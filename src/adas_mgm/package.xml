@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>adas_mgm</name>
+  <version>0.1.0</version>
+  <description>Decision 계층 — 10ms 고정 루프, 주행 모드 스테이트 머신, ref 조립/종방향 병합, 지터 로깅 (CLAUDE.md §2, §4, §5)</description>
+  <maintainer email="kyg100800@gmail.com">FMA Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>fma_interfaces</depend>
+
+  <exec_depend>ros2launch</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

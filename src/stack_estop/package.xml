@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>stack_estop</name>
+  <version>0.1.0</version>
+  <description>돌발 장애물 감지 → 긴급 정지 요구 — 담당: 박찬미</description>
+  <maintainer email="kyg100800@gmail.com">박찬미</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>fma_interfaces</depend>
+
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,24 @@
+mgm_node:
+  ros__parameters:
+    # lane ↔ waypoint 히스테리시스 (CLAUDE.md §4)
+    lane_conf_exit: 0.4
+    lane_conf_return: 0.6
+    n_cycles: 20            # 10ms × 20 = 200ms 연속
+
+    # 스테이트별 속도 [m/s]
+    v_base: 0.5
+    v_accel_zone: 1.0
+    v_narrow: 0.2
+
+    # avoid 안전 바닥
+    ttc_stop: 0.8           # [s]
+
+    # 조립/병합 (실행부 파라미터 — 판단 아님)
+    blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)
+    a_up: 0.5               # [m/s^2] 가속 rate limit
+    a_down: 1.5             # [m/s^2] 일반 감속 rate limit (긴급은 우회)
+
+    # 실시간 (§5.2, §5.3)
+    cpu_core: -1            # >=0 이면 해당 코어에 루프 스레드 고정
+    jitter_window: 1000     # 10s 단위 통계
+    jitter_csv_path: ""     # 예: "/home/yungi/mgm_jitter.csv" — §7 장시간 측정 시 지정
