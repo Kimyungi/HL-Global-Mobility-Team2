@@ -1,0 +1,105 @@
+<mxfile host="app.diagrams.net" agent="Claude">
+  <diagram name="State Machine Detail" id="sm-detail">
+    <mxGraphModel dx="3148" dy="1603" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1320" pageHeight="740" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="_uzXRjAcZN8tbBjxY8X_-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=none;" value="" vertex="1">
+          <mxGeometry height="670" width="1440" x="-60" y="-370" as="geometry" />
+        </mxCell>
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=15;fontStyle=1;align=left;" value="주행 모드 스테이트 머신 상세 — ADAS MGM Decision&amp;nbsp;" vertex="1">
+          <mxGeometry height="24" width="370" x="90" y="-350" as="geometry" />
+        </mxCell>
+        <mxCell id="start_dot" parent="1" style="ellipse;fillColor=#000000;strokeColor=#000000;" value="" vertex="1">
+          <mxGeometry height="16" width="16" x="212" y="-315" as="geometry" />
+        </mxCell>
+        <mxCell id="st_lane" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;" value="lane&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;차선 추종&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="180" x="70" y="-240" as="geometry" />
+        </mxCell>
+        <mxCell id="st_wp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;" value="waypoint&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;GPS 경로 추종&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="180" x="570" y="-240" as="geometry" />
+        </mxCell>
+        <mxCell id="st_avoid" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontStyle=1;" value="avoid&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;장애물 회피 기동&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="180" x="350" as="geometry" />
+        </mxCell>
+        <mxCell id="st_park" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;" value="parking&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;주차&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="180" x="70" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="e_start" edge="1" parent="1" source="start_dot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="st_lane">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_lane_wp" edge="1" parent="1" source="st_lane" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=1;exitY=0.3;entryX=0;entryY=0.3;" target="st_wp" value="차선 신뢰도 &lt; 임계 · N주기 연속">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_wp_lane" edge="1" parent="1" source="st_wp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=0;exitY=0.7;entryX=1;entryY=0.7;" target="st_lane" value="차선 신뢰도 &amp;gt; 복귀 임계, N주기 연속 (히스테리시스)">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_lane_avoid" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;entryX=0.15;entryY=0;" target="st_avoid" value="장애물 AND 회피 가능&lt;br&gt;(TTC · 측방 여유)">
+          <mxGeometry relative="1" x="0.003" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="210" y="-170" />
+              <mxPoint x="210" y="-60" />
+              <mxPoint x="377" y="-60" />
+            </Array>
+            <mxPoint x="210.01" y="-170" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_avoid_lane" edge="1" parent="1" source="st_avoid" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;fontSize=11;exitX=0;exitY=0.5;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="st_lane" value="기동 완료 → 복귀">
+          <mxGeometry relative="1" x="0.2911" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="160" y="35" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_wp_avoid" edge="1" parent="1" source="st_wp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=0.3;exitY=1;entryX=0.85;entryY=0;" target="st_avoid" value="장애물 AND 회피 가능">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="624" y="-60" />
+              <mxPoint x="503" y="-60" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_avoid_wp" edge="1" parent="1" source="st_avoid" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;fontSize=11;exitX=1;exitY=0.5;entryX=0.7;entryY=1;" target="st_wp" value="기동 완료 → 복귀">
+          <mxGeometry relative="1" x="0.2453" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="696" y="35" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_lane_park" edge="1" parent="1" source="st_lane" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=0.15;exitY=1;entryX=0.15;entryY=0;" target="st_park" value="GPS 주차구간 AND 주차공간 인식">
+          <mxGeometry relative="1" x="0.2195" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_park_lane" edge="1" parent="1" source="st_park" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" target="st_lane" value="주차 완료">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="-20" y="235" />
+              <mxPoint x="-20" y="-205" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tbl_title" parent="1" style="text;html=1;fontSize=14;fontStyle=1;align=left;" value="스테이트별 우선권 — 매 10ms, 스테이트 내에서 결정" vertex="1">
+          <mxGeometry height="24" width="460" x="870" y="-255" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_lane" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=left;spacingLeft=12;" value="&lt;b&gt;lane · waypoint&lt;/b&gt;&lt;br&gt;종방향: 긴급 정지 &amp;gt; 신호등 정지 &amp;gt; 가속구간 &amp;gt; 기본 속도&lt;br&gt;횡방향: 차선 경로 / GPS 경로" vertex="1">
+          <mxGeometry height="90" width="460" x="870" y="-220" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_avoid" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;align=left;spacingLeft=12;" value="&lt;b&gt;avoid&lt;/b&gt;&lt;br&gt;기동 완료 우선 — 정지 요구는 기동 이탈 후 적용&lt;br&gt;단, TTC &amp;lt; 임계 → 즉시 정지 (안전 바닥)&lt;br&gt;횡방향: 회피 경로&lt;div&gt;종방향: v_ref는 회피 기하로 결정 (여유 폭 좁으면 감속)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="460" x="870" y="-110" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_park" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=left;spacingLeft=12;" value="&lt;b&gt;parking&lt;/b&gt;&lt;br&gt;경로 침범 정지 &amp;gt; 주차 진행&lt;br&gt;신호등 · 가속구간 요구 비활성&lt;br&gt;정적 경계(콘 · 연석)는 정지 트리거 아님 — 로컬맵 입력" vertex="1">
+          <mxGeometry height="100" width="460" x="870" y="10" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl_note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;fontSize=12;align=left;spacingLeft=12;" value="&lt;b&gt;긴급 정지는 스테이트가 X&lt;/b&gt;&amp;nbsp;— 각 스테이트 우선권 표의 최상위 요구.&lt;br&gt;정지 중에도 주행 스테이트 유지 → 복귀 관리 불필요 (v_ref = 0으로만 반영)" vertex="1">
+          <mxGeometry height="70" width="460" x="870" y="130" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
