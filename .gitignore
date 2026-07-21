@@ -3,5 +3,6 @@ install/
 log/
 __pycache__/
 *.pyc
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 nohup.out
