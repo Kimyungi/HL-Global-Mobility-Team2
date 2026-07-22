@@ -22,3 +22,6 @@ mgm_node:
     cpu_core: -1            # >=0 이면 해당 코어에 루프 스레드 고정
     jitter_window: 1000     # 10s 단위 통계
     jitter_csv_path: ""     # 예: "/home/yungi/mgm_jitter.csv" — §7 장시간 측정 시 지정
+
+    # back-to-back 검증 (§5.5) — 지정 시 매 틱 CoreSnapshot을 바이너리 덤프
+    snapshot_dump_path: ""  # 예: "/home/yungi/mgm_snapshots.bin" → core_replay로 재생

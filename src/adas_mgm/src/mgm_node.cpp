@@ -1,10 +1,13 @@
-// mgm_node — Decision 계층 본체 (CLAUDE.md §2, §4, §5).
+// mgm_node — Decision 계층 wrapper (CLAUDE.md §2, §5, §5.5).
 //
-// 구조 원칙:
+// 판단·조립·병합 로직은 전부 core/mgm_step.cpp에 있다 — 이 파일은 wrapper만:
+//   구독 msg → CoreSnapshot 변환, 10ms 틱 → mgm_step 호출,
+//   CoreOutput → TargetRef 변환·발행, 지터 로깅, (옵션) 스냅샷 덤프.
+// 여기에 판단 로직(if 장애물, if 신호등 …)을 추가하는 것은 §5.1·§5.5 위반.
+//
+// 실시간 구조:
 //  - 10ms 루프는 전용 스레드 (clock_nanosleep 절대시각 + SCHED_FIFO 시도).
 //    인지 콜백은 스냅샷 갱신만 — 루프를 블로킹하지 않는다 (§5.2 pull 방식).
-//  - 판단은 StateMachine 한 곳. 이 파일의 조립/병합은 결정의 실행부일 뿐이며
-//    요구 조건 분기(if 장애물, if 신호등 …)를 여기 추가하는 것은 §5.1 위반.
 //  - 주기 지터 로깅은 처음부터 내장 (§5.3) — §7 v1/v3 판정의 근거 데이터.
 #include <pthread.h>
 #include <sched.h>
@@ -12,7 +15,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cmath>
 #include <fstream>
 #include <mutex>
 #include <numeric>
@@ -21,109 +23,68 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "fma_interfaces/msg/lane_path.hpp"
+#include "fma_interfaces/msg/gps_path.hpp"
+#include "fma_interfaces/msg/avoid_status.hpp"
+#include "fma_interfaces/msg/parking_status.hpp"
+#include "fma_interfaces/msg/traffic_stop.hpp"
+#include "fma_interfaces/msg/estop_request.hpp"
 #include "fma_interfaces/msg/target_ref.hpp"
-#include "state_machine.hpp"
 
-using fma_interfaces::msg::RefPoint;
+#include "core/mgm_step.hpp"
+#include "tools/dump_format.hpp"
+
 using fma_interfaces::msg::TargetRef;
 
 namespace adas_mgm
 {
 
-constexpr int kNumPoints = 20;          // dSPACE MPC 지평과 일치 (PROTOCOL.md)
 constexpr int64_t kPeriodNs = 10'000'000;  // 10ms 고정
 
-// ── ref points 조립 — 스테이트가 고른 경로를 포맷 변환·전환 연속 처리만 (§5.1, §5.6)
-class RefAssembler
+// 인지 콜백이 갱신하는 최신 msg 보관함 — 루프가 매 틱 복사(pull)
+struct LatestMsgs
 {
-public:
-  explicit RefAssembler(int blend_cycles)
-  : blend_cycles_(blend_cycles)
-  {
-    RefPoint origin{};
-    out_.assign(kNumPoints, origin);  // 인지 도착 전: 제자리 (v_ref가 어차피 속도를 지배)
-  }
-
-  const std::vector<RefPoint> & assemble(PathSource src, const Snapshot & s)
-  {
-    const auto * pts = select(src, s);
-    if (pts == nullptr || pts->empty()) {
-      return out_;  // 선택 소스 미도착 → 직전 출력 유지 (판단 아님 — 데이터 hold)
-    }
-    std::vector<RefPoint> target = normalize(*pts);
-
-    if (src != last_src_) {           // 스테이트 전환 → ref 불연속 방지 블렌드 시작
-      blend_from_ = out_;
-      blend_left_ = blend_cycles_;
-      last_src_ = src;
-    }
-    if (blend_left_ > 0) {
-      const double a = 1.0 - static_cast<double>(blend_left_) / (blend_cycles_ + 1);
-      for (int i = 0; i < kNumPoints; ++i) {
-        out_[i].x = lerp(blend_from_[i].x, target[i].x, a);
-        out_[i].y = lerp(blend_from_[i].y, target[i].y, a);
-        out_[i].yaw = lerp(blend_from_[i].yaw, target[i].yaw, a);
-        out_[i].curvature = lerp(blend_from_[i].curvature, target[i].curvature, a);
-      }
-      --blend_left_;
-    } else {
-      out_ = std::move(target);
-    }
-    return out_;
-  }
-
-private:
-  static float lerp(float a, float b, double t)
-  {
-    return static_cast<float>(a + (b - a) * t);
-  }
-
-  static const std::vector<RefPoint> * select(PathSource src, const Snapshot & s)
-  {
-    switch (src) {
-      case PathSource::Lane: return &s.lane.points;
-      case PathSource::Gps: return &s.gps.points;
-      case PathSource::Avoid: return &s.avoid.points;
-      case PathSource::Parking: return &s.parking.points;
-    }
-    return nullptr;
-  }
-
-  static std::vector<RefPoint> normalize(const std::vector<RefPoint> & in)
-  {
-    std::vector<RefPoint> out(kNumPoints);
-    for (int i = 0; i < kNumPoints; ++i) {
-      out[i] = in[std::min<size_t>(i, in.size() - 1)];  // 부족분은 마지막 점 복제
-    }
-    return out;
-  }
-
-  int blend_cycles_;
-  int blend_left_{0};
-  PathSource last_src_{PathSource::Lane};
-  std::vector<RefPoint> out_, blend_from_;
+  fma_interfaces::msg::LanePath lane;
+  fma_interfaces::msg::GpsPath gps;
+  fma_interfaces::msg::AvoidStatus avoid;
+  fma_interfaces::msg::ParkingStatus parking;
+  fma_interfaces::msg::TrafficStop traffic;
+  fma_interfaces::msg::EstopRequest estop;
 };
 
-// ── 종방향 병합 — rate limit만 (§5.6). immediate_stop은 스테이트의 결정으로 우회.
-class VrefMerger
+// msg → CoreSnapshot 변환 (포맷 변환만 — 판단 금지)
+void toCorePath(const std::vector<fma_interfaces::msg::RefPoint> & in, CorePath & out)
 {
-public:
-  VrefMerger(double a_up, double a_down)
-  : dv_up_(a_up * 0.01), dv_down_(a_down * 0.01) {}
-
-  double merge(const Decision & d)
-  {
-    if (d.immediate_stop) {
-      v_ = 0.0;  // 긴급 정지·TTC 바닥은 램프 없이 즉시 (스테이트 머신이 결정)
-      return v_;
-    }
-    v_ = std::clamp(d.v_ref, v_ - dv_down_, v_ + dv_up_);
-    return v_;
+  out.n = static_cast<int32_t>(std::min<size_t>(in.size(), MGM_NUM_POINTS));
+  for (int32_t i = 0; i < out.n; ++i) {
+    out.pts[i] = CorePoint{in[i].x, in[i].y, in[i].yaw, in[i].curvature};
   }
+}
 
-private:
-  double dv_up_, dv_down_, v_{0.0};
-};
+CoreSnapshot toSnapshot(const LatestMsgs & m)
+{
+  CoreSnapshot s{};
+  s.lane_confidence = m.lane.confidence;
+  toCorePath(m.lane.points, s.lane_path);
+  toCorePath(m.gps.points, s.gps_path);
+  s.gps_accel_zone = m.gps.accel_zone;
+  s.gps_parking_zone = m.gps.parking_zone;
+  s.avoid_obstacle_detected = m.avoid.obstacle_detected;
+  s.avoid_avoidable = m.avoid.avoidable;
+  s.avoid_ttc = m.avoid.ttc;
+  s.avoid_narrow_gap = m.avoid.narrow_gap;
+  s.avoid_maneuver_done = m.avoid.maneuver_done;
+  toCorePath(m.avoid.points, s.avoid_path);
+  s.avoid_v_suggest = m.avoid.v_suggest;
+  s.parking_space_found = m.parking.space_found;
+  s.parking_path_blocked = m.parking.path_blocked;
+  s.parking_done = m.parking.done;
+  toCorePath(m.parking.points, s.parking_path);
+  s.parking_v_suggest = m.parking.v_suggest;
+  s.traffic_stop_required = m.traffic.stop_required;
+  s.estop = m.estop.estop;
+  return s;
+}
 
 // ── 주기 지터 로거 (§5.3, §7) — 최악값 기준. 윈도 단위로 통계·CSV 기록.
 class JitterLogger
@@ -183,26 +144,35 @@ public:
   MgmNode()
   : Node("mgm_node")
   {
-    Params p;
-    p.lane_conf_exit = declare_parameter<double>("lane_conf_exit", p.lane_conf_exit);
-    p.lane_conf_return = declare_parameter<double>("lane_conf_return", p.lane_conf_return);
-    p.n_cycles = declare_parameter<int>("n_cycles", p.n_cycles);
-    p.v_base = declare_parameter<double>("v_base", p.v_base);
-    p.v_accel_zone = declare_parameter<double>("v_accel_zone", p.v_accel_zone);
-    p.v_narrow = declare_parameter<double>("v_narrow", p.v_narrow);
-    p.ttc_stop = declare_parameter<double>("ttc_stop", p.ttc_stop);
-    sm_ = std::make_unique<StateMachine>(p);
+    CoreParams p{};
+    p.lane_conf_exit = static_cast<float>(declare_parameter<double>("lane_conf_exit", 0.4));
+    p.lane_conf_return = static_cast<float>(declare_parameter<double>("lane_conf_return", 0.6));
+    p.n_cycles = static_cast<int32_t>(declare_parameter<int>("n_cycles", 20));
+    p.v_base = static_cast<float>(declare_parameter<double>("v_base", 0.5));
+    p.v_accel_zone = static_cast<float>(declare_parameter<double>("v_accel_zone", 1.0));
+    p.v_narrow = static_cast<float>(declare_parameter<double>("v_narrow", 0.2));
+    p.ttc_stop = static_cast<float>(declare_parameter<double>("ttc_stop", 0.8));
+    p.blend_cycles = static_cast<int32_t>(declare_parameter<int>("blend_cycles", 10));
+    p.a_up = static_cast<float>(declare_parameter<double>("a_up", 0.5));      // [m/s^2]
+    p.a_down = static_cast<float>(declare_parameter<double>("a_down", 1.5));  // [m/s^2]
+    mgm_init(core_state_, p);
 
-    assembler_ = std::make_unique<RefAssembler>(
-      static_cast<int>(declare_parameter<int>("blend_cycles", 10)));
-    merger_ = std::make_unique<VrefMerger>(
-      declare_parameter<double>("a_up", 0.5),      // [m/s^2]
-      declare_parameter<double>("a_down", 1.5));   // [m/s^2] 일반 감속 한계
     jitter_ = std::make_unique<JitterLogger>(
       get_logger(),
       declare_parameter<std::string>("jitter_csv_path", ""),
       static_cast<int>(declare_parameter<int>("jitter_window", 1000)));
     cpu_core_ = static_cast<int>(declare_parameter<int>("cpu_core", -1));
+
+    // back-to-back 검증용 스냅샷 덤프 (tools/dump_format.hpp) — 미지정 시 비활성
+    const auto dump_path = declare_parameter<std::string>("snapshot_dump_path", "");
+    if (!dump_path.empty()) {
+      dump_.open(dump_path, std::ios::binary | std::ios::trunc);
+      DumpHeader h{kDumpMagic, kDumpVersion,
+        static_cast<uint32_t>(sizeof(CoreSnapshot)),
+        static_cast<uint32_t>(sizeof(CoreParams)), p};
+      dump_.write(reinterpret_cast<const char *>(&h), sizeof(h));
+      RCLCPP_INFO(get_logger(), "snapshot dump → %s", dump_path.c_str());
+    }
 
     pub_ = create_publisher<TargetRef>("/adas/target_ref", rclcpp::QoS(1));
 
@@ -211,29 +181,29 @@ public:
     sub_lane_ = create_subscription<fma_interfaces::msg::LanePath>(
       "/perception/lane_path", qos,
       [this](fma_interfaces::msg::LanePath::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); snap_.lane = *m;});
+        std::lock_guard<std::mutex> lk(mtx_); msgs_.lane = *m;});
     sub_gps_ = create_subscription<fma_interfaces::msg::GpsPath>(
       "/perception/gps_path", qos,
       [this](fma_interfaces::msg::GpsPath::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); snap_.gps = *m;});
+        std::lock_guard<std::mutex> lk(mtx_); msgs_.gps = *m;});
     sub_avoid_ = create_subscription<fma_interfaces::msg::AvoidStatus>(
       "/perception/avoid", qos,
       [this](fma_interfaces::msg::AvoidStatus::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); snap_.avoid = *m;});
+        std::lock_guard<std::mutex> lk(mtx_); msgs_.avoid = *m;});
     sub_parking_ = create_subscription<fma_interfaces::msg::ParkingStatus>(
       "/perception/parking", qos,
       [this](fma_interfaces::msg::ParkingStatus::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); snap_.parking = *m;});
+        std::lock_guard<std::mutex> lk(mtx_); msgs_.parking = *m;});
     sub_traffic_ = create_subscription<fma_interfaces::msg::TrafficStop>(
       "/perception/traffic_stop", qos,
       [this](fma_interfaces::msg::TrafficStop::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); snap_.traffic = *m;});
+        std::lock_guard<std::mutex> lk(mtx_); msgs_.traffic = *m;});
     sub_estop_ = create_subscription<fma_interfaces::msg::EstopRequest>(
       "/perception/estop", qos,
       [this](fma_interfaces::msg::EstopRequest::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); snap_.estop = *m;});
+        std::lock_guard<std::mutex> lk(mtx_); msgs_.estop = *m;});
 
-    snap_.avoid.ttc = 1e9f;  // 인지 도착 전 TTC=0으로 오인해 정지하는 것 방지
+    msgs_.avoid.ttc = 1e9f;  // 인지 도착 전 TTC=0으로 오인해 정지하는 것 방지
 
     loop_thread_ = std::thread([this] {loop();});
   }
@@ -285,22 +255,31 @@ private:
 
   void tick()
   {
-    Snapshot s;
+    LatestMsgs m;
     {
       std::lock_guard<std::mutex> lk(mtx_);
-      s = snap_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
+      m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
+    }
+    const CoreSnapshot s = toSnapshot(m);
+
+    if (dump_.is_open()) {
+      dump_.write(reinterpret_cast<const char *>(&s), sizeof(s));
     }
 
-    const Decision d = sm_->decide(s);                    // 판단 (유일한 곳)
-    const auto & points = assembler_->assemble(d.path_source, s);  // 실행: 조립
-    const double v = merger_->merge(d);                   // 실행: 병합(rate limit)
+    const CoreOutput out = mgm_step(s, core_state_);  // 판단+실행 전부 코어에서
 
     TargetRef msg;
     msg.header.stamp = now();
     msg.header.frame_id = "base_link";
-    msg.state = static_cast<uint8_t>(d.state);
-    msg.v_ref = static_cast<float>(v);
-    msg.ref_points.assign(points.begin(), points.end());
+    msg.state = out.state;
+    msg.v_ref = out.v_ref;
+    msg.ref_points.resize(MGM_NUM_POINTS);
+    for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
+      msg.ref_points[i].x = out.ref_points[i].x;
+      msg.ref_points[i].y = out.ref_points[i].y;
+      msg.ref_points[i].yaw = out.ref_points[i].yaw;
+      msg.ref_points[i].curvature = out.ref_points[i].curvature;
+    }
     pub_->publish(msg);
   }
 
@@ -317,14 +296,13 @@ private:
     }
   }
 
-  std::unique_ptr<StateMachine> sm_;
-  std::unique_ptr<RefAssembler> assembler_;
-  std::unique_ptr<VrefMerger> merger_;
+  CoreState core_state_;
   std::unique_ptr<JitterLogger> jitter_;
   int cpu_core_{-1};
+  std::ofstream dump_;
 
   std::mutex mtx_;
-  Snapshot snap_;
+  LatestMsgs msgs_;
 
   rclcpp::Publisher<TargetRef>::SharedPtr pub_;
   rclcpp::Subscription<fma_interfaces::msg::LanePath>::SharedPtr sub_lane_;
