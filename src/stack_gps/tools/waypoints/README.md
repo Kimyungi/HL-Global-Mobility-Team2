@@ -22,10 +22,15 @@ python3 record_waypoints.py --host 172.20.10.2 --name track_A    # 트랙 이름
 
 | 열 | 의미 |
 |---|---|
-| lat / lon | WGS84, 소수 9자리 (mm 해상도, UBX 고정밀 소스) |
-| height_m | 타원체고 |
+| lat / lon | WGS84 십진도 (NMEA GGA 소스 — 아래 정밀도 참고) |
+| height_m | 타원체고 (GGA MSL고도 + 지오이드 분리값) |
 | east_m / north_m | 첫 점 기준 로컬 미터 좌표 (검토·시각화용) |
-| h_acc_mm | 수신기 자체 수평정확도 추정 |
+| quality | GGA quality (4=RTK FIXED) |
+
+**정밀도**: FST-UEF9P의 USB는 출하 설정상 **NMEA 출력 + RTCM 입력만 허용**하고
+UBX 설정 명령을 받지 않는다 (실측 확인 — 고정밀 NMEA 모드도 켤 수 없음).
+GGA 좌표는 분 소수 5자리 = 약 1.85cm 양자화이므로, RTK 오차와 합산한
+웨이포인트 유효 정밀도는 **2~3cm**. 주행 제어 요구 수준에는 충분하다.
 
 ## 기록 요령
 

@@ -3,19 +3,23 @@
 
 하나의 프로세스가 두 역할을 겸한다 (포트 공유 금지 원칙):
   ① 베이스 RTCM을 TCP로 받아 로버 시리얼에 주입 (rtcm_client_inject 역할)
-  ② 로버의 UBX 고정밀 위치(NAV-HPPOSLLH, mm 해상도)를 읽어 웨이포인트 기록
+  ② 로버의 NMEA GGA를 파싱해 웨이포인트 기록
+
+NMEA 기반인 이유: FST-UEF9P의 USB는 출하 설정상 NMEA 출력 + RTCM 입력만
+허용하고 UBX 설정 명령을 받지 않는다 (실측 확인). GGA 좌표는 분 단위 소수
+5자리 = 약 1.85cm 양자화 → RTK 오차와 합산해 웨이포인트 유효 정밀도 2~3cm.
 
 ⚠ 실행 전 rtcm_client_inject.py 는 반드시 종료할 것 — 같은 포트를 두 프로세스가
-읽으면 데이터가 조각난다. 이 도구 하나만 돌리면 주입+기록이 모두 된다.
+읽으면 문장이 조각난다. 이 도구 하나만 돌리면 주입+기록이 모두 된다.
 
 기록 규칙:
-  - RTK FIXED(carrSoln=2)인 순간의 좌표만 기록. FLOAT/NONE 구간은 자동 일시정지.
+  - GGA quality=4 (RTK FIXED)인 문장만 기록. FLOAT/DGPS 구간은 자동 일시정지.
   - 직전 기록점에서 --spacing (기본 0.2m) 이상 이동했을 때만 새 점 추가.
   - Ctrl-C 로 종료 → CSV 마감 + 요약 출력.
 
 출력: src/stack_gps/waypoints/waypoints_[이름_]YYYYMMDD_HHMMSS.csv
-  idx, utc, lat, lon, height_m, east_m, north_m, h_acc_mm
-  (east/north 는 첫 점 기준 로컬 미터 좌표 — 시각화·검토용)
+  idx, utc, lat, lon, height_m, east_m, north_m, quality
+  (height_m = 타원체고 — GGA의 MSL고도 + 지오이드 분리값)
 
 사용:
   python3 record_waypoints.py --host 172.20.10.2                  # 기본
@@ -30,21 +34,30 @@ import sys
 import time
 
 import serial
-from pyubx2 import UBX_PROTOCOL, UBXMessage, UBXReader
 
 M_PER_DEG_LAT = 111_320.0
 
 
-def enable_ubx(ser):
-    """로버 USB 포트에 UBX 항법 출력(5Hz) 활성화 (RAM — 전원 차단 시 원복)."""
-    msg = UBXMessage.config_set(1, 0, [
-        ("CFG_USBOUTPROT_UBX", 1),
-        ("CFG_MSGOUT_UBX_NAV_PVT_USB", 1),
-        ("CFG_MSGOUT_UBX_NAV_HPPOSLLH_USB", 1),
-        ("CFG_RATE_MEAS", 200),   # 5Hz — 도보 1.4m/s 기준 점 간격 0.28m 해상도
-        ("CFG_RATE_NAV", 1),
-    ])
-    ser.write(msg.serialize())
+def parse_gga(line):
+    """GGA 문장 → (utc, lat, lon, h_ellip, quality) 또는 None.
+
+    lat/lon: ddmm.mmmmm 형식을 십진도로 변환. 좌표 비면 None.
+    """
+    f = line.split(",")
+    if len(f) < 12 or not f[2] or not f[4] or not f[6].isdigit():
+        return None
+    try:
+        lat = int(f[2][:2]) + float(f[2][2:]) / 60.0
+        if f[3] == "S":
+            lat = -lat
+        lon = int(f[4][:3]) + float(f[4][3:]) / 60.0
+        if f[5] == "W":
+            lon = -lon
+        alt_msl = float(f[9]) if f[9] else 0.0
+        geoid = float(f[11]) if f[11] else 0.0
+        return f[1], lat, lon, alt_msl + geoid, int(f[6])
+    except ValueError:
+        return None
 
 
 def connect_base(host, port):
@@ -61,6 +74,8 @@ def main():
     ap.add_argument("--baud", type=int, default=115200, help="USB CDC는 무의미, RS232면 38400")
     ap.add_argument("--spacing", type=float, default=0.2, help="기록 점 간격 [m]")
     ap.add_argument("--name", default="", help="트랙 이름 (파일명에 포함)")
+    ap.add_argument("--min-quality", type=int, default=4,
+                    help="기록 최소 GGA quality (기본 4=RTK FIXED, 5 허용 시 주의)")
     ap.add_argument("--outdir", default=os.path.join(os.path.dirname(__file__),
                     "..", "..", "waypoints"), help="CSV 저장 폴더")
     args = ap.parse_args()
@@ -70,27 +85,27 @@ def main():
     tag = f"{args.name}_" if args.name else ""
     path = os.path.join(outdir, f"waypoints_{tag}{time.strftime('%Y%m%d_%H%M%S')}.csv")
 
-    ser = serial.Serial(args.serial, args.baud, timeout=1)
-    ubr = UBXReader(ser, protfilter=UBX_PROTOCOL)
-    enable_ubx(ser)
+    ser = serial.Serial(args.serial, args.baud, timeout=0.2)
     sock = connect_base(args.host, args.port)
     print(f"[record] 베이스 {args.host}:{args.port} → {args.serial} 주입 시작")
     print(f"[record] 기록 파일: {path}")
-    print(f"[record] 점 간격 {args.spacing}m — RTK FIXED에서만 기록. Ctrl-C로 종료.")
+    print(f"[record] 점 간격 {args.spacing}m — quality≥{args.min_quality}에서만 기록. "
+          "Ctrl-C로 종료.")
 
     f = open(path, "w", newline="")
     writer = csv.writer(f)
     writer.writerow(["idx", "utc", "lat", "lon", "height_m",
-                     "east_m", "north_m", "h_acc_mm"])
+                     "east_m", "north_m", "quality"])
 
-    carr = 0            # 최신 carrSoln
+    quality = 0
     origin = None       # (lat0, lon0) — ENU 기준점
     last_en = None      # 마지막 기록점 (e, n)
     n_pts = 0
     total_len = 0.0
     rtcm_bytes = 0
+    nmea_buf = b""
     t_stat = time.time()
-    names = {0: "NO-RTK", 1: "FLOAT", 2: "FIXED"}
+    qnames = {0: "NOFIX", 1: "GPS", 2: "DGPS", 4: "FIXED", 5: "FLOAT"}
 
     try:
         while True:
@@ -105,35 +120,36 @@ def main():
             except (BlockingIOError, InterruptedError):
                 pass
             except OSError as e:
-                print(f"[record] ⚠ 베이스 연결 오류: {e} — 3초 후 재접속")
+                print(f"\n[record] ⚠ 베이스 연결 오류: {e} — 3초 후 재접속")
                 time.sleep(3)
                 try:
                     sock = connect_base(args.host, args.port)
                 except OSError:
                     pass
 
-            # ② 로버 위치 읽기
-            raw, msg = ubr.read()
-            if msg is None:
-                continue
-            if msg.identity == "NAV-PVT":
-                carr = msg.carrSoln
-            elif msg.identity == "NAV-HPPOSLLH" and carr == 2:
-                lat, lon = msg.lat, msg.lon        # pyubx2가 HP 성분 합산 완료 (deg)
-                h = msg.height * 1e-3              # mm → m (타원체고)
+            # ② NMEA 수신·GGA 파싱
+            nmea_buf += ser.read(ser.in_waiting or 1)
+            while b"\n" in nmea_buf:
+                raw, nmea_buf = nmea_buf.split(b"\n", 1)
+                line = raw.decode(errors="ignore").strip()
+                if not (line.startswith("$G") and "GGA" in line[:7]):
+                    continue
+                parsed = parse_gga(line)
+                if parsed is None:
+                    continue
+                utc, lat, lon, h, quality = parsed
+                if quality < args.min_quality:
+                    continue
                 if origin is None:
                     origin = (lat, lon)
-                    print(f"[record] 기준점 고정: {lat:.9f}, {lon:.9f}")
+                    print(f"[record] 기준점 고정: {lat:.7f}, {lon:.7f}")
                 e = (lon - origin[1]) * M_PER_DEG_LAT * math.cos(math.radians(origin[0]))
                 n = (lat - origin[0]) * M_PER_DEG_LAT
-                if last_en is None:
-                    dist = 0.0
-                else:
-                    dist = math.hypot(e - last_en[0], n - last_en[1])
+                dist = 0.0 if last_en is None else math.hypot(e - last_en[0],
+                                                              n - last_en[1])
                 if last_en is None or dist >= args.spacing:
-                    utc = time.strftime("%H:%M:%S", time.gmtime())
-                    writer.writerow([n_pts, utc, f"{lat:.9f}", f"{lon:.9f}",
-                                     f"{h:.4f}", f"{e:.3f}", f"{n:.3f}", msg.hAcc])
+                    writer.writerow([n_pts, utc, f"{lat:.7f}", f"{lon:.7f}",
+                                     f"{h:.3f}", f"{e:.3f}", f"{n:.3f}", quality])
                     f.flush()
                     if last_en is not None:
                         total_len += dist
@@ -143,14 +159,13 @@ def main():
             # ③ 상태 표시 (2초마다)
             now = time.time()
             if now - t_stat >= 2:
+                warn = "  ⚠ FIX 아님 — 기록 일시정지" if quality < args.min_quality else ""
                 sys.stdout.write(
-                    f"\r[record] {names.get(carr, '?'):6s}  점 {n_pts:4d}개  "
-                    f"경로 {total_len:7.1f}m  RTCM {rtcm_bytes / (now - t_stat):5.0f}B/s   ")
+                    f"\r[record] {qnames.get(quality, quality):5}  점 {n_pts:4d}개  "
+                    f"경로 {total_len:7.1f}m  RTCM {rtcm_bytes / (now - t_stat):5.0f}B/s{warn}   ")
                 sys.stdout.flush()
                 rtcm_bytes = 0
                 t_stat = now
-                if carr != 2 and n_pts > 0:
-                    sys.stdout.write("⚠ FIX 풀림 — 기록 일시정지  ")
     except KeyboardInterrupt:
         pass
     finally:
