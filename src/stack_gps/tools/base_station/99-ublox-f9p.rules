@@ -16,3 +16,6 @@ ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1546", ENV{ID_MM_DEVICE_IGNORE
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="0507", MODE="0666", GROUP="dialout", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="ttyF9P"
 # UART2 (0508)
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="0508", MODE="0666", GROUP="dialout", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="ttyF9P_uart2"
+
+# --- 로버 GPS (FST-UEF9P 등 u-blox 네이티브 USB, 01a9) → /dev/ttyRover 로 고정 ---
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", MODE="0666", GROUP="dialout", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="ttyRover"
