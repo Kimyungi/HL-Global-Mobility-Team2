@@ -85,11 +85,14 @@ python3 rtcm_server.py          # /dev/ttyF9P_uart2 @38400 → tcp 0.0.0.0:2101
 
 ## 4단계 — 차량(로버) 연결 검증
 
-FST-UEF9P 도착 후, 차량 PC에서:
+FST-UEF9P를 로버 PC에 연결한다. 연결 방식은 둘 다 가능:
+
+- **USB (개발·테스트 권장)**: FST의 USB를 직결 → udev 규칙이 `/dev/ttyRover`로
+  고정해준다 (u-blox 네이티브 USB라 baud 무관, NMEA 출력·RTCM 입력 동시 지원)
+- **RS-232 (차량 최종 탑재)**: USB-RS232 어댑터 경유, 38400bps 고정 → `/dev/ttyUSB0`
 
 ```bash
-# RS-232 어댑터 연결 → 포트 확인 (보통 /dev/ttyUSB0)
-python3 rtcm_client_inject.py --host <베이스PC_IP> --monitor
+python3 rtcm_client_inject.py --host <베이스PC_IP> --serial /dev/ttyRover --monitor
 ```
 
 - `RTK 상태: RTK FIXED` (GGA quality 4)가 뜨면 **베이스-로버 링크 완성**.
