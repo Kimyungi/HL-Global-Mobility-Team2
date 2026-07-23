@@ -16,6 +16,11 @@ GPS·IMU 융합, RTK, waypoint ref
 - 금지: v_ref 결정·모드 판단 금지 (CLAUDE.md §5.1). accel_zone은 요구의 원천일 뿐.
 - 검증: RTK fix 상태에서 waypoint 추종 오차, GPS 음영에서 vehicle vector 보정 유지 시간.
 
+## 베이스 스테이션
+
+RTK 베이스(EVK-F9P) 구축·운용 도구와 상세 가이드: `tools/base_station/README.md`
+(ROS 무의존 — 좌표 측량 → 베이스 설정 → RTCM TCP 배포 → 로버 주입 순서).
+
 ## 공통 규칙 (CLAUDE.md)
 
 - 출력은 `fma_interfaces` 메시지로만. MGM은 이 토픽만 구독한다.
