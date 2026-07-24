@@ -1,5 +1,19 @@
 # 웨이포인트 기록 도구
 
+> **현재 상태 (2026-07-24 기준) — 새 세션은 여기서 이어서 작업:**
+> - 인프라 전부 가동·검증 완료: 베이스 = EVK-F9P(1층 야외, 확정 좌표는
+>   `../base_station/README.md` 맨 위) + 산업용 PC(`rtcm_server.py`),
+>   로버 = 김윤기 노트북 + FST-UEF9P(`/dev/ttyRover`). **RTK FIXED 확인됨.**
+> - 베이스↔로버는 Tailscale VPN — 베이스(산업용 PC) 주소 **`100.70.198.29`**,
+>   노트북 `100.102.93.96`. 기기 고정 주소라 네트워크가 바뀌어도 그대로.
+> - 웨이포인트 기록 즉시 가능: `python3 record_waypoints.py --host 100.70.198.29 --name <트랙명>`
+> - `waypoints/waypoints_test1_*.csv`(7/23)는 **옛 옥상 좌표 기준이라 무효** — 삭제할 것.
+> - **다음 개발 단계 (마감 8/2, GPS 단독 주행)**: stack_gps 노드 본편 —
+>   ① 웨이포인트 CSV 로드 ② FST GGA(위치)·경로 기하(헤딩)로 전역 waypoint를
+>   **vehicle frame ref points {x, y, yaw, curvature}로 변환** ③ `/perception/gps_path`
+>   발행 (fix_quality, accel_zone/parking_zone 포함 — REQUIREMENTS.md 계약)
+>   ④ RTCM 주입을 노드에 내장할지 별도 프로세스로 둘지 결정.
+
 RTK FIXED 상태의 로버(FST-UEF9P)를 들고/싣고 경로를 이동하면 고정밀 좌표를
 CSV로 기록한다. 기록된 웨이포인트는 stack_gps 노드가 읽어 `/perception/gps_path`
 ref points의 원천이 된다.
