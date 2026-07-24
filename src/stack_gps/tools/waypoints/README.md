@@ -7,12 +7,19 @@
 > - 베이스↔로버는 Tailscale VPN — 베이스(산업용 PC) 주소 **`100.70.198.29`**,
 >   노트북 `100.102.93.96`. 기기 고정 주소라 네트워크가 바뀌어도 그대로.
 > - 웨이포인트 기록 즉시 가능: `python3 record_waypoints.py --host 100.70.198.29 --name <트랙명>`
-> - `waypoints/waypoints_test1_*.csv`(7/23)는 **옛 옥상 좌표 기준이라 무효** — 삭제할 것.
-> - **다음 개발 단계 (마감 8/2, GPS 단독 주행)**: stack_gps 노드 본편 —
->   ① 웨이포인트 CSV 로드 ② FST GGA(위치)·경로 기하(헤딩)로 전역 waypoint를
->   **vehicle frame ref points {x, y, yaw, curvature}로 변환** ③ `/perception/gps_path`
->   발행 (fix_quality, accel_zone/parking_zone 포함 — REQUIREMENTS.md 계약)
->   ④ RTCM 주입을 노드에 내장할지 별도 프로세스로 둘지 결정.
+> - `waypoints/waypoints_test1_*.csv`(7/23)는 **옛 옥상 좌표 기준이라 무효** — 삭제됨.
+> - **노드 본편 구현 완료 (7/24)** — CSV 로드 → GGA 위치 + 경로 접선 헤딩으로
+>   vehicle frame ref points 변환 → `/perception/gps_path` 발행 (fix_quality,
+>   accel/parking_zone 포함). RTCM 주입은 **노드에 내장**으로 결정
+>   (기록 도구와 같은 이유 — 시리얼 포트는 한 프로세스만. `rtcm_host` 파라미터,
+>   미지정 시 주입 안 함). 구조: `stack_gps/path_engine.py`(ROS 무의존 코어,
+>   테스트 `test/test_path_engine.py`) + `gga_link.py`(시리얼·RTCM 스레드) +
+>   `node.py`(wrapper). 합성 GGA(pty) 통합 검증 통과.
+> - **남은 것 (마감 8/2, GPS 단독 주행)**:
+>   ① 실외에서 실제 트랙 기록 → 그 CSV로 노드 실측 검증 (`ros2 run` 예시는
+>   node.py 도크스트링) ② accel/parking zone 인덱스 확정 (`*_zone_ranges` 파라미터)
+>   ③ MGM 연동 주행 ④ (2단계) `/vehicle/vector` dead-reckoning 보간 —
+>   dSPACE 프레임↔ENU 정렬 확정 후.
 
 RTK FIXED 상태의 로버(FST-UEF9P)를 들고/싣고 경로를 이동하면 고정밀 좌표를
 CSV로 기록한다. 기록된 웨이포인트는 stack_gps 노드가 읽어 `/perception/gps_path`
@@ -23,8 +30,8 @@ ref points의 원천이 된다.
 ```bash
 # ⚠ rtcm_client_inject.py 가 돌고 있으면 먼저 종료 (Ctrl-C) — 이 도구가 주입까지 겸한다
 cd ~/FMA_ws/src/stack_gps/tools/waypoints
-python3 record_waypoints.py --host 172.20.10.2                   # 기본 (0.2m 간격)
-python3 record_waypoints.py --host 172.20.10.2 --name track_A    # 트랙 이름 지정
+python3 record_waypoints.py --host 100.70.198.29                   # 기본 (0.2m 간격)
+python3 record_waypoints.py --host 100.70.198.29 --name track_A    # 트랙 이름 지정
 ```
 
 - **RTK FIXED에서만 기록** — FLOAT로 떨어지면 자동 일시정지, 복귀하면 재개.

@@ -26,4 +26,5 @@ RTK 베이스(EVK-F9P) 구축·운용 도구와 상세 가이드: `tools/base_st
 - 출력은 `fma_interfaces` 메시지로만. MGM은 이 토픽만 구독한다.
 - 경로를 내는 스택은 전부 동일 ref points 포맷 — {x, y, yaw, curvature}, vehicle frame (§5.4).
 - 판단 로직(모드 전환·정지 결정·우선권)은 MGM 스테이트 머신에만 존재한다 (§4, §5.1).
-- 실행: `ros2 run stack_gps stack_gps_node`
+- 실행: `ros2 run stack_gps stack_gps_node --ros-args -p waypoint_csv:=<기록 CSV> -p rtcm_host:=100.70.198.29`
+  (전체 파라미터는 `stack_gps/node.py` 도크스트링 참조 — `rtcm_host` 생략 시 RTCM 주입 없이 수신만)
