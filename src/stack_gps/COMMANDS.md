@@ -25,6 +25,10 @@ cd ~/FMA_ws/src/stack_gps/tools/base_station
 python3 rtcm_server.py
 ```
 
+systemctl status rtcm-server          # 돌고 있는지 확인
+journalctl -u rtcm-server -f          # 실시간 로그 (B/s, 클라이언트 접속)
+sudo systemctl restart rtcm-server    # 재시작이 필요할 때
+
 노트북에서 간접 확인은 위 `nc -vz` 한 줄이면 된다.
 
 ## 2. 웨이포인트 따기 (기록)
