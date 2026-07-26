@@ -76,9 +76,14 @@ class StackGpsNode(Node):
             f"웨이포인트 {len(pts)}개 로드: {csv_path} "
             f"(accel {accel or '없음'}, parking {parking or '없음'})")
 
+        rtcm_host = p('rtcm_host').value
+        if rtcm_host.lower() in ('off', 'none'):  # launch 인자는 빈 값 불가
+            rtcm_host = ''
+            self.get_logger().warn(
+                "RTCM 주입 꺼짐 — 단독 GPS 모드 (RTK 없음, 오차 수 m 예상)")
         self.link = GgaLink(
             serial_port=p('serial_port').value, baud=int(p('baud').value),
-            rtcm_host=p('rtcm_host').value, rtcm_port=int(p('rtcm_port').value),
+            rtcm_host=rtcm_host, rtcm_port=int(p('rtcm_port').value),
             log=lambda m: self.get_logger().info(f"[link] {m}"))
         self.link.start()
 

@@ -16,6 +16,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -34,9 +35,13 @@ def generate_launch_description():
         Node(
             package='stack_gps', executable='stack_gps_node', output='screen',
             parameters=[{
-                'waypoint_csv': LaunchConfiguration('waypoint_csv'),
-                'rtcm_host': LaunchConfiguration('rtcm_host'),
-                'serial_port': LaunchConfiguration('serial_port'),
+                # str 강제 — YAML이 'off'/'no' 등을 불리언으로 바꾸는 것 방지
+                'waypoint_csv': ParameterValue(
+                    LaunchConfiguration('waypoint_csv'), value_type=str),
+                'rtcm_host': ParameterValue(
+                    LaunchConfiguration('rtcm_host'), value_type=str),
+                'serial_port': ParameterValue(
+                    LaunchConfiguration('serial_port'), value_type=str),
                 'error_log_csv': os.path.join(logdir, f'errlog_{stamp}.csv'),
             }],
         ),

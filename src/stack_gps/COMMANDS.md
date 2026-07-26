@@ -62,6 +62,12 @@ ros2 launch stack_gps walk_test.launch.py
 다른 트랙/주소를 쓰려면: `ros2 launch stack_gps walk_test.launch.py waypoint_csv:=<경로> rtcm_host:=<IP>`
 (수동 실행이 필요하면 `ros2 run stack_gps stack_gps_node --ros-args -p waypoint_csv:=... -p rtcm_host:=...`)
 
+**RTK 없이 단독 GPS로 비교 실험**: `rtcm_host:=off` — 베이스 보정 없이 로버
+GGA만으로 동작 (오차 수 m 예상, quality 1~2로 기록됨).
+
+ros2 launch stack_gps walk_test.launch.py rtcm_host:=off
+
+
 **터미널 2 — 정밀 뷰어** (트랙 대비 내 위치·횡오차, 검증은 이걸로):
 
 ```bash
