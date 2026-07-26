@@ -46,8 +46,10 @@ def generate_launch_description():
             }],
         ),
         ExecuteProcess(
+            # MGM·브리지 토픽도 함께 — 안 떠 있으면 그냥 비어 있음 (GPS 단독 검증 겸용)
             cmd=['ros2', 'bag', 'record', '-o', os.path.join(logdir, f'bag_{stamp}'),
-                 '/perception/gps_path', '/perception/gps_fix'],
+                 '/perception/gps_path', '/perception/gps_fix',
+                 '/adas/target_ref', '/vehicle/vector'],
             output='log',
         ),
     ])
