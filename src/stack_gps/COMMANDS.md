@@ -41,18 +41,22 @@ python3 record_waypoints.py --host 100.70.198.29 --name track_B
 - 같은 경로 왕복 금지 — 한 방향 한 번이 한 트랙.
 - 끝나면 **안테나 내리기 전에 Ctrl-C** → `waypoints/waypoints_track_B_*.csv` 저장됨.
 
-## 3. 딴 웨이포인트로 실행 (도보 검증)
+## 3. 딴 웨이포인트로 실행 (도보 검증) — 기록까지 자동
 
-**터미널 1 — stack_gps 노드** (가장 최근 기록한 CSV 자동 선택):
+**터미널 1 — 노드 + 기록 (한 방):**
 
 ```bash
-ros2 run stack_gps stack_gps_node --ros-args \
-    -p waypoint_csv:=$(ls -t $HOME/FMA_ws/src/stack_gps/waypoints/waypoints_*.csv | head -1) \
-    -p rtcm_host:=100.70.198.29
+ros2 launch stack_gps walk_test.launch.py
 ```
 
-특정 트랙을 지정하려면 `waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/파일명.csv`.
+이 한 줄로 ① 최신 트랙 CSV 자동 선택 ② 노드 실행 ③ 횡오차 CSV(100ms 간격)
+④ rosbag(`/perception/gps_path` = ref points 전체, `/perception/gps_fix` = 새 GGA
+측정마다 1개 → 메시지 간격이 곧 GPS 갱신 주기)가 전부 켜진다.
+기록물은 `src/stack_gps/logs/errlog_*.csv`, `logs/bag_*/` (git 제외).
 정상: `[link] 로버 시리얼 연결` → 2초마다 `FIXED age 0.2s RTCM ...B/s idx N 횡오차 0.0Xm`.
+
+다른 트랙/주소를 쓰려면: `ros2 launch stack_gps walk_test.launch.py waypoint_csv:=<경로> rtcm_host:=<IP>`
+(수동 실행이 필요하면 `ros2 run stack_gps stack_gps_node --ros-args -p waypoint_csv:=... -p rtcm_host:=...`)
 
 **터미널 2 — 정밀 뷰어** (트랙 대비 내 위치·횡오차, 검증은 이걸로):
 

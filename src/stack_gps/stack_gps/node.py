@@ -55,6 +55,7 @@ class StackGpsNode(Node):
         self.declare_parameter('stale_timeout', 1.5)  # [s] 이보다 오래된 fix는 무효
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
         self.declare_parameter('parking_zone_ranges', [0])  # 기본 [0] = 미설정(쌍 안 됨)
+        self.declare_parameter('error_log_csv', '')  # 지정 시 매 틱 횡오차 CSV 기록
 
         p = self.get_parameter
         csv_path = p('waypoint_csv').value
@@ -83,6 +84,14 @@ class StackGpsNode(Node):
 
         self.stale_timeout = float(p('stale_timeout').value)
         self._last_snap = None
+        self._err_log = None
+        log_path = p('error_log_csv').value
+        if log_path:
+            self._err_log = open(log_path, 'w', buffering=1)  # line-buffered
+            self._err_log.write(
+                "stamp_s,lat,lon,quality,idx,cross_track_m,at_end,fix_age_s\n")
+            self.get_logger().info(f"횡오차 로그: {log_path}")
+        self._last_fix_t = None  # 새 GGA 판별용 (gps_fix는 새 측정에만 발행)
         self.pub = self.create_publisher(GpsPath, '/perception/gps_path', 1)
         # 디버그·시각화용 (MGM 계약 아님): RViz Path + 전역 위치 + TF(map→base_link)
         self.pub_viz = self.create_publisher(Path, '/perception/gps_path_viz', 1)
@@ -118,7 +127,7 @@ class StackGpsNode(Node):
             self.pub.publish(msg)
             return
 
-        lat, lon, height, quality, _ = fix
+        lat, lon, height, quality, age, fix_t = fix
         snap = self.engine.snapshot(lat, lon)
         for x, y, yaw, curv in snap['points']:
             rp = RefPoint()
@@ -129,6 +138,12 @@ class StackGpsNode(Node):
         msg.fix_quality = quality
         self.pub.publish(msg)
         self._last_snap = snap
+
+        if self._err_log is not None:
+            t = self.get_clock().now().nanoseconds * 1e-9
+            self._err_log.write(
+                f"{t:.3f},{lat:.7f},{lon:.7f},{quality},{snap['idx']},"
+                f"{snap['cross_track_m']:.3f},{int(snap['at_end'])},{age:.3f}\n")
 
         viz = Path()
         viz.header = msg.header
@@ -141,12 +156,15 @@ class StackGpsNode(Node):
             viz.poses.append(ps)
         self.pub_viz.publish(viz)
 
-        nsf = NavSatFix()
-        nsf.header.stamp = msg.header.stamp
-        nsf.header.frame_id = 'base_link'
-        nsf.latitude, nsf.longitude, nsf.altitude = lat, lon, height
-        nsf.status.status = 0 if quality > 0 else -1  # STATUS_FIX / NO_FIX
-        self.pub_fix.publish(nsf)
+        # 새 GGA 측정일 때만 발행 — rosbag의 gps_fix 간격 = 실제 GPS 갱신 주기
+        if fix_t != self._last_fix_t:
+            self._last_fix_t = fix_t
+            nsf = NavSatFix()
+            nsf.header.stamp = msg.header.stamp
+            nsf.header.frame_id = 'base_link'
+            nsf.latitude, nsf.longitude, nsf.altitude = lat, lon, height
+            nsf.status.status = 0 if quality > 0 else -1  # STATUS_FIX / NO_FIX
+            self.pub_fix.publish(nsf)
 
         # TF map(ENU) → base_link: 위치 = fix, 헤딩 = 경로 접선 (엔진과 동일 가정)
         ev, nv = self.engine.to_enu(lat, lon)
@@ -166,7 +184,7 @@ class StackGpsNode(Node):
         if fix is None:
             self.get_logger().warn(f"fix 없음 (RTCM {rtcm:.0f}B/s)")
             return
-        _, _, _, quality, age = fix
+        _, _, _, quality, age, _ = fix
         qnames = {0: "NOFIX", 1: "GPS", 2: "DGPS", 4: "FIXED", 5: "FLOAT"}
         snap = self._last_snap
         detail = (f"  idx {snap['idx']}  횡오차 {snap['cross_track_m']:.2f}m"
@@ -184,6 +202,8 @@ def main(args=None):
         pass
     finally:
         node.link.stop()
+        if node._err_log is not None:
+            node._err_log.close()
         node.destroy_node()
         rclpy.try_shutdown()
 

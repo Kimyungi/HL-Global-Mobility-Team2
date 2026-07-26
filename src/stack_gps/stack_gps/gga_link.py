@@ -56,12 +56,15 @@ class GgaLink:
         self._stop.set()
 
     def latest_fix(self):
-        """(lat, lon, h, quality, age_s) 또는 None — 스레드 안전 스냅샷."""
+        """(lat, lon, h, quality, age_s, t_mono) 또는 None — 스레드 안전 스냅샷.
+
+        t_mono는 수신 시각(monotonic) — 같은 값이면 같은 측정(새 GGA 아님).
+        """
         with self._lock:
             if self._fix is None:
                 return None
             lat, lon, h, q, t = self._fix
-            return lat, lon, h, q, time.monotonic() - t
+            return lat, lon, h, q, time.monotonic() - t, t
 
     def rtcm_rate_and_reset(self):
         with self._lock:
@@ -77,14 +80,20 @@ class GgaLink:
 
     def _run(self):
         ser, sock, nmea_buf = None, None, b""
+        next_rtcm_try = 0.0
         while not self._stop.is_set():
             try:
                 if ser is None:
                     ser = serial.Serial(self._serial_port, self._baud, timeout=0.2)
                     self._log(f"로버 시리얼 연결: {self._serial_port}")
-                if sock is None and self._rtcm_host:
-                    sock = self._connect_rtcm()
-                    self._log(f"베이스 RTCM 연결: {self._rtcm_host}:{self._rtcm_port}")
+                # RTCM 연결 실패는 GGA 수신을 막지 않는다 (베이스 죽어도 위치는 계속)
+                if sock is None and self._rtcm_host and time.monotonic() >= next_rtcm_try:
+                    try:
+                        sock = self._connect_rtcm()
+                        self._log(f"베이스 RTCM 연결: {self._rtcm_host}:{self._rtcm_port}")
+                    except OSError as e:
+                        self._log(f"⚠ RTCM 연결 실패: {e} — 5초 후 재시도 (GGA 수신은 계속)")
+                        next_rtcm_try = time.monotonic() + 5.0
 
                 # ① RTCM 펌프 (논블로킹 — 밀린 만큼 전부 로버로)
                 if sock is not None:
