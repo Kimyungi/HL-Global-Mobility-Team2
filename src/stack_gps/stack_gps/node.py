@@ -17,11 +17,18 @@ GGA 사이(수백 ms)를 보간 — dSPACE 프레임과 ENU 정렬 방법 확정
       -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_track_A.csv \
       -p rtcm_host:=100.70.198.29
 """
+import math
+
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 from fma_interfaces.msg import GpsPath, RefPoint
+from geometry_msgs.msg import PoseStamped, TransformStamped
+from nav_msgs.msg import Path
+from rclpy.qos import DurabilityPolicy, QoSProfile
+from sensor_msgs.msg import NavSatFix
+from tf2_ros import TransformBroadcaster
 
 from stack_gps.gga_link import GgaLink
 from stack_gps.path_engine import PathEngine, load_waypoints_csv
@@ -77,6 +84,26 @@ class StackGpsNode(Node):
         self.stale_timeout = float(p('stale_timeout').value)
         self._last_snap = None
         self.pub = self.create_publisher(GpsPath, '/perception/gps_path', 1)
+        # 디버그·시각화용 (MGM 계약 아님): RViz Path + 전역 위치 + TF(map→base_link)
+        self.pub_viz = self.create_publisher(Path, '/perception/gps_path_viz', 1)
+        self.pub_fix = self.create_publisher(NavSatFix, '/perception/gps_fix', 1)
+        self.tf_bc = TransformBroadcaster(self)
+
+        # 기록 트랙 전체 — map(ENU, 트랙 첫 점 원점) 프레임, latched 1회 발행
+        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.pub_track = self.create_publisher(Path, '/perception/gps_track_viz', latched)
+        track = Path()
+        track.header.frame_id = 'map'
+        track.header.stamp = self.get_clock().now().to_msg()
+        for i in range(len(self.engine.e)):
+            ps = PoseStamped()
+            ps.header = track.header
+            ps.pose.position.x = float(self.engine.e[i])
+            ps.pose.position.y = float(self.engine.n[i])
+            ps.pose.orientation.z = math.sin(self.engine.yaw[i] / 2.0)
+            ps.pose.orientation.w = math.cos(self.engine.yaw[i] / 2.0)
+            track.poses.append(ps)
+        self.pub_track.publish(track)
         self.timer = self.create_timer(float(p('publish_period').value), self.tick)
         self.status_timer = self.create_timer(2.0, self.report_status)
 
@@ -91,7 +118,7 @@ class StackGpsNode(Node):
             self.pub.publish(msg)
             return
 
-        lat, lon, _, quality, _ = fix
+        lat, lon, height, quality, _ = fix
         snap = self.engine.snapshot(lat, lon)
         for x, y, yaw, curv in snap['points']:
             rp = RefPoint()
@@ -102,6 +129,36 @@ class StackGpsNode(Node):
         msg.fix_quality = quality
         self.pub.publish(msg)
         self._last_snap = snap
+
+        viz = Path()
+        viz.header = msg.header
+        for x, y, yaw, _ in snap['points']:
+            ps = PoseStamped()
+            ps.header = msg.header
+            ps.pose.position.x, ps.pose.position.y = float(x), float(y)
+            ps.pose.orientation.z = math.sin(yaw / 2.0)
+            ps.pose.orientation.w = math.cos(yaw / 2.0)
+            viz.poses.append(ps)
+        self.pub_viz.publish(viz)
+
+        nsf = NavSatFix()
+        nsf.header.stamp = msg.header.stamp
+        nsf.header.frame_id = 'base_link'
+        nsf.latitude, nsf.longitude, nsf.altitude = lat, lon, height
+        nsf.status.status = 0 if quality > 0 else -1  # STATUS_FIX / NO_FIX
+        self.pub_fix.publish(nsf)
+
+        # TF map(ENU) → base_link: 위치 = fix, 헤딩 = 경로 접선 (엔진과 동일 가정)
+        ev, nv = self.engine.to_enu(lat, lon)
+        yaw = self.engine.yaw[snap['idx']]
+        tf = TransformStamped()
+        tf.header.stamp = msg.header.stamp
+        tf.header.frame_id = 'map'
+        tf.child_frame_id = 'base_link'
+        tf.transform.translation.x, tf.transform.translation.y = ev, nv
+        tf.transform.rotation.z = math.sin(yaw / 2.0)
+        tf.transform.rotation.w = math.cos(yaw / 2.0)
+        self.tf_bc.sendTransform(tf)
 
     def report_status(self):
         fix = self.link.latest_fix()

@@ -53,6 +53,35 @@ UBX 설정 명령을 받지 않는다 (실측 확인 — 고정밀 NMEA 모드�
 GGA 좌표는 분 소수 5자리 = 약 1.85cm 양자화이므로, RTK 오차와 합산한
 웨이포인트 유효 정밀도는 **2~3cm**. 주행 제어 요구 수준에는 충분하다.
 
+## 라이브 시각화 (검증용)
+
+노드가 돌고 있는 상태에서 **별도 터미널**로:
+
+```bash
+cd ~/FMA_ws/src/stack_gps/tools/waypoints
+python3 live_view.py            # 최신 waypoints_*.csv 자동 선택
+```
+
+- 왼쪽: 기록 트랙 전체 + 현재 위치·이동 궤적 (전역 ENU). 헤더에 FIXED 여부,
+  최근접 인덱스, **횡오차(cm)** 가 실시간 표시.
+- 오른쪽: 노드가 실제 발행 중인 `/perception/gps_path` 경로창 (vehicle frame,
+  전방 ↑). 내가 트랙 오른쪽에 서면 경로가 화면 오른쪽에 보이면 정상.
+- 뷰어는 ROS 토픽만 구독하므로 시리얼 충돌 없음.
+
+### RViz + 위성지도 (데모용)
+
+f9p 워크스페이스에서 검증됐던 rviz_satellite(4.3.1, Apache 2)를 `src/`로
+발췌해 두었다. 노드가 TF `map→base_link`(위치=fix, 헤딩=경로 접선)와
+latched 트랙(`/perception/gps_track_viz`)을 발행하므로:
+
+```bash
+rviz2 -d ~/FMA_ws/src/stack_gps/tools/waypoints/gps_view.rviz
+```
+
+ArcGIS 위성 타일 위에 기록 트랙(회색)·경로창(주황)·차량 TF가 표시된다.
+타일 다운로드에 인터넷 필요. **지도 정합은 수 m급 — cm 검증은 live_view로,
+이건 현장 감각·시연용.**
+
 ## 기록 요령
 
 - 안테나를 몸 앞이 아니라 **머리 위로** 들면 몸에 의한 신호 가림이 줄어든다.
