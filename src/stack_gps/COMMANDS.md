@@ -93,16 +93,17 @@ GPS → MGM → 브리지까지 노트북 안에서 관통 확인. 위 3번의 �
 ros2 launch adas_mgm mgm.launch.py
 ```
 
-**터미널 5 — dSPACE 흉내:**
+**터미널 5 — dSPACE 흉내 (가상 CAN):**
 
 ```bash
-ros2 run bridge_dspace dspace_sim_node --ros-args -p pc_ip:=127.0.0.1
+# 최초 1회: sudo modprobe vcan && sudo ip link add dev vcan0 type vcan && sudo ip link set vcan0 up
+ros2 run bridge_dspace dspace_sim_node --ros-args -p can_interface:=vcan0
 ```
 
-**터미널 6 — UDP 브리지:**
+**터미널 6 — CAN 브리지:**
 
 ```bash
-ros2 run bridge_dspace udp_bridge_node --ros-args -p dspace_ip:=127.0.0.1
+ros2 run bridge_dspace can_bridge_node --ros-args -p can_interface:=vcan0
 ```
 
 > ⚠ `loopback_test.launch.py`는 쓰지 말 것 — MGM 없이 브리지만 시험하는
@@ -123,7 +124,8 @@ ros2 topic echo /vehicle/vector --once         # dSPACE(흉내) 회신까지 오
 리허설과 동일하되 터미널 5만 교체 — 흉내 대신 진짜 dSPACE로:
 
 ```bash
-ros2 launch bridge_dspace bridge.launch.py     # dSPACE IP는 launch 파라미터 확인
+sudo ip link set can0 up type can bitrate 1000000   # PROTOCOL.md — 1 Mbps
+ros2 launch bridge_dspace bridge.launch.py can_interface:=can0
 ```
 
 ## 자주 막히는 것

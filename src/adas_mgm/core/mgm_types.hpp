@@ -32,7 +32,7 @@ enum : uint8_t
   MGM_SRC_PARKING = 3,
 };
 
-// RefPointWire(bridge_dspace/packet.hpp)와 동일 레이아웃 — float 4개
+// fma_interfaces/RefPoint과 동일 의미 — float 4개 (CAN 전송 시 양자화는 bridge_dspace 담당)
 struct CorePoint
 {
   float x;          // [m] vehicle frame, 전방 +

@@ -3,7 +3,7 @@
 <package format="3">
   <name>bridge_dspace</name>
   <version>0.1.0</version>
-  <description>PC↔dSPACE Ethernet UDP 브리지 — CLAUDE.md §3 계약의 유일한 구현 지점 (★ 최우선)</description>
+  <description>PC↔dSPACE CAN 브리지 (SocketCAN) — CLAUDE.md §3 계약의 유일한 구현 지점 (★ 최우선)</description>
   <maintainer email="kyg100800@gmail.com">FMA Team</maintainer>
   <license>MIT</license>
 

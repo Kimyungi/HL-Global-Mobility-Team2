@@ -6,7 +6,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "fma_interfaces/msg/target_ref.hpp"
 #include "fma_interfaces/msg/ref_point.hpp"
-#include "packet.hpp"
+#include "can_protocol.hpp"
 
 using fma_interfaces::msg::RefPoint;
 using fma_interfaces::msg::TargetRef;
