@@ -1,0 +1,15 @@
+# 가상 CAN vcan0 상시 준비 (FMA — 루프백 테스트용, 개발 머신에만 설치)
+[Unit]
+Description=Virtual CAN vcan0 (FMA loopback test)
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/modprobe vcan
+# 이미 존재하면 무시 (- 접두)
+ExecStart=-/usr/sbin/ip link add dev vcan0 type vcan
+ExecStart=/usr/sbin/ip link set vcan0 up
+ExecStop=-/usr/sbin/ip link del dev vcan0
+
+[Install]
+WantedBy=multi-user.target

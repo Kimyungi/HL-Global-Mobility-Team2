@@ -96,7 +96,7 @@ ros2 launch adas_mgm mgm.launch.py
 **터미널 5 — dSPACE 흉내 (가상 CAN):**
 
 ```bash
-# 최초 1회: sudo modprobe vcan && sudo ip link add dev vcan0 type vcan && sudo ip link set vcan0 up
+# 최초 1회: sudo ~/FMA_ws/src/bridge_dspace/tools/can_setup/install.sh --vcan
 ros2 run bridge_dspace dspace_sim_node --ros-args -p can_interface:=vcan0
 ```
 
@@ -124,7 +124,7 @@ ros2 topic echo /vehicle/vector --once         # dSPACE(흉내) 회신까지 오
 리허설과 동일하되 터미널 5만 교체 — 흉내 대신 진짜 dSPACE로:
 
 ```bash
-sudo ip link set can0 up type can bitrate 1000000   # PROTOCOL.md — 1 Mbps
+# 최초 1회 자동 셋업(sudo install.sh) 후에는 PCAN 꽂으면 can0 자동 up (PROTOCOL.md)
 ros2 launch bridge_dspace bridge.launch.py can_interface:=can0
 ```
 

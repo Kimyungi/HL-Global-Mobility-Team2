@@ -1,7 +1,7 @@
 """실기용: can_bridge_node 단독 (dSPACE 실물 CAN 연결).
 
-사전 준비 (PROTOCOL.md):
-    sudo ip link set can0 up type can bitrate 1000000
+사전 준비 (최초 1회 — 이후 PCAN 꽂으면 자동 up, PROTOCOL.md):
+    sudo src/bridge_dspace/tools/can_setup/install.sh
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument

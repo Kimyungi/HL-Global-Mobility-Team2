@@ -117,9 +117,18 @@ dSPACE 측 설정과 일치만 시키면 됨.
 
 ## PC 측 CAN 인터페이스 설정
 
+**최초 1회 자동 셋업 설치 (권장)** — 이후로는 PCAN을 꽂기만 하면 can0이 1 Mbps로 자동 up:
+
 ```bash
-# 실기 (USB-CAN 어댑터 등, 1 Mbps)
-sudo ip link set can0 up type can bitrate 1000000
+sudo src/bridge_dspace/tools/can_setup/install.sh          # 실차 PC
+sudo src/bridge_dspace/tools/can_setup/install.sh --vcan   # 개발 머신 (+vcan0 상시 생성)
+```
+
+수동 설정 (자동 셋업 미설치 시):
+
+```bash
+# 실기 (PCAN, 1 Mbps)
+sudo ip link set can0 up type can bitrate 1000000 restart-ms 100
 
 # 루프백 테스트용 가상 CAN
 sudo modprobe vcan

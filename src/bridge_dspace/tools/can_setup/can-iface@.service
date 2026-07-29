@@ -1,0 +1,19 @@
+# CAN 인터페이스 자동 셋업 (FMA — PROTOCOL.md: 1 Mbps)
+# PCAN을 꽂으면(부팅 포함) 커널이 장치 유닛을 올리고, 이 서비스가 bitrate 설정 후 up.
+# 설치: install.sh 참조. 수동 확인: systemctl status can-iface@can0
+[Unit]
+Description=Bring up CAN interface %i at 1 Mbps (FMA)
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# restart-ms 100: bus-off(배선 불량 등) 시 100ms 후 자동 복구
+ExecStart=/usr/sbin/ip link set %i type can bitrate 1000000 restart-ms 100
+ExecStart=/usr/sbin/ip link set %i txqueuelen 100
+ExecStart=/usr/sbin/ip link set %i up
+ExecStop=/usr/sbin/ip link set %i down
+
+[Install]
+WantedBy=sys-subsystem-net-devices-%i.device

@@ -1,9 +1,7 @@
 """부트스트래핑 ① — PC 단독 루프백: dummy ref → can_bridge → dSPACE sim → vehicle vector.
 
-사전 준비 (가상 CAN — PROTOCOL.md):
-    sudo modprobe vcan
-    sudo ip link add dev vcan0 type vcan
-    sudo ip link set vcan0 up
+사전 준비 (최초 1회 — vcan0 상시 생성, PROTOCOL.md):
+    sudo src/bridge_dspace/tools/can_setup/install.sh --vcan
 
 검증: ros2 topic hz /vehicle/vector  (≈100Hz), ros2 topic echo /vehicle/vector (x 증가)
 watchdog 검증: dummy_ref_publisher 프로세스 kill → sim 로그에 TIMEOUT, v→0
