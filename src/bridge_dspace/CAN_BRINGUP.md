@@ -140,7 +140,7 @@ v_ref = 300 (=0.3 m/s), `0x101` x = 500 (=0.5 m).
 | dSPACE 측이 꼭 지킬 것 | 근거 |
 |---|---|
 | point 프레임은 버퍼링만, **`0x100` 수신 시점에 n_points개 latch** | PROTOCOL.md 커밋 규칙 |
-| n_points는 헤더에서 읽기 (소스별 1~3개 가변, 20개 아님!) | 점은 lane/gps/parking 1, avoid 3 |
+| n_points는 헤더에서 읽기 (현재 모든 소스 1 — 확장 대비 가변 필드, 20개 아님!) | 점은 전 스테이트 1개 |
 | watchdog: `0x100` counter 30ms 미갱신 → v_ref=0, 조향 유지 | CLAUDE.md §3 |
 
 ---

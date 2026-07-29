@@ -35,7 +35,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 
 | 필드 | CAN 매핑 | 설명 |
 |---|---|---|
-| ref_points[n] | `0x101`~`0x114` (점당 1프레임, int16 양자화: 1mm / 1e-4rad / 5e-4 1/m) | **vehicle frame** — 생성 시점 차량 위치 = (0,0,0). 모든 모드 동일 포맷. **점 수는 소스별: 차선 1 / GPS 1 / 회피 3 / 주차 1** — dSPACE 궤적 생성(quintic)이 목표점으로부터 MPC 지평을 채움 |
+| ref_points[n] | `0x101`~`0x114` (점당 1프레임, int16 양자화: 1mm / 1e-4rad / 5e-4 1/m) | **vehicle frame** — 생성 시점 차량 위치 = (0,0,0). 모든 모드 동일 포맷. **점 수는 모든 소스 1개** (차선/GPS/회피/주차, 2026-07-29 합의) — dSPACE 궤적 생성(quintic)이 목표점으로부터 MPC 지평을 채움 |
 | v_ref | `0x100` 헤더 프레임 (int16, 1mm/s) | 종방향 병합의 최종 목표 속도. 정지 = v_ref 0 (별도 정지 명령 없음) |
 | flags | `0x100` 헤더 프레임 (state u8 + n_points u8 + counter u16) | **counter는 watchdog 필수 입력** |
 
@@ -49,7 +49,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 
 **watchdog (dSPACE):** `0x100` 헤더의 counter가 30ms(TX 3주기) 동안 미갱신 → v_ref = 0 (감속 정지), 조향은 직전 값 유지(급조향 금지). 타임아웃 값은 §7 검증 결과에 따라 조정 가능(예: 50ms). point 프레임 수신 여부는 watchdog 판정에 쓰지 않는다.
 
-**버스 부하:** 통상 5프레임/10ms ≈ 68 kbit/s, 최악(회피) 7프레임 ≈ 95 kbit/s → 1 Mbps에서 ~9%, 500 kbps에서도 ~19%로 여유.
+**버스 부하:** 전 스테이트 5프레임/10ms (TX 2 + RX 3) ≈ 68 kbit/s → 1 Mbps에서 ~7%, 500 kbps에서도 ~14%로 여유.
 
 ## 4. 스테이트 머신 (Decision 핵심 — 상세: `docs/state_machine_detail.drawio`)
 

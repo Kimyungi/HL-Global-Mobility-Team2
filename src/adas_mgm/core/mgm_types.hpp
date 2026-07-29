@@ -12,7 +12,7 @@ namespace adas_mgm
 {
 
 constexpr int32_t MGM_NUM_POINTS = 20;   // ref points 최대치 (CAN ID 예약 폭, PROTOCOL.md)
-                                         // 실제 점 수는 소스별: lane 1 / gps 1 / avoid 3 / parking 1
+                                         // 실제 점 수는 현재 모든 소스 1 (n은 확장 대비 가변)
 constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
 
 // CLAUDE.md §4 스테이트 4개 — TargetRef.msg의 STATE_* 상수와 값 일치

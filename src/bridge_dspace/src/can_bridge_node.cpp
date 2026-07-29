@@ -75,7 +75,7 @@ private:
       return;
     }
     bool ok = true;
-    // 유효 점만 송신 — 통상 lane/gps 1점, avoid 3점 (PROTOCOL.md). dSPACE는
+    // 유효 점만 송신 — 현재 모든 소스 1점 (PROTOCOL.md). dSPACE는
     // 헤더의 n_points로 몇 개가 왔는지 알고, 궤적 생성(quintic)이 나머지를 채운다.
     for (size_t i = 0; i < n; ++i) {
       const auto & p = msg.ref_points[i];
