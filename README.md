@@ -30,7 +30,7 @@ ros2 topic hz /vehicle/vector     # ≈100 Hz
 ros2 topic echo /vehicle/vector   # x·v 증가 = 왕복 성립
 ```
 
-실기 (dSPACE CAN 연결):
+실기 (dSPACE CAN 연결) — **단계별 검증 절차는 [CAN_BRINGUP.md](src/bridge_dspace/CAN_BRINGUP.md)** (배선·candump·watchdog까지 복붙 가이드):
 
 ```bash
 ros2 launch bridge_dspace bridge.launch.py can_interface:=can0   # 자동 셋업 설치돼 있으면 꽂기만 하면 됨

@@ -138,6 +138,8 @@ sudo ip link set vcan0 up
 
 ## 루프백 검증 절차 (부트스트래핑 ①)
 
+> 실기(dSPACE 연결) 단계별 검증은 **`CAN_BRINGUP.md`** — 배선·수신·송신·왕복·watchdog 순서의 복붙 가이드.
+
 1. PC 단독 (dSPACE 없이): 위 vcan0 설정 후 `ros2 launch bridge_dspace loopback_test.launch.py`
    — dummy_ref_publisher → can_bridge → **dspace_sim_node**(dSPACE 에뮬레이터, watchdog 동작 포함) → vehicle vector 회신 → `/vehicle/vector` 토픽 확인.
 2. 실기: dspace_sim_node 대신 실제 dSPACE (`can_interface:=can0`). 더미 ref(직선, v_ref 0.3)로 바퀴 반응 + vehicle vector 회신 확인.
