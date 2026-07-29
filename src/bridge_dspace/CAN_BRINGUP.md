@@ -77,7 +77,7 @@ PCAN D-sub9 ↔ dSPACE(MicroLabBox) CAN 포트:
 ## 3단계 — dSPACE → PC 수신 확인 (한 방향씩!)
 
 **dSPACE 쪽(손상민)**: 모델에서 `0x200`~`0x202` 3프레임을 10ms 주기로 송신 시작
-(값은 아무거나, 예: x=1.0). 설정 필수 확인 — **1 Mbps / 11-bit 표준 ID / byte order Intel(little-endian)**.
+(값은 아무거나, 예: x=1.0). 설정 필수 확인 — **baud rate 1 MBaud(= bitrate 1 Mbps, 같은 말) / 11-bit 표준 ID / byte order Intel(little-endian)**.
 
 **PC 쪽:**
 

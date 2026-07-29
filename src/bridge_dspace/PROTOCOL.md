@@ -9,7 +9,7 @@ CLAUDE.md §3의 바이너리 구현. dSPACE 측(RTI CAN 블록셋)과 **반드�
 ## 공통
 
 - **CAN 2.0A, 11-bit 표준 ID, 페이로드 8 bytes 고정** (CAN FD 아님)
-- **Bitrate: 1 Mbps** (권장 기본값). 500 kbps도 동작하나 버스 부하 ~65%로 여유 없음 — 아래 부하 계산 참조
+- **Bitrate: 1 Mbps** (권장 기본값) — dSPACE 설정 화면에는 **"baud rate"로 표기됨. CAN에서 baud rate = bitrate (같은 값, 1 MBaud 선택)**. sample point는 기본값 유지. 500 kbps도 동작하나 양쪽 일치 필수
 - 페이로드 내 byte order: **little-endian (Intel format)** — dSPACE RTI CAN 블록에서 Intel로 설정할 것
 - float = IEEE 754 single (4 bytes), int16 = 2's complement
 - PC 측: **PCAN(USB) 어댑터** — peak_usb 드라이버가 커널 기본 포함이라 표준 SocketCAN(`can0`)으로 잡힘. 루프백 테스트는 가상 CAN (`vcan0`)
