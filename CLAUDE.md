@@ -9,7 +9,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 
 - 상위: 산업용 PC, **Ubuntu 22.04 + ROS 2 Humble** — 인지(Signal processing) + 판단(Decision)
 - 하위: dSPACE — 제어(Control) + 구동(Actuation)
-- 통신: **CAN (classic 2.0A, 1 Mbps 권장)**, 10ms 주기 — dSPACE 측 Ethernet 사용 불가로 UDP에서 전환 (2026-07-29)
+- 통신: **CAN (classic 2.0A, 1 Mbps 권장, PC 측 PCAN 어댑터)**, 10ms 주기 — dSPACE 측 Ethernet 사용 불가로 UDP에서 전환 (2026-07-29)
 
 ## 2. 아키텍처 (v1 — 현재 기준)
 
@@ -31,25 +31,25 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 물리 계층은 CAN (classic, 8바이트/프레임)이므로 논리 계약을 여러 CAN 프레임으로 분할한다.
 **CAN ID 맵·양자화 스케일·프레임 레이아웃의 단일 진실 원천은 `src/bridge_dspace/PROTOCOL.md`** — dSPACE 측(손상민)과 반드시 그 문서로 합의.
 
-**TX (PC → dSPACE, 10ms, 21프레임):**
+**TX (PC → dSPACE, 10ms, n_points+1 프레임 — 유효 점만 송신):**
 
 | 필드 | CAN 매핑 | 설명 |
 |---|---|---|
-| ref_points[N] | `0x101`~`0x114` (점당 1프레임, int16 양자화: 1mm / 1e-4rad / 5e-4 1/m) | **vehicle frame** — 생성 시점 차량 위치 = (0,0,0). 모든 모드(차선/GPS/회피/주차)가 동일 포맷 |
+| ref_points[n] | `0x101`~`0x114` (점당 1프레임, int16 양자화: 1mm / 1e-4rad / 5e-4 1/m) | **vehicle frame** — 생성 시점 차량 위치 = (0,0,0). 모든 모드 동일 포맷. **점 수는 소스별: 차선 1 / GPS 1 / 회피 3 / 주차 1** — dSPACE 궤적 생성(quintic)이 목표점으로부터 MPC 지평을 채움 |
 | v_ref | `0x100` 헤더 프레임 (int16, 1mm/s) | 종방향 병합의 최종 목표 속도. 정지 = v_ref 0 (별도 정지 명령 없음) |
-| flags | `0x100` 헤더 프레임 (state u8 + counter u16) | **counter는 watchdog 필수 입력** |
+| flags | `0x100` 헤더 프레임 (state u8 + n_points u8 + counter u16) | **counter는 watchdog 필수 입력** |
 
-- 헤더(`0x100`)는 매 주기 **마지막에** 송신 — dSPACE는 이 프레임에서 20점 세트를 원자적으로 latch (반쯤 갱신된 세트 방지).
+- 헤더(`0x100`)는 매 주기 **마지막에** 송신 — dSPACE는 이 프레임에서 n_points개 세트를 원자적으로 latch (반쯤 갱신된 세트 방지).
 
 **RX (dSPACE → PC, 10ms, 3프레임):**
 
 | 필드 | CAN 매핑 | 설명 |
 |---|---|---|
-| vehicle_vector | `0x200`~`0x202` (f32 무손실, `0x202`가 커밋) | 상태 추정 결과 {x, y, yaw, v, str} — PC의 localization 보정에 사용 |
+| vehicle_vector | `0x200`~`0x202` (f32 무손실, `0x202`가 커밋) | 상태 추정 결과 {x, y, yaw, v, str} — PC의 localization 보정에 사용. **모든 스테이트에서 상시 송신 (parking 중에도 유지** — 주차 로컬맵·경로 추종의 입력**)** |
 
 **watchdog (dSPACE):** `0x100` 헤더의 counter가 30ms(TX 3주기) 동안 미갱신 → v_ref = 0 (감속 정지), 조향은 직전 값 유지(급조향 금지). 타임아웃 값은 §7 검증 결과에 따라 조정 가능(예: 50ms). point 프레임 수신 여부는 watchdog 판정에 쓰지 않는다.
 
-**버스 부하:** 24프레임/10ms ≈ 324 kbit/s → 1 Mbps에서 ~32% (500 kbps는 ~65%로 비권장).
+**버스 부하:** 통상 5프레임/10ms ≈ 68 kbit/s, 최악(회피) 7프레임 ≈ 95 kbit/s → 1 Mbps에서 ~9%, 500 kbps에서도 ~19%로 여유.
 
 ## 4. 스테이트 머신 (Decision 핵심 — 상세: `docs/state_machine_detail.drawio`)
 

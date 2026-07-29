@@ -20,6 +20,9 @@ public:
     v_ref_ = declare_parameter<double>("v_ref", 0.3);           // [m/s]
     curvature_ = declare_parameter<double>("curvature", 0.0);   // [1/m] 0 = 직선
     period_ms_ = declare_parameter<int>("period_ms", 10);
+    // 실제 소스와 동일 조건: lane/gps = 1점 (avoid 흉내는 3, 최대 20)
+    n_points_ = static_cast<int>(declare_parameter<int>("n_points", 1));
+    n_points_ = std::clamp(n_points_, 1, bridge_dspace::kNumPoints);
 
     pub_ = create_publisher<TargetRef>("/adas/target_ref", rclcpp::QoS(1));
     timer_ = create_wall_timer(
@@ -36,9 +39,9 @@ private:
     msg.state = TargetRef::STATE_LANE;
     msg.v_ref = static_cast<float>(v_ref_);
 
-    // MPC 샘플링과 동일하게 v_ref × Ts(10ms) 간격으로 N=20점 생성
-    const double ds = std::max(v_ref_, 0.1) * 0.01;
-    for (int i = 0; i < bridge_dspace::kNumPoints; ++i) {
+    // 목표점: 전방 0.5m 지점부터 등간격 (dSPACE 궤적 생성이 사이를 채운다)
+    const double ds = 0.5;
+    for (int i = 0; i < n_points_; ++i) {
       RefPoint p;
       const double s = ds * (i + 1);
       if (std::abs(curvature_) < 1e-6) {
@@ -58,7 +61,7 @@ private:
   }
 
   double v_ref_{}, curvature_{};
-  int period_ms_{};
+  int period_ms_{}, n_points_{1};
   rclcpp::Publisher<TargetRef>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

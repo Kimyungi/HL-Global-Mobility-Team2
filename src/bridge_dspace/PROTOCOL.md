@@ -12,7 +12,7 @@ CLAUDE.md §3의 바이너리 구현. dSPACE 측(RTI CAN 블록셋)과 **반드�
 - **Bitrate: 1 Mbps** (권장 기본값). 500 kbps도 동작하나 버스 부하 ~65%로 여유 없음 — 아래 부하 계산 참조
 - 페이로드 내 byte order: **little-endian (Intel format)** — dSPACE RTI CAN 블록에서 Intel로 설정할 것
 - float = IEEE 754 single (4 bytes), int16 = 2's complement
-- PC 측: Linux SocketCAN (`can0`), 루프백 테스트는 가상 CAN (`vcan0`)
+- PC 측: **PCAN(USB) 어댑터** — peak_usb 드라이버가 커널 기본 포함이라 표준 SocketCAN(`can0`)으로 잡힘. 루프백 테스트는 가상 CAN (`vcan0`)
 
 ## CAN ID 맵
 
@@ -26,11 +26,23 @@ CLAUDE.md §3의 바이너리 구현. dSPACE 측(RTI CAN 블록셋)과 **반드�
 
 - `0x000`~`0x0FF`: 예약 (향후 긴급/진단용). `0x300` 이상: 하위 제어 내부용으로 자유 — 단 이 문서에 등록 후 사용.
 
-## TX — PC → dSPACE, 매 10ms 21프레임
+## TX — PC → dSPACE, 매 10ms, n_points + 1 프레임 (가변)
 
-**송신 순서: REF_POINT_0 … REF_POINT_19 → 마지막에 TARGET_HEADER.**
-dSPACE는 point 프레임을 버퍼에 쌓다가 **TARGET_HEADER 수신 시점에 20점 세트를 원자적으로 latch**한다
-(프레임 간 반쯤 갱신된 세트를 MPC가 읽는 것 방지).
+**유효 점만 송신한다** — REF_POINT_0 … REF_POINT_(n_points−1) → 마지막에 TARGET_HEADER.
+dSPACE는 point 프레임을 버퍼에 쌓다가 **TARGET_HEADER 수신 시점에 n_points개 세트를 원자적으로
+latch**한다 (프레임 간 반쯤 갱신된 세트를 MPC가 읽는 것 방지). 점이 sparse해도 되는 이유:
+dSPACE 궤적 생성(quintic)이 목표점(들)로부터 MPC 지평(200ms/N=20) 궤적을 만들기 때문.
+
+**소스별 점 수 (팀 합의, 2026-07-29):**
+
+| 스테이트(소스) | n_points | 주기당 TX 프레임 |
+|---|---|---|
+| lane (카메라) | 1 | 2 |
+| waypoint (GPS) | 1 | 2 |
+| avoid (장애물 회피) | 3 | 4 |
+| parking (주차) | 1 | 2 |
+
+ID `0x101`~`0x114`는 최대 20점 폭으로 예약 — 나중에 점 수를 늘려도 ID 맵은 불변.
 
 ### REF_POINT_i (`0x101 + i`, i = 0…19) — 8 bytes
 
@@ -41,9 +53,9 @@ dSPACE는 point 프레임을 버퍼에 쌓다가 **TARGET_HEADER 수신 시점�
 | 4 | i16 | yaw | 1e-4 rad | ±3.2767 rad (±π 커버) |
 | 6 | i16 | curvature | 5e-4 1/m | ±16.38 1/m (최소 회전반경 6.1 cm) |
 
-- vehicle frame (생성 시점 차량 = 0,0,0). MPC 지평 200ms × 최대 속도에서 point 거리는 수 m 이내 →
+- vehicle frame (생성 시점 차량 = 0,0,0). 목표점은 차량 전방 수 m 이내 →
   1mm 분해능·±32m 범위로 충분.
-- n_points 미만 슬롯은 마지막 점 복제 (v1과 동일).
+- `i ≥ n_points`인 REF_POINT 프레임은 **송신하지 않는다** (수신 측도 무시할 것).
 
 ### TARGET_HEADER (`0x100`) — 8 bytes
 
@@ -51,11 +63,10 @@ dSPACE는 point 프레임을 버퍼에 쌓다가 **TARGET_HEADER 수신 시점�
 |---|---|---|---|
 | 0 | u16 | counter | 송신마다 +1 (wrap). **watchdog 판정 입력** — 30ms(3주기) 미갱신 시 v_ref=0, 조향 유지 |
 | 2 | u8 | state | 0=lane, 1=waypoint, 2=avoid, 3=parking |
-| 3 | u8 | n_points | 유효 포인트 수 (≤ 20) |
+| 3 | u8 | n_points | 유효 포인트 수 (1~20) — 이번 주기에 송신된 REF_POINT 프레임 수 |
 | 4 | i16 | v_ref | 1 mm/s LSB. [±32.767 m/s] 최종 목표 속도. 정지 = 0 |
 | 6 | u16 | reserved | 0 |
 
-- N=20은 MPC 예측 지평(200ms / Ts 10ms)과 일치.
 - **브리지는 수신한 TargetRef를 즉시 송신한다 (자체 재송신 없음).** MGM이 죽으면 송신도 멈춰야
   dSPACE watchdog이 동작한다 — 브리지에 keep-alive를 넣지 말 것.
 - **watchdog은 TARGET_HEADER의 counter만 본다.** point 프레임 수신 여부는 판정에 쓰지 않는다.
@@ -64,6 +75,9 @@ dSPACE는 point 프레임을 버퍼에 쌓다가 **TARGET_HEADER 수신 시점�
 
 **송신 순서: VEH_POSE → VEH_VEL → 마지막에 VEH_COMMIT.** PC는 VEH_COMMIT 수신 시점에
 `/vehicle/vector` 1회 퍼블리시 (한 주기 세트 = 한 메시지).
+
+**모든 스테이트에서 상시 송신 — parking 중에도 끊지 말 것.** 주차 스택(stack_parking)의
+로컬맵·경로 추종이 vehicle vector를 입력으로 쓴다.
 
 상태 추정값은 localization 보정에 쓰이고 odom 누적 범위가 커질 수 있어 **양자화 없이 f32 유지**.
 
@@ -91,12 +105,15 @@ dSPACE는 point 프레임을 버퍼에 쌓다가 **TARGET_HEADER 수신 시점�
 
 ## 버스 부하
 
-프레임당 최악 ~135 bits (11-bit ID, 8B 데이터, stuffing 포함). 주기당 TX 21 + RX 3 = 24프레임 → 2,400 프레임/s ≈ **324 kbit/s**.
+프레임당 최악 ~135 bits (11-bit ID, 8B 데이터, stuffing 포함).
 
-| bitrate | 부하 |
-|---|---|
-| 1 Mbps | ~32% ✅ 권장 |
-| 500 kbps | ~65% ⚠ 동작은 하나 다른 노드 추가 여유 없음 |
+| 상황 | 주기당 프레임 (TX+RX) | 트래픽 | 1 Mbps 부하 | 500 kbps 부하 |
+|---|---|---|---|---|
+| lane / waypoint / parking | 2 + 3 = 5 | ~68 kbit/s | ~7% | ~14% |
+| avoid (최악) | 4 + 3 = 7 | ~95 kbit/s | ~9% | ~19% |
+
+최악에도 **500 kbps에서 ~19%** — 1 Mbps, 500 kbps 어느 쪽이든 여유 충분. 기본값은 1 Mbps로 하되
+dSPACE 측 설정과 일치만 시키면 됨.
 
 ## PC 측 CAN 인터페이스 설정
 

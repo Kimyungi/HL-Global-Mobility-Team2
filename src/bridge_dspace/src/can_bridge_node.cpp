@@ -75,9 +75,10 @@ private:
       return;
     }
     bool ok = true;
-    for (size_t i = 0; i < static_cast<size_t>(kNumPoints); ++i) {
-      // n_points 미만 슬롯은 마지막 점 복제 (PROTOCOL.md)
-      const auto & p = msg.ref_points[std::min(i, n - 1)];
+    // 유효 점만 송신 — 통상 lane/gps 1점, avoid 3점 (PROTOCOL.md). dSPACE는
+    // 헤더의 n_points로 몇 개가 왔는지 알고, 궤적 생성(quintic)이 나머지를 채운다.
+    for (size_t i = 0; i < n; ++i) {
+      const auto & p = msg.ref_points[i];
       RefPointPayload pt{
         quantize(p.x, kPosScale),
         quantize(p.y, kPosScale),
@@ -85,7 +86,7 @@ private:
         quantize(p.curvature, kCurvScale)};
       ok &= sendCanFrame(sock_, kIdRefPointBase + i, pt);
     }
-    // 헤더는 반드시 마지막 — dSPACE는 이 프레임에서 20점 세트를 latch
+    // 헤더는 반드시 마지막 — dSPACE는 이 프레임에서 n_points개 세트를 latch
     TargetHeaderPayload hdr{};
     hdr.counter = ++tx_counter_;
     hdr.state = msg.state;

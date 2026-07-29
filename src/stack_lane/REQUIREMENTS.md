@@ -12,7 +12,7 @@
 - 출력: `/perception/lane_path` (`fma_interfaces/LanePath`), 카메라 주기마다.
   - `points[]`: **vehicle frame** ref points — 생성 시점 차량 = (0,0,0). {x, y, yaw, curvature}.
   - `confidence`: 0.0~1.0. lane↔waypoint 전이 판정의 **재료** — 전이 판단 자체는 MGM이 한다.
-- 점 개수는 자유(부족분은 MGM이 마지막 점 복제로 20개 정규화). 차량 전방 최소 ~1m 커버 권장.
+- **점 개수: 1개** (팀 합의 2026-07-29) — 목표점 하나만 내면 dSPACE 궤적 생성(quintic)이 나머지를 채운다. 차량 전방 ~1m 부근 목표점 권장.
 - 금지: v_ref·정지 판단·모드 판단을 이 스택에서 하지 말 것 (CLAUDE.md §5.1).
 - 검증 시나리오: 차선 신뢰도가 떨어질 때 confidence가 실제로 떨어지는지 (MGM 히스테리시스가 이 값에 의존).
 

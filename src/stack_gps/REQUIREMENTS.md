@@ -10,7 +10,7 @@ GPS·IMU 융합, RTK, waypoint ref
 
 - 입력: GPS(수백 ms) + IMU(~10ms 비주기) 융합 → 위치·헤딩. RTK 베이스 설치 포함.
 - 출력: `/perception/gps_path` (`fma_interfaces/GpsPath`).
-  - `points[]`: 전역 waypoint를 **vehicle frame으로 변환 완료한** ref points.
+  - `points[]`: 전역 waypoint를 **vehicle frame으로 변환 완료한** ref points. **점 개수: 1개** (팀 합의 2026-07-29) — 추종 목표 waypoint 하나만.
   - `accel_zone` / `parking_zone`: 구간 플래그 — 속도를 올리는 판단은 MGM 우선권 표가 한다.
 - localization 보정: `/vehicle/vector` (dSPACE 상태 추정 회신, 10ms) 구독하여 GPS 갱신 사이 dead-reckoning 보정.
 - 금지: v_ref 결정·모드 판단 금지 (CLAUDE.md §5.1). accel_zone은 요구의 원천일 뿐.
