@@ -6,4 +6,3 @@ __pycache__/
 .vscode/*
 !.vscode/extensions.json
 nohup.out
-src/stack_traffic/models/*.pt

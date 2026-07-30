@@ -47,8 +47,7 @@ sudo apt install python3-opencv python3-numpy
 ## YOLO 모델 배포
 
 - 기본 검색 위치: 설치된 패키지의 `share/stack_traffic/models/yolov8n.pt`.
-- 저장소의 `models/`에 모델을 배치하고 다시 빌드하면 기본 위치로 설치된다.
-- 모델 파일을 저장소에 포함하기 전에는 용량과 라이선스를 확인해야 한다.
+- 저장소의 `models/yolov8n.pt`가 빌드 시 기본 위치로 함께 설치된다.
 - `model_path` 파라미터를 지정하면 기본 검색 위치보다 우선한다.
 
 ## 실행
