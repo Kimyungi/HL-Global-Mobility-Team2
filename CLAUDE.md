@@ -110,6 +110,12 @@ adas_ws/src/
 
 - 각 stack 폴더에 `REQUIREMENTS.md` 포함 (담당자별 요구사항).
 - 각 스택의 출력은 `common_interfaces`에 정의된 토픽/메시지로만 — MGM은 그 토픽들만 구독.
+- **스택 간 전달 (MGM 미경유, 2026-07-30 결정):** stack_lane → stack_traffic 정지선 전달.
+  OAK-D 각도상 신호등이 안 보여 이현준(stack_lane)이 정지선 거리를 `/perception/stopline`
+  (`StopLine.msg`: header + detected + distance)으로 발행, 김재민(stack_traffic)이 웹캠 신호등
+  적색 판정과 결합해 정지 요구를 낸다. 스택 간 토픽도 `common_interfaces` 메시지로만.
+  stack_traffic은 적색 정지 요구를 **적색 해제까지 래치** — 정지선 시야 이탈/카메라 사망으로
+  요구가 소멸해 빨간불 재출발하는 것 방지 (해제 판단의 유일 조건 = 적색 아님).
 - 부트스트랩 순서: ① bridge_dspace로 PC↔dSPACE 왕복 검증 (더미 ref로 바퀴 반응 + vehicle vector 회신 확인) → ② adas_mgm 10ms 루프 골격 + 지터 로깅 → ③ 각 스택 배포·병렬 개발.
 
 ## 7. 실시간성 검증 기준 (v1 유지 vs v3 이관)

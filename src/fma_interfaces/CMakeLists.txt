@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AvoidStatus.msg"
   "msg/ParkingStatus.msg"
   "msg/TrafficStop.msg"
+  "msg/StopLine.msg"
   "msg/EstopRequest.msg"
   DEPENDENCIES std_msgs
 )
