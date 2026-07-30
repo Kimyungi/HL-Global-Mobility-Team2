@@ -7,9 +7,10 @@
 - YOLOv8n으로 traffic light 위치 검출
 - HSV 빨간색 픽셀 비율로 red_raw 0/1 판정
 - 최근 5프레임 중 빨간불 3프레임 이상이면 red_active
-- red_active AND 정지선 거리 임계값 이내이면 stop_required
+- red_active AND 정지선 거리 임계값 이내이면 stop_required 래치
+- 래치 후에는 정지선이 사라져도 유지하고 red_active=False일 때만 해제
 
-정지선 거리는 이현준의 /perception/stopline_distance (Float32)를 입력받고,
+정지선 거리는 이현준의 /perception/stopline (StopLine)을 입력받고,
 결과는 /perception/traffic_stop (TrafficStop)으로 발행한다.
 """
 
@@ -24,9 +25,9 @@ from typing import Deque, Optional, Tuple, Union
 import cv2
 import numpy as np
 import rclpy
-from fma_interfaces.msg import TrafficStop
+from ament_index_python.packages import get_package_share_directory
+from fma_interfaces.msg import StopLine, TrafficStop
 from rclpy.node import Node
-from std_msgs.msg import Float32
 
 try:
     from ultralytics import YOLO
@@ -199,6 +200,19 @@ def classify_red_binary(
     return red_raw, red_ratio, crop, red_mask
 
 
+def update_stop_latch(
+    current: bool,
+    red_active: bool,
+    stopline_approaching: bool,
+) -> bool:
+    """적색 해제만 기존 정지 래치를 해제할 수 있다."""
+    if not red_active:
+        return False
+    if stopline_approaching:
+        return True
+    return current
+
+
 class StackTrafficNode(Node):
     def __init__(self) -> None:
         super().__init__("stack_traffic_node")
@@ -211,10 +225,12 @@ class StackTrafficNode(Node):
                 "python3 -m pip install ultralytics"
             )
 
-        model_path = Path(self.model_path).expanduser().resolve()
+        model_path = self._resolve_model_path()
         if not model_path.exists():
             raise FileNotFoundError(
-                f"YOLO 모델 파일을 찾을 수 없습니다: {model_path}"
+                f"YOLO 모델 파일을 찾을 수 없습니다: {model_path}. "
+                "models/yolov8n.pt에 배치하거나 "
+                "-p model_path:=/path/to/model.pt로 지정하세요."
             )
 
         self.model = YOLO(str(model_path))
@@ -239,15 +255,17 @@ class StackTrafficNode(Node):
             TrafficStop, "/perception/traffic_stop", 1
         )
         self.stopline_subscription = self.create_subscription(
-            Float32,
+            StopLine,
             self.stopline_topic,
-            self._on_stopline_distance,
+            self._on_stopline,
             1,
         )
 
         self.red_history: Deque[int] = deque(maxlen=self.vote_window)
+        self.stop_required_latched = False
+        self.stopline_detected = False
         self.stopline_distance_m = -1.0
-        self.stopline_update_ns: Optional[int] = None
+        self.stopline_stamp_ns: Optional[int] = None
         self.frame_index = 0
         self.previous_time = time.perf_counter()
         self.filtered_fps = 0.0
@@ -262,7 +280,7 @@ class StackTrafficNode(Node):
         )
 
     def _declare_parameters(self) -> None:
-        self.declare_parameter("model_path", "~/yolov8n.pt")
+        self.declare_parameter("model_path", "")
         self.declare_parameter("camera_source", "2")
         self.declare_parameter("camera_width", 640)
         self.declare_parameter("camera_height", 480)
@@ -273,7 +291,7 @@ class StackTrafficNode(Node):
         self.declare_parameter("vote_window", 5)
         self.declare_parameter("minimum_red_votes", 3)
         self.declare_parameter(
-            "stopline_topic", "/perception/stopline_distance"
+            "stopline_topic", "/perception/stopline"
         )
         self.declare_parameter("stop_trigger_distance_m", 0.5)
         self.declare_parameter("stopline_timeout_sec", 0.5)
@@ -330,19 +348,31 @@ class StackTrafficNode(Node):
         if self.stopline_timeout_sec <= 0.0:
             raise ValueError("stopline_timeout_sec은 0보다 커야 합니다.")
 
-    def _on_stopline_distance(self, msg: Float32) -> None:
-        self.stopline_distance_m = float(msg.data)
-        self.stopline_update_ns = self.get_clock().now().nanoseconds
+    def _resolve_model_path(self) -> Path:
+        if self.model_path.strip():
+            return Path(self.model_path).expanduser().resolve()
+
+        share_dir = Path(get_package_share_directory("stack_traffic"))
+        return share_dir / "models" / "yolov8n.pt"
+
+    def _on_stopline(self, msg: StopLine) -> None:
+        self.stopline_detected = bool(msg.detected)
+        self.stopline_distance_m = float(msg.distance)
+        self.stopline_stamp_ns = (
+            int(msg.header.stamp.sec) * 1_000_000_000
+            + int(msg.header.stamp.nanosec)
+        )
 
     def _get_stopline_distance(self) -> float:
-        if self.stopline_update_ns is None:
+        if self.stopline_stamp_ns is None or not self.stopline_detected:
             return -1.0
         age_sec = (
-            self.get_clock().now().nanoseconds - self.stopline_update_ns
+            self.get_clock().now().nanoseconds - self.stopline_stamp_ns
         ) / 1_000_000_000.0
         distance = self.stopline_distance_m
         if (
-            age_sec > self.stopline_timeout_sec
+            age_sec < 0.0
+            or age_sec > self.stopline_timeout_sec
             or not math.isfinite(distance)
             or distance < 0.0
         ):
@@ -353,7 +383,11 @@ class StackTrafficNode(Node):
         success, frame = self.capture.read()
         if not success or frame is None:
             self.get_logger().error("카메라 프레임 수신 실패")
-            self._publish(False, -1.0)
+            # 안전 원칙: 적색 정지 중 카메라가 죽어도 재출발시키지 않는다.
+            self._publish(
+                self.stop_required_latched,
+                self._get_stopline_distance(),
+            )
             return
 
         self.frame_index += 1
@@ -395,9 +429,17 @@ class StackTrafficNode(Node):
             stopline_distance_m >= 0.0
             and stopline_distance_m <= self.stop_trigger_distance_m
         )
-        final_stop = int(
-            red_active == 1 and stopline_approaching == 1
+        # 적색 정지 래치:
+        # - 진입에는 적색 + 정지선 접근이 모두 필요하다.
+        # - 진입 후 정지선 미검출/stale은 해제 조건이 아니다.
+        # - 정상 처리 프레임에서 적색 투표가 해제될 때만 출발을 허용한다.
+        self.stop_required_latched = update_stop_latch(
+            current=self.stop_required_latched,
+            red_active=bool(red_active),
+            stopline_approaching=bool(stopline_approaching),
         )
+
+        final_stop = int(self.stop_required_latched)
         self._publish(bool(final_stop), stopline_distance_m)
 
         if self.frame_index % self.print_every == 0:
