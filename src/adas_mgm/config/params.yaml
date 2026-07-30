@@ -13,6 +13,11 @@ mgm_node:
     # avoid 안전 바닥
     ttc_stop: 0.8           # [s]
 
+    # estop 입력 신선도 watchdog (wrapper 입력 컨디셔닝 — 판단은 코어)
+    # 미수신 또는 이 시간 초과 staleness → 스냅샷 estop=true 보정.
+    # stack_estop 하트비트 50ms 기준 5주기.
+    estop_stale_timeout_sec: 0.25
+
     # 조립/병합 (실행부 파라미터 — 판단 아님)
     blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)
     a_up: 0.5               # [m/s^2] 가속 rate limit

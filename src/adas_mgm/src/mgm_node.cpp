@@ -157,6 +157,10 @@ public:
     p.a_down = static_cast<float>(declare_parameter<double>("a_down", 1.5));  // [m/s^2]
     mgm_init(core_state_, p);
 
+    // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기
+    estop_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("estop_stale_timeout_sec", 0.25) * 1e9);
+
     jitter_ = std::make_unique<JitterLogger>(
       get_logger(),
       declare_parameter<std::string>("jitter_csv_path", ""),
@@ -201,9 +205,12 @@ public:
     sub_estop_ = create_subscription<fma_interfaces::msg::EstopRequest>(
       "/perception/estop", qos,
       [this](fma_interfaces::msg::EstopRequest::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); msgs_.estop = *m;});
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.estop = *m;
+        last_estop_rx_ns_ = monotonicNs();});
 
-    msgs_.avoid.ttc = 1e9f;  // 인지 도착 전 TTC=0으로 오인해 정지하는 것 방지
+    msgs_.avoid.ttc = 1e9f;   // 인지 도착 전 TTC=0으로 오인해 정지하는 것 방지
+    msgs_.estop.estop = true;  // 첫 EstopRequest 수신 전 fail-safe — 미수신 = 정지
 
     loop_thread_ = std::thread([this] {loop();});
   }
@@ -256,9 +263,17 @@ private:
   void tick()
   {
     LatestMsgs m;
+    int64_t estop_rx_ns;
     {
       std::lock_guard<std::mutex> lk(mtx_);
       m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
+      estop_rx_ns = last_estop_rx_ns_;
+    }
+    // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
+    // counter watchdog의 PC측 대응물). stack_estop 미수신/사망 시 스냅샷의
+    // estop을 true로 보정하고, 정지 판단(v_ref=0) 자체는 코어가 한다.
+    if (estop_rx_ns < 0 || monotonicNs() - estop_rx_ns > estop_stale_ns_) {
+      m.estop.estop = true;
     }
     const CoreSnapshot s = toSnapshot(m);
 
@@ -287,6 +302,12 @@ private:
   {
     return static_cast<int64_t>(t.tv_sec) * 1'000'000'000 + t.tv_nsec;
   }
+  static int64_t monotonicNs()
+  {
+    timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return toNs(t);
+  }
   static void addNs(timespec & t, int64_t ns)
   {
     t.tv_nsec += ns;
@@ -303,6 +324,8 @@ private:
 
   std::mutex mtx_;
   LatestMsgs msgs_;
+  int64_t last_estop_rx_ns_{-1};  // 마지막 EstopRequest 수신 시각 (미수신 = -1)
+  int64_t estop_stale_ns_{250'000'000};
 
   rclcpp::Publisher<TargetRef>::SharedPtr pub_;
   rclcpp::Subscription<fma_interfaces::msg::LanePath>::SharedPtr sub_lane_;
