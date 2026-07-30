@@ -10,7 +10,7 @@
 | 구조체 | Simulink 대응 | 비고 |
 |---|---|---|
 | `CoreSnapshot` | 입력 버스 | 인지 6종의 코어 필요분. bool→boolean, float→single, int32_t→int32 |
-| `CoreOutput` | 출력 버스 | state, path_source, immediate_stop, v_ref, ref_points[20] |
+| `CoreOutput` | 출력 버스 | state, path_source, immediate_stop, v_ref, **n_points**, ref_points[20] (유효분은 n_points개 — 현재 모든 소스 1) |
 | `CoreState` | 모델 내부 상태 | Stateflow 차트 상태 + Data Store (params 포함) |
 | `CoreParams` | tunable parameter | params.yaml과 1:1 |
 | `CorePoint` / `CorePath` | 서브 버스 | CorePoint = RefPointWire와 동일 레이아웃 (float×4) |

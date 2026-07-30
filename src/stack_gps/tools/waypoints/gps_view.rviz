@@ -1,0 +1,90 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Tree Height: 500
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Cell Size: 10
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Class: rviz_satellite/AerialMap
+      Draw Behind: true
+      ENU Aligned Reference Frame: map
+      Enabled: true
+      Name: AerialMap
+      Object URI: https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}
+      TF tolerance: 2
+      Timeout: 3
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/gps_fix
+      Value: true
+      Zoom: 19
+    - Alpha: 1
+      Class: rviz_default_plugins/Path
+      Color: 138; 138; 138
+      Enabled: true
+      Line Style: Billboards
+      Line Width: 0.15
+      Name: 기록 트랙 (전체)
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/gps_track_viz
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/Path
+      Color: 230; 159; 0
+      Enabled: true
+      Line Style: Billboards
+      Line Width: 0.2
+      Name: 경로창 (노드 출력)
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/gps_path_viz
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Name: TF
+      Marker Scale: 5
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Value: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/FocusCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 80
+      Name: Current View
+      Pitch: 1.2
+      Yaw: 1.57
+      Focal Point:
+        X: -30
+        Y: -30
+        Z: 0
+    Saved: ~
+Window Geometry:
+  Height: 800
+  Width: 1200

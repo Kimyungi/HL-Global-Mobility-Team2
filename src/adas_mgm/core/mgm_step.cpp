@@ -138,7 +138,7 @@ const CorePath * select_path(uint8_t src, const CoreSnapshot & s)
   }
 }
 
-// ── 실행 1: ref 조립 — 스테이트가 고른 경로를 N=20 고정, 전환 시 블렌드 (§5.6)
+// ── 실행 1: ref 조립 — 스테이트가 고른 경로를 채택(유효 n_out개), 전환 시 블렌드 (§5.6)
 void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
 {
   const CorePath * path = select_path(src, s);
@@ -146,12 +146,15 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     return;  // 선택 소스 미도착 → 직전 출력(ref_out) 유지 (판단 아님 — 데이터 hold)
   }
 
-  // 부족분은 마지막 점 복제해 N=20 정규화
+  // 내부 배열은 20 고정(블렌드 계산용) — 부족분은 마지막 점 복제.
+  // 출력 유효분은 n_out개 (와이어에는 유효 점만 실린다 — PROTOCOL.md)
   CorePoint target[MGM_NUM_POINTS];
-  const int32_t last = (path->n < MGM_NUM_POINTS ? path->n : MGM_NUM_POINTS) - 1;
+  const int32_t n = path->n < MGM_NUM_POINTS ? path->n : MGM_NUM_POINTS;
+  const int32_t last = n - 1;
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
     target[i] = path->pts[i < last ? i : last];
   }
+  st.n_out = n;
 
   if (src != st.last_src) {  // 스테이트 전환 → ref 불연속 방지 블렌드 시작
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
@@ -203,7 +206,8 @@ void mgm_init(CoreState & st, const CoreParams & params)
   st.state = MGM_STATE_LANE;
   st.avoid_return = MGM_STATE_LANE;
   st.last_src = MGM_SRC_LANE;
-  // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 (v_ref가 어차피 속도를 지배)
+  st.n_out = 1;
+  // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)
 }
 
 CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
@@ -215,6 +219,7 @@ CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
   assemble(in, out.path_source, st);  // 실행: 조립
   out.v_ref = merge(out, st);         // 실행: 병합 (rate limit)
 
+  out.n_points = st.n_out;
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
     out.ref_points[i] = st.ref_out[i];
   }

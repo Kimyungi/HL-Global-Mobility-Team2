@@ -1,6 +1,6 @@
 # stack_parking — 요구사항
 
-**담당: 손상민** · 산출물: 주차 단독 + MPC 검증 (8/10)
+**담당: 손상민** · 산출물: 주차 단독 + MPC 검증 (8/2)
 
 ## 역할
 
@@ -13,8 +13,11 @@
   - `space_found`: lane→parking 전이 조건의 절반 (나머지 절반은 GPS 주차구간 — stack_gps).
   - `path_blocked`: **동적 침범만**. 정적 경계(콘·연석)는 정지 트리거가 아니라 로컬맵 입력 (CLAUDE.md §4).
   - `points[]`: vehicle frame 주차 경로. 후진 구간 포함 — `v_suggest` 음수로 표현.
+    **점 개수: 1개** (팀 합의 2026-07-29) — 현재 추종 목표점 하나만. 나머지는 dSPACE 궤적 생성이 채운다.
+- 입력으로 `/vehicle/vector` 사용 가능 — **dSPACE는 parking 스테이트 중에도 vehicle vector를 계속 회신한다** (PROTOCOL.md RX, 로컬맵·경로 추종 입력).
 - 겸임: dSPACE 측 MPC·Vehicle MGM (quintic 궤적, feasibility, kinematic bicycle 상태 추정).
   PROTOCOL.md(bridge_dspace)가 인터페이스 기준 — dSPACE 모델은 이 문서와 합의 후 변경.
+  **CAN 수신부 주의: REF_POINT는 헤더의 n_points개만 온다** (현재 모든 소스 1점 — n_points는 확장 대비 필드) — 궤적 생성이 목표점을 지평으로 보간.
 - 금지: 주차 중 회피 로직 만들지 말 것 — parking→avoid 전이가 없는 것이 설계다.
 
 ## 공통 규칙 (CLAUDE.md)

@@ -1,11 +1,7 @@
 // dspace_sim_node — dSPACE 에뮬레이터 (PC 단독 루프백 검증용).
-// 실제 dSPACE의 최소 동작을 재현: TX 프레임 수신 → watchdog(30ms) → kinematic bicycle
-// 적분(10ms) → RX 프레임 회신. ROS 인터페이스 없음 — 순수 UDP (실기와 같은 조건).
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
+// 실제 dSPACE의 최소 동작을 재현: REF_POINT 버퍼링 → TARGET_HEADER에서 latch →
+// watchdog(30ms) → kinematic bicycle 적분(10ms) → VEH_* 3프레임 회신.
+// ROS 토픽 인터페이스 없음 — 순수 CAN (실기와 같은 조건, vcan0 사용).
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -14,7 +10,8 @@
 #include <thread>
 
 #include "rclcpp/rclcpp.hpp"
-#include "packet.hpp"
+#include "can_protocol.hpp"
+#include "socketcan.hpp"
 
 using namespace bridge_dspace;
 using Clock = std::chrono::steady_clock;
@@ -25,35 +22,24 @@ public:
   DspaceSimNode()
   : Node("dspace_sim_node")
   {
-    listen_port_ = static_cast<uint16_t>(declare_parameter<int>("listen_port", 50001));
-    pc_ip_ = declare_parameter<std::string>("pc_ip", "127.0.0.1");
-    pc_port_ = static_cast<uint16_t>(declare_parameter<int>("pc_port", 50002));
+    can_interface_ = declare_parameter<std::string>("can_interface", "vcan0");
     wheelbase_ = declare_parameter<double>("wheelbase", 0.32);      // WHEELTEC 근사
     timeout_ms_ = declare_parameter<int>("watchdog_timeout_ms", 30);
 
-    sock_ = ::socket(AF_INET, SOCK_DGRAM, 0);
-    int reuse = 1;
-    ::setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    timeval tv{0, 100000};
-    ::setsockopt(sock_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(listen_port_);
-    if (::bind(sock_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-      throw std::runtime_error("bind failed");
-    }
-    std::memset(&pc_addr_, 0, sizeof(pc_addr_));
-    pc_addr_.sin_family = AF_INET;
-    pc_addr_.sin_port = htons(pc_port_);
-    ::inet_pton(AF_INET, pc_ip_.c_str(), &pc_addr_.sin_addr);
+    // 수신은 PC→dSPACE ID만 (0x100 헤더 + 0x101..0x114 포인트)
+    const std::vector<can_filter> rx_filters = {
+      {kIdTargetHeader, CAN_SFF_MASK},
+      // 0x101..0x114를 하나의 mask 필터로: 0x100~0x11F 대역에서 헤더 제외 상위 매칭
+      {kIdRefPointBase, static_cast<canid_t>(CAN_SFF_MASK & ~0x01F)},
+    };
+    sock_ = openCanSocket(can_interface_, rx_filters);
 
-    last_rx_ = Clock::now();  // 부팅 직후는 정상 취급 — 30ms 내 첫 패킷 미도착 시 자연히 타임아웃
+    last_rx_ = Clock::now();  // 부팅 직후는 정상 취급 — 30ms 내 첫 헤더 미도착 시 자연히 타임아웃
     rx_thread_ = std::thread([this] {rxLoop();});
     // 10ms 태스크 — 실 dSPACE의 Vehicle MGM 주기에 대응
     timer_ = create_wall_timer(std::chrono::milliseconds(10), [this] {step();});
-    RCLCPP_INFO(get_logger(), "dSPACE sim: listen :%u → reply %s:%u, watchdog %dms",
-      listen_port_, pc_ip_.c_str(), pc_port_, timeout_ms_);
+    RCLCPP_INFO(get_logger(), "dSPACE sim: %s, watchdog %dms",
+      can_interface_.c_str(), timeout_ms_);
   }
 
   ~DspaceSimNode() override
@@ -66,18 +52,32 @@ public:
 private:
   void rxLoop()
   {
-    TxFrame f{};
+    can_frame f{};
     while (running_ && rclcpp::ok()) {
-      const ssize_t len = ::recv(sock_, &f, sizeof(f), 0);
-      if (len != sizeof(TxFrame) || f.magic != kMagicTx) {continue;}
+      const ssize_t len = ::read(sock_, &f, sizeof(f));
+      if (len != sizeof(can_frame) || f.can_dlc != 8) {continue;}
+
+      if (f.can_id >= kIdRefPointBase &&
+        f.can_id < kIdRefPointBase + kNumPoints)
+      {
+        // point 프레임은 스테이징 버퍼에만 — latch는 헤더 수신 시점 (PROTOCOL.md)
+        std::memcpy(&staged_points_[f.can_id - kIdRefPointBase], f.data,
+          sizeof(RefPointPayload));
+        continue;
+      }
+      if (f.can_id != kIdTargetHeader) {continue;}
+
+      TargetHeaderPayload hdr{};
+      std::memcpy(&hdr, f.data, sizeof(hdr));
       std::lock_guard<std::mutex> lk(mtx_);
-      if (f.counter != last_counter_) {   // counter 갱신 = 링크 생존 (watchdog 입력)
-        last_counter_ = f.counter;
+      if (hdr.counter != last_counter_) {   // counter 갱신 = 링크 생존 (watchdog 입력)
+        last_counter_ = hdr.counter;
         last_rx_ = Clock::now();
       }
-      v_ref_ = f.v_ref;
+      v_ref_ = dequantize(hdr.v_ref, kVelScale);
       // 조향 목표: 첫 ref point의 곡률로 근사 (실기는 quintic+MPC — 여기선 스모크 수준)
-      str_ref_ = std::atan(wheelbase_ * f.points[0].curvature);
+      const double curv = dequantize(staged_points_[0].curvature, kCurvScale);
+      str_ref_ = std::atan(wheelbase_ * curv);
     }
   }
 
@@ -105,26 +105,22 @@ private:
     y_ += v_ * std::sin(yaw_) * dt;
     yaw_ += v_ / wheelbase_ * std::tan(str_) * dt;
 
-    RxFrame r{};
-    r.magic = kMagicRx;
-    r.counter = ++tx_counter_;
-    r.x = static_cast<float>(x_);
-    r.y = static_cast<float>(y_);
-    r.yaw = static_cast<float>(yaw_);
-    r.v = static_cast<float>(v_);
-    r.str = static_cast<float>(str_);
-    ::sendto(sock_, &r, sizeof(r), 0,
-      reinterpret_cast<const sockaddr *>(&pc_addr_), sizeof(pc_addr_));
+    // 회신 순서: POSE → VEL → COMMIT (PC는 COMMIT에서 퍼블리시)
+    VehPosePayload pose{static_cast<float>(x_), static_cast<float>(y_)};
+    VehVelPayload vel{static_cast<float>(yaw_), static_cast<float>(v_)};
+    VehCommitPayload commit{static_cast<float>(str_), ++tx_counter_, 0};
+    sendCanFrame(sock_, kIdVehPose, pose);
+    sendCanFrame(sock_, kIdVehVel, vel);
+    sendCanFrame(sock_, kIdVehCommit, commit);
   }
 
-  uint16_t listen_port_{}, pc_port_{};
-  std::string pc_ip_;
+  std::string can_interface_;
   double wheelbase_{};
   int timeout_ms_{};
   int sock_{-1};
-  sockaddr_in pc_addr_{};
   std::mutex mtx_;
-  uint32_t last_counter_{0}, tx_counter_{0};
+  RefPointPayload staged_points_[kNumPoints]{};
+  uint16_t last_counter_{0}, tx_counter_{0};
   Clock::time_point last_rx_;
   bool timeout_latched_{false};
   double v_ref_{0.0}, str_ref_{0.0};

@@ -1,6 +1,6 @@
 # stack_gps — 요구사항
 
-**담당: 김윤기 (팀장)** · 산출물: GPS 단독 주행 (8/10) — 베이스 설치·RTK 포함
+**담당: 김윤기 (팀장)** · 산출물: GPS 단독 주행 (8/2) — 베이스 설치·RTK 포함
 
 ## 역할
 
@@ -10,7 +10,7 @@ GPS·IMU 융합, RTK, waypoint ref
 
 - 입력: GPS(수백 ms) + IMU(~10ms 비주기) 융합 → 위치·헤딩. RTK 베이스 설치 포함.
 - 출력: `/perception/gps_path` (`fma_interfaces/GpsPath`).
-  - `points[]`: 전역 waypoint를 **vehicle frame으로 변환 완료한** ref points.
+  - `points[]`: 전역 waypoint를 **vehicle frame으로 변환 완료한** ref points. **점 개수: 1개** (팀 합의 2026-07-29) — 추종 목표 waypoint 하나만.
   - `accel_zone` / `parking_zone`: 구간 플래그 — 속도를 올리는 판단은 MGM 우선권 표가 한다.
 - localization 보정: `/vehicle/vector` (dSPACE 상태 추정 회신, 10ms) 구독하여 GPS 갱신 사이 dead-reckoning 보정.
 - 금지: v_ref 결정·모드 판단 금지 (CLAUDE.md §5.1). accel_zone은 요구의 원천일 뿐.
@@ -26,4 +26,5 @@ RTK 베이스(EVK-F9P) 구축·운용 도구와 상세 가이드: `tools/base_st
 - 출력은 `fma_interfaces` 메시지로만. MGM은 이 토픽만 구독한다.
 - 경로를 내는 스택은 전부 동일 ref points 포맷 — {x, y, yaw, curvature}, vehicle frame (§5.4).
 - 판단 로직(모드 전환·정지 결정·우선권)은 MGM 스테이트 머신에만 존재한다 (§4, §5.1).
-- 실행: `ros2 run stack_gps stack_gps_node`
+- 실행: `ros2 run stack_gps stack_gps_node --ros-args -p waypoint_csv:=<기록 CSV> -p rtcm_host:=100.70.198.29`
+  (전체 파라미터는 `stack_gps/node.py` 도크스트링 참조 — `rtcm_host` 생략 시 RTCM 주입 없이 수신만)

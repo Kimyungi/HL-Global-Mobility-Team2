@@ -11,7 +11,8 @@
 namespace adas_mgm
 {
 
-constexpr int32_t MGM_NUM_POINTS = 20;   // dSPACE MPC 지평과 일치 (PROTOCOL.md N=20)
+constexpr int32_t MGM_NUM_POINTS = 20;   // ref points 최대치 (CAN ID 예약 폭, PROTOCOL.md)
+                                         // 실제 점 수는 현재 모든 소스 1 (n은 확장 대비 가변)
 constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
 
 // CLAUDE.md §4 스테이트 4개 — TargetRef.msg의 STATE_* 상수와 값 일치
@@ -32,7 +33,7 @@ enum : uint8_t
   MGM_SRC_PARKING = 3,
 };
 
-// RefPointWire(bridge_dspace/packet.hpp)와 동일 레이아웃 — float 4개
+// fma_interfaces/RefPoint과 동일 의미 — float 4개 (CAN 전송 시 양자화는 bridge_dspace 담당)
 struct CorePoint
 {
   float x;          // [m] vehicle frame, 전방 +
@@ -105,7 +106,8 @@ struct CoreState
   // ref 조립 (전환 연속 처리)
   uint8_t last_src;                       // MGM_SRC_*
   int32_t blend_left;
-  CorePoint ref_out[MGM_NUM_POINTS];
+  int32_t n_out;                          // 유효 점 수 (선택 소스의 n, 소스 미도착 시 hold)
+  CorePoint ref_out[MGM_NUM_POINTS];      // 내부는 20 고정(블렌드용) — 출력 유효분은 n_out개
   CorePoint blend_from[MGM_NUM_POINTS];
   // 종방향 병합 (rate limit)
   float v;
@@ -118,6 +120,7 @@ struct CoreOutput
   uint8_t path_source;     // MGM_SRC_* (디버그·back-to-back 비교용)
   bool immediate_stop;     // 디버그·back-to-back 비교용
   float v_ref;             // [m/s] 병합 최종 목표 속도. 정지 = 0
+  int32_t n_points;        // 유효 점 수 (1~20) — CAN에는 이만큼만 실린다
   CorePoint ref_points[MGM_NUM_POINTS];
 };
 

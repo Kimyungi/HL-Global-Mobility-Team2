@@ -42,7 +42,7 @@ int main(int argc, char ** argv)
     std::fprintf(stderr, "cannot open csv: %s\n", argv[2]);
     return 1;
   }
-  out << "tick,state,path_source,immediate_stop,v_ref";
+  out << "tick,state,path_source,immediate_stop,v_ref,n_points";
   for (int i = 0; i < MGM_NUM_POINTS; ++i) {
     out << ",x" << i << ",y" << i << ",yaw" << i << ",k" << i;
   }
@@ -59,7 +59,7 @@ int main(int argc, char ** argv)
     out << tick << ',' << static_cast<int>(o.state) << ',' << static_cast<int>(o.path_source)
         << ',' << (o.immediate_stop ? 1 : 0);
     std::snprintf(buf, sizeof(buf), ",%.9g", static_cast<double>(o.v_ref));
-    out << buf;
+    out << buf << ',' << o.n_points;
     for (int i = 0; i < MGM_NUM_POINTS; ++i) {
       std::snprintf(buf, sizeof(buf), ",%.9g,%.9g,%.9g,%.9g",
         static_cast<double>(o.ref_points[i].x), static_cast<double>(o.ref_points[i].y),

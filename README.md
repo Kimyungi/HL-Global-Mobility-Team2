@@ -15,7 +15,13 @@ source install/setup.bash
 
 ### ① PC↔dSPACE 왕복 검증 (최우선)
 
-PC 단독 루프백 (dSPACE 에뮬레이터 포함):
+최초 1회 — CAN 자동 셋업 설치 (이후 PCAN을 꽂으면 can0 자동 up, `--vcan`은 루프백용):
+
+```bash
+sudo src/bridge_dspace/tools/can_setup/install.sh --vcan
+```
+
+PC 단독 루프백 (dSPACE 에뮬레이터 포함, 가상 CAN 사용):
 
 ```bash
 ros2 launch bridge_dspace loopback_test.launch.py
@@ -24,10 +30,10 @@ ros2 topic hz /vehicle/vector     # ≈100 Hz
 ros2 topic echo /vehicle/vector   # x·v 증가 = 왕복 성립
 ```
 
-실기 (dSPACE 연결):
+실기 (dSPACE CAN 연결) — **단계별 검증 절차는 [CAN_BRINGUP.md](src/bridge_dspace/CAN_BRINGUP.md)** (배선·candump·watchdog까지 복붙 가이드):
 
 ```bash
-ros2 launch bridge_dspace bridge.launch.py dspace_ip:=192.168.1.10
+ros2 launch bridge_dspace bridge.launch.py can_interface:=can0   # 자동 셋업 설치돼 있으면 꽂기만 하면 됨
 ros2 run bridge_dspace dummy_ref_publisher   # 직선 ref, v_ref 0.3 → 바퀴 반응 확인
 ```
 

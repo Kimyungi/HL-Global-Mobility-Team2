@@ -9,7 +9,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 
 - 상위: 산업용 PC, **Ubuntu 22.04 + ROS 2 Humble** — 인지(Signal processing) + 판단(Decision)
 - 하위: dSPACE — 제어(Control) + 구동(Actuation)
-- 통신: Ethernet (UDP), 10ms 주기
+- 통신: **CAN (classic 2.0A, 1 Mbps 권장, PC 측 PCAN 어댑터)**, 10ms 주기 — dSPACE 측 Ethernet 사용 불가로 UDP에서 전환 (2026-07-29)
 
 ## 2. 아키텍처 (v1 — 현재 기준)
 
@@ -18,7 +18,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 | 계층 | 이름 | 위치 | 주기 | 내용 |
 |---|---|---|---|---|
 | Signal processing | ADAS application | PC | 비동기 (각 센서 주기) | 차선 검출(camera 100ms), 신호등·정지선 인식(camera), GPS·IMU 융합(위치·헤딩), 장애물 인지·주차 로컬맵(LiDAR 100ms) |
-| Decision | ADAS MGM | PC | **10ms 고정** | 주행 모드 스테이트 머신 + 요구 생성 + ref points 조립 + 종방향 병합 → target ref 확정 → Ethernet TX |
+| Decision | ADAS MGM | PC | **10ms 고정** | 주행 모드 스테이트 머신 + 요구 생성 + ref points 조립 + 종방향 병합 → target ref 확정 → CAN TX |
 | Control | Vehicle MGM | dSPACE | 10ms | 통신 watchdog → 궤적 생성(quintic, feasibility) → MPC(횡·종 통합, 예측 지평 200ms/N=20 → str_ref, v_ref) → 상태 추정(kinematic bicycle model) |
 | Actuation | 하위 제어 | dSPACE | **5ms 독립 태스크** | 엔코더 읽기 → PI → PWM 갱신 (구동 20kHz, 조향 서보 50Hz) |
 
@@ -26,23 +26,30 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 - Actuation은 상위와 무관하게 항상 5ms로 돌며, 최신 목표값(str_ref, v_ref)을 hold하여 사용.
 - 대안 v3: ROS 2 실시간성 검증 실패 시 ADAS MGM을 통째로 dSPACE로 이관 (§7 판정 기준 참조). 로직은 동일, 배치만 변경.
 
-## 3. 통신 계약 (Ethernet, PC ↔ dSPACE) — 최우선 구현 대상
+## 3. 통신 계약 (CAN, PC ↔ dSPACE) — 최우선 구현 대상
 
-**TX (PC → dSPACE, 10ms):**
+물리 계층은 CAN (classic, 8바이트/프레임)이므로 논리 계약을 여러 CAN 프레임으로 분할한다.
+**CAN ID 맵·양자화 스케일·프레임 레이아웃의 단일 진실 원천은 `src/bridge_dspace/PROTOCOL.md`** — dSPACE 측(손상민)과 반드시 그 문서로 합의.
 
-| 필드 | 형식 | 설명 |
+**TX (PC → dSPACE, 10ms, n_points+1 프레임 — 유효 점만 송신):**
+
+| 필드 | CAN 매핑 | 설명 |
 |---|---|---|
-| ref_points[N] | {x, y, yaw, curvature} × N | **vehicle frame** — 생성 시점 차량 위치 = (0,0,0). 모든 모드(차선/GPS/회피/주차)가 동일 포맷 |
-| v_ref | float | 종방향 병합의 최종 목표 속도. 정지 = v_ref 0 (별도 정지 명령 없음) |
-| flags | uint | state + packet counter. **counter는 watchdog 필수 입력** |
+| ref_points[n] | `0x101`~`0x114` (점당 1프레임, int16 양자화: 1mm / 1e-4rad / 5e-4 1/m) | **vehicle frame** — 생성 시점 차량 위치 = (0,0,0). 모든 모드 동일 포맷. **점 수는 모든 소스 1개** (차선/GPS/회피/주차, 2026-07-29 합의) — dSPACE 궤적 생성(quintic)이 목표점으로부터 MPC 지평을 채움 |
+| v_ref | `0x100` 헤더 프레임 (int16, 1mm/s) | 종방향 병합의 최종 목표 속도. 정지 = v_ref 0 (별도 정지 명령 없음) |
+| flags | `0x100` 헤더 프레임 (state u8 + n_points u8 + counter u16) | **counter는 watchdog 필수 입력** |
 
-**RX (dSPACE → PC, 10ms):**
+- 헤더(`0x100`)는 매 주기 **마지막에** 송신 — dSPACE는 이 프레임에서 n_points개 세트를 원자적으로 latch (반쯤 갱신된 세트 방지).
 
-| 필드 | 설명 |
-|---|---|
-| vehicle_vector | 상태 추정 결과 {x, y, yaw, v, str} — PC의 localization 보정에 사용 |
+**RX (dSPACE → PC, 10ms, 3프레임):**
 
-**watchdog (dSPACE):** 패킷 counter가 30ms(TX 3주기) 동안 미갱신 → v_ref = 0 (감속 정지), 조향은 직전 값 유지(급조향 금지). 타임아웃 값은 §7 검증 결과에 따라 조정 가능(예: 50ms).
+| 필드 | CAN 매핑 | 설명 |
+|---|---|---|
+| vehicle_vector | `0x200`~`0x202` (f32 무손실, `0x202`가 커밋) | 상태 추정 결과 {x, y, yaw, v, str} — PC의 localization 보정에 사용. **모든 스테이트에서 상시 송신 (parking 중에도 유지** — 주차 로컬맵·경로 추종의 입력**)** |
+
+**watchdog (dSPACE):** `0x100` 헤더의 counter가 30ms(TX 3주기) 동안 미갱신 → v_ref = 0 (감속 정지), 조향은 직전 값 유지(급조향 금지). 타임아웃 값은 §7 검증 결과에 따라 조정 가능(예: 50ms). point 프레임 수신 여부는 watchdog 판정에 쓰지 않는다.
+
+**버스 부하:** 전 스테이트 5프레임/10ms (TX 2 + RX 3) ≈ 68 kbit/s → 1 Mbps에서 ~7%, 500 kbps에서도 ~14%로 여유.
 
 ## 4. 스테이트 머신 (Decision 핵심 — 상세: `docs/state_machine_detail.drawio`)
 
@@ -90,7 +97,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 ```
 adas_ws/src/
 ├── common_interfaces/     # msg/인터페이스 정의 — 모든 스택의 공용 계약 (§3 포맷)
-├── bridge_dspace/         # Ethernet UDP 브리지 (TX/RX) — ★ 최우선 구현, 배포 전 완성
+├── bridge_dspace/         # CAN 브리지 (SocketCAN, TX/RX) — ★ 최우선 구현, 배포 전 완성
 ├── adas_mgm/              # Decision — core/(§5.5 로직 코어, ROS 무의존) + src/(wrapper) + tools/(back-to-back 하네스)
 ├── stack_lane/            # 이현준 — 차선 검출(YOLO) → 차선 ref
 ├── stack_gps/             # 김윤기 — GPS·IMU 융합, RTK, waypoint ref
@@ -114,7 +121,7 @@ adas_ws/src/
 
 ## 8. 팀 담당 · 일정
 
-| 이름 | 담당 | 8/10 산출물 |
+| 이름 | 담당 | 8/2 산출물 |
 |---|---|---|
 | 김윤기 (팀장) | GPS — 베이스 설치, RTK, GPS 주행 | GPS 단독 주행 |
 | 이현준 | 카메라 차선 주행 | 차선 단독 주행 |
@@ -123,7 +130,7 @@ adas_ws/src/
 | 김재민 | 신호등·정지선 + 하위제어 사수(기반 7/6~7/17 완료) | 신호등 정지 |
 | 박찬미 | 돌발 장애물 긴급 정지 | 긴급 정지 |
 
-미팅 주 2회(월·목). 마일스톤: 8/10 센서 단독 주행 통합 시연.
+미팅 주 2회(월·목). 마일스톤: **8/2 전원 센서 단독 주행 완료**.
 
 ## 9. 참조 문서
 
