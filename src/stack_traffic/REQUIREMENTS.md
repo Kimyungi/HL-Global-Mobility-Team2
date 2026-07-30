@@ -55,10 +55,12 @@ sudo apt install python3-opencv python3-numpy
 
 ```bash
 ros2 run stack_traffic stack_traffic_node --ros-args \
-  -p model_path:=/home/jaemin/yolov8n.pt \
   -p camera_source:="2" \
   -p stop_trigger_distance_m:=0.5
 ```
+
+위 명령은 패키지의 `models/yolov8n.pt`를 자동으로 사용한다.
+패키지 밖의 모델을 사용할 때만 `model_path`를 지정한다.
 
 ## 공통 규칙 (CLAUDE.md)
 
