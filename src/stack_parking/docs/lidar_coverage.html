@@ -1,0 +1,176 @@
+<title>라이다 인식 범위 5m×5m</title>
+<style>
+  :root{
+    --paper:#eef1f5; --panel:#ffffff; --ink:#1c2836; --ink-soft:#54657a;
+    --line:#c3ccd6; --grid:#dde4ec; --grid2:#b7c2ce; --field:#f7f9fb; --accent:#2563eb;
+    --l-front:#2563eb; --l-left:#0d9488; --l-right:#d97706; --l-rear:#7c3aed;
+    --body-fill:#dde5ee; --wheel:#2b3644;
+    --shadow:0 1px 2px rgba(20,35,55,.08),0 8px 24px rgba(20,35,55,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0e1620; --panel:#141d29; --ink:#dbe6f1; --ink-soft:#8ea0b4;
+      --line:#2c3a4b; --grid:#1b2634; --grid2:#2f4256; --field:#0b131c; --accent:#60a5fa;
+      --l-front:#60a5fa; --l-left:#2dd4bf; --l-right:#fbbf24; --l-rear:#a78bfa;
+      --body-fill:#1b2634; --wheel:#05090e;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#eef1f5; --panel:#ffffff; --ink:#1c2836; --ink-soft:#54657a;
+    --line:#c3ccd6; --grid:#dde4ec; --grid2:#b7c2ce; --field:#f7f9fb; --accent:#2563eb;
+    --l-front:#2563eb; --l-left:#0d9488; --l-right:#d97706; --l-rear:#7c3aed;
+    --body-fill:#dde5ee; --wheel:#2b3644;
+  }
+  :root[data-theme="dark"]{
+    --paper:#0e1620; --panel:#141d29; --ink:#dbe6f1; --ink-soft:#8ea0b4;
+    --line:#2c3a4b; --grid:#1b2634; --grid2:#2f4256; --field:#0b131c; --accent:#60a5fa;
+    --l-front:#60a5fa; --l-left:#2dd4bf; --l-right:#fbbf24; --l-rear:#a78bfa;
+    --body-fill:#1b2634; --wheel:#05090e;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+    line-height:1.5; padding:clamp(16px,3vw,40px);}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,"Cascadia Mono",monospace; font-variant-numeric:tabular-nums;}
+  .sheet{max-width:1000px; margin:0 auto;}
+  header.title{display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between;
+    gap:12px 24px; border-bottom:2px solid var(--ink); padding-bottom:14px; margin-bottom:18px;}
+  header.title h1{font-size:clamp(20px,2.6vw,30px); margin:0; letter-spacing:-.01em; text-wrap:balance;}
+  header.title .sub{color:var(--ink-soft); font-size:14px; margin-top:4px;}
+  .frame-badge{font-size:12px; color:var(--ink-soft); text-align:right; line-height:1.7;
+    border:1px solid var(--line); border-radius:6px; padding:8px 12px; background:var(--panel);}
+  .frame-badge b{color:var(--ink);}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    box-shadow:var(--shadow); padding:clamp(12px,2vw,22px); margin-bottom:20px;}
+  .card h2{font-size:13px; text-transform:uppercase; letter-spacing:.09em; color:var(--ink-soft); margin:0 0 12px;}
+  .plan-wrap{width:100%; overflow-x:auto;}
+  svg{display:block; width:100%; height:auto; max-width:720px; margin:0 auto;}
+  ul.legend{list-style:none; padding:0; margin:0; display:grid; grid-template-columns:1fr 1fr; gap:10px 18px; font-size:13.5px;}
+  @media(max-width:520px){ ul.legend{grid-template-columns:1fr;} }
+  ul.legend li{display:flex; align-items:center; gap:10px;}
+  .chip{width:22px; height:12px; border-radius:3px; flex:none; opacity:.85;}
+  .legend b{font-variant-numeric:tabular-nums;}
+  .note{font-size:12.5px; color:var(--ink-soft); line-height:1.6;}
+  .note b{color:var(--ink);}
+  .ok{color:var(--l-left); font-weight:700;}
+  footer{color:var(--ink-soft); font-size:12px; margin-top:6px; text-align:center;}
+</style>
+
+<div class="sheet">
+  <header class="title">
+    <div>
+      <h1>라이다 인식 범위 — 5 m × 5 m</h1>
+      <div class="sub">stack_parking · 실측 차량 치수 + 적용 시야각(앞 180° · 좌 110° · 우 110° · 뒤 160°)</div>
+    </div>
+    <div class="frame-badge">
+      영역 <b>5 m × 5 m</b> (차량중심 기준 ±2.5 m)<br>
+      base_link = <b>후축 중심</b> · x 전방+ / y 좌측+<br>
+      격자 <b>0.5 m</b> · 굵은선 <b>1 m</b>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="plan-wrap">
+      <svg id="cov" viewBox="0 0 1000 1000" role="img"
+           aria-label="5m×5m 영역 내 4개 라이다 인식 범위"></svg>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>범례 — 라이다별 적용 시야각</h2>
+    <ul class="legend">
+      <li><span class="chip" style="background:var(--l-front)"></span> <span><b>앞</b> (760, 0) · 정면 <b>180°</b> (−90°~+90°)</span></li>
+      <li><span class="chip" style="background:var(--l-left)"></span> <span><b>좌</b> (310, +155) · 정좌 <b>110°</b> (+35°~+145°)</span></li>
+      <li><span class="chip" style="background:var(--l-right)"></span> <span><b>우</b> (310, −155) · 정우 <b>110°</b> (−145°~−35°)</span></li>
+      <li><span class="chip" style="background:var(--l-rear)"></span> <span><b>뒤</b> (−55, 0) · 정후 <b>160°</b> (+100°~+260°)</span></li>
+    </ul>
+    <p class="note" style="margin-top:14px">
+      각 부채꼴은 라이다 장착점에서 적용 시야각만큼 5 m 경계까지 뻗은 인식 범위(겹칠수록 진함).
+      <span class="ok">적용 시야각 합집합 = 차량 주위 360° 전방위 커버 (사각지대 없음)</span> —
+      앞 180° 의 좌우 경계(±90°)를 좌·우·뒤 시야가 이어받아 메운다. 색이 진한 곳은 2대 이상 중복 관측.
+      단위 m, 좌표 = base_link.
+    </p>
+  </div>
+
+  <footer>인식 범위는 적용 시야각(바퀴 기준 기하 상한−여유) 기반 · 실측 mask 로 축소 가능 · 상세: README.md / lidar_layout.html</footer>
+</div>
+
+<script>
+const NS="http://www.w3.org/2000/svg";
+function E(tag,a,parent){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);if(parent)parent.appendChild(e);return e;}
+function T(x,y,str,fill,extra){const t=E("text",Object.assign({x,y,fill:fill||"var(--ink-soft)","font-size":13},extra||{}));t.textContent=str;return t;}
+
+const svg=document.getElementById("cov");
+const CX=500, CY=500, s=170;                 // svg units per meter
+const SX=y=>CX-y*s, SY=x=>CY-x*s;            // y left+ →left ; x forward+ →up
+const HALF=2.5;
+
+// clip to 5m box
+const defs=E("defs",{},svg);
+const cp=E("clipPath",{id:"box"},defs);
+E("rect",{x:SX(HALF),y:SY(HALF),width:5*s,height:5*s},cp);
+
+// field bg
+E("rect",{x:SX(HALF),y:SY(HALF),width:5*s,height:5*s,fill:"var(--field)",stroke:"var(--ink)","stroke-width":2},svg);
+
+// grid
+for(let v=-2.5; v<=2.5001; v+=0.5){
+  const major=Math.abs(v-Math.round(v))<1e-6;
+  E("line",{x1:SX(v),y1:SY(HALF),x2:SX(v),y2:SY(-HALF),stroke:major?"var(--grid2)":"var(--grid)","stroke-width":major?1.3:0.8},svg);
+  E("line",{x1:SX(HALF),y1:SY(v),x2:SX(-HALF),y2:SY(v),stroke:major?"var(--grid2)":"var(--grid)","stroke-width":major?1.3:0.8},svg);
+}
+// axis tick labels (m)
+[-2,-1,1,2].forEach(v=>{
+  T(SX(v),SY(-HALF)+20,v+"",'var(--ink-soft)',{"text-anchor":"middle","font-size":12});   // along bottom (y)
+  T(SX(-HALF)+6,SY(v)+4,v+"",'var(--ink-soft)',{"font-size":12});                          // along left (x)
+});
+T(SX(-HALF)+6,SY(0)-6,"0",'var(--ink-soft)',{"font-size":12});
+
+// ---- coverage wedges (clipped to box) ----
+const cov=E("g",{"clip-path":"url(#box)"},svg);
+function wedge(px,py,a1,a2,cvar){
+  const R=6, pts=[[SX(py),SY(px)]];
+  for(let a=a1; a<=a2+1e-6; a+=1.5){const t=a*Math.PI/180; pts.push([SX(py+R*Math.sin(t)),SY(px+R*Math.cos(t))]);}
+  E("polygon",{points:pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "),
+    fill:`var(${cvar})`,opacity:.17,stroke:`var(${cvar})`,"stroke-width":1,"stroke-opacity":.32},cov);
+}
+wedge(0.76,0,-90,90,"--l-front");
+wedge(0.31,0.155,35,145,"--l-left");
+wedge(0.31,-0.155,-145,-35,"--l-right");
+wedge(-0.055,0,100,260,"--l-rear");
+
+// range reference rings from vehicle center (1..2 m)
+[1,2].forEach(r=>{
+  E("circle",{cx:SX(0),cy:SY(0),r:r*s,fill:"none",stroke:"var(--ink-soft)","stroke-width":1,"stroke-dasharray":"2 6",opacity:.5},svg);
+  T(SX(0)+4,SY(0)-r*s+14,r+" m",'var(--ink-soft)',{"font-size":11,opacity:.8});
+});
+
+// ---- vehicle (to scale) ----
+const bodyPts=[[.76,.14],[.76,-.14],[.69,-.21],[-.02,-.21],[-.09,-.14],[-.09,.14],[-.02,.21],[.69,.21]]
+  .map(p=>SX(p[1]).toFixed(1)+","+SY(p[0]).toFixed(1)).join(" ");
+E("polygon",{points:bodyPts,fill:"var(--body-fill)",stroke:"var(--ink)","stroke-width":2},svg);
+// wheels
+[[.595,.2586],[.595,-.2586],[0,.2586],[0,-.2586]].forEach(([cx,cy])=>{
+  E("rect",{x:SX(cy)-0.048*s/2,y:SY(cx)-0.18*s/2,width:0.048*s,height:0.18*s,rx:3,fill:"var(--wheel)",stroke:"var(--ink)","stroke-width":1},svg);
+});
+// origin
+E("line",{x1:SX(0)-9,y1:SY(0),x2:SX(0)+9,y2:SY(0),stroke:"var(--accent)","stroke-width":1.6},svg);
+E("line",{x1:SX(0),y1:SY(0)-9,x2:SX(0),y2:SY(0)+9,stroke:"var(--accent)","stroke-width":1.6},svg);
+// lidars
+const L=[[.76,0,"--l-front","앞"],[.31,.155,"--l-left","좌"],[.31,-.155,"--l-right","우"],[-.055,0,"--l-rear","뒤"]];
+L.forEach(([x,y,c,nm])=>{
+  E("circle",{cx:SX(y),cy:SY(x),r:7,fill:`var(${c})`,stroke:"var(--panel)","stroke-width":2},svg);
+});
+// vehicle label
+T(SX(0),SY(-0.09)+26,"차량 (실측 스케일)",'var(--ink-soft)',{"text-anchor":"middle","font-size":12});
+
+// compass
+const ax=118, ay=900;
+E("line",{x1:ax,y1:ay,x2:ax,y2:ay-42,stroke:"var(--accent)","stroke-width":1.6},svg);
+E("path",{d:`M ${ax} ${ay-48} l -5 10 l 10 0 z`,fill:"var(--accent)"},svg);
+T(ax,ay-54,"+x 전방",'var(--accent)',{"text-anchor":"middle","font-size":12});
+E("line",{x1:ax,y1:ay,x2:ax-42,y2:ay,stroke:"var(--accent)","stroke-width":1.6},svg);
+E("path",{d:`M ${ax-48} ${ay} l 10 -5 l 0 10 z`,fill:"var(--accent)"},svg);
+T(ax-26,ay+16,"+y 좌",'var(--accent)',{"text-anchor":"middle","font-size":12});
+</script>
