@@ -148,6 +148,36 @@ cd ~/FMA_ws/src/stack_gps/tools/base_station
 python3 rtcm_client_inject.py --host <베이스PC_IP> --monitor
 ```
 
+## 텔레메트리 라디오 운용 (Holybro SiK 915MHz — 무선, 인터넷·WiFi 불필요)
+
+2026-07-31 실기기 검증 완료: EVK → 베이스 PC → 라디오 → **전파** → 수신 라디오,
+RTCM 무손실 통과. 라디오 두 대 모두 시리얼 속도 **38,400으로 변경·저장됨**
+(공장값 57,600 — 새 라디오 교체 시 AT 명령 `ATS1=38, AT&W, ATZ`로 재설정 필요).
+
+**베이스 (PC 브릿지 방식 — 표준 운용):**
+
+```bash
+# EVK와 라디오를 모두 베이스 PC USB에 연결 (라디오 포트는 /dev/serial/by-id/로 확인)
+python3 rtcm_server.py --radio /dev/ttyUSB0     # TCP(Tailscale)와 무선 동시 송출
+```
+
+**로버:**
+
+```bash
+# 라디오를 로버 PC USB에 연결
+python3 rtcm_client_inject.py --from-serial /dev/ttyUSB0 --serial /dev/ttyRover --monitor
+```
+
+주의·기록:
+- **라디오 JST 커넥터에 EVK를 직결(PC 제거)하는 방식은 보류.** 배선(TXD2→RX, GND)을
+  전 구간 검증했음에도 통신 불가 — 라디오가 USB로 전원을 받는 동안 내부 USB 칩이
+  JST RX 입력을 점유하는 회로 특성으로 결론. 직결하려면 USB 대신 **JST의 5V 핀으로
+  급전**해야 할 것으로 추정 (추후 재시도, 납땜 전선은 보존).
+- 보조배터리는 저부하(라디오+EVK ≈ 0.3A) 시 **자동 꺼짐**이 있는 모델이 많다 —
+  현장 투입 전 10분 유지 확인 필수.
+- 실내에서는 1005/1230만 송출된다(~35B/s). MSM 관측 메시지는 안테나가 하늘을 봐야
+  나오며 그때 총 유량 ~560B/s (라디오 용량 대비 여유).
+
 ## 5단계 — 운용 절차 (시연 당일)
 
 1. 베이스 안테나를 **측량했던 바로 그 위치**에 설치, EVK 전원 인가
