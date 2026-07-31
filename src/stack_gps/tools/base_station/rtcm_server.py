@@ -24,9 +24,17 @@ def main():
     ap.add_argument("--baud", type=int, default=38400)
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--tcp-port", type=int, default=2101)
+    ap.add_argument("--radio", default="",
+                    help="텔레메트리 라디오 시리얼 포트 (예: /dev/ttyUSB0) — "
+                         "지정 시 TCP와 동시에 무선으로도 RTCM 송출")
+    ap.add_argument("--radio-baud", type=int, default=38400)
     args = ap.parse_args()
 
     ser = serial.Serial(args.port, args.baud, timeout=0.2)
+    radio = None
+    if args.radio:
+        radio = serial.Serial(args.radio, args.radio_baud, timeout=0.2)
+        print(f"[server] 라디오 송출: {args.radio} @ {args.radio_baud}")
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((args.bind, args.tcp_port))
@@ -53,6 +61,20 @@ def main():
         data = ser.read(1024)
         if data:
             n_bytes += len(data)
+            if radio is not None:
+                try:
+                    radio.write(data)
+                except (serial.SerialException, OSError):
+                    print("[server] ⚠ 라디오 포트 오류 — 3초 후 재접속 시도")
+                    try:
+                        radio.close()
+                    except OSError:
+                        pass
+                    time.sleep(3)
+                    try:
+                        radio = serial.Serial(args.radio, args.radio_baud, timeout=0.2)
+                    except (serial.SerialException, OSError):
+                        pass
             with lock:
                 for sock in list(clients):
                     try:

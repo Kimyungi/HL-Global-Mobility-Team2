@@ -36,12 +36,17 @@ QUALITY_NAMES = {0: "NO FIX", 1: "GPS", 2: "DGPS", 4: "RTK FIXED", 5: "RTK FLOAT
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--host", required=True, help="베이스 PC IP")
+    ap.add_argument("--host", default="", help="베이스 PC IP (TCP 수신)")
+    ap.add_argument("--from-serial", default="",
+                    help="텔레메트리 라디오 포트 (예: /dev/ttyUSB0) — TCP 대신 무선 수신")
+    ap.add_argument("--from-baud", type=int, default=38400)
     ap.add_argument("--port", type=int, default=2101, help="rtcm_server.py TCP 포트")
     ap.add_argument("--serial", default="/dev/ttyUSB0", help="로버 시리얼 포트")
     ap.add_argument("--baud", type=int, default=38400, help="FST-UEF9P는 38400 고정")
     ap.add_argument("--monitor", action="store_true", help="NMEA GGA로 RTK 상태 표시")
     args = ap.parse_args()
+    if bool(args.host) == bool(args.from_serial):
+        ap.error("--host(TCP) 또는 --from-serial(라디오) 중 하나만 지정하세요")
 
     ser = serial.Serial(args.serial, args.baud, timeout=0.1)
     print(f"[client] 로버 포트 열림: {args.serial} @ {args.baud}")
@@ -51,7 +56,32 @@ def main():
     t_stats = time.time()
     n_bytes = 0
 
-    while True:  # TCP 재접속 루프
+    if args.from_serial:  # ── 라디오 수신 모드 ──
+        radio = serial.Serial(args.from_serial, args.from_baud, timeout=0.1)
+        print(f"[client] 라디오 수신: {args.from_serial} @ {args.from_baud}")
+        while True:
+            data = radio.read(2048)
+            if data:
+                ser.write(data)
+                n_bytes += len(data)
+
+            if args.monitor and ser.in_waiting:
+                nmea_buf += ser.read(ser.in_waiting)
+                while b"\n" in nmea_buf:
+                    line, nmea_buf = nmea_buf.split(b"\n", 1)
+                    q = gga_quality(line.decode(errors="ignore").strip())
+                    if q is not None:
+                        quality = q
+
+            now = time.time()
+            if now - t_stats >= 5:
+                msg = f"[client] RTCM {n_bytes / (now - t_stats):6.0f} B/s"
+                if args.monitor:
+                    msg += f"  RTK 상태: {QUALITY_NAMES.get(quality, quality)}"
+                print(msg)
+                n_bytes, t_stats = 0, now
+
+    while True:  # ── TCP 수신 모드 (재접속 루프) ──
         try:
             sock = socket.create_connection((args.host, args.port), timeout=5)
             sock.settimeout(0.2)
