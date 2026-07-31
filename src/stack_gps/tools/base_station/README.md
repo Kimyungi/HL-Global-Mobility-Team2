@@ -157,15 +157,15 @@ RTCM 무손실 통과. 라디오 두 대 모두 시리얼 속도 **38,400으로 
 **베이스 (PC 브릿지 방식 — 표준 운용):**
 
 ```bash
-# EVK와 라디오를 모두 베이스 PC USB에 연결 (라디오 포트는 /dev/serial/by-id/로 확인)
-python3 rtcm_server.py --radio /dev/ttyUSB0     # TCP(Tailscale)와 무선 동시 송출
+# EVK와 라디오를 모두 베이스 PC USB에 연결 (udev 규칙 설치 시 /dev/ttyRadio 자동 생성)
+python3 rtcm_server.py --radio /dev/ttyRadio    # TCP(Tailscale)와 무선 동시 송출
 ```
 
 **로버:**
 
 ```bash
 # 라디오를 로버 PC USB에 연결
-python3 rtcm_client_inject.py --from-serial /dev/ttyUSB0 --serial /dev/ttyRover --monitor
+python3 rtcm_client_inject.py --from-serial /dev/ttyRadio --serial /dev/ttyRover --monitor
 ```
 
 주의·기록:

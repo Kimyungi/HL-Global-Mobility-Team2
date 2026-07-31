@@ -1,9 +1,42 @@
-# 산업용 PC — 임시 베이스 PC 세팅 가이드 (Tailscale 경유)
+# 산업용 PC — 베이스 PC 세팅 가이드 (라디오 무선 / Tailscale)
 
 > 이 문서는 산업용 PC의 Claude Code가 그대로 실행할 수 있게 작성됨.
-> 목표: **산업용 PC = 임시 베이스** (EVK-F9P 연결 + RTCM을 Tailscale VPN으로 배포).
+> 목표: **산업용 PC = 베이스** (EVK-F9P 연결 + RTCM을 라디오 전파 또는 Tailscale로 배포).
 > 로버는 김윤기 노트북(FST-UEF9P). 추후 산업용 PC는 차량 로버 PC로 역할이 바뀐다 —
-> 그때도 Tailscale/저장소 세팅은 그대로 재사용되므로 지금 작업이 낭비가 아니다.
+> 그때도 세팅은 그대로 재사용되므로 지금 작업이 낭비가 아니다.
+>
+> **배포 경로는 2개 — 상황에 맞게 선택 (동시 사용도 가능):**
+> - **라디오 (현장 표준, 2026-07-31 검증)**: 인터넷·와이파이 전혀 불필요. 아래 "라디오 송출" 섹션.
+> - **Tailscale VPN (개발용)**: 양쪽 인터넷 필요. 아래 1단계.
+
+## 라디오 송출 세팅 (현장 표준 — 인터넷 불필요)
+
+전제: 저장소 최신화(`git pull` — `--radio` 옵션 포함 커밋 dd4a3b7 이후) + udev 규칙 재설치.
+
+```bash
+cd ~/FMA_ws && git pull
+
+# udev 규칙 갱신 (라디오 /dev/ttyRadio 자동 명명 포함, 최초 1회)
+cd src/stack_gps/tools/base_station
+sudo cp 99-ublox-f9p.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger
+
+# 연결: EVK USB + 라디오 USB (안테나는 확정 좌표 지점!)
+ls -l /dev/ttyF9P_uart2 /dev/ttyRadio     # 둘 다 보여야 정상 (라디오 재연결 후 확인)
+
+# 송출 시작 (운용 내내 켜둠 — TCP도 같이 서빙되므로 Tailscale 클라이언트도 동시 수용)
+python3 rtcm_server.py --radio /dev/ttyRadio
+```
+
+**성공 판정**: 10초 통계에 RTCM 유입이 찍히면 정상 — 실내 ~35B/s(1005/1230만),
+실외(안테나 하늘 시야) ~500B/s. 로버 쪽은 라디오 꽂고:
+`python3 rtcm_client_inject.py --from-serial /dev/ttyRadio --serial /dev/ttyRover --monitor`
+
+**주의**:
+- 라디오 시리얼 속도는 38,400으로 저장돼 있음. 새 라디오로 교체 시에만 AT 명령
+  (`+++` → `ATS1=38` → `AT&W` → `ATZ`)으로 재설정.
+- 보조배터리 전원 사용 시 저부하 자동 꺼짐 확인 (10분 유지 테스트).
+- 라디오의 JST 커넥터에 EVK 직결(PC 제거) 금지 — 동작 안 함 (base_station/README.md 참조).
 
 ## ⚠ 먼저 읽을 것 (Claude Code 준수사항)
 
