@@ -82,7 +82,7 @@ PCAN D-sub9 ↔ dSPACE(MicroLabBox) CAN 포트:
 **PC 쪽:**
 
 ```bash
-candump -td can0
+ candump -td can0
 ```
 
 ✅ **성공 판정**: `0x200`, `0x201`, `0x202`가 각각 ~10ms 간격으로 계속 찍힘.
