@@ -119,17 +119,55 @@ cd ~/FMA_ws/src/stack_gps/tools/drive_log
 | 트랙 CSV 사본 | 그 주행의 지도 | 재현 |
 | stack_gps `error_log_csv` | 매 틱 횡오차 | "추종 오차가 어디서 컸나" |
 
-## §5. 첫 주행 프로토콜
+## §5. 첫 주행 프로토콜 — 전체 명령 순서
 
-- 인원: **비상정지 담당 1명 + 차 옆 동행 1명** (필수)
-- 속도: dSPACE 쪽 v_ref 상한을 **보행 속도(~1m/s)**로 제한하고 시작
-- MGM 모드: stack_lane을 켜지 않으면 차선 신뢰도가 없어 **waypoint 스테이트로 자동 진입** — GPS 단독 주행 조건. stack_estop은 반드시 가동 (§5.7 estop 신선도 워치독)
-- 순서:
-  1. §0 베이스·중계 가동 → §3 정지 검증 통과 → §4 로깅 시작
-  2. MGM + bridge 기동, `/vehicle/vector` 회신 확인 (실차 dSPACE)
-  3. 출발 — 첫 목표는 **"직선 10m 추종"**. 성공 시 곡선 → 전체 코스 → 속도 단계 상승
-  4. 이상 시 즉시 비상정지 — **로그는 끄지 말 것** (사고 순간이 제일 귀한 데이터)
-- FIX가 풀리면 stack_gps가 빈 경로+quality 0을 발행하고 MGM이 정지 요구 — **주행 중 차가 서면 우선 FIX 상태부터 의심**
+**"출발 명령어"는 따로 없다.** MGM은 estop 신호가 없거나 오래되면(250ms) 무조건
+정지(v_ref=0)를 유지한다 (CLAUDE.md §5.7 워치독). 따라서 **마지막에 켜는
+stack_estop이 곧 출발 스위치**다 — 켜는 순간 estop이 해제 상태로 발행되기
+시작하면서 차가 출발한다. 이 원리를 이용해 아래 순서로 "장전 → 발사"한다.
+
+사전: 비상정지 담당 1명 + 차 옆 동행 1명 배치. dSPACE v_ref 상한 보행속도(~1m/s).
+stack_lane은 켜지 않는다 (차선 신뢰도 없음 → MGM이 waypoint 스테이트 자동 진입).
+
+```bash
+# ═══ 장전 단계 — 이 순서대로 다 켜도 차는 움직이지 않는다 (estop 워치독) ═══
+
+# [베이스 PC]
+python3 rtcm_server.py --radio /dev/ttyRadio                    # ① 보정 송출
+
+# [차량 PC — 터미널 나눠서]
+python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
+    --port /dev/ttyRadio --tcp-port 2101                        # ② 라디오→로컬 중계
+
+source ~/FMA_ws/install/setup.bash                              # (각 터미널마다)
+ros2 run stack_gps stack_gps_node --ros-args \
+    -p waypoint_csv:=<코스CSV> -p rtcm_host:=127.0.0.1 \
+    -p error_log_csv:=$HOME/FMA_ws/drive_logs/run1_lateral.csv  # ③ 경로 발행
+
+ros2 launch bridge_dspace bridge.launch.py                      # ④ CAN 브릿지
+ros2 launch adas_mgm mgm.launch.py                              # ⑤ 판단 (10ms 루프)
+
+ros2 topic echo /vehicle/vector --once                          # ⑥ dSPACE 살아있나 (회신 오면 OK)
+ros2 topic echo /perception/gps_path --once | grep fix_quality  # ⑦ quality: 4 확인
+
+cd ~/FMA_ws/src/stack_gps/tools/drive_log
+./record_drive.sh run1 <코스CSV>                                # ⑧ 블랙박스 시작
+
+# ═══ 출발 — 전원 준비 확인 후 이 한 줄이 곧 출발이다 ═══
+ros2 run stack_estop stack_estop_node                           # ⑨ ★출발★
+
+# ═══ 정지 방법 (급한 순서대로) ═══
+#  1) 물리 비상정지 (항상 최우선)
+#  2) ⑨ 터미널에서 Ctrl-C → 250ms 내 estop 워치독이 정지시킴 (소프트웨어 정지 레버)
+#  3) 코스 끝 도달 시 자연 정지
+```
+
+- 첫 목표는 **"직선 10m 추종"** — 성공 시 곡선 → 전체 코스 → 속도 단계 상승
+- 이상 시 정지시키더라도 **로깅(⑧)은 끄지 말 것** — 사고 순간이 제일 귀한 데이터
+- FIX가 풀리면 stack_gps가 빈 경로+quality 0 발행 → MGM 정지 — **주행 중 차가 서면
+  우선 FIX부터 의심**
+- ⑨를 켰는데 출발 안 하면: stack_estop이 장애물을 보고 있는지(`ros2 topic echo
+  /perception/estop`), 라이다 `/scan`이 나오는지 확인
 
 ## §6. 주행 후 분석
 
