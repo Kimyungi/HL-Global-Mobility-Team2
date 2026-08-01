@@ -58,6 +58,7 @@ python3 ntrip_inject.py
 python3 measure_base_position.py --duration 600
 ```
 
+- ⚠ **EVK가 베이스 모드였다면 먼저 `python3 setup_base.py --disable`** — 베이스 모드(fixType=5)에서는 측위를 안 해서 샘플이 절대 안 쌓인다 (스크립트가 감지 시 경고 후 종료).
 - ⚠ `ublox_gps` ROS 노드(start_rtk.sh)는 꺼둘 것 — UART1 포트가 겹친다.
 - carrSoln=FIXED가 떠야 샘플이 쌓인다. FLOAT에 머물면 하늘 시야/NGII 계정 확인.
 - 출력된 **위도/경도/타원체고**를 팀 문서에 기록 — 이 좌표는 이후 절대 불변.
