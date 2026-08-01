@@ -110,6 +110,12 @@ ros2 topic echo /vehicle/vector --once                          # dSPACE 회신 
 ros2 topic echo /perception/gps_path --once | grep fix_quality  # 4 = RTK FIXED
 ```
 
+**IMU 헤딩 융합 (2026-08-01 도입):** V2 상태 로그 2초마다 `IMU:150Hz 정렬 +123°`
+형태로 나온다. 전원 인가 직후에는 `미정렬(직진 주행 필요)` — **첫 주행에서 몇 초
+직진하면 COG로 자동 정렬**되고, 이후 헤딩 소스가 `융합`으로 바뀌며 정지·저속에서도
+절대 헤딩이 유지된다 (기존 "접선 폴백 = 출발 전 정렬 필수" 제약이 첫 출발에만 남음).
+IMU를 뗐거나 문제면 `-p imu_port:=off`로 기존 COG/접선 동작 그대로.
+
 **여기까지는 전부 켜도 차가 움직이지 않는다** — estop 신호가 없으면 MGM이 정지를
 유지하기 때문 (§5.7 워치독). 이게 "장전만 된" 안전 상태다.
 
@@ -162,3 +168,6 @@ ros2 bag play  ~/FMA_ws/drive_logs/run1_*/bag    # RViz/live_view로 그날 재�
 | 첫 점이 차량 뒤(x<0) | 차가 트랙 진행 방향과 반대 — 돌려 세우기 |
 | target_ref 나오는데 바퀴 무반응 | candump로 CAN TX 확인 → dSPACE 쪽(손상민) 수신 확인 |
 | 곡선에서 크게 이탈 | 기록이 너무 빨랐음 — 더 느리게, --spacing 0.2로 재기록 |
+| 상태 로그 `IMU:없음` | /dev/ttyUSB_IMU 존재·USB 연결 확인 (udev가 자동 명명) |
+| 융합 정렬 후에도 선회에서 이탈 | IMU yaw 부호 의심 — error_log의 imu_yaw_deg가 좌회전 시 감소하면 `-p imu_yaw_sign:=-1.0` |
+| CRC오류 다수 | IMU USB 케이블·전원 노이즈 — 케이블 교체 |
