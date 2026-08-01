@@ -105,15 +105,20 @@ class PathEngine:
     def _in_ranges(idx, ranges):
         return any(a <= idx <= b for a, b in ranges)
 
-    def snapshot(self, lat, lon):
+    def snapshot(self, lat, lon, heading=None):
         """현재 fix → dict(points, accel_zone, parking_zone, idx, cross_track_m).
 
         points: [(x, y, yaw, curvature)] vehicle frame, 최근접점부터 앞으로
         n_points개 (트랙 끝에서는 남은 만큼만).
+
+        heading: 차량 헤딩(ENU rad, 예: RMC 이동방향). None이면 "최근접 경로
+        접선 = 차량 헤딩" 가정으로 폴백 — 정지·출발 직후 등 헤딩을 모를 때만
+        쓰고, 이때는 차가 트랙 위에 진행 방향으로 정렬돼 있어야 유효하다
+        (2026-08-01 첫 주행에서 이 가정 위반으로 선회 발산 — COG 도입 계기).
         """
         ev, nv = self.to_enu(lat, lon)
         idx, dist = self._nearest_idx(ev, nv)
-        psi = self.yaw[idx]
+        psi = self.yaw[idx] if heading is None else heading
         c, s = math.cos(psi), math.sin(psi)
 
         points = []

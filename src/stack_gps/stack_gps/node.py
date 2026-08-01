@@ -54,6 +54,8 @@ class StackGpsNode(Node):
         self.declare_parameter('n_points', 30)
         self.declare_parameter('publish_period', 0.1)
         self.declare_parameter('stale_timeout', 1.5)  # [s] 이보다 오래된 fix는 무효
+        self.declare_parameter('cog_min_speed', 0.5)  # [m/s] 이상 이동 시 COG를 헤딩으로
+        self.declare_parameter('cog_max_age', 1.0)    # [s] COG 신선도 한계
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
         self.declare_parameter('parking_zone_ranges', [0])  # 기본 [0] = 미설정(쌍 안 됨)
         self.declare_parameter('error_log_csv', '')  # 지정 시 매 틱 횡오차 CSV 기록
@@ -89,6 +91,9 @@ class StackGpsNode(Node):
         self.link.start()
 
         self.stale_timeout = float(p('stale_timeout').value)
+        self.cog_min_speed = float(p('cog_min_speed').value)
+        self.cog_max_age = float(p('cog_max_age').value)
+        self._heading_src = '접선'
         self._last_snap = None
         self._err_log = None
         log_path = p('error_log_csv').value
@@ -98,7 +103,8 @@ class StackGpsNode(Node):
                 os.makedirs(log_dir, exist_ok=True)
             self._err_log = open(log_path, 'w', buffering=1)  # line-buffered
             self._err_log.write(
-                "stamp_s,lat,lon,quality,idx,cross_track_m,at_end,fix_age_s\n")
+                "stamp_s,lat,lon,quality,idx,cross_track_m,at_end,fix_age_s,"
+                "heading_deg,heading_src\n")
             self.get_logger().info(f"횡오차 로그: {log_path}")
         self._last_fix_t = None  # 새 GGA 판별용 (gps_fix는 새 측정에만 발행)
         self.pub = self.create_publisher(GpsPath, '/perception/gps_path', 1)
@@ -137,7 +143,18 @@ class StackGpsNode(Node):
             return
 
         lat, lon, height, quality, age, fix_t = fix
-        snap = self.engine.snapshot(lat, lon)
+
+        # 헤딩 선택: 이동 중(RMC COG 신선·충분한 속도)이면 실제 이동방향,
+        # 아니면 경로 접선 가정 폴백 (출발 전 정렬 필수 — path_engine 참조)
+        heading = None
+        cog = self.link.latest_cog()
+        if (cog is not None and cog[0] >= self.cog_min_speed
+                and cog[2] <= self.cog_max_age):
+            heading = cog[1]
+        self._heading_src = 'COG' if heading is not None else '접선'
+
+        snap = self.engine.snapshot(lat, lon, heading)
+        yaw = heading if heading is not None else self.engine.yaw[snap['idx']]
         for x, y, yaw, curv in snap['points']:
             rp = RefPoint()
             rp.x, rp.y, rp.yaw, rp.curvature = float(x), float(y), float(yaw), float(curv)
@@ -152,7 +169,8 @@ class StackGpsNode(Node):
             t = self.get_clock().now().nanoseconds * 1e-9
             self._err_log.write(
                 f"{t:.3f},{lat:.7f},{lon:.7f},{quality},{snap['idx']},"
-                f"{snap['cross_track_m']:.3f},{int(snap['at_end'])},{age:.3f}\n")
+                f"{snap['cross_track_m']:.3f},{int(snap['at_end'])},{age:.3f},"
+                f"{math.degrees(yaw):.1f},{self._heading_src}\n")
 
         viz = Path()
         viz.header = msg.header
@@ -175,9 +193,8 @@ class StackGpsNode(Node):
             nsf.status.status = 0 if quality > 0 else -1  # STATUS_FIX / NO_FIX
             self.pub_fix.publish(nsf)
 
-        # TF map(ENU) → base_link: 위치 = fix, 헤딩 = 경로 접선 (엔진과 동일 가정)
+        # TF map(ENU) → base_link: 위치 = fix, 헤딩 = 엔진과 동일 소스(COG/접선)
         ev, nv = self.engine.to_enu(lat, lon)
-        yaw = self.engine.yaw[snap['idx']]
         tf = TransformStamped()
         tf.header.stamp = msg.header.stamp
         tf.header.frame_id = 'map'
@@ -199,7 +216,8 @@ class StackGpsNode(Node):
         detail = (f"  idx {snap['idx']}  횡오차 {snap['cross_track_m']:.2f}m"
                   + ("  [트랙 끝]" if snap['at_end'] else "")) if snap else ""
         self.get_logger().info(
-            f"{qnames.get(quality, quality)}  age {age:.1f}s  RTCM {rtcm:.0f}B/s{detail}")
+            f"{qnames.get(quality, quality)}  age {age:.1f}s  RTCM {rtcm:.0f}B/s"
+            f"  헤딩:{self._heading_src}{detail}")
 
 
 def main(args=None):
