@@ -127,6 +127,11 @@ def main():
             last_rx[0] = time.time()
             if msg.identity == "NAV-PVT":
                 carr_soln = getattr(msg, "carrSoln", 0)
+                if msg.fixType == 5 and time.time() - t0 > 5:
+                    print("\n[measure] ⚠ 수신기가 베이스 모드(TMODE, fixType=5)입니다 — "
+                          "측위를 안 하므로 샘플이 절대 안 쌓입니다.\n"
+                          "[measure]   먼저 실행:  python3 setup_base.py --disable")
+                    sys.exit(2)
             elif msg.identity == "NAV-HPPOSLLH" and carr_soln >= need:
                 # pyubx2가 고정밀(HP) 성분을 lat/lon/height에 이미 합산해준다.
                 # lat/lon은 도 단위, height는 타원체고 mm 단위.
