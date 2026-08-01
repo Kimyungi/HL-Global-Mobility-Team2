@@ -18,6 +18,7 @@ GGA 사이(수백 ms)를 보간 — dSPACE 프레임과 ENU 정렬 방법 확정
       -p rtcm_host:=100.70.198.29
 """
 import math
+import os
 
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -92,6 +93,9 @@ class StackGpsNode(Node):
         self._err_log = None
         log_path = p('error_log_csv').value
         if log_path:
+            log_dir = os.path.dirname(log_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
             self._err_log = open(log_path, 'w', buffering=1)  # line-buffered
             self._err_log.write(
                 "stamp_s,lat,lon,quality,idx,cross_track_m,at_end,fix_age_s\n")
