@@ -23,7 +23,9 @@ from stack_gps.path_engine import wrap_angle
 class HeadingFusion:
 
     def __init__(self, alpha=0.1, imu_timeout=0.5, sign=1.0,
-                 gyro_gate=0.15, inn_gate=math.radians(60.0)):
+                 gyro_gate=0.15, inn_gate=math.radians(60.0),
+                 seed_n=5, seed_width=1.0, seed_spread=math.radians(25.0),
+                 reseed_after=30):
         """alpha: offset 저역통과 이득 (COG 갱신 1회당).
         imu_timeout: IMU 샘플 신선도 한계 [s].
         sign: IMU yaw 부호 (+1 = CCW+, ENU와 동일 — HandsFree 기본).
@@ -31,17 +33,31 @@ class HeadingFusion:
         inn_gate: 잔차 게이트 [rad] — 정렬 후 이보다 큰 COG 잔차는 거부.
           후진·역주행 시 COG는 차머리 반대(≈180°)라 offset을 통째로
           끌어내린다 (2026-08-03 주행 말미 실사례: 124.7°→21.1° 오염).
-          정상 드리프트 보정은 수 ° 수준이므로 60°면 넉넉한 상한."""
+          정상 드리프트 보정은 수 ° 수준이므로 60°면 넉넉한 상한.
+        seed_n/seed_width/seed_spread: 최초 정렬 합의 조건 — seed_width[s]
+          이상에 걸친 seed_n개 표본이 seed_spread 안에 모여야 offset을
+          확정한다. 출발 전 차를 뒤로 밀거나 뒤로 구르면 순간 COG가
+          차머리 반대를 보고해 첫 정렬이 180° 오염되던 것 방지
+          (2026-08-03 저속 run 실사례: offset -57°로 오염 → 주행 불능).
+        reseed_after: 잔차 거부가 이 횟수 연속되면(유효 COG 기준 ≈3초)
+          정렬 자체가 오염된 것으로 보고 재시드 — 오염 잠금 해제 경로."""
         self._alpha = float(alpha)
         self._imu_timeout = float(imu_timeout)
         self._sign = float(sign)
         self._gyro_gate = float(gyro_gate)
         self._inn_gate = float(inn_gate)
+        self._seed_n = int(seed_n)
+        self._seed_width = float(seed_width)
+        self._seed_spread = float(seed_spread)
+        self._reseed_after = int(reseed_after)
         self._imu = None           # (yaw_signed, t)
         self._gyro_z = 0.0         # 최신 선회율 — 게이트용 (없으면 0 = 통과)
         self._offset = None
+        self._seed_buf = []        # [(target, t)] — 정렬 전 COG 표본
+        self._reject_streak = 0
         self.last_innovation = None  # 최근 COG−융합 잔차 [rad] — 진단용
         self.rejected = 0            # 잔차 게이트 거부 누계 — 진단용
+        self.reseeds = 0             # 오염 판정 재정렬 횟수 — 진단용
 
     @property
     def offset(self):
@@ -57,7 +73,27 @@ class HeadingFusion:
         있으므로 기존 offset을 폐기하고 다음 직진 COG로 재정렬한다.
         리셋 직후 heading()은 None → 호출자는 COG/접선 폴백으로 안전."""
         self._offset = None
+        self._seed_buf = []
+        self._reject_streak = 0
         self.last_innovation = None
+
+    def _try_seed(self, target, t):
+        """정렬 전 COG 표본 합의 — seed_width 이상에 걸친 seed_n개가
+        seed_spread 안에 모이면 순환 평균으로 offset 확정."""
+        buf = self._seed_buf
+        buf.append((target, t))
+        buf[:] = [(a, ta) for a, ta in buf if t - ta <= 5.0]  # 표본 신선도
+        if len(buf) < self._seed_n:
+            return
+        if self._seed_n > 1 and t - buf[0][1] < self._seed_width:
+            return
+        mean = math.atan2(sum(math.sin(a) for a, _ in buf),
+                          sum(math.cos(a) for a, _ in buf))
+        if max(abs(wrap_angle(a - mean)) for a, _ in buf) > self._seed_spread:
+            return  # 표본이 흩어짐 (뒤로 밀림·저속 노이즈 혼재) — 대기
+        self._offset = wrap_angle(mean)
+        self.last_innovation = 0.0
+        buf.clear()
 
     def update_imu(self, yaw_rad, t, gyro_z=None):
         self._imu = (self._sign * yaw_rad, t)
@@ -73,15 +109,22 @@ class HeadingFusion:
             return
         target = wrap_angle(cog_yaw - self._imu[0])
         if self._offset is None:
-            self._offset = target
-            self.last_innovation = 0.0
-        else:
-            inn = wrap_angle(target - self._offset)
-            self.last_innovation = inn
-            if abs(inn) > self._inn_gate:
-                self.rejected += 1   # 후진/이상 기동의 COG — 오염 방지 거부
-                return
-            self._offset = wrap_angle(self._offset + self._alpha * inn)
+            self._try_seed(target, t)
+            return
+        inn = wrap_angle(target - self._offset)
+        self.last_innovation = inn
+        if abs(inn) > self._inn_gate:
+            self.rejected += 1       # 후진/이상 기동의 COG — 오염 방지 거부
+            self._reject_streak += 1
+            if self._reject_streak >= self._reseed_after:
+                # 유효 COG가 지속적으로 정렬과 모순 → 정렬 오염 판정, 재시드
+                self.reseeds += 1
+                self._offset = None
+                self._seed_buf = []
+                self._reject_streak = 0
+            return
+        self._reject_streak = 0
+        self._offset = wrap_angle(self._offset + self._alpha * inn)
 
     def heading(self, t):
         """융합 헤딩(ENU rad) 또는 None (IMU 부재·정렬 전)."""

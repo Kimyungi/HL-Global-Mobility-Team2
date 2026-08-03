@@ -122,6 +122,7 @@ class StackGpsNode(Node):
         self._heading_src = '접선'
         self._imu_gen = 0
         self._cog_ok = False
+        self._was_aligned = False
         self._last_snap = None
         self._err_log = None
         log_path = p('error_log_csv').value
@@ -203,6 +204,14 @@ class StackGpsNode(Node):
             if cog_valid:
                 self.fusion.update_cog(cog[1], now - cog[2])
         fused = self.fusion.heading(now) if self.fusion is not None else None
+
+        if self.fusion is not None and self.fusion.aligned != self._was_aligned:
+            self._was_aligned = self.fusion.aligned
+            if self._was_aligned:
+                self.get_logger().info(
+                    f"융합 헤딩 정렬: offset {math.degrees(self.fusion.offset):+.1f}°")
+            else:
+                self.get_logger().warn("융합 정렬 해제 — 직진 주행으로 재정렬 대기")
 
         if fused is not None:
             heading, self._heading_src = fused, '융합'
@@ -292,7 +301,9 @@ class StackGpsNode(Node):
                 imu_stat = (f"  IMU:{frames / 2.0:.0f}Hz {align}"
                             + (f" CRC오류 {crc_err}" if crc_err else "")
                             + (f" 잔차거부 {self.fusion.rejected}"
-                               if self.fusion.rejected else ""))
+                               if self.fusion.rejected else "")
+                            + (f" 재정렬 {self.fusion.reseeds}"
+                               if self.fusion.reseeds else ""))
         self.get_logger().info(
             f"{qnames.get(quality, quality)}  age {age:.1f}s  RTCM {rtcm:.0f}B/s"
             f"  헤딩:{self._heading_src}{imu_stat}{detail}")
