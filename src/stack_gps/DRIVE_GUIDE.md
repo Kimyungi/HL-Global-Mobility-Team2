@@ -55,7 +55,7 @@ ros2 topic echo /vehicle/vector --once  # 시뮬레이터 회신 확인
 ```bash
 # 임시 터미널 (차량 PC) — 차에 FST 실은 채 수동 저속 주행하며 기록
 cd ~/FMA_ws/src/stack_gps/tools/waypoints
-python3 record_waypoints.py --host 127.0.0.1 --name course_1 --spacing 0.3
+python3 record_waypoints.py --host 127.0.0.1 --name course_2 --spacing 0.3
 # 기록 끝나면 Ctrl-C → 터미널 닫아도 됨
 ```
 
@@ -63,7 +63,7 @@ python3 record_waypoints.py --host 127.0.0.1 --name course_1 --spacing 0.3
 폐곡선이면 시작점 복귀 후 종료 (시작·끝 차이 3cm 이내 = 합격) / "FIX 아님" 경고가 떴던
 run은 버리고 다시.
 
-기록 후 품질 눈검사 (임시 터미널): `python3 live_view.py --csv ../../waypoints/waypoints_course_1_*.csv`
+기록 후 품질 눈검사 (임시 터미널): `python3 live_view.py --csv ../../waypoints/waypoints_course_2_*.csv`
 
 ## A3. 현장 정지 검증 — 현장 첫날 1회 (이후 이상할 때만)
 
@@ -93,10 +93,9 @@ python3 rtcm_server.py --radio /dev/ttyRadio
 python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
     --port /dev/ttyRadio --tcp-port 2101
 
-# V2 [차량 PC]
-# 1. V2 재시작 (새 코드 반영 — 기존 stack_gps 터미널 Ctrl-C 후)
+# V2 [차량 PC]  (현재 코스: course_2, 2026-08-03 기록 — 137점 전부 FIXED, 42.9m)
 ros2 run stack_gps stack_gps_node --ros-args \
-    -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_course_1_20260801_170519.csv \
+    -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_course_2_20260803_170950.csv \
     -p rtcm_host:=127.0.0.1 \
     -p error_log_csv:=$HOME/FMA_ws/drive_logs/lateral_$(date +%m%d_%H%M).csv
 
@@ -129,7 +128,7 @@ ros2 topic echo /perception/gps_path --once | grep fix_quality  # 4 = RTK FIXED
 ```bash
 # V5 [차량 PC] — 블랙박스 시작
 cd ~/FMA_ws/src/stack_gps/tools/drive_log
-./record_drive.sh run1 $HOME/FMA_ws/src/stack_gps/waypoints/waypoints_course_1_20260801_170519.csv
+./record_drive.sh run1 $HOME/FMA_ws/src/stack_gps/waypoints/waypoints_course_2_20260803_170950.csv
 
 
 # V6 [차량 PC] — ★ 이 줄이 곧 출발이다 ★  (비상정지 담당·동행 준비 확인 후!)
