@@ -26,19 +26,30 @@ def wrap_angle(a):
     return (a + math.pi) % (2.0 * math.pi) - math.pi
 
 
-def load_waypoints_csv(path):
+def load_waypoints_csv(path, log=None):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 
     east_m/north_m 열은 기록 세션의 기준점에 묶여 있어 쓰지 않고,
     lat/lon에서 다시 계산한다. 연속 중복점은 제거.
+
+    quality 열이 있으면 RTK FIXED(4)가 아닌 행은 버린다 — FLOAT(5)는
+    m급 오차로 트랙을 오염시킨다 (2026-08-01 course_1의 idx 0·84가
+    이웃 대비 2.5~2.7m 튀어 시작 횡오차 4m대의 한 원인이었음).
+    버린 수는 log 콜백으로 보고.
     """
-    pts = []
+    pts, dropped = [], 0
     with open(path, newline="") as f:
         for row in csv.DictReader(f):
+            q = row.get("quality")
+            if q is not None and int(q) != 4:
+                dropped += 1
+                continue
             lat, lon = float(row["lat"]), float(row["lon"])
             if pts and pts[-1] == (lat, lon):
                 continue
             pts.append((lat, lon))
+    if dropped and log is not None:
+        log(f"비-FIXED 웨이포인트 {dropped}개 제외 (FLOAT 오염 방지): {path}")
     if len(pts) < 2:
         raise ValueError(f"웨이포인트가 {len(pts)}개뿐 — 유효한 트랙이 아님: {path}")
     return pts

@@ -81,7 +81,7 @@ class StackGpsNode(Node):
         parking = _pair_ranges(p('parking_zone_ranges').value or [],
                                'parking_zone_ranges', self.get_logger())
 
-        pts = load_waypoints_csv(csv_path)
+        pts = load_waypoints_csv(csv_path, log=self.get_logger().warn)
         self.engine = PathEngine(pts, n_points=int(p('n_points').value),
                                  accel_ranges=accel, parking_ranges=parking)
         self.get_logger().info(

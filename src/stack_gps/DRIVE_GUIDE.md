@@ -34,6 +34,8 @@ FST(위치) → stack_gps(경로) → adas_mgm(판단) → bridge(CAN) → dSPAC
 dSPACE 시뮬레이터로 소프트웨어 체인 관통 확인. 임시 터미널 4개, 끝나면 전부 Ctrl-C 후 닫는다.
 
 ```bash
+sudo modprobe vcan && sudo ip link add dev vcan0 type vcan && sudo ip link set up vcan0
+
 # 임시1
 ros2 launch bridge_dspace loopback_test.launch.py
 # 임시2
@@ -92,9 +94,11 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
     --port /dev/ttyRadio --tcp-port 2101
 
 # V2 [차량 PC]
+# 1. V2 재시작 (새 코드 반영 — 기존 stack_gps 터미널 Ctrl-C 후)
 ros2 run stack_gps stack_gps_node --ros-args \
-    -p waypoint_csv:=<코스CSV> -p rtcm_host:=127.0.0.1 \
-    -p error_log_csv:=$HOME/FMA_ws/drive_logs/lateral_$(date +%H%M).csv
+    -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_course_1_20260801_170519.csv \
+    -p rtcm_host:=127.0.0.1 \
+    -p error_log_csv:=$HOME/FMA_ws/drive_logs/lateral_run2.csv
 
 # V3 [차량 PC]
 ros2 launch bridge_dspace bridge.launch.py
@@ -110,12 +114,6 @@ ros2 topic echo /vehicle/vector --once                          # dSPACE 회신 
 ros2 topic echo /perception/gps_path --once | grep fix_quality  # 4 = RTK FIXED
 ```
 
-**IMU 헤딩 융합 (2026-08-01 도입):** V2 상태 로그 2초마다 `IMU:150Hz 정렬 +123°`
-형태로 나온다. 전원 인가 직후에는 `미정렬(직진 주행 필요)` — **첫 주행에서 몇 초
-직진하면 COG로 자동 정렬**되고, 이후 헤딩 소스가 `융합`으로 바뀌며 정지·저속에서도
-절대 헤딩이 유지된다 (기존 "접선 폴백 = 출발 전 정렬 필수" 제약이 첫 출발에만 남음).
-IMU를 뗐거나 문제면 `-p imu_port:=off`로 기존 COG/접선 동작 그대로.
-
 **여기까지는 전부 켜도 차가 움직이지 않는다** — estop 신호가 없으면 MGM이 정지를
 유지하기 때문 (§5.7 워치독). 이게 "장전만 된" 안전 상태다.
 
@@ -124,10 +122,16 @@ IMU를 뗐거나 문제면 `-p imu_port:=off`로 기존 COG/접선 동작 그대
 ```bash
 # V5 [차량 PC] — 블랙박스 시작
 cd ~/FMA_ws/src/stack_gps/tools/drive_log
-./record_drive.sh run1 <코스CSV>
+./record_drive.sh run1 $HOME/FMA_ws/src/stack_gps/waypoints/waypoints_course_1_20260801_170519.csv
+
 
 # V6 [차량 PC] — ★ 이 줄이 곧 출발이다 ★  (비상정지 담당·동행 준비 확인 후!)
 ros2 run stack_estop stack_estop_node
+
+
+cd ~/FMA_ws/src/stack_gps/tools/drive_log
+python3 manual_go.py
+
 ```
 
 **세우는 법** (급한 순서): ① 물리 비상정지 ② V6에서 Ctrl-C (250ms 내 정지) ③ 코스 완주 자연 정지
@@ -168,6 +172,3 @@ ros2 bag play  ~/FMA_ws/drive_logs/run1_*/bag    # RViz/live_view로 그날 재�
 | 첫 점이 차량 뒤(x<0) | 차가 트랙 진행 방향과 반대 — 돌려 세우기 |
 | target_ref 나오는데 바퀴 무반응 | candump로 CAN TX 확인 → dSPACE 쪽(손상민) 수신 확인 |
 | 곡선에서 크게 이탈 | 기록이 너무 빨랐음 — 더 느리게, --spacing 0.2로 재기록 |
-| 상태 로그 `IMU:없음` | /dev/ttyUSB_IMU 존재·USB 연결 확인 (udev가 자동 명명) |
-| 융합 정렬 후에도 선회에서 이탈 | IMU yaw 부호 의심 — error_log의 imu_yaw_deg가 좌회전 시 감소하면 `-p imu_yaw_sign:=-1.0` |
-| CRC오류 다수 | IMU USB 케이블·전원 노이즈 — 케이블 교체 |

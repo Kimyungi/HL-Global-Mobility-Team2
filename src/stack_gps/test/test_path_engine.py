@@ -112,6 +112,44 @@ def test_csv_roundtrip():
         os.unlink(path)
 
 
+def test_csv_drops_non_fixed_rows():
+    """FLOAT(q5) 오염점은 로드 시 제외 — 2026-08-01 course_1 idx 0·84 사례."""
+    rows = ["idx,utc,lat,lon,height_m,east_m,north_m,quality"]
+    track = make_track([(0.3 * i, 0.0) for i in range(10)])
+    for i, (lat, lon) in enumerate(track):
+        q = 5 if i in (0, 4) else 4          # 시작점·중간점 오염
+        rows.append(f"{i},000000.00,{lat:.7f},{lon:.7f},50.000,0,0,{q}")
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+        f.write("\n".join(rows) + "\n")
+        path = f.name
+    try:
+        logs = []
+        pts = load_waypoints_csv(path, log=logs.append)
+        assert len(pts) == 8
+        # 오염 시작점이 원점이 되지 않는다 (CSV는 소수 7자리 반올림 — 근사 비교)
+        assert abs(pts[0][0] - track[1][0]) < 1e-6
+        assert abs(pts[0][1] - track[1][1]) < 1e-6
+        assert all(abs(la - track[4][0]) > 1e-9 or abs(lo - track[4][1]) > 1e-9
+                   for la, lo in pts)
+        assert logs and "2개" in logs[0]
+    finally:
+        os.unlink(path)
+
+
+def test_csv_without_quality_column_loads_all():
+    """quality 열이 없는 구형/수제 CSV는 전부 통과."""
+    rows = ["lat,lon"]
+    for lat, lon in make_track([(0.3 * i, 0.0) for i in range(5)]):
+        rows.append(f"{lat:.7f},{lon:.7f}")
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+        f.write("\n".join(rows) + "\n")
+        path = f.name
+    try:
+        assert len(load_waypoints_csv(path)) == 5
+    finally:
+        os.unlink(path)
+
+
 def test_wrap_angle():
     assert abs(wrap_angle(3 * math.pi) + math.pi) < 1e-9
     assert abs(wrap_angle(-0.1) + 0.1) < 1e-9

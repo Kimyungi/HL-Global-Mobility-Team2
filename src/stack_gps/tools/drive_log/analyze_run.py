@@ -48,7 +48,9 @@ def main():
                 (topics[topic],)):
             yield ts * 1e-9, deserialize_message(bytes(data), typ)
 
-    trk = list(csv.DictReader(open(trk_csv)))
+    # 노드(load_waypoints_csv)와 동일하게 비-FIXED 점 제외 — FLOAT 오염 방지
+    trk = [r for r in csv.DictReader(open(trk_csv))
+           if r.get("quality") is None or int(r["quality"]) == 4]
     lat0, lon0 = float(trk[0]["lat"]), float(trk[0]["lon"])
     te = [(float(r["lon"]) - lon0) * M * math.cos(math.radians(lat0)) for r in trk]
     tn = [(float(r["lat"]) - lat0) * M for r in trk]
