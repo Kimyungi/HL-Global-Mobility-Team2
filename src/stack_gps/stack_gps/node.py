@@ -63,7 +63,9 @@ class StackGpsNode(Node):
         self.declare_parameter('cog_max_age', 1.0)    # [s] COG 신선도 한계
         self.declare_parameter('imu_port', '/dev/ttyUSB_IMU')  # 'off' = IMU 없이
         self.declare_parameter('imu_baud', 921600)
-        self.declare_parameter('imu_yaw_sign', 1.0)   # -1 = IMU yaw가 CW+일 때
+        # HFI-A9 실측(2026-08-03, tools/imu_sign_check.py): yaw는 시계+(나침반
+        # 방식) = ENU와 반대 → 기본 -1.0. 기종 교체·재장착 시 도구로 재판정.
+        self.declare_parameter('imu_yaw_sign', -1.0)
         self.declare_parameter('fusion_alpha', 0.1)   # offset 저역통과 이득
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
         self.declare_parameter('parking_zone_ranges', [0])  # 기본 [0] = 미설정(쌍 안 됨)
