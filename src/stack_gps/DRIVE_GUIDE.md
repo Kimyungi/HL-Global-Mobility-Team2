@@ -98,7 +98,7 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 ros2 run stack_gps stack_gps_node --ros-args \
     -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_course_1_20260801_170519.csv \
     -p rtcm_host:=127.0.0.1 \
-    -p error_log_csv:=$HOME/FMA_ws/drive_logs/lateral_run2.csv
+    -p error_log_csv:=$HOME/FMA_ws/drive_logs/lateral_$(date +%m%d_%H%M).csv
 
 # V3 [차량 PC]
 ros2 launch bridge_dspace bridge.launch.py
