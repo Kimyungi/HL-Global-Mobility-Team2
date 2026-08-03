@@ -119,6 +119,7 @@ class StackGpsNode(Node):
                 "IMU 꺼짐 — 헤딩은 COG/접선만 사용 (정지 시 절대 헤딩 없음)")
         self._heading_src = '접선'
         self._imu_gen = 0
+        self._cog_ok = False
         self._last_snap = None
         self._err_log = None
         log_path = p('error_log_csv').value
@@ -174,8 +175,15 @@ class StackGpsNode(Node):
         # 기존 COG/접선 동작과 동일 (출발 전 정렬 필수 — path_engine 참조)
         now = time.monotonic()
         cog = self.link.latest_cog()
-        cog_valid = (cog is not None and cog[0] >= self.cog_min_speed
-                     and cog[2] <= self.cog_max_age)
+        # COG 유효 판정에 히스테리시스 — 속도가 문턱(0.5m/s)에 걸치면 10Hz로
+        # COG↔접선이 깜빡이며 발행 프레임이 흔들린다 (2026-08-03 출발 구간 실사례)
+        if cog is None or cog[2] > self.cog_max_age:
+            self._cog_ok = False
+        elif self._cog_ok:
+            self._cog_ok = cog[0] >= 0.7 * self.cog_min_speed
+        else:
+            self._cog_ok = cog[0] >= self.cog_min_speed
+        cog_valid = self._cog_ok
         if self.fusion is not None and self.imu is not None:
             gen = self.imu.generation()
             if gen != self._imu_gen:
@@ -210,6 +218,7 @@ class StackGpsNode(Node):
             msg.points.append(rp)
         msg.accel_zone = snap['accel_zone']
         msg.parking_zone = snap['parking_zone']
+        msg.at_end = snap['at_end']
         msg.fix_quality = quality
         self.pub.publish(msg)
         self._last_snap = snap
@@ -279,7 +288,9 @@ class StackGpsNode(Node):
                 align = (f"정렬 {math.degrees(off):+.0f}°" if off is not None
                          else "미정렬(직진 주행 필요)")
                 imu_stat = (f"  IMU:{frames / 2.0:.0f}Hz {align}"
-                            + (f" CRC오류 {crc_err}" if crc_err else ""))
+                            + (f" CRC오류 {crc_err}" if crc_err else "")
+                            + (f" 잔차거부 {self.fusion.rejected}"
+                               if self.fusion.rejected else ""))
         self.get_logger().info(
             f"{qnames.get(quality, quality)}  age {age:.1f}s  RTCM {rtcm:.0f}B/s"
             f"  헤딩:{self._heading_src}{imu_stat}{detail}")

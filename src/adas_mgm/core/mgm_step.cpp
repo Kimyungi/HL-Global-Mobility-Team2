@@ -80,12 +80,14 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
     case MGM_STATE_LANE:
     case MGM_STATE_WAYPOINT:
       out.path_source = (st.state == MGM_STATE_LANE) ? MGM_SRC_LANE : MGM_SRC_GPS;
-      // 종방향 우선권: 긴급 정지 > 신호등 정지 > 가속구간 > 기본 속도
+      // 종방향 우선권: 긴급 정지 > 신호등 정지 > 트랙 종점(waypoint만) > 가속구간 > 기본 속도
       if (s.estop) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
       } else if (s.traffic_stop_required) {
         out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
+      } else if (st.state == MGM_STATE_WAYPOINT && s.gps_at_end) {
+        out.v_ref = 0.0f;  // 트랙 종점 — 통과 시 ref가 뒤로 가 유턴 (§4, 2026-08-03)
       } else if (s.gps_accel_zone) {
         out.v_ref = st.params.v_accel_zone;
       } else {

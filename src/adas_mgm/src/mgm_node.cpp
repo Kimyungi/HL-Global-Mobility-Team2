@@ -69,6 +69,7 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   toCorePath(m.gps.points, s.gps_path);
   s.gps_accel_zone = m.gps.accel_zone;
   s.gps_parking_zone = m.gps.parking_zone;
+  s.gps_at_end = m.gps.at_end;
   s.avoid_obstacle_detected = m.avoid.obstacle_detected;
   s.avoid_avoidable = m.avoid.avoidable;
   s.avoid_ttc = m.avoid.ttc;

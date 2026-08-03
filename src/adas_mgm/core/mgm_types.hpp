@@ -59,6 +59,7 @@ struct CoreSnapshot
   CorePath gps_path;
   bool gps_accel_zone;
   bool gps_parking_zone;
+  bool gps_at_end;
   // stack_avoid
   bool avoid_obstacle_detected;
   bool avoid_avoidable;
