@@ -27,7 +27,7 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
-from fma_interfaces.msg import GpsPath, RefPoint
+from fma_interfaces.msg import EstopRequest, GpsPath, RefPoint
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Path
 from rclpy.qos import DurabilityPolicy, QoSProfile
@@ -133,9 +133,14 @@ class StackGpsNode(Node):
             self._err_log = open(log_path, 'w', buffering=1)  # line-buffered
             self._err_log.write(
                 "stamp_s,lat,lon,quality,idx,cross_track_m,at_end,fix_age_s,"
-                "heading_deg,heading_src,imu_yaw_deg,offset_deg\n")
+                "heading_deg,heading_src,imu_yaw_deg,offset_deg,go\n")
             self.get_logger().info(f"횡오차 로그: {log_path}")
         self._last_fix_t = None  # 새 GGA 판별용 (gps_fix는 새 측정에만 발행)
+        # 자율/수동 구분 로그용 — GO(estop 해제) 발행 중인지. 판단 아님, 기록만.
+        # (2026-08-03: 종점 정지 후 조이스틱 이동이 자율 유턴으로 오독된 사례)
+        self._go_t = None
+        self.sub_estop = self.create_subscription(
+            EstopRequest, '/perception/estop', self._on_estop, 1)
         self.pub = self.create_publisher(GpsPath, '/perception/gps_path', 1)
         # 디버그·시각화용 (MGM 계약 아님): RViz Path + 전역 위치 + TF(map→base_link)
         self.pub_viz = self.create_publisher(Path, '/perception/gps_path_viz', 1)
@@ -240,11 +245,13 @@ class StackGpsNode(Node):
             imu_deg = f"{math.degrees(euler[2]):.1f}" if euler else ""
             off = self.fusion.offset if self.fusion is not None else None
             off_deg = f"{math.degrees(off):.1f}" if off is not None else ""
+            go = int(self._go_t is not None
+                     and time.monotonic() - self._go_t < 0.25)
             self._err_log.write(
                 f"{t:.3f},{lat:.7f},{lon:.7f},{quality},{snap['idx']},"
                 f"{snap['cross_track_m']:.3f},{int(snap['at_end'])},{age:.3f},"
                 f"{math.degrees(yaw):.1f},{self._heading_src},"
-                f"{imu_deg},{off_deg}\n")
+                f"{imu_deg},{off_deg},{go}\n")
 
         viz = Path()
         viz.header = msg.header
@@ -277,6 +284,10 @@ class StackGpsNode(Node):
         tf.transform.rotation.z = math.sin(yaw / 2.0)
         tf.transform.rotation.w = math.cos(yaw / 2.0)
         self.tf_bc.sendTransform(tf)
+
+    def _on_estop(self, msg):
+        # estop=false 하트비트(manual_go/stack_estop)가 살아 있는 동안만 GO
+        self._go_t = time.monotonic() if not msg.estop else None
 
     def report_status(self):
         fix = self.link.latest_fix()
