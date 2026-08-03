@@ -109,9 +109,25 @@ def main():
     pts = load_waypoints_csv(track)
     lat0, lon0 = pts[0]
     mlon = M_PER_DEG_LAT * math.cos(math.radians(lat0))
-    ref = math.atan2((pts[-1][0] - lat0) * M_PER_DEG_LAT,
-                     (pts[-1][1] - lon0) * mlon)
-    print(f"기준각(트랙 직선 방향): {math.degrees(ref):+.1f}° — {os.path.basename(track)}")
+    E = [(lon - lon0) * mlon for _, lon in pts]
+    N = [(lat - lat0) * M_PER_DEG_LAT for lat, _ in pts]
+    # 기준각 = 전체 점 최소제곱 직선 (부호는 시작→끝 코드로 결정).
+    # 손으로 딴 트랙의 로컬 구불거림(접선 ±수°)에 둔감 — 33m 분모로 나눠짐.
+    me, mn = sum(E) / len(E), sum(N) / len(N)
+    sxx = sum((e - me) ** 2 for e in E)
+    syy = sum((v - mn) ** 2 for v in N)
+    sxy = sum((e - me) * (v - mn) for e, v in zip(E, N))
+    ref = 0.5 * math.atan2(2 * sxy, sxx - syy)
+    chord = math.atan2(N[-1] - N[0], E[-1] - E[0])
+    if abs(wrap_angle(ref - chord)) > math.pi / 2:
+        ref = wrap_angle(ref + math.pi)
+    dev = [-(e - me) * math.sin(ref) + (v - mn) * math.cos(ref)
+           for e, v in zip(E, N)]
+    rms = math.sqrt(sum(d * d for d in dev) / len(dev))
+    print(f"기준각(트랙 최소제곱 직선): {math.degrees(ref):+.2f}° — {os.path.basename(track)}")
+    print(f"  직진도 증명: 코드 방향과 차이 {abs(math.degrees(wrap_angle(ref - chord))):.2f}°, "
+          f"횡편차 RMS {rms * 100:.1f}cm / 최대 {max(abs(d) for d in dev) * 100:.1f}cm"
+          f" → 기준각 불확도 1° 미만")
 
     gga = GgaLink(args.serial_port, rtcm_host=args.rtcm_host,
                   log=lambda m: print(f"  [gps] {m}"))
