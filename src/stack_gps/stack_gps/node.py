@@ -59,7 +59,9 @@ class StackGpsNode(Node):
         self.declare_parameter('n_points', 30)
         self.declare_parameter('publish_period', 0.1)
         self.declare_parameter('stale_timeout', 1.5)  # [s] 이보다 오래된 fix는 무효
-        self.declare_parameter('cog_min_speed', 0.5)  # [m/s] 이상 이동 시 COG를 헤딩으로
+        # v_base(MGM params.yaml)보다 낮아야 이동 중 COG가 잡힌다.
+        # 0.25에서 COG 노이즈 ~7° 수준 — 융합 저역통과가 흡수 (저속 시험 대응)
+        self.declare_parameter('cog_min_speed', 0.25)
         self.declare_parameter('cog_max_age', 1.0)    # [s] COG 신선도 한계
         self.declare_parameter('imu_port', '/dev/ttyUSB_IMU')  # 'off' = IMU 없이
         self.declare_parameter('imu_baud', 921600)

@@ -6,7 +6,10 @@ mgm_node:
     n_cycles: 20            # 10ms × 20 = 200ms 연속
 
     # 스테이트별 속도 [m/s]
-    v_base: 0.5
+    # 0.3 = 저속 재시험 설정 (2026-08-03 위빙·과회전 원인 분리용 — dSPACE
+    # 조향 튜닝 후 0.5로 복원). stack_gps cog_min_speed(0.25)보다 높아야
+    # 이동 중 COG가 잡혀 융합이 정렬된다.
+    v_base: 0.3
     v_accel_zone: 1.0
     v_narrow: 0.2
 
