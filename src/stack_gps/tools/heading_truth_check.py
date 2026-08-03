@@ -98,8 +98,12 @@ def main():
     ap.add_argument("--track", required=True, help="직선 트랙 CSV (기준각)")
     ap.add_argument("--serial-port", default="/dev/ttyRover")
     ap.add_argument("--imu-port", default="/dev/ttyUSB_IMU")
-    ap.add_argument("--rtcm-host", default="127.0.0.1")
+    ap.add_argument("--rtcm-host", default="127.0.0.1",
+                    help="'off'면 베이스 없이 진행 — COG는 도플러 기반이라 "
+                         "RTK 보정 불필요, 이 시험은 위치를 안 씀")
     args = ap.parse_args()
+    if args.rtcm_host.lower() in ("off", "none"):
+        args.rtcm_host = ""
 
     track = sorted(glob.glob(args.track))[-1] if "*" in args.track else args.track
     pts = load_waypoints_csv(track)
