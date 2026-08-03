@@ -75,6 +75,23 @@ def test_imu_staleness_gates_everything():
     assert f.heading(5.0) is None          # IMU 죽으면 융합도 죽는다
 
 
+def test_innovation_gate_rejects_reverse_cog():
+    """후진 시 COG는 차머리 반대(≈180°) — offset이 끌려가면 안 된다.
+    (2026-08-03 주행 말미 offset 124.7°→21.1° 오염 재발 방지)"""
+    f = HeadingFusion(alpha=0.1)
+    f.update_imu(0.0, t=0.0)
+    f.update_cog(1.0, t=0.0)               # 정렬: offset=1.0
+    for i in range(1, 20):                 # 후진 주행: COG가 지속적으로 ~180° 반대
+        f.update_imu(0.0, t=float(i))
+        f.update_cog(1.0 + math.pi, t=float(i))
+    assert f.offset == pytest.approx(1.0)  # 오염 없음
+    assert f.rejected == 19
+    # 정상 소잔차는 여전히 통과
+    f.update_imu(0.0, t=20.0)
+    f.update_cog(1.05, t=20.0)
+    assert f.offset == pytest.approx(1.005)
+
+
 def test_reset_alignment_requires_realignment():
     """IMU 재연결(전원 재인가) 시 offset 폐기 → 재정렬 전까지 None."""
     f = HeadingFusion()
