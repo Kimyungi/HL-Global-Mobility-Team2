@@ -126,13 +126,13 @@ cd ~/FMA_ws/src/stack_gps/tools/drive_log
 
 
 # V6 [차량 PC] — ★ 이 줄이 곧 출발이다 ★  (비상정지 담당·동행 준비 확인 후!)
-ros2 run stack_estop stack_estop_node
-
-
-cd ~/FMA_ws/src/stack_gps/tools/drive_log
-python3 manual_go.py
-
+# GPS 단독 주행 (라이다 없음 — 현재 구성):
+python3 ~/FMA_ws/src/stack_gps/tools/drive_log/manual_go.py
+# 정식 구성 (라이다 장착 시) — 위 대신 이것. 둘 동시 실행 절대 금지(신호 충돌):
+# ros2 run stack_estop stack_estop_node
 ```
+
+⚠ manual_go는 돌발 장애물 자동 정지가 없다 — 물리 비상정지 담당 배치·저속·개활지 필수.
 
 **세우는 법** (급한 순서): ① 물리 비상정지 ② V6에서 Ctrl-C (250ms 내 정지) ③ 코스 완주 자연 정지
 
@@ -140,8 +140,9 @@ run 종료 처리: V6 Ctrl-C(이미 세웠으면 생략) → V5 Ctrl-C(bag 마�
 다음 run은 V5·V6만 다시 켠다. 코스를 바꿀 때만 V2를 Ctrl-C 후 새 CSV로 재시작.
 
 첫 주행 규칙: dSPACE v_ref 상한 보행속도(~1m/s) / 첫 목표 "직선 10m" → 곡선 → 전체
-코스 → 속도 상승 / 사고·이상 순간에도 **V5는 끄지 말 것** / V6를 켰는데 출발 안 하면
-차 앞 장애물(estop이 보고 있음)과 `/scan` 유무 확인.
+코스 → 속도 상승 / 사고·이상 순간에도 **V5는 끄지 말 것** / V6를 켰는데 출발 안 하면:
+manual_go 구성은 `/perception/gps_path` fix_quality·`/adas/target_ref` 발행 확인,
+stack_estop 구성은 차 앞 장애물(estop이 보고 있음)과 `/scan` 유무 확인.
 
 ---
 
