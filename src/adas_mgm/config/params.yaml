@@ -16,6 +16,11 @@ mgm_node:
     # avoid 안전 바닥
     ttc_stop: 0.8           # [s]
 
+    # 역방향 정지 (§4 waypoint) — |ref[0].yaw| > 2.1rad(120°)가 50틱(0.5s)
+    # 지속되면 차가 경로를 등진 것 → v_ref 0 (유턴 후 트랙 역추종 차단)
+    wrongway_yaw_rad: 2.1
+    wrongway_cycles: 50
+
     # estop 입력 신선도 watchdog (wrapper 입력 컨디셔닝 — 판단은 코어)
     # 미수신 또는 이 시간 초과 staleness → 스냅샷 estop=true 보정.
     # stack_estop 하트비트 50ms 기준 5주기.

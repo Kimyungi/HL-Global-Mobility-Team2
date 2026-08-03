@@ -29,6 +29,12 @@ void transition(const CoreSnapshot & s, CoreState & st)
   st.lane_low_cnt = (s.lane_confidence < st.params.lane_conf_exit) ? st.lane_low_cnt + 1 : 0;
   st.lane_high_cnt = (s.lane_confidence > st.params.lane_conf_return) ? st.lane_high_cnt + 1 : 0;
 
+  // 역방향 카운터 (§4 waypoint) — GPS 경로 첫 점의 상대 yaw가 임계를 넘으면
+  // 차가 경로를 등진 것 (유턴 후 트랙 역추종, 2026-08-03 2회 재현)
+  const float y0 = (s.gps_path.n > 0) ? s.gps_path.pts[0].yaw : 0.0f;
+  const bool wrongway = (y0 > st.params.wrongway_yaw) || (y0 < -st.params.wrongway_yaw);
+  st.wrongway_cnt = wrongway ? st.wrongway_cnt + 1 : 0;
+
   switch (st.state) {
     case MGM_STATE_LANE:
       if (s.gps_parking_zone && s.parking_space_found) {
@@ -88,6 +94,10 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
       } else if (st.state == MGM_STATE_WAYPOINT && s.gps_at_end) {
         out.v_ref = 0.0f;  // 트랙 종점 — 통과 시 ref가 뒤로 가 유턴 (§4, 2026-08-03)
+      } else if (st.state == MGM_STATE_WAYPOINT &&
+        st.wrongway_cnt >= st.params.wrongway_cycles)
+      {
+        out.v_ref = 0.0f;  // 역방향 — 경로를 등진 채 주행 금지 (§4, 2026-08-03)
       } else if (s.gps_accel_zone) {
         out.v_ref = st.params.v_accel_zone;
       } else {

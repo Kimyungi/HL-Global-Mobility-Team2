@@ -93,6 +93,8 @@ struct CoreParams
   int32_t blend_cycles;    // 스테이트 전환 ref 블렌드 구간 (틱)
   float a_up;              // [m/s^2] 가속 rate limit
   float a_down;            // [m/s^2] 일반 감속 rate limit (immediate_stop은 우회)
+  float wrongway_yaw;      // [rad] 역방향 판정 |ref[0].yaw| 임계 (waypoint, §4)
+  int32_t wrongway_cycles; // 역방향 N주기 연속 조건
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -104,6 +106,7 @@ struct CoreState
   uint8_t avoid_return;                   // 복귀처 변수 1개만 기억 (§4)
   int32_t lane_low_cnt;
   int32_t lane_high_cnt;
+  int32_t wrongway_cnt;                   // 역방향 지속 카운터 (waypoint, §4)
   // ref 조립 (전환 연속 처리)
   uint8_t last_src;                       // MGM_SRC_*
   int32_t blend_left;
