@@ -44,6 +44,13 @@ class HeadingFusion:
         """offset 초기화 완료 여부 — False면 heading()은 항상 None."""
         return self._offset is not None
 
+    def reset_alignment(self):
+        """IMU 재연결(전원 재인가 가능성) 시 호출 — yaw 기준점이 바뀌었을 수
+        있으므로 기존 offset을 폐기하고 다음 직진 COG로 재정렬한다.
+        리셋 직후 heading()은 None → 호출자는 COG/접선 폴백으로 안전."""
+        self._offset = None
+        self.last_innovation = None
+
     def update_imu(self, yaw_rad, t, gyro_z=None):
         self._imu = (self._sign * yaw_rad, t)
         if gyro_z is not None:

@@ -118,6 +118,7 @@ class StackGpsNode(Node):
             self.get_logger().warn(
                 "IMU 꺼짐 — 헤딩은 COG/접선만 사용 (정지 시 절대 헤딩 없음)")
         self._heading_src = '접선'
+        self._imu_gen = 0
         self._last_snap = None
         self._err_log = None
         log_path = p('error_log_csv').value
@@ -176,6 +177,14 @@ class StackGpsNode(Node):
         cog_valid = (cog is not None and cog[0] >= self.cog_min_speed
                      and cog[2] <= self.cog_max_age)
         if self.fusion is not None and self.imu is not None:
+            gen = self.imu.generation()
+            if gen != self._imu_gen:
+                self._imu_gen = gen
+                if self.fusion.aligned:
+                    self.get_logger().warn(
+                        "IMU 재연결 감지 — yaw 기준점 리셋 가능성, 헤딩 오프셋 폐기 "
+                        "(다음 직진에서 자동 재정렬)")
+                self.fusion.reset_alignment()
             euler = self.imu.latest_euler()
             if euler is not None:
                 gz = self.imu.latest_gyro_z()

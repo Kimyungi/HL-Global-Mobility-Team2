@@ -76,6 +76,7 @@ class ImuLink:
         self._gyro_z = None   # (wz[rad/s], monotonic_t)
         self._frames = 0
         self._crc_err = 0
+        self._gen = 0   # 시리얼 (재)연결 세대 — 재연결 = 전원 재인가 가능성
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
@@ -108,6 +109,12 @@ class ImuLink:
             self._frames = self._crc_err = 0
         return out
 
+    def generation(self):
+        """시리얼 (재)연결 횟수. 값이 바뀌면 USB 재삽입 등으로 장치 전원이
+        재인가됐을 수 있다 → IMU yaw 기준점 리셋 가능성 (융합 오프셋 무효)."""
+        with self._lock:
+            return self._gen
+
     def _run(self):
         ser, buf = None, b""
         while not self._stop.is_set():
@@ -115,6 +122,8 @@ class ImuLink:
                 if ser is None:
                     ser = serial.Serial(self._serial_port, self._baud,
                                         timeout=0.2)
+                    with self._lock:
+                        self._gen += 1
                     self._log(f"IMU 시리얼 연결: {self._serial_port}")
                 buf += ser.read(ser.in_waiting or 1)
                 frames, buf, crc_err = parse_stream(buf)

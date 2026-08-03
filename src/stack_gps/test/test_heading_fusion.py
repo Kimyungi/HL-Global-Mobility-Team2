@@ -75,6 +75,20 @@ def test_imu_staleness_gates_everything():
     assert f.heading(5.0) is None          # IMU 죽으면 융합도 죽는다
 
 
+def test_reset_alignment_requires_realignment():
+    """IMU 재연결(전원 재인가) 시 offset 폐기 → 재정렬 전까지 None."""
+    f = HeadingFusion()
+    f.update_imu(0.5, t=0.0)
+    f.update_cog(1.0, t=0.0)
+    assert f.heading(0.0) is not None
+    f.reset_alignment()
+    assert not f.aligned
+    assert f.heading(0.0) is None          # 폴백(COG/접선)으로 안전
+    f.update_imu(2.0, t=1.0)               # 재인가 후 새 yaw 기준
+    f.update_cog(1.0, t=1.0)               # 다음 직진 COG로 재정렬
+    assert f.heading(1.0) == pytest.approx(1.0)
+
+
 def test_gyro_gate_blocks_update_while_turning():
     f = HeadingFusion(gyro_gate=0.15)
     f.update_imu(0.0, t=0.0, gyro_z=0.5)   # 선회 중
