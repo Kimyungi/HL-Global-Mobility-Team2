@@ -35,6 +35,15 @@ void transition(const CoreSnapshot & s, CoreState & st)
   const bool wrongway = (y0 > st.params.wrongway_yaw) || (y0 < -st.params.wrongway_yaw);
   st.wrongway_cnt = wrongway ? st.wrongway_cnt + 1 : 0;
 
+  // 종점 래치 (§4) — 정지 후 미세하게 밀려 최근접점이 뒤로 바뀌면 at_end가
+  // 풀려 재출발·유턴하던 것 방지 (2026-08-03 직선 run 실사례). estop 인가
+  // (= run 종료/새 run 준비)로만 해제.
+  if (s.estop) {
+    st.at_end_latched = false;
+  } else if (st.state == MGM_STATE_WAYPOINT && s.gps_at_end) {
+    st.at_end_latched = true;
+  }
+
   switch (st.state) {
     case MGM_STATE_LANE:
       if (s.gps_parking_zone && s.parking_space_found) {
@@ -92,8 +101,10 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.immediate_stop = true;
       } else if (s.traffic_stop_required) {
         out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
-      } else if (st.state == MGM_STATE_WAYPOINT && s.gps_at_end) {
-        out.v_ref = 0.0f;  // 트랙 종점 — 통과 시 ref가 뒤로 가 유턴 (§4, 2026-08-03)
+      } else if (st.state == MGM_STATE_WAYPOINT &&
+        (s.gps_at_end || st.at_end_latched))
+      {
+        out.v_ref = 0.0f;  // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03)
       } else if (st.state == MGM_STATE_WAYPOINT &&
         st.wrongway_cnt >= st.params.wrongway_cycles)
       {

@@ -107,6 +107,7 @@ struct CoreState
   int32_t lane_low_cnt;
   int32_t lane_high_cnt;
   int32_t wrongway_cnt;                   // 역방향 지속 카운터 (waypoint, §4)
+  bool at_end_latched;                    // 종점 도달 래치 — estop 인가 시 해제 (§4)
   // ref 조립 (전환 연속 처리)
   uint8_t last_src;                       // MGM_SRC_*
   int32_t blend_left;
