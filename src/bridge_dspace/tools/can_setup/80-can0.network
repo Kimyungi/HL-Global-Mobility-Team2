@@ -1,0 +1,13 @@
+# systemd-networkd용 can0 설정 (FMA 팀 표준: PROTOCOL.md — classic CAN 1 Mbps)
+#
+# networkd가 활성인 머신에서는 udev(can_up.sh)·can-iface@ 서비스가 올린 설정을
+# networkd가 마지막에 덮어쓴다. 실사례(2026-08-03): 초기 실험 잔재였던
+# BitRate=500000 파일이 can_up.sh의 1 Mbps를 매 삽입마다 500k로 뒤집어
+# ERROR-PASSIVE를 유발했다. 이 파일은 install.sh가 설치하며, 반드시
+# PROTOCOL.md의 팀 표준 비트레이트와 일치시킬 것.
+[Match]
+Name=can0
+
+[CAN]
+BitRate=1000000
+RestartSec=100ms

@@ -54,6 +54,7 @@ ip -details link show can0 | grep bitrate
 | `Device "can0" does not exist` | PCAN 재삽입. 그래도 없으면 `dmesg | tail -20`에서 `peak_usb` 인식 확인 |
 | `can0 DOWN` | 자동 셋업 미설치 — `sudo ~/FMA_ws/src/bridge_dspace/tools/can_setup/install.sh` |
 | bitrate가 1000000이 아님 | 위 install.sh 재실행 후 PCAN 재삽입 |
+| bitrate가 **재삽입할 때마다** 500000 등으로 되돌아감 | systemd-networkd의 `/etc/systemd/network/*.network` 잔재가 udev 설정을 덮어쓰는 것 (실사례 2026-08-03, journalctl에 up→down→up 두 번 찍힘). install.sh 재실행이 표준 `80-can0.network`(1Mbps)로 교체해 준다 |
 
 ---
 
