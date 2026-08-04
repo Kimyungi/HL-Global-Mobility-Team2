@@ -35,6 +35,26 @@ def parse_gga(line):
         return None
 
 
+KNOT_TO_MPS = 0.514444
+
+
+def parse_rmc(line):
+    """RMC 문장 → (speed_mps, yaw_enu_rad) 또는 None.
+
+    course(진북 기준 시계방향 deg) → ENU yaw(동쪽 0, 반시계 +)로 변환.
+    정지 상태에서는 course 필드가 비어 있으므로 None을 반환한다.
+    """
+    f = line.split(",")
+    if len(f) < 9 or f[2] != "A" or not f[7] or not f[8]:
+        return None
+    try:
+        speed = float(f[7]) * KNOT_TO_MPS
+        yaw_enu = math.radians(90.0 - float(f[8]))
+        return speed, yaw_enu
+    except ValueError:
+        return None
+
+
 class GgaLink:
     def __init__(self, serial_port, baud=115200, rtcm_host="", rtcm_port=2101,
                  log=print):
@@ -45,6 +65,7 @@ class GgaLink:
         self._log = log
         self._lock = threading.Lock()
         self._fix = None          # (lat, lon, h, quality, monotonic_t)
+        self._cog = None          # (speed_mps, yaw_enu, monotonic_t) — RMC 이동방향
         self._rtcm_bytes = 0
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -65,6 +86,18 @@ class GgaLink:
                 return None
             lat, lon, h, q, t = self._fix
             return lat, lon, h, q, time.monotonic() - t, t
+
+    def latest_cog(self):
+        """(speed_mps, yaw_enu_rad, age_s) 또는 None — 이동방향(Course Over Ground).
+
+        단일 안테나 GPS의 헤딩 근사 — 전진 주행 중에만 유효하다.
+        속도·나이 판정은 호출자(노드)의 몫.
+        """
+        with self._lock:
+            if self._cog is None:
+                return None
+            spd, yaw, t = self._cog
+            return spd, yaw, time.monotonic() - t
 
     def rtcm_rate_and_reset(self):
         with self._lock:
@@ -120,16 +153,23 @@ class GgaLink:
                 while b"\n" in nmea_buf:
                     raw, nmea_buf = nmea_buf.split(b"\n", 1)
                     line = raw.decode(errors="ignore").strip()
-                    if not (line.startswith("$G") and "GGA" in line[:7]):
+                    if not line.startswith("$G"):
                         continue
-                    parsed = parse_gga(line)
-                    if parsed is None:
-                        continue
-                    _, lat, lon, h, quality = parsed
-                    if not (math.isfinite(lat) and math.isfinite(lon)):
-                        continue
-                    with self._lock:
-                        self._fix = (lat, lon, h, quality, time.monotonic())
+                    tag = line[3:6]
+                    if tag == "GGA":
+                        parsed = parse_gga(line)
+                        if parsed is None:
+                            continue
+                        _, lat, lon, h, quality = parsed
+                        if not (math.isfinite(lat) and math.isfinite(lon)):
+                            continue
+                        with self._lock:
+                            self._fix = (lat, lon, h, quality, time.monotonic())
+                    elif tag == "RMC":
+                        rmc = parse_rmc(line)
+                        if rmc is not None:
+                            with self._lock:
+                                self._cog = (rmc[0], rmc[1], time.monotonic())
 
             except (OSError, serial.SerialException) as e:
                 self._log(f"⚠ 시리얼/네트워크 오류: {e} — 3초 후 재시도")

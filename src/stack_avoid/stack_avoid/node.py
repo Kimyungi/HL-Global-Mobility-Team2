@@ -7,7 +7,9 @@
   (avoid n_points=1: dSPACE quintic이 현재 자세에서 이 목표점으로 궤적을 채움)
 - 모든 차량/센서/튜닝 값은 `config/params.yaml`에서 로드(하드코딩 금지, CLAUDE.md §5).
 - LiDAR 장착 오프셋으로 vehicle frame(base_link=후축 중심) 보정 + static TF 발행.
-- avoidable/narrow_gap/maneuver_done/v_suggest 는 다음 단계(TODO).
+- narrow_gap: offset_max 안에 통과 가능한 열림이 없으면 True (감속 근거).
+- ttc 자차속도: dSPACE VehicleVector.v(신선) 우선, 미수신/오래되면 target_speed 폴백.
+- avoidable/maneuver_done/v_suggest 는 다음 단계(TODO).
 
 설계 메모:
 - 앞 LiDAR로 반응형 회피 (맵 생성 없음, REQUIREMENTS §계약).
@@ -25,10 +27,11 @@ from rcl_interfaces.msg import SetParametersResult
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import TransformStamped
 from tf2_ros import StaticTransformBroadcaster
-from fma_interfaces.msg import AvoidStatus, RefPoint
+from fma_interfaces.msg import AvoidStatus, RefPoint, VehicleVector
 
 TTC_INF = 1.0e9   # 장애물 없을 때 ttc (0 금지 — MGM이 즉시 정지 바닥을 밟음)
 EPS_SPEED = 1e-3  # 이보다 느리면 정지 상태로 보고 ttc=INF
+VV_FRESH_S = 0.2  # VehicleVector 신선도 [s] — 이보다 오래되면 목표속도로 폴백
 
 
 def wrap_to_pi(a: float) -> float:
@@ -89,6 +92,12 @@ class StackAvoidNode(Node):
         # LaserScan은 Best Effort(sensor data QoS) — 구독도 맞춰야 수신됨.
         self.sub = self.create_subscription(
             LaserScan, self.scan_topic, self.on_scan, qos_profile_sensor_data)
+        # 자차속도(TTC 입력): dSPACE 상태추정 VehicleVector.v 구독. Best Effort QoS.
+        self.ego_v = None          # 최근 수신 속도 [m/s] (None = 미수신)
+        self.ego_v_stamp = None    # 최근 수신 시각 (신선도 판정)
+        self.vv_sub = self.create_subscription(
+            VehicleVector, '/vehicle/vector', self.on_vehicle_vector,
+            qos_profile_sensor_data)
         self.pub = self.create_publisher(AvoidStatus, '/perception/avoid', 1)
         # 디버그: 전방 FOV만 남긴 스캔 (뒤쪽은 inf → RViz 미표기). forward_angle 검증용.
         self.front_scan_pub = self.create_publisher(
@@ -162,6 +171,22 @@ class StackAvoidNode(Node):
             f"forward={math.degrees(self.front_center):.0f}deg, v={self.target_speed}m/s")
         return SetParametersResult(successful=True)
 
+    def on_vehicle_vector(self, vv: VehicleVector):
+        """dSPACE 상태추정 수신 → 자차속도 갱신 (TTC 계산 입력). 후진도 대비해 절대값."""
+        self.ego_v = abs(float(vv.v))
+        self.ego_v_stamp = self.get_clock().now()
+
+    def _ego_speed(self) -> float:
+        """TTC용 자차속도 [m/s]. VehicleVector.v가 신선하면 그 값, 아니면 target_speed 폴백.
+
+        dSPACE 미연결(단독 테스트)·통신 끊김 시에도 TTC가 죽지 않도록 목표속도로 근사.
+        더 빠른 쪽을 쓰면 TTC가 작아져(보수적) 안전하나, 여기선 실측 우선·미가용 시 근사."""
+        if self.ego_v is not None and self.ego_v_stamp is not None:
+            age = (self.get_clock().now() - self.ego_v_stamp).nanoseconds * 1e-9
+            if age <= VV_FRESH_S:
+                return self.ego_v
+        return self.target_speed
+
     def on_scan(self, scan: LaserScan):
         """전방 통로 안 최근접 장애물 → 거리·TTC + 회피 목표점 발행."""
         self.front_scan_pub.publish(self._front_only_scan(scan))  # 시각화용
@@ -175,23 +200,23 @@ class StackAvoidNode(Node):
         msg.obstacle_detected = gap is not None and gap < self.detect_range
 
         # TTC = 거리 ÷ 자차속도 (정적 장애물 가정, REQUIREMENTS). 정지 중이면 INF.
-        # NOTE(stage2): 자차속도는 VehicleVector.v 구독으로 교체 예정. 지금은 목표속도 근사.
-        if gap is None or self.target_speed <= EPS_SPEED:
+        # 자차속도는 dSPACE VehicleVector.v(신선) 우선, 미수신/오래되면 target_speed 폴백.
+        speed = self._ego_speed()
+        if gap is None or speed <= EPS_SPEED:
             msg.ttc = TTC_INF
         else:
-            msg.ttc = float(gap / self.target_speed)
+            msg.ttc = float(gap / speed)
 
         # 회피 목표점 1개(follow-the-gap, 양쪽 고려), vehicle frame — 감지 시에만.
-        if msg.obstacle_detected:
-            tgt = self._gap_target(scan, gap)
-            msg.points = [tgt] if tgt is not None else []
-        else:
-            msg.points = []
+        # offset_max 안에 통과 가능한 열림이 없으면 None (여유 미달 지점을 억지로
+        # 내지 않음 — 팀장 리뷰 반영). 이 경우 narrow_gap 으로 감속 근거만 제공.
+        tgt = self._gap_target(scan, gap) if msg.obstacle_detected else None
+        msg.points = [tgt] if tgt is not None else []
 
         # TODO(stage2): avoidable = (측방 여유 확보 AND ttc >= ttc_stop). 판정 재료만.
         msg.avoidable = False
-        # TODO(stage2): 통과 최소폭(= width + 2*margin) 대비 여유 폭 좁음 판정.
-        msg.narrow_gap = False
+        # 감지했으나 offset_max 안에 통과 가능한 열림이 없음 = 통로 좁음 → 감속 근거.
+        msg.narrow_gap = msg.obstacle_detected and tgt is None
         # TODO(stage4): "스캔에 안 보임 = 완료" 금지. 측방 클리어런스/최근 위치 유지로 판정.
         msg.maneuver_done = False
         # TODO(stage3): 회피 기하 기반 권장 속도(v_suggest).
@@ -241,11 +266,14 @@ class StackAvoidNode(Node):
             if (b - a) >= pass_w:
                 cands.append((a + b) / 2.0)
 
-        # offset_max 안에 실현 가능한 것 우선, 직진에서 가장 덜 벗어나는 중심 선택
+        # offset_max 안에서 통과 가능한 열림만 실현 가능. 하나도 없으면 안전한
+        # 목표가 없는 것 → None (예전엔 ±offset_max로 클램프해 여유 미달 지점을
+        # 목표로 냈음. 팀장 리뷰 반영). narrow_gap 판정은 호출측(on_scan)이 담당.
         reach = [c for c in cands if abs(c) <= self.offset_max]
-        center = min(reach if reach else cands, key=abs)
-        target_y = max(-self.offset_max, min(self.offset_max, center))
-        return self._rp(obs_x, target_y)
+        if not reach:
+            return None
+        center = min(reach, key=abs)   # 직진에서 가장 덜 벗어나는 열림 (이미 clamp 불필요)
+        return self._rp(obs_x, center)
 
     @staticmethod
     def _rp(x: float, y: float, yaw: float = 0.0, curvature: float = 0.0) -> RefPoint:

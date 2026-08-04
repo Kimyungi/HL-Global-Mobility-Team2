@@ -37,6 +37,9 @@ import serial
 
 M_PER_DEG_LAT = 111_320.0
 
+# GGA quality 정확도 순위 (좋음 → 나쁨): FIXED > FLOAT > DGPS > GPS단독
+QUALITY_RANK = {4: 0, 5: 1, 2: 2, 1: 3, 0: 4}
+
 
 def parse_gga(line):
     """GGA 문장 → (utc, lat, lon, h_ellip, quality) 또는 None.
@@ -138,7 +141,11 @@ def main():
                 if parsed is None:
                     continue
                 utc, lat, lon, h, quality = parsed
-                if quality < args.min_quality:
+                # GGA quality는 순서 척도가 아니다 — FLOAT(5)가 FIXED(4)보다
+                # 숫자만 클 뿐 정확도는 낮다. 정확도 순위로 비교한다.
+                # (수치 비교 버그로 course_1에 FLOAT 점이 섞였던 원인, 2026-08-01)
+                if QUALITY_RANK.get(quality, 99) > QUALITY_RANK.get(
+                        args.min_quality, 0):
                     continue
                 if origin is None:
                     origin = (lat, lon)

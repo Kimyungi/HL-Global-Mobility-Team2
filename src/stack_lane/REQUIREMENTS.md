@@ -19,6 +19,8 @@
   - `detected` + `distance`[m, vehicle frame 전방 x]. 미검출 프레임에도 detected=false로 **매 주기 발행**
     (수신 측 stale 판정이 발행 주기에 의존).
   - `header.stamp` 필수 — 수신 측 신선도 판정 기준.
+  - **QoS: 기본(Reliable)으로 발행** — 수신 측(stack_traffic)이 기본 QoS 구독이라
+    SensorDataQoS(Best Effort)로 발행하면 연결 자체가 안 된다.
 - 금지: v_ref·정지 판단·모드 판단을 이 스택에서 하지 말 것 (CLAUDE.md §5.1). 정지선도 거리 보고만 — 정지 요구는 stack_traffic이, 적용은 MGM이 한다.
 - 검증 시나리오: 차선 신뢰도가 떨어질 때 confidence가 실제로 떨어지는지 (MGM 히스테리시스가 이 값에 의존). 정지선 접근~정차 직전까지 distance가 연속적으로 줄어드는지 (특히 **0.5m 이내 근거리에서 시야 이탈 전까지 유지되는지** — stack_traffic 정지 트리거가 0.5m).
 

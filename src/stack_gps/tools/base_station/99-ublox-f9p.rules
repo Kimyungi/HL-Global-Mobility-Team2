@@ -19,3 +19,7 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="0508", MODE="0666"
 
 # --- 로버 GPS (FST-UEF9P 등 u-blox 네이티브 USB, 01a9) → /dev/ttyRover 로 고정 ---
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", MODE="0666", GROUP="dialout", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="ttyRover"
+
+# --- 텔레메트리 라디오 (Holybro SiK, FTDI FT231X) → /dev/ttyRadio 로 고정 ---
+# 주의: 한 PC에 라디오 2대를 꽂으면 심볼릭 링크는 마지막 것만 가리킨다 (운용 시엔 1대씩)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", MODE="0666", GROUP="dialout", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="ttyRadio"

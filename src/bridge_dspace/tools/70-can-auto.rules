@@ -1,0 +1,5 @@
+# PCAN(및 모든 SocketCAN 어댑터) 꽂으면 자동으로 1Mbps 활성화
+# 설치: sudo cp 70-can-auto.rules /etc/udev/rules.d/
+#       sudo cp can_up.sh /usr/local/bin/ && sudo chmod +x /usr/local/bin/can_up.sh
+#       sudo udevadm control --reload
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="can[0-9]*", RUN+="/usr/local/bin/can_up.sh %k"

@@ -69,6 +69,7 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   toCorePath(m.gps.points, s.gps_path);
   s.gps_accel_zone = m.gps.accel_zone;
   s.gps_parking_zone = m.gps.parking_zone;
+  s.gps_at_end = m.gps.at_end;
   s.avoid_obstacle_detected = m.avoid.obstacle_detected;
   s.avoid_avoidable = m.avoid.avoidable;
   s.avoid_ttc = m.avoid.ttc;
@@ -155,6 +156,8 @@ public:
     p.blend_cycles = static_cast<int32_t>(declare_parameter<int>("blend_cycles", 10));
     p.a_up = static_cast<float>(declare_parameter<double>("a_up", 0.5));      // [m/s^2]
     p.a_down = static_cast<float>(declare_parameter<double>("a_down", 1.5));  // [m/s^2]
+    p.wrongway_yaw = static_cast<float>(declare_parameter<double>("wrongway_yaw_rad", 2.1));
+    p.wrongway_cycles = static_cast<int32_t>(declare_parameter<int>("wrongway_cycles", 50));
     mgm_init(core_state_, p);
 
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기
