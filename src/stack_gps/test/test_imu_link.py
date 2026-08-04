@@ -18,7 +18,7 @@ INERTIAL = bytes.fromhex(
 def test_euler_frame_decodes_to_degrees_seen_on_device():
     frames, rest, crc_err = parse_stream(EULER_1)
     assert crc_err == 0 and rest == b""
-    (kind, roll, pitch, yaw), = frames
+    (kind, roll, pitch, yaw, ts), = frames
     assert kind == 'euler'
     assert math.degrees(roll) == pytest.approx(2.183, abs=0.001)
     assert math.degrees(pitch) == pytest.approx(4.664, abs=0.001)
@@ -28,7 +28,7 @@ def test_euler_frame_decodes_to_degrees_seen_on_device():
 def test_inertial_frame_gyro_and_accel():
     frames, rest, crc_err = parse_stream(INERTIAL)
     assert crc_err == 0 and rest == b""
-    (kind, gx, gy, gz, ax, ay, az), = frames
+    (kind, gx, gy, gz, ax, ay, az, ts), = frames
     assert kind == 'inertial'
     assert abs(gz) < 0.1                      # 정지 캡처 → 선회율 ≈ 0
     assert az == pytest.approx(-1.03, abs=0.01)  # 중력 ≈ 1g
@@ -59,6 +59,13 @@ def test_garbage_between_frames_is_skipped():
     frames, rest, crc_err = parse_stream(
         b"\x00\xaaU" + EULER_1 + b"\xaa\x55\x99" + EULER_2 + b"\xaa")
     assert len(frames) == 2 and rest == b"\xaa"
+
+
+def test_device_timestamp_microseconds():
+    """장치 ts(offset 7:11, µs) — 자이로 적분의 dt 원천 (실기 간격 ~6.8ms)."""
+    e, _, _ = parse_stream(EULER_1)
+    i, _, _ = parse_stream(INERTIAL)
+    assert i[0][-1] - e[0][-1] == 3367  # 캡처 시 연속 프레임 간 3.367ms
 
 
 def test_crc_reference():

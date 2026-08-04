@@ -43,7 +43,9 @@ class Runner:
 
     def __init__(self, gga, imu):
         self.gga, self.imu = gga, imu
-        self.fusion = HeadingFusion(sign=-1.0)   # 노드 기본값과 동일
+        # 노드 기본값과 동일 — 자이로 적분 yaw(반시계+), 2026-08-04 지자기
+        # 오염 판명 후 오일러 yaw 폐기 (imu_link 참조)
+        self.fusion = HeadingFusion(sign=1.0)
         self.gyro_int = 0.0                      # 총 회전량 표시용
         self._cog_ok = False
         self._t_gyro = None
@@ -56,10 +58,10 @@ class Runner:
     def _run(self):
         while not self._stop.is_set():
             now = time.monotonic()
-            e = self.imu.latest_euler()
+            yawg = self.imu.latest_yaw_gyro()
             g = self.imu.latest_gyro_z()
-            if e is not None:
-                self.fusion.update_imu(e[2], now - e[3],
+            if yawg is not None:
+                self.fusion.update_imu(yawg[0], now - yawg[1],
                                        gyro_z=g[0] if g else None)
             if g is not None:
                 if self._t_gyro is not None:

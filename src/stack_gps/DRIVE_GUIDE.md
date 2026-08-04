@@ -181,5 +181,5 @@ ros2 bag play  ~/FMA_ws/drive_logs/run1_*/bag    # RViz/live_view로 그날 재�
 | target_ref 나오는데 바퀴 무반응 | candump로 CAN TX 확인 → dSPACE 쪽(손상민) 수신 확인 |
 | 곡선에서 크게 이탈 | 기록이 너무 빨랐음 — 더 느리게, --spacing 0.2로 재기록 |
 | 상태 로그 `IMU:없음` | /dev/ttyUSB_IMU 존재·USB 연결 확인 (udev가 자동 명명) |
-| 융합 정렬 후에도 선회에서 이탈 | IMU 부호/장착 의심 — `tools/imu_sign_check.py`로 재판정. HFI-A9 실측(08-03): yaw 시계+ → 노드 기본 `imu_yaw_sign=-1.0` 반영됨. **IMU 재장착·교체 때만 재실행** (수평면 회전 장착은 융합이 자동 흡수, 상하 뒤집힘만 부호가 바뀜). 로그의 imu_yaw_deg는 원시값이라 좌회전 시 감소가 정상, 융합 heading_deg는 증가가 정상 |
+| 융합 정렬 후에도 선회에서 이탈 | IMU 부호/장착 의심 — `tools/imu_sign_check.py`로 재판정. 헤딩 소스는 **자이로 적분 yaw(반시계+, 기본 imu_yaw_sign=+1.0)** — 오일러 yaw는 지자기 오염으로 08-04부터 미사용. 수평면 회전 장착은 융합이 자동 흡수, 상하 뒤집힘만 부호 반전. 로그 imu_yaw_deg = 자이로 적분값(좌회전 시 증가가 정상) |
 | IMU CRC오류 다수 | USB 케이블·전원 노이즈 — 케이블 교체 |

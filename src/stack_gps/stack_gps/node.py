@@ -37,7 +37,7 @@ from tf2_ros import TransformBroadcaster
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
 from stack_gps.imu_link import ImuLink
-from stack_gps.path_engine import PathEngine, load_waypoints_csv
+from stack_gps.path_engine import PathEngine, load_waypoints_csv, wrap_angle
 
 
 def _pair_ranges(flat, name, logger):
@@ -65,9 +65,10 @@ class StackGpsNode(Node):
         self.declare_parameter('cog_max_age', 1.0)    # [s] COG 신선도 한계
         self.declare_parameter('imu_port', '/dev/ttyUSB_IMU')  # 'off' = IMU 없이
         self.declare_parameter('imu_baud', 921600)
-        # HFI-A9 실측(2026-08-03, tools/imu_sign_check.py): yaw는 시계+(나침반
-        # 방식) = ENU와 반대 → 기본 -1.0. 기종 교체·재장착 시 도구로 재판정.
-        self.declare_parameter('imu_yaw_sign', -1.0)
+        # 헤딩 소스 = 자이로 적분 yaw (2026-08-04: 오일러 yaw는 지자기 오염으로
+        # 폐기 — imu_link 참조). 자이로는 반시계+ 실측 → 기본 +1.0.
+        # 기종 교체·재장착 시 tools/imu_sign_check.py로 재판정.
+        self.declare_parameter('imu_yaw_sign', 1.0)
         self.declare_parameter('fusion_alpha', 0.1)   # offset 저역통과 이득
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
         self.declare_parameter('parking_zone_ranges', [0])  # 기본 [0] = 미설정(쌍 안 됨)
@@ -201,10 +202,10 @@ class StackGpsNode(Node):
                         "IMU 재연결 감지 — yaw 기준점 리셋 가능성, 헤딩 오프셋 폐기 "
                         "(다음 직진에서 자동 재정렬)")
                 self.fusion.reset_alignment()
-            euler = self.imu.latest_euler()
-            if euler is not None:
+            yawg = self.imu.latest_yaw_gyro()
+            if yawg is not None:
                 gz = self.imu.latest_gyro_z()
-                self.fusion.update_imu(euler[2], now - euler[3],
+                self.fusion.update_imu(yawg[0], now - yawg[1],
                                        gyro_z=gz[0] if gz else None)
             if cog_valid:
                 self.fusion.update_cog(cog[1], now - cog[2])
@@ -241,8 +242,9 @@ class StackGpsNode(Node):
 
         if self._err_log is not None:
             t = self.get_clock().now().nanoseconds * 1e-9
-            euler = self.imu.latest_euler() if self.imu is not None else None
-            imu_deg = f"{math.degrees(euler[2]):.1f}" if euler else ""
+            yawg = self.imu.latest_yaw_gyro() if self.imu is not None else None
+            imu_deg = (f"{math.degrees(wrap_angle(yawg[0])):.1f}"
+                       if yawg else "")
             off = self.fusion.offset if self.fusion is not None else None
             off_deg = f"{math.degrees(off):.1f}" if off is not None else ""
             go = int(self._go_t is not None
