@@ -163,6 +163,26 @@ def test_gyro_gate_blocks_update_while_turning():
     f.update_imu(0.0, t=0.0, gyro_z=0.5)   # 선회 중
     f.update_cog(1.0, t=0.0)
     assert not f.aligned                   # 선회 중 COG는 짝짓기 오차 → 거부
-    f.update_imu(0.0, t=0.1, gyro_z=0.05)  # 직진
-    f.update_cog(1.0, t=0.1)
+    f.update_imu(0.0, t=0.5, gyro_z=0.05)  # 직진 (선회 종료 0.5s)
+    f.update_cog(1.0, t=0.5)
+    assert not f.aligned                   # 진정 시간(1s) 내 표본 — 거부
+    f.update_imu(0.0, t=1.5, gyro_z=0.05)
+    f.update_cog(1.0, t=1.5)               # 진정 후 → 통과
     assert f.aligned
+
+
+def test_stale_pivot_cog_not_reconsumed_at_standstill():
+    """선회 직후 정지: 선회 중 찍힌 낡은 COG가 (자이로≈0인 지금 기준으론
+    게이트를 다 통과해도) 진정 시간·dedupe에 걸려 offset을 못 끌고 간다.
+    (2026-08-04 3차 시험 실증: 이 경로로 자세마다 offset 수십° 오염)"""
+    f = HeadingFusion(seed_n=1)
+    f.update_imu(0.0, t=0.0, gyro_z=0.0)
+    f.update_cog(1.0, t=0.0)               # 정상 정렬 offset=1.0
+    # 제자리 선회 (t=1~3), 마지막 COG는 t=2.9에 원호 접선(+90° 오염) 측정
+    for i in range(20):
+        f.update_imu(0.1 * i, t=1.0 + 0.1 * i, gyro_z=0.3)
+    # 정지 (자이로 0) — 낡은 표본(t=2.9)이 50Hz 루프처럼 반복 소비 시도
+    for k in range(50):
+        f.update_imu(2.0, t=3.1 + 0.02 * k, gyro_z=0.0)
+        f.update_cog(2.0 + 1.0 + math.pi / 2, t=2.9, speed=0.3)
+    assert f.offset == pytest.approx(1.0)  # 오염 없음 (진정 시간 + dedupe)

@@ -25,7 +25,7 @@ class HeadingFusion:
     def __init__(self, alpha=0.1, imu_timeout=0.5, sign=1.0,
                  gyro_gate=0.15, inn_gate=math.radians(60.0),
                  seed_n=5, seed_width=1.0, seed_spread=math.radians(25.0),
-                 reseed_after=30, min_turn_radius=3.0):
+                 reseed_after=30, min_turn_radius=3.0, turn_settle=1.0):
         """alpha: offset 저역통과 이득 (COG 갱신 1회당).
         imu_timeout: IMU 샘플 신선도 한계 [s].
         sign: IMU yaw 부호 (+1 = CCW+, ENU와 동일 — HandsFree 기본).
@@ -45,7 +45,12 @@ class HeadingFusion:
           반경 R 미만의 원호 운동이므로 COG ≠ 차머리로 보고 거부.
           제자리 선회 시 안테나(회전 중심에서 ~1m)가 원호를 그리며
           0.3m/s로 '이동'해 COG를 오염시키던 것 차단 (2026-08-04
-          진단 캡처 실증: 선회 스텝에서 offset -14.7° 오염)."""
+          진단 캡처 실증: 선회 스텝에서 offset -14.7° 오염).
+        turn_settle[s]: 선회 종료 후 이 시간 안에 측정된 COG는 거부.
+          COG 표본은 나이(≤1s)가 있어 '지금 자이로'로 게이트하면 선회 중
+          찍힌 낡은 원호 표본이 정지 직후 통과·반복 소비돼 offset을 끌고
+          간다 (2026-08-04 3차 시험 실증: 선회 직후 자세마다 offset 수십°
+          이동). 같은 표본 재소비도 측정 시각 dedupe로 차단."""
         self._alpha = float(alpha)
         self._imu_timeout = float(imu_timeout)
         self._sign = float(sign)
@@ -56,6 +61,9 @@ class HeadingFusion:
         self._seed_spread = float(seed_spread)
         self._reseed_after = int(reseed_after)
         self._min_turn_radius = float(min_turn_radius)
+        self._turn_settle = float(turn_settle)
+        self._last_turn_t = None   # 마지막으로 |gyro| > gate 였던 시각
+        self._last_cog_t = None    # 마지막으로 소비한 COG 측정 시각 (dedupe)
         self._imu = None           # (yaw_signed, t)
         self._gyro_z = 0.0         # 최신 선회율 — 게이트용 (없으면 0 = 통과)
         self._offset = None
@@ -106,13 +114,22 @@ class HeadingFusion:
         self._imu = (self._sign * yaw_rad, t)
         if gyro_z is not None:
             self._gyro_z = gyro_z
+            if abs(gyro_z) > self._gyro_gate:
+                self._last_turn_t = t   # 선회 중 — turn_settle 기산점
 
     def update_cog(self, cog_yaw, t, speed=None):
         """이동 중 유효한 COG(ENU rad)로 offset 추정. 유효성(속도·나이)
-        판정은 호출자 몫 — 여기서는 IMU 신선도·선회율·회전 반경 게이트만."""
+        판정은 호출자 몫. t는 COG '측정 시각' — 같은 표본은 1회만 소비."""
+        if self._last_cog_t is not None and abs(t - self._last_cog_t) < 1e-3:
+            return                  # 같은 측정 재소비 금지 (50Hz 루프 × 낡은 표본)
+        self._last_cog_t = t
         if self._imu is None or t - self._imu[1] > self._imu_timeout:
             return
         if abs(self._gyro_z) > self._gyro_gate:
+            return
+        if (self._last_turn_t is not None
+                and t - self._last_turn_t < self._turn_settle):
+            self.arc_blocked += 1   # 선회 중/직후 측정된 표본 — 원호 접선 의심
             return
         if (speed is not None
                 and speed < self._min_turn_radius * abs(self._gyro_z)):
