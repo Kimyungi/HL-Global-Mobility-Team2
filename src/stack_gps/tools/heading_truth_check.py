@@ -83,9 +83,35 @@ class Runner:
 
 
 def collect(runner, seconds=10.0):
+    """정지 자동 감지 후 10초 측정 — 측정 중 움직이면 무효.
+
+    (2026-08-04 4차 시험 교훈: 입력 후 회전하면 측정창이 회전 궤적을 담아
+    평균이 중간각으로 찍힘 — 사람 절차에 기대지 않고 도구가 정지를 강제)"""
+    print("    정지 대기 중... (차가 2초간 완전히 멈추면 자동 시작)", flush=True)
+    t0 = time.monotonic()
+    still_since = None
+    while True:
+        g = runner.imu.latest_gyro_z()
+        moving = g is None or abs(g[0]) > 0.03
+        now = time.monotonic()
+        if moving:
+            still_since = None
+        elif still_since is None:
+            still_since = now
+        elif now - still_since >= 2.0:
+            break
+        if now - t0 > 60:
+            print("    ✖ 60초 내 정지 감지 실패")
+            return None
+        time.sleep(0.05)
+    print("    측정 시작 — 10초간 손대지 말 것", flush=True)
     xs = []
     t0 = time.monotonic()
     while time.monotonic() - t0 < seconds:
+        g = runner.imu.latest_gyro_z()
+        if g is not None and abs(g[0]) > 0.08:
+            print("    ⚠ 측정 중 움직임 감지 — 이 자세 무효, 다시 세우고 재입력")
+            return None
         h = runner.heading()
         if h is not None:
             xs.append(h)
@@ -162,7 +188,6 @@ def main():
             break
         if name not in POSES:
             print("    ⚠ 이름 오타"); continue
-        print("    10초 측정 중 — 차 만지지 말 것...")
         r = collect(runner)
         if r is None:
             print("    ✖ 헤딩 없음 (정렬 풀림?)"); continue
@@ -185,7 +210,6 @@ def main():
         s = input(f"  기준 자세 복귀 후 Enter (사이클 {cyc}, q=종료): ").strip()
         if s.lower() == "q":
             break
-        print("    10초 측정 중...")
         r = collect(runner)
         if r is None:
             print("    ✖ 헤딩 없음"); continue
