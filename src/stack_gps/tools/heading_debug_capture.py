@@ -84,7 +84,7 @@ def main():
         else:
             cog_ok = cog[0] >= 0.25
         if cog_ok:
-            fusion.update_cog(cog[1], now - cog[2])
+            fusion.update_cog(cog[1], now - cog[2], speed=cog[0])
         h = fusion.heading(now)
 
         fix = gga.latest_fix()

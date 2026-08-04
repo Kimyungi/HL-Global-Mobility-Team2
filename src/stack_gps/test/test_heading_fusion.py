@@ -75,6 +75,20 @@ def test_imu_staleness_gates_everything():
     assert f.heading(5.0) is None          # IMU 죽으면 융합도 죽는다
 
 
+def test_arc_gate_blocks_pivot_antenna_cog():
+    """제자리 선회 시 안테나(회전 중심 밖)가 원호를 그리며 COG가 '이동'으로
+    보인다 — speed < R_min·|gyro_z| 면 소반경 원호로 판정하고 차단.
+    (2026-08-04 진단 캡처: 선회 중 cog_ok 63/150, offset -14.7° 오염 실증)"""
+    f = HeadingFusion(seed_n=1)
+    f.update_imu(0.0, t=0.0, gyro_z=0.1)   # 선회율 0.1rad/s (gyro_gate는 통과)
+    f.update_cog(1.0, t=0.0, speed=0.12)   # 0.12 < 3.0×0.1 → 원호 차단
+    assert not f.aligned
+    assert f.arc_blocked == 1
+    f.update_imu(0.0, t=1.0, gyro_z=0.01)  # 직진 (반경 30m 상당)
+    f.update_cog(1.0, t=1.0, speed=0.3)    # 0.3 > 3.0×0.01 → 통과
+    assert f.aligned
+
+
 def test_seed_ignores_brief_backward_roll():
     """출발 전 차가 뒤로 구르면 COG가 차머리 반대(180°)를 잠깐 보고한다 —
     합의 시드는 이를 무시하고 이후 전진 주행으로만 정렬해야 한다.

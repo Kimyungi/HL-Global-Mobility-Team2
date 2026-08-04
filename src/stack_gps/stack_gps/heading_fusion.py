@@ -25,7 +25,7 @@ class HeadingFusion:
     def __init__(self, alpha=0.1, imu_timeout=0.5, sign=1.0,
                  gyro_gate=0.15, inn_gate=math.radians(60.0),
                  seed_n=5, seed_width=1.0, seed_spread=math.radians(25.0),
-                 reseed_after=30):
+                 reseed_after=30, min_turn_radius=3.0):
         """alpha: offset 저역통과 이득 (COG 갱신 1회당).
         imu_timeout: IMU 샘플 신선도 한계 [s].
         sign: IMU yaw 부호 (+1 = CCW+, ENU와 동일 — HandsFree 기본).
@@ -40,7 +40,12 @@ class HeadingFusion:
           차머리 반대를 보고해 첫 정렬이 180° 오염되던 것 방지
           (2026-08-03 저속 run 실사례: offset -57°로 오염 → 주행 불능).
         reseed_after: 잔차 거부가 이 횟수 연속되면(유효 COG 기준 ≈3초)
-          정렬 자체가 오염된 것으로 보고 재시드 — 오염 잠금 해제 경로."""
+          정렬 자체가 오염된 것으로 보고 재시드 — 오염 잠금 해제 경로.
+        min_turn_radius[m]: 회전 반경 게이트 — speed < R·|gyro_z| 이면
+          반경 R 미만의 원호 운동이므로 COG ≠ 차머리로 보고 거부.
+          제자리 선회 시 안테나(회전 중심에서 ~1m)가 원호를 그리며
+          0.3m/s로 '이동'해 COG를 오염시키던 것 차단 (2026-08-04
+          진단 캡처 실증: 선회 스텝에서 offset -14.7° 오염)."""
         self._alpha = float(alpha)
         self._imu_timeout = float(imu_timeout)
         self._sign = float(sign)
@@ -50,6 +55,7 @@ class HeadingFusion:
         self._seed_width = float(seed_width)
         self._seed_spread = float(seed_spread)
         self._reseed_after = int(reseed_after)
+        self._min_turn_radius = float(min_turn_radius)
         self._imu = None           # (yaw_signed, t)
         self._gyro_z = 0.0         # 최신 선회율 — 게이트용 (없으면 0 = 통과)
         self._offset = None
@@ -58,6 +64,7 @@ class HeadingFusion:
         self.last_innovation = None  # 최근 COG−융합 잔차 [rad] — 진단용
         self.rejected = 0            # 잔차 게이트 거부 누계 — 진단용
         self.reseeds = 0             # 오염 판정 재정렬 횟수 — 진단용
+        self.arc_blocked = 0         # 회전 반경 게이트 차단 누계 — 진단용
 
     @property
     def offset(self):
@@ -100,12 +107,16 @@ class HeadingFusion:
         if gyro_z is not None:
             self._gyro_z = gyro_z
 
-    def update_cog(self, cog_yaw, t):
+    def update_cog(self, cog_yaw, t, speed=None):
         """이동 중 유효한 COG(ENU rad)로 offset 추정. 유효성(속도·나이)
-        판정은 호출자 몫 — 여기서는 IMU 신선도·선회율 게이트만 본다."""
+        판정은 호출자 몫 — 여기서는 IMU 신선도·선회율·회전 반경 게이트만."""
         if self._imu is None or t - self._imu[1] > self._imu_timeout:
             return
         if abs(self._gyro_z) > self._gyro_gate:
+            return
+        if (speed is not None
+                and speed < self._min_turn_radius * abs(self._gyro_z)):
+            self.arc_blocked += 1   # 소반경 원호(제자리 선회 등) — COG ≠ 차머리
             return
         target = wrap_angle(cog_yaw - self._imu[0])
         if self._offset is None:

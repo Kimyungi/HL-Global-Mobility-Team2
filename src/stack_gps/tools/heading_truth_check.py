@@ -75,7 +75,7 @@ class Runner:
             else:
                 self._cog_ok = cog[0] >= 0.25
             if self._cog_ok:
-                self.fusion.update_cog(cog[1], now - cog[2])
+                self.fusion.update_cog(cog[1], now - cog[2], speed=cog[0])
             time.sleep(0.02)
 
     def stop(self):

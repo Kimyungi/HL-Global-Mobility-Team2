@@ -208,7 +208,7 @@ class StackGpsNode(Node):
                 self.fusion.update_imu(yawg[0], now - yawg[1],
                                        gyro_z=gz[0] if gz else None)
             if cog_valid:
-                self.fusion.update_cog(cog[1], now - cog[2])
+                self.fusion.update_cog(cog[1], now - cog[2], speed=cog[0])
         fused = self.fusion.heading(now) if self.fusion is not None else None
 
         if self.fusion is not None and self.fusion.aligned != self._was_aligned:
