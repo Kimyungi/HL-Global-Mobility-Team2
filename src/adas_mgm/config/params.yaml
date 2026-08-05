@@ -6,12 +6,20 @@ mgm_node:
     n_cycles: 20            # 10ms × 20 = 200ms 연속
 
     # 스테이트별 속도 [m/s]
-    v_base: 0.5
+    # 0.3 = 저속 재시험 설정 (2026-08-03 위빙·과회전 원인 분리용 — dSPACE
+    # 조향 튜닝 후 0.5로 복원). stack_gps cog_min_speed(0.25)보다 높아야
+    # 이동 중 COG가 잡혀 융합이 정렬된다.
+    v_base: 0.3
     v_accel_zone: 1.0
     v_narrow: 0.2
 
     # avoid 안전 바닥
     ttc_stop: 0.8           # [s]
+
+    # 역방향 정지 (§4 waypoint) — |ref[0].yaw| > 2.1rad(120°)가 50틱(0.5s)
+    # 지속되면 차가 경로를 등진 것 → v_ref 0 (유턴 후 트랙 역추종 차단)
+    wrongway_yaw_rad: 2.1
+    wrongway_cycles: 50
 
     # estop 입력 신선도 watchdog (wrapper 입력 컨디셔닝 — 판단은 코어)
     # 미수신 또는 이 시간 초과 staleness → 스냅샷 estop=true 보정.

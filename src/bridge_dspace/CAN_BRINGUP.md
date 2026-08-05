@@ -54,6 +54,7 @@ ip -details link show can0 | grep bitrate
 | `Device "can0" does not exist` | PCAN 재삽입. 그래도 없으면 `dmesg | tail -20`에서 `peak_usb` 인식 확인 |
 | `can0 DOWN` | 자동 셋업 미설치 — `sudo ~/FMA_ws/src/bridge_dspace/tools/can_setup/install.sh` |
 | bitrate가 1000000이 아님 | 위 install.sh 재실행 후 PCAN 재삽입 |
+| bitrate가 **재삽입할 때마다** 500000 등으로 되돌아감 | systemd-networkd의 `/etc/systemd/network/*.network` 잔재가 udev 설정을 덮어쓰는 것 (실사례 2026-08-03, journalctl에 up→down→up 두 번 찍힘). install.sh 재실행이 표준 `80-can0.network`(1Mbps)로 교체해 준다 |
 
 ---
 
@@ -207,3 +208,19 @@ python3 ~/FMA_ws/src/bridge_dspace/tools/can_dump.py --iface can0   # 공학 단
 cansend can0 100#0100000000000000                            # 수동 프레임 1개 송신 (can-utils)
 python3 ~/FMA_ws/src/bridge_dspace/tools/protocol_selftest.py       # 프로토콜 로직 셀프테스트
 ```
+
+## 자동 활성화 (설치하면 이 문서의 수동 bringup 불필요)
+
+PCAN을 꽂기만 하면 udev가 1Mbps + 자동 BUS-OFF 복구(restart-ms 100)로 올려준다:
+
+```bash
+cd ~/FMA_ws/src/bridge_dspace/tools
+sudo cp can_up.sh /usr/local/bin/ && sudo chmod +x /usr/local/bin/can_up.sh
+sudo cp 70-can-auto.rules /etc/udev/rules.d/
+sudo udevadm control --reload
+# 이미 꽂혀 있으면 1회: sudo /usr/local/bin/can_up.sh can0
+```
+
+확인: `ip -details link show can0` → `state ERROR-ACTIVE` + `bitrate 1000000`.
+참고: dSPACE 미연결(버스에 혼자) 상태에서 송신하면 BUS-OFF가 정상이며,
+restart-ms 덕에 상대가 나타나면 자동 복구된다. (2026-08-01, 차량 PC 적용 완료)

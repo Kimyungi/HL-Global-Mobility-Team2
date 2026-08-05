@@ -29,6 +29,21 @@ void transition(const CoreSnapshot & s, CoreState & st)
   st.lane_low_cnt = (s.lane_confidence < st.params.lane_conf_exit) ? st.lane_low_cnt + 1 : 0;
   st.lane_high_cnt = (s.lane_confidence > st.params.lane_conf_return) ? st.lane_high_cnt + 1 : 0;
 
+  // 역방향 카운터 (§4 waypoint) — GPS 경로 첫 점의 상대 yaw가 임계를 넘으면
+  // 차가 경로를 등진 것 (유턴 후 트랙 역추종, 2026-08-03 2회 재현)
+  const float y0 = (s.gps_path.n > 0) ? s.gps_path.pts[0].yaw : 0.0f;
+  const bool wrongway = (y0 > st.params.wrongway_yaw) || (y0 < -st.params.wrongway_yaw);
+  st.wrongway_cnt = wrongway ? st.wrongway_cnt + 1 : 0;
+
+  // 종점 래치 (§4) — 정지 후 미세하게 밀려 최근접점이 뒤로 바뀌면 at_end가
+  // 풀려 재출발·유턴하던 것 방지 (2026-08-03 직선 run 실사례). estop 인가
+  // (= run 종료/새 run 준비)로만 해제.
+  if (s.estop) {
+    st.at_end_latched = false;
+  } else if (st.state == MGM_STATE_WAYPOINT && s.gps_at_end) {
+    st.at_end_latched = true;
+  }
+
   switch (st.state) {
     case MGM_STATE_LANE:
       if (s.gps_parking_zone && s.parking_space_found) {
@@ -80,12 +95,20 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
     case MGM_STATE_LANE:
     case MGM_STATE_WAYPOINT:
       out.path_source = (st.state == MGM_STATE_LANE) ? MGM_SRC_LANE : MGM_SRC_GPS;
-      // 종방향 우선권: 긴급 정지 > 신호등 정지 > 가속구간 > 기본 속도
+      // 종방향 우선권: 긴급 정지 > 신호등 정지 > 트랙 종점(waypoint만) > 가속구간 > 기본 속도
       if (s.estop) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
       } else if (s.traffic_stop_required) {
         out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
+      } else if (st.state == MGM_STATE_WAYPOINT &&
+        (s.gps_at_end || st.at_end_latched))
+      {
+        out.v_ref = 0.0f;  // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03)
+      } else if (st.state == MGM_STATE_WAYPOINT &&
+        st.wrongway_cnt >= st.params.wrongway_cycles)
+      {
+        out.v_ref = 0.0f;  // 역방향 — 경로를 등진 채 주행 금지 (§4, 2026-08-03)
       } else if (s.gps_accel_zone) {
         out.v_ref = st.params.v_accel_zone;
       } else {

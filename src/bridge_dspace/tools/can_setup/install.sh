@@ -19,10 +19,24 @@ systemctl daemon-reload
 systemctl enable can-iface@can0.service
 echo "✔ can-iface@can0 설치 — PCAN을 꽂으면 자동으로 1 Mbps up"
 
-# 이미 꽂혀 있으면 즉시 적용
+# systemd-networkd가 활성이면 udev·서비스가 올린 설정을 networkd가 마지막에
+# 덮어쓴다 (실사례 2026-08-03: 잔재 80-can0.network의 500k가 1 Mbps를 뒤집어
+# ERROR-PASSIVE 유발). 같은 이름으로 팀 표준 파일을 설치해 그 경로도 1 Mbps로.
+if systemctl is-active --quiet systemd-networkd; then
+  conflict=$(grep -rlZ "Name=can0" /etc/systemd/network/ 2>/dev/null \
+             | tr '\0' '\n' | grep -v "80-can0.network" || true)
+  [[ -n "$conflict" ]] && echo "⚠ can0을 건드리는 다른 networkd 설정 발견 — 확인 필요: $conflict"
+  install -m 644 80-can0.network /etc/systemd/network/
+  networkctl reload 2>/dev/null || true
+  echo "✔ networkd 80-can0.network 설치 (1 Mbps — networkd 덮어쓰기 경로 차단)"
+fi
+
+# 이미 꽂혀 있으면 즉시 적용 (networkd 관리 중이면 새 설정으로 재구성부터)
 if [[ -d /sys/class/net/can0 ]]; then
+  networkctl reconfigure can0 2>/dev/null || true
   systemctl start can-iface@can0.service
   echo "✔ can0 지금 up: $(ip -br link show can0)"
+  ip -details link show can0 | grep -o "bitrate [0-9]*"
 fi
 
 if [[ "${1:-}" == "--vcan" ]]; then

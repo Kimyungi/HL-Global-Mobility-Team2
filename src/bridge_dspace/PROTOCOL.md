@@ -113,6 +113,11 @@ sudo src/bridge_dspace/tools/can_setup/install.sh          # 실차 PC
 sudo src/bridge_dspace/tools/can_setup/install.sh --vcan   # 개발 머신 (+vcan0 상시 생성)
 ```
 
+> ⚠ systemd-networkd가 활성인 머신에서는 `/etc/systemd/network/`의 can0 설정이
+> udev·서비스보다 **나중에 적용되어 이긴다**. install.sh가 팀 표준
+> `80-can0.network`(1 Mbps)를 함께 설치해 이 경로도 맞춘다 — 다른 비트레이트의
+> can0 `.network` 파일을 수동으로 만들지 말 것 (2026-08-03 500k 잔재로 ERROR-PASSIVE 실사례).
+
 수동 설정 (자동 셋업 미설치 시):
 
 ```bash
