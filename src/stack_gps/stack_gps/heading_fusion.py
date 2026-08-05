@@ -25,7 +25,7 @@ class HeadingFusion:
     def __init__(self, alpha=0.1, imu_timeout=0.5, sign=1.0,
                  gyro_gate=0.15, inn_gate=math.radians(60.0),
                  seed_n=5, seed_width=1.0, seed_spread=math.radians(25.0),
-                 reseed_after=30, min_turn_radius=3.0, turn_settle=1.0):
+                 reseed_after=30, min_turn_radius=3.0, turn_settle=0.5):
         """alpha: offset 저역통과 이득 (COG 갱신 1회당).
         imu_timeout: IMU 샘플 신선도 한계 [s].
         sign: IMU yaw 부호 (+1 = CCW+, ENU와 동일 — HandsFree 기본).
@@ -47,6 +47,10 @@ class HeadingFusion:
           0.3m/s로 '이동'해 COG를 오염시키던 것 차단 (2026-08-04
           진단 캡처 실증: 선회 스텝에서 offset -14.7° 오염).
         turn_settle[s]: 선회 종료 후 이 시간 안에 측정된 COG는 거부.
+          0.5 = RMC course 지연 상한. 1.0이었을 때 위빙 주행(조용한 창
+          1~2초)에서 표본이 굶주려 정렬 자체가 안 되는 부작용 실증
+          (2026-08-04 밤 주행: 전 구간 미정렬 → COG 끊김 시 접선 폴백
+          발산). 피벗 꼬리 방어는 '측정 시각이 선회 중' 조건으로 유지됨.
           COG 표본은 나이(≤1s)가 있어 '지금 자이로'로 게이트하면 선회 중
           찍힌 낡은 원호 표본이 정지 직후 통과·반복 소비돼 offset을 끌고
           간다 (2026-08-04 3차 시험 실증: 선회 직후 자세마다 offset 수십°
@@ -97,7 +101,7 @@ class HeadingFusion:
         seed_spread 안에 모이면 순환 평균으로 offset 확정."""
         buf = self._seed_buf
         buf.append((target, t))
-        buf[:] = [(a, ta) for a, ta in buf if t - ta <= 5.0]  # 표본 신선도
+        buf[:] = [(a, ta) for a, ta in buf if t - ta <= 12.0]  # 위빙 주기(~12s)보다 길게
         if len(buf) < self._seed_n:
             return
         if self._seed_n > 1 and t - buf[0][1] < self._seed_width:

@@ -99,9 +99,10 @@ def test_seed_ignores_brief_backward_roll():
         f.update_imu(0.0, t=t)
         f.update_cog(math.pi - 0.05, t=t)
     assert not f.aligned         # 표본 부족 — 시드 금지
-    # 전진 주행: 진짜 방향 0.5rad 표본이 쌓임 (혼재 구간에선 spread로 대기)
+    # 전진 주행: 진짜 방향 0.5rad 표본이 쌓임 — 후진 표본(버퍼 12s)이
+    # 만료될 때까지는 spread 게이트가 시드를 보류한다
     t = 1.0
-    while t < 7.0:
+    while t < 15.0:
         f.update_imu(0.0, t=t)
         f.update_cog(0.5, t=t)
         t += 0.3
@@ -163,11 +164,11 @@ def test_gyro_gate_blocks_update_while_turning():
     f.update_imu(0.0, t=0.0, gyro_z=0.5)   # 선회 중
     f.update_cog(1.0, t=0.0)
     assert not f.aligned                   # 선회 중 COG는 짝짓기 오차 → 거부
-    f.update_imu(0.0, t=0.5, gyro_z=0.05)  # 직진 (선회 종료 0.5s)
-    f.update_cog(1.0, t=0.5)
-    assert not f.aligned                   # 진정 시간(1s) 내 표본 — 거부
-    f.update_imu(0.0, t=1.5, gyro_z=0.05)
-    f.update_cog(1.0, t=1.5)               # 진정 후 → 통과
+    f.update_imu(0.0, t=0.3, gyro_z=0.05)  # 직진 (선회 종료 0.3s)
+    f.update_cog(1.0, t=0.3)
+    assert not f.aligned                   # 진정 시간(0.5s) 내 표본 — 거부
+    f.update_imu(0.0, t=0.9, gyro_z=0.05)
+    f.update_cog(1.0, t=0.9)               # 진정 후 → 통과
     assert f.aligned
 
 
