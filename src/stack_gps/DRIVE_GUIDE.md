@@ -93,10 +93,11 @@ python3 rtcm_server.py --radio /dev/ttyRadio
 python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
     --port /dev/ttyRadio --tcp-port 2101
 
-# V2 [차량 PC]  (현재 코스: straight_1 직선 33.4m, 2026-08-03 기록 — 107점 전부 FIXED.
-#  직선 순수 시험용: 종점 자동정지·위빙 정량. S커브 코스는 course_2로 복귀)
+# V2 [차량 PC]  (현재 코스: S자 46.4m, 2026-08-06 기록 — 145점 전부 FIXED,
+#  최소 회전 반경 1.5m(idx 80~122). 코너 파먹기 크면 -p ref_lookahead_m:=0.7 시도
+#  — 단 낮출수록 위빙 위험과 교환. 직선 재검증은 ..._20260803_181924.csv로)
 ros2 run stack_gps stack_gps_node --ros-args \
-    -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260803_181924.csv \
+    -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260806_191643.csv \
     -p rtcm_host:=127.0.0.1 \
     -p error_log_csv:=$HOME/FMA_ws/drive_logs/lateral_$(date +%m%d_%H%M).csv
 
@@ -129,7 +130,7 @@ ros2 topic echo /perception/gps_path --once | grep fix_quality  # 4 = RTK FIXED
 ```bash
 # V5 [차량 PC] — 블랙박스 시작
 cd ~/FMA_ws/src/stack_gps/tools/drive_log
-./record_drive.sh run1 $HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260803_181924.csv
+./record_drive.sh run1 $HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260806_191643.csv
 
 
 # V6 [차량 PC] — ★ 이 줄이 곧 출발이다 ★  (비상정지 담당·동행 준비 확인 후!)
