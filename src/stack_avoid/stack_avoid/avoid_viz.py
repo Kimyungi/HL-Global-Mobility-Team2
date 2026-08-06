@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""회피 출력 시각화 — `/perception/avoid` 를 RViz 마커로 그린다.
+
+corridor(감지 통로)·감지거리·FOV·회피 목표점·상태 텍스트를 base_link 프레임
+MarkerArray(`/avoid_markers`)로 발행. 장애물을 옮기며(fake_scan 또는 실라이다)
+회피 목표점이 올바른 쪽에 찍히는지, narrow_gap/avoidable 이 맞게 뜨는지 눈으로 확인.
+
+파라미터 기본값은 config/params.yaml 실측값과 동일하게 맞춘다(런치에서 주입).
+"""
+import math
+
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Point
+from visualization_msgs.msg import Marker, MarkerArray
+from fma_interfaces.msg import AvoidStatus
+
+
+def _mk(ns, mid, mtype, frame='base_link'):
+    m = Marker()
+    m.header.frame_id = frame
+    m.ns = ns
+    m.id = mid
+    m.type = mtype
+    m.action = Marker.ADD
+    m.pose.orientation.w = 1.0
+    return m
+
+
+def _pt(x, y, z=0.0):
+    return Point(x=float(x), y=float(y), z=float(z))
+
+
+class AvoidViz(Node):
+
+    def __init__(self):
+        super().__init__('avoid_viz')
+        self.lidar_x = float(self.declare_parameter('lidar_x_m', 0.76).value)
+        self.vehicle_width = float(self.declare_parameter('vehicle_width_m', 0.62).value)
+        self.lateral_margin = float(self.declare_parameter('lateral_margin_m', 0.15).value)
+        self.detect_range = float(self.declare_parameter('detect_range_m', 3.0).value)
+        self.offset_max = float(self.declare_parameter('offset_max_m', 1.0).value)
+        self.roi_angle = float(self.declare_parameter('roi_angle_deg', 180.0).value)
+        self.corr = self.vehicle_width / 2.0 + self.lateral_margin
+        self.half = math.radians(self.roi_angle / 2.0)
+
+        self.pub = self.create_publisher(MarkerArray, 'avoid_markers', 1)
+        self.sub = self.create_subscription(AvoidStatus, '/perception/avoid', self.cb, 10)
+        self.get_logger().info(
+            f"avoid_viz → /avoid_markers | corridor ±{self.corr:.2f}m, "
+            f"detect {self.detect_range}m, FOV ±{math.degrees(self.half):.0f}deg")
+
+    def cb(self, msg: AvoidStatus):
+        arr = MarkerArray()
+        cx = self.lidar_x
+
+        # corridor (감지 통로 좌우 경계)
+        corr = _mk('corridor', 0, Marker.LINE_LIST)
+        corr.scale.x = 0.02
+        corr.color.r, corr.color.g, corr.color.b, corr.color.a = 0.6, 0.6, 0.6, 0.8
+        for s in (+1.0, -1.0):
+            corr.points.append(_pt(cx, s * self.corr))
+            corr.points.append(_pt(cx + self.detect_range, s * self.corr))
+        arr.markers.append(corr)
+
+        # FOV 부채꼴 (감지거리 반경 + 좌우 경계)
+        fov = _mk('fov', 1, Marker.LINE_STRIP)
+        fov.scale.x = 0.015
+        fov.color.r, fov.color.g, fov.color.b, fov.color.a = 0.2, 0.5, 1.0, 0.7
+        fov.points.append(_pt(cx, 0.0))
+        steps = 48
+        for i in range(steps + 1):
+            a = -self.half + (2.0 * self.half) * i / steps
+            fov.points.append(_pt(cx + self.detect_range * math.cos(a),
+                                  self.detect_range * math.sin(a)))
+        fov.points.append(_pt(cx, 0.0))
+        arr.markers.append(fov)
+
+        # 회피 목표점 (있으면 초록 구, 없으면 삭제)
+        tgt = _mk('target', 2, Marker.SPHERE)
+        tgt.scale.x = tgt.scale.y = tgt.scale.z = 0.18
+        arw = _mk('to_target', 3, Marker.ARROW)
+        arw.scale.x, arw.scale.y, arw.scale.z = 0.03, 0.08, 0.12
+        if msg.points:
+            p = msg.points[0]
+            tgt.pose.position.x, tgt.pose.position.y = float(p.x), float(p.y)
+            tgt.color.g, tgt.color.a = 1.0, 0.95
+            arw.points = [_pt(cx, 0.0), _pt(p.x, p.y)]
+            arw.color.g, arw.color.b, arw.color.a = 0.8, 0.3, 0.9
+        else:
+            tgt.action = Marker.DELETE
+            arw.action = Marker.DELETE
+        arr.markers.append(tgt)
+        arr.markers.append(arw)
+
+        # 상태 텍스트
+        txt = _mk('status', 4, Marker.TEXT_VIEW_FACING)
+        txt.pose.position.x, txt.pose.position.y, txt.pose.position.z = cx, 0.0, 0.6
+        txt.scale.z = 0.16
+        txt.color.r = txt.color.g = txt.color.b = 1.0
+        txt.color.a = 0.95
+        state = 'DETECTED' if msg.obstacle_detected else 'clear'
+        tgt_s = (f"({msg.points[0].x:.2f}, {msg.points[0].y:+.2f})"
+                 if msg.points else '-')
+        txt.text = (f"{state} | ttc {msg.ttc:.2f}s | narrow_gap {msg.narrow_gap} | "
+                    f"avoidable {msg.avoidable}\n"
+                    f"target {tgt_s} | v_suggest {msg.v_suggest:.2f}")
+        arr.markers.append(txt)
+
+        self.pub.publish(arr)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = AvoidViz()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == '__main__':
+    main()
