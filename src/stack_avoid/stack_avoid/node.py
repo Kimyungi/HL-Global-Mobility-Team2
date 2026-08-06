@@ -22,7 +22,7 @@ import math
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from rcl_interfaces.msg import SetParametersResult
+from rcl_interfaces.msg import SetParametersResult, ParameterDescriptor
 
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import TransformStamped
@@ -71,9 +71,15 @@ class StackAvoidNode(Node):
         self.lidar_yaw = self.declare_parameter('lidar_mount.yaw_deg', 0.0).value
         self.lidar_roll = self.declare_parameter('lidar_mount.roll_deg', 0.0).value
         self.lidar_pitch = self.declare_parameter('lidar_mount.pitch_deg', 0.0).value
-        # 차량 전방을 가리키는 스캔 각도(드라이버 프레임 관례) — 필드검증 완료(270)
+        # 차량 전방을 가리키는 스캔 각도(드라이버 프레임 관례). 필드검증 확정 = 270°
+        # (FOV = raw 180°~360°). ★코드 고정: read_only → 런타임(param set) 변경 불가.
+        #  값을 바꾸려면 이 기본값 또는 params.yaml 수정 후 재빌드해야 한다.
         self.front_center = math.radians(
-            self.declare_parameter('lidar_mount.forward_angle_deg', 270.0).value)
+            self.declare_parameter(
+                'lidar_mount.forward_angle_deg', 270.0,
+                ParameterDescriptor(
+                    read_only=True,
+                    description='전방=raw270°(FOV raw180~360). 코드 고정, 런타임 변경 불가')).value)
 
         # 회피 판단 (튜닝 글로벌)
         self.roi_angle = self.declare_parameter('avoid.roi_angle_deg', 180.0).value
@@ -132,10 +138,16 @@ class StackAvoidNode(Node):
         t.transform.translation.x = float(self.lidar_x)
         t.transform.translation.y = float(self.lidar_y)
         t.transform.translation.z = float(self.lidar_z)
+        # laser_frame = 드라이버 프레임. 스캔각 0 이 향하는 방향이 차량 전방(+x)과
+        # forward_angle 만큼 어긋나 있다(노드 로직: rel = raw - front_center). RViz가
+        # 스캔을 로직과 같은 방향으로 그리려면 TF yaw = -front_center 로 그 오프셋을
+        # 반영해야 한다(예전엔 물리 yaw=0 만 써서 스캔이 90° 틀어져 보였음).
+        # lidar_yaw 는 그 위의 물리 미세보정으로 가산.
+        yaw_rad = math.radians(self.lidar_yaw) - self.front_center
         qx, qy, qz, qw = euler_to_quat(
             math.radians(self.lidar_roll),
             math.radians(self.lidar_pitch),
-            math.radians(self.lidar_yaw))
+            yaw_rad)
         t.transform.rotation.x = qx
         t.transform.rotation.y = qy
         t.transform.rotation.z = qz
@@ -166,6 +178,7 @@ class StackAvoidNode(Node):
             elif p.name == 'lidar_mount.forward_angle_deg':
                 self.front_center = math.radians(p.value)
         self._recompute_derived()
+        self._publish_static_tf()   # forward_angle 변경 시 TF도 갱신(스캔 방향 일치)
         self.get_logger().info(
             f"param 변경 → 통로반폭 {self.corridor_half_width:.2f}m, 전방FOV {self.roi_angle}deg, "
             f"forward={math.degrees(self.front_center):.0f}deg, v={self.target_speed}m/s")
