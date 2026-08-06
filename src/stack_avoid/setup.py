@@ -14,6 +14,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'config'), glob('config/*.rviz')),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
@@ -25,6 +26,11 @@ setup(
     entry_points={
         'console_scripts': [
             'stack_avoid_node = stack_avoid.node:main',
+            'fake_scan = stack_avoid.fake_scan:main',        # 테스트: 합성 스캔
+            'avoid_viz = stack_avoid.avoid_viz:main',        # 테스트: 회피 출력 RViz 마커
+            'angle_labels = stack_avoid.angle_labels:main',  # 테스트: 각도 눈금(방향 확인)
+            'avoid_drive_sim = stack_avoid.avoid_drive_sim:main',  # 테스트: 폐루프 회피주행 sim
+            'avoid_to_ref = stack_avoid.avoid_to_ref:main',        # 테스트: 회피점→dSPACE(실차 조향)
         ],
     },
 )

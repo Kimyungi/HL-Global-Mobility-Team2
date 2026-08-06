@@ -37,7 +37,7 @@
 | C4 | avoid.lateral_margin_m | m | 측방 안전여유. 측방여유판정 = width/2 + margin, 통과최소폭 = width + 2·margin |
 | C5 | avoid.target_speed_mps | m/s | **M3 시연 주행 속도** (TTC 계산 기준) — 실측/목표값 |
 
-## D. LiDAR 스캔 특성 (✅ 실측 완료 — YDLIDAR T-mini Pro)
+## D. LiDAR 스캔 특성 (✅ 실측 완료 — YDLIDAR **T-mini Plus**)
 
 | 항목 | 값 |
 |---|---|
@@ -46,6 +46,13 @@
 | 각도 범위 | ±180° |
 | 거리 범위 | 0.03 ~ 12.0 m |
 | 포인트/스캔 | 약 429점 |
+
+> 모델명 정정 (2026-07-31): 이전에 "T-mini Pro"로 적혀 있었으나 **T-mini Plus**가 맞다.
+> 드라이버 설정(`Tmini.yaml`)은 이 하드웨어로 정상 동작 중이므로 값 변경은 없다.
+>
+> ⚠ **주기 재확인 필요** — 2026-07-30 관측 시 `/scan`이 **6.11 Hz**(min 0.162s / max 0.166s)로,
+> 위 실측치 10.07 Hz와 다르게 나왔다. `fixed_resolution: true`라 포인트 수는 430으로 고정된 채
+> 주기만 떨어진 형태. 다음 연결 시 `ros2 topic hz /scan`으로 확인할 것.
 
 ## E. 실행·검증 커맨드
 
