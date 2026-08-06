@@ -48,7 +48,7 @@ class DistanceEstopController:
         if danger_now:
             self.current_final_estop = True
             self.clear_count = 0
-            return danger_now
+            return self.current_final_estop
 
         safe_now = bool(
             nearest_corridor_x_m is None
@@ -65,7 +65,7 @@ class DistanceEstopController:
         else:
             # Hysteresis band: retain the level and restart clear confirmation.
             self.clear_count = 0
-        return danger_now
+        return self.current_final_estop
 
     def force_timeout(self):
         self.current_final_estop = True
@@ -254,6 +254,8 @@ class StackEstopNode(Node):
         self.declare_parameter('max_index_gap', 1)
         self.declare_parameter('max_neighbor_distance_m', 0.12)
         self.declare_parameter('laser_yaw_in_base_rad', 1.57079632679)
+        # Must match stack_avoid's lidar_mount.forward_angle_deg=270.0;
+        # update both when the shared LiDAR is remounted.
         self.declare_parameter('debug_log_period_sec', 0.20)
         self.declare_parameter('dynamic_enabled', True)
         self.declare_parameter('dynamic_stop_distance_m', 1.00)
@@ -374,7 +376,6 @@ class StackEstopNode(Node):
         self.last_valid_scan_time = None
         self.scan_timeout_active = True
         self.last_processed_scan_stamp = None
-        self.danger_present = False
         self.last_debug_log_time = None
         self.last_status_publish_time = None
         self.last_static_nearest_x = None
@@ -458,7 +459,7 @@ class StackEstopNode(Node):
         nearest_x = diagnostics['nearest_cluster_min_x']
         self.last_static_nearest_x = nearest_x
         previous_final = self.current_final_estop
-        danger_now = self.controller.update_from_scan(nearest_x)
+        self.controller.update_from_scan(nearest_x)
         self.last_valid_scan_time = self.get_clock().now()
         self.scan_timeout_active = False
         if self.dynamic_enabled:
@@ -478,7 +479,6 @@ class StackEstopNode(Node):
             self.dynamic_status['dynamic_estop'] = False
         if self.current_final_estop and not previous_final:
             self.publish_current_level()
-        self.danger_present = danger_now
         if diagnostics['reason'] != 'CLUSTER_ACCEPTED':
             reason = diagnostics['reason']
         elif nearest_x <= self.controller.on_distance_m:
