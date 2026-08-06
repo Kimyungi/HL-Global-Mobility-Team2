@@ -150,6 +150,24 @@ def test_csv_without_quality_column_loads_all():
         os.unlink(path)
 
 
+def test_lookahead_shifts_first_ref_point():
+    """dSPACE는 첫 점만 목표로 씀 — lookahead면 첫 점이 최근접점(옆구리)이
+    아니라 전방 트랙 점이어야 한다 (2026-08-05 위빙 원인 수정)."""
+    track = make_track([(0.3 * i, 0.0) for i in range(30)])
+    base = PathEngine(track, n_points=5)
+    la = PathEngine(track, n_points=5, lookahead_m=0.9)   # ≈3점
+    # 차가 트랙 중간점 옆 0.3m에 있음
+    from_lat, from_lon = en_to_latlon(3.0, 0.3)
+    s0 = base.snapshot(from_lat, from_lon)
+    s1 = la.snapshot(from_lat, from_lon)
+    assert s1["idx"] == s0["idx"]                        # 최근접·at_end 판정은 동일
+    assert abs(s1["cross_track_m"] - s0["cross_track_m"]) < 1e-9
+    # 첫 점: 기본은 옆구리(x≈0), lookahead는 ~0.9m 전방
+    assert abs(s0["points"][0][0]) < 0.2
+    assert abs(s1["points"][0][0] - 0.9) < 0.2
+    assert abs(s1["points"][0][1] + 0.3) < 0.05  # 횡오차는 그대로 담김
+
+
 def test_wrap_angle():
     assert abs(wrap_angle(3 * math.pi) + math.pi) < 1e-9
     assert abs(wrap_angle(-0.1) + 0.1) < 1e-9

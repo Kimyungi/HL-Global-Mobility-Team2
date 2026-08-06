@@ -57,6 +57,10 @@ class StackGpsNode(Node):
         self.declare_parameter('serial_port', '/dev/ttyRover')
         self.declare_parameter('baud', 115200)
         self.declare_parameter('n_points', 30)
+        # dSPACE는 첫 ref점만 목표로 사용(stack_avoid 실측) — 최근접점(옆구리)을
+        # 주면 도달 곡률 폭주로 풀조향 위빙. 전방 lookahead 점을 첫 점으로.
+        # 짧을수록 강한 조향(이기돈 회피=0.4), 트랙 추종은 1.0 권장. 0 = 구동작.
+        self.declare_parameter('ref_lookahead_m', 1.0)
         self.declare_parameter('publish_period', 0.1)
         self.declare_parameter('stale_timeout', 1.5)  # [s] 이보다 오래된 fix는 무효
         # v_base(MGM params.yaml)보다 낮아야 이동 중 COG가 잡힌다.
@@ -88,7 +92,8 @@ class StackGpsNode(Node):
 
         pts = load_waypoints_csv(csv_path, log=self.get_logger().warn)
         self.engine = PathEngine(pts, n_points=int(p('n_points').value),
-                                 accel_ranges=accel, parking_ranges=parking)
+                                 accel_ranges=accel, parking_ranges=parking,
+                                 lookahead_m=float(p('ref_lookahead_m').value))
         self.get_logger().info(
             f"웨이포인트 {len(pts)}개 로드: {csv_path} "
             f"(accel {accel or '없음'}, parking {parking or '없음'})")

@@ -62,7 +62,13 @@ class PathEngine:
     """
 
     def __init__(self, latlon_pts, n_points=30,
-                 accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0):
+                 accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0,
+                 lookahead_m=0.0):
+        """lookahead_m: ref 시작점을 최근접점이 아니라 이만큼 전방의 트랙
+        점으로 민다. dSPACE는 첫 점만 목표로 쓰므로(stack_avoid 실측 주석)
+        최근접점(차 옆구리, x≈0)을 주면 도달 곡률 κ=2y/(x²+y²)가 폭주해
+        풀조향 위빙을 유발한다 — 회피(0.4m 호 lookahead)와 같은 원리로
+        전방 점을 목표로 제공 (2026-08-05 위빙 원인 분석)."""
         self.n_points = n_points
         self.accel_ranges = list(accel_ranges)
         self.parking_ranges = list(parking_ranges)
@@ -84,6 +90,7 @@ class PathEngine:
                for i in range(m - 1)]
         spacing = sorted(seg)[len(seg) // 2]
         k = max(1, round(tangent_baseline_m / max(spacing, 1e-6)))
+        self._la_pts = max(0, round(lookahead_m / max(spacing, 1e-6)))
 
         # 접선 yaw: i-k → i+k 중심 차분 (끝단은 클램프)
         self.yaw = []
@@ -132,8 +139,9 @@ class PathEngine:
         psi = self.yaw[idx] if heading is None else heading
         c, s = math.cos(psi), math.sin(psi)
 
+        start = min(idx + self._la_pts, len(self.e) - 1)
         points = []
-        for i in range(idx, min(idx + self.n_points, len(self.e))):
+        for i in range(start, min(start + self.n_points, len(self.e))):
             de, dn = self.e[i] - ev, self.n[i] - nv
             points.append((c * de + s * dn,          # x 전방
                            -s * de + c * dn,         # y 좌측
