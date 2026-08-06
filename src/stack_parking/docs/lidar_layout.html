@@ -1,0 +1,343 @@
+<title>WHEELTEC 라이다 배치도</title>
+<style>
+  :root{
+    --paper:#eef1f5; --panel:#ffffff; --ink:#1c2836; --ink-soft:#54657a;
+    --line:#c3ccd6; --dim:#8291a1; --grid:#dbe2ea;
+    --accent:#2563eb;
+    --l-front:#2563eb; --l-left:#0d9488; --l-right:#d97706; --l-rear:#7c3aed;
+    --body-fill:#dde5ee; --wheel:#2b3644; --shadow:0 1px 2px rgba(20,35,55,.08),0 8px 24px rgba(20,35,55,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0e1620; --panel:#141d29; --ink:#dbe6f1; --ink-soft:#8ea0b4;
+      --line:#2c3a4b; --dim:#5b6e82; --grid:#1c2836;
+      --accent:#60a5fa;
+      --l-front:#60a5fa; --l-left:#2dd4bf; --l-right:#fbbf24; --l-rear:#a78bfa;
+      --body-fill:#1b2634; --wheel:#0a0f16; --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#eef1f5; --panel:#ffffff; --ink:#1c2836; --ink-soft:#54657a;
+    --line:#c3ccd6; --dim:#8291a1; --grid:#dbe2ea; --accent:#2563eb;
+    --l-front:#2563eb; --l-left:#0d9488; --l-right:#d97706; --l-rear:#7c3aed;
+    --body-fill:#dde5ee; --wheel:#2b3644;
+  }
+  :root[data-theme="dark"]{
+    --paper:#0e1620; --panel:#141d29; --ink:#dbe6f1; --ink-soft:#8ea0b4;
+    --line:#2c3a4b; --dim:#5b6e82; --grid:#1c2836; --accent:#60a5fa;
+    --l-front:#60a5fa; --l-left:#2dd4bf; --l-right:#fbbf24; --l-rear:#a78bfa;
+    --body-fill:#1b2634; --wheel:#0a0f16;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+    line-height:1.5; padding:clamp(16px,3vw,40px);
+  }
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,"Cascadia Mono",monospace; font-variant-numeric:tabular-nums;}
+  .sheet{max-width:1120px; margin:0 auto;}
+  header.title{
+    display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between;
+    gap:12px 24px; border-bottom:2px solid var(--ink); padding-bottom:14px; margin-bottom:8px;
+  }
+  header.title h1{font-size:clamp(20px,2.6vw,30px); margin:0; letter-spacing:-.01em; text-wrap:balance;}
+  header.title .sub{color:var(--ink-soft); font-size:14px; margin-top:4px;}
+  .frame-badge{
+    font-size:12px; color:var(--ink-soft); text-align:right; line-height:1.7;
+    border:1px solid var(--line); border-radius:6px; padding:8px 12px; background:var(--panel);
+  }
+  .frame-badge b{color:var(--ink);}
+  .meta-row{
+    display:flex; flex-wrap:wrap; gap:8px 18px; font-size:12.5px; color:var(--ink-soft);
+    margin:14px 0 22px; padding:0;
+  }
+  .meta-row span{display:inline-flex; align-items:center; gap:7px;}
+  .swatch{width:11px; height:11px; border-radius:50%; display:inline-block; box-shadow:0 0 0 2px var(--panel),0 0 0 3px currentColor;}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    box-shadow:var(--shadow); padding:clamp(12px,2vw,22px); margin-bottom:22px;
+  }
+  .card h2{font-size:13px; text-transform:uppercase; letter-spacing:.09em; color:var(--ink-soft); margin:0 0 12px;}
+  .plan-wrap{width:100%; overflow-x:auto;}
+  svg{display:block; width:100%; height:auto;}
+  .cols{display:grid; grid-template-columns:1fr; gap:22px;}
+  @media(min-width:820px){ .cols{grid-template-columns:1.15fr .85fr;} }
+  table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  th,td{text-align:right; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap;}
+  th:first-child,td:first-child{text-align:left;}
+  thead th{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); border-bottom:1.5px solid var(--ink);}
+  tbody tr td:first-child{font-weight:600;}
+  .tag{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:8px; vertical-align:baseline;}
+  .note{font-size:12.5px; color:var(--ink-soft); line-height:1.6;}
+  .note b{color:var(--ink);}
+  .note.warn{border-left:3px solid var(--l-right); padding-left:12px; background:color-mix(in srgb,var(--l-right) 8%,transparent); border-radius:0 6px 6px 0; padding:10px 12px;}
+  ul.legend{list-style:none; padding:0; margin:0; display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; font-size:13px;}
+  ul.legend li{display:flex; align-items:center; gap:9px;}
+  footer{color:var(--ink-soft); font-size:12px; margin-top:8px; text-align:center;}
+  /* SVG token-driven classes */
+  .s-body{fill:var(--body-fill); stroke:var(--ink); stroke-width:2.5;}
+  .s-wheel{fill:var(--wheel); stroke:var(--ink); stroke-width:1;}
+  .s-axle{stroke:var(--ink-soft); stroke-width:1.4; stroke-dasharray:7 5;}
+  .s-center{stroke:var(--dim); stroke-width:1; stroke-dasharray:3 4;}
+  .s-dim{stroke:var(--dim); stroke-width:1;}
+  .s-dimtxt{fill:var(--ink); font-size:15px;}
+  .s-lbl{fill:var(--ink); font-size:15px; font-weight:600;}
+  .s-lblsoft{fill:var(--ink-soft); font-size:13px;}
+  .s-origin{stroke:var(--accent); stroke-width:1.8;}
+  .hi{fill:var(--accent);} .s-hi{stroke:var(--accent); stroke-width:1.6;}
+</style>
+
+<div class="sheet">
+  <header class="title">
+    <div>
+      <h1>주차 로컬리제이션 라이다 배치도</h1>
+      <div class="sub">stack_parking (손상민) · 실측 치수 기반 · T-mini Plus × 4 (전·좌·우·후) · 앞 라이다는 stack_avoid 공용</div>
+    </div>
+    <div class="frame-badge">
+      좌표계 <b>base_link = 후축 중심</b><br>
+      x <b>전방(+)</b> · y <b>좌측(+)</b> · 단위 <b>mm</b><br>
+      평면도 척도 <b>1 : 5.7</b> (도면폭 기준)
+    </div>
+  </header>
+
+  <div class="meta-row">
+    <span><i class="swatch" style="color:var(--l-front)"></i> 앞 (로컬+회피)</span>
+    <span><i class="swatch" style="color:var(--l-left)"></i> 좌 (로컬)</span>
+    <span><i class="swatch" style="color:var(--l-right)"></i> 우 (로컬)</span>
+    <span><i class="swatch" style="color:var(--l-rear)"></i> 뒤 (로컬)</span>
+  </div>
+
+  <div class="card">
+    <h2>평면도 (Top view) — 정면이 위</h2>
+    <div class="plan-wrap">
+      <svg id="plan" viewBox="0 0 1000 1160" role="img"
+           aria-label="차량 평면 배치도, 후축 중심 원점, 4개 라이다 위치 표시"></svg>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h2>라이다 장착 좌표 (후축 중심 기준)</h2>
+      <table class="mono">
+        <thead><tr><th>유닛</th><th>x</th><th>y</th><th>z</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag" style="background:var(--l-front)"></span>앞</td><td>+760</td><td>0</td><td>65</td><td>로컬+회피</td></tr>
+          <tr><td><span class="tag" style="background:var(--l-left)"></span>좌</td><td>+310</td><td>+155</td><td>65</td><td>로컬</td></tr>
+          <tr><td><span class="tag" style="background:var(--l-right)"></span>우</td><td>+310</td><td>−155</td><td>65</td><td>로컬</td></tr>
+          <tr><td><span class="tag" style="background:var(--l-rear)"></span>뒤</td><td>−55</td><td>0</td><td>65</td><td>로컬</td></tr>
+        </tbody>
+      </table>
+      <p class="note" style="margin-top:14px">
+        <b>좌·우 = 중심선에서 ±155mm</b> (서로 310mm). 4대 모두 스캔평면 <b>z=65mm 동일</b> —
+        2D 스캔 병합 전제 성립. 앞 라이다는 stack_avoid(정면 ±90°, 감지 3m)와 공용.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>측면도 (Side view) — 정면이 왼쪽</h2>
+      <div class="plan-wrap">
+        <svg id="side" viewBox="0 0 1000 300" role="img"
+             aria-label="차량 측면도, 바퀴 지름 180, 스캔평면 높이 65mm"></svg>
+      </div>
+      <p class="note warn" style="margin-top:12px">
+        측면도의 라이다 높이는 <b>실측 z=65mm</b>(낮은 장착)로 그렸습니다. 참조 사진의
+        기본 WHEELTEC 구성(라이다 타워 ≈200mm)과 다르며, <b>본 프로젝트 수치를 우선</b> 적용했습니다.
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>유효 시야각 — 차량 간섭 없는 최대 각도 (바퀴 기준 기하)</h2>
+    <table class="mono">
+      <thead><tr><th>유닛</th><th>중심 방향</th><th>최대(계산)</th><th>적용 시야폭</th><th>적용 각도 (vehicle frame)</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag" style="background:var(--l-left)"></span>좌</td><td>정좌측 +90°</td><td>116.7°</td><td><b>110°</b></td><td>+35° ~ +145°</td></tr>
+        <tr><td><span class="tag" style="background:var(--l-right)"></span>우</td><td>정우측 −90°</td><td>116.7°</td><td><b>110°</b></td><td>−145° ~ −35°</td></tr>
+        <tr><td><span class="tag" style="background:var(--l-rear)"></span>뒤</td><td>정후방 180°</td><td>163.0°</td><td><b>160°</b></td><td>+100° ~ +260°</td></tr>
+        <tr><td><span class="tag" style="background:var(--l-front)"></span>앞</td><td>정면 +x</td><td>180.0°</td><td>180°</td><td>−90° ~ +90° (회피 ROI)</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-top:14px">
+      각도 = vehicle frame(+x 전방, 반시계 +). <b>바퀴(Ø180)만 하드 오클루더</b>로, 평평한 섀시는
+      스캔평면(65mm) 이하로 가정. 최대는 기하 상한이며 라이다 몸체·카메라·케이블은 미반영 →
+      <b>적용값은 최대에서 여유</b>(좌·우 −6.7°, 뒤 −3°)를 둔 값. 실측 mask
+      (<span class="mono">tools/lidar_fov.py mask</span>)로 최종 확인.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>주요 치수 (도면 실측)</h2>
+    <ul class="legend mono">
+      <li>축거(wheelbase) <b>593.8</b></li>
+      <li>전장(차체) <b>850</b></li>
+      <li>차체폭 <b>420</b></li>
+      <li>전폭(바퀴외곽) <b>565.2</b></li>
+      <li>바퀴외곽 전장 <b>774.5</b></li>
+      <li>바퀴 Ø <b>180</b> / 폭 <b>48</b></li>
+    </ul>
+  </div>
+
+  <footer>base_link 후축 중심 · x 전방+ / y 좌측+ / z 상방+ · 단위 mm · 실측 단일 소스: stack_parking/MEASUREMENTS.md · stack_avoid/config/params.yaml</footer>
+</div>
+
+<script>
+const NS="http://www.w3.org/2000/svg";
+function E(tag,a,parent){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);if(parent)parent.appendChild(e);return e;}
+function T(x,y,str,cls,extra){const t=E("text",Object.assign({x,y,class:cls||"s-dimtxt"},extra||{}));t.textContent=str;return t;}
+
+/* ---------- PLAN VIEW (mm world → svg) ---------- */
+(function(){
+  const svg=document.getElementById("plan");
+  const OX=500, OY=820;                 // origin(=rear axle) in svg units
+  const SX=y=>OX-y, SY=x=>OY-x;         // y left+ → left ; x forward+ → up
+
+  // ground reference grid (100mm) — subtle
+  const g=E("g",{},svg);
+  for(let gy=-300; gy<=800; gy+=100){ E("line",{x1:120,y1:SY(gy),x2:880,y2:SY(gy),stroke:"var(--grid)","stroke-width":1},g); }
+  for(let gx=-300; gx<=300; gx+=100){ E("line",{x1:SX(gx),y1:60,x2:SX(gx),y2:1060,stroke:"var(--grid)","stroke-width":1},g); }
+
+  // body (chamfered plate): rear x=-90, front x=760, halfwidth 210, chamfer 70
+  const bp=[[760,140],[760,-140],[690,-210],[-20,-210],[-90,-140],[-90,140],[-20,210],[690,210]]
+    .map(p=>SX(p[1])+","+SY(p[0])).join(" ");
+  E("polygon",{points:bp,class:"s-body"},svg);
+
+  // wheels (width 48 in y, dia 180 in x)  outer edge at ±282.6, center 258.6
+  const wheels=[[595,258.6],[595,-258.6],[0,258.6],[0,-258.6]];
+  wheels.forEach(([cx,cy])=>{
+    E("rect",{x:SX(cy)-24,y:SY(cx)-90,width:48,height:180,rx:9,class:"s-wheel"},svg);
+  });
+
+  // ---- 유효 시야각 (차체 자기가림 제외, 바퀴 기준 기하 계산) ----
+  function fovWedge(px,py,a1,a2,cvar,lbl){
+    const r=245, pts=[[SX(py),SY(px)]];
+    for(let a=a1;a<=a2+0.001;a+=2){const t=a*Math.PI/180; pts.push([SX(py+r*Math.sin(t)),SY(px+r*Math.cos(t))]);}
+    const c=`var(${cvar})`;
+    E("polygon",{points:pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "),
+      fill:c,opacity:.11,stroke:c,"stroke-width":1.2,"stroke-dasharray":"5 4","stroke-opacity":.6},svg);
+    if(lbl){const m=(a1+a2)/2*Math.PI/180, lr=r*0.55;
+      T(SX(py+lr*Math.sin(m)),SY(px+lr*Math.cos(m))+4,lbl,"s-lbl",
+        {"text-anchor":"middle","font-size":14,style:`fill:${c}`});}
+  }
+  // 적용값(최대에서 여유): 좌우 110°, 뒤 160°
+  fovWedge(310,155,35,145,"--l-left","110°");
+  fovWedge(310,-155,-145,-35,"--l-right","110°");
+  fovWedge(-55,0,100,260,"--l-rear","160°");
+
+  // axles
+  E("line",{x1:SX(258.6),y1:SY(0),x2:SX(-258.6),y2:SY(0),class:"s-axle"},svg);   // rear
+  E("line",{x1:SX(258.6),y1:SY(595),x2:SX(-258.6),y2:SY(595),class:"s-axle"},svg); // front
+  T(SX(-282.6)-6,SY(0)+5,"후축",'s-lblsoft',{"text-anchor":"end"});
+  T(SX(-282.6)-6,SY(595)+5,"전축",'s-lblsoft',{"text-anchor":"end"});
+  // centerline
+  E("line",{x1:SX(0),y1:SY(-140),x2:SX(0),y2:SY(800),class:"s-center"},svg);
+
+  // origin marker
+  E("line",{x1:SX(0)-13,y1:SY(0),x2:SX(0)+13,y2:SY(0),class:"s-origin"},svg);
+  E("line",{x1:SX(0),y1:SY(0)-13,x2:SX(0),y2:SY(0)+13,class:"s-origin"},svg);
+  E("circle",{cx:SX(0),cy:SY(0),r:5,fill:"none",class:"s-origin"},svg);
+  T(SX(0)+16,SY(0)+18,"base_link (0,0)",'s-lblsoft');
+
+  // ---- LiDARs ----
+  const vars={front:"--l-front",left:"--l-left",right:"--l-right",rear:"--l-rear"};
+  function lidar(x,y,key,name,tag){
+    const cx=SX(y),cy=SY(x),c=`var(${vars[key]})`;
+    E("circle",{cx,cy,r:15,fill:c,stroke:"var(--panel)","stroke-width":2.5},svg);
+    E("circle",{cx,cy,r:15,fill:"none",stroke:c,"stroke-width":1,opacity:.9},svg);
+    return {cx,cy,c,name,tag};
+  }
+  const LF=lidar(760,0,"front","앞","(+760, 0)");
+  const LL=lidar(310,155,"left","좌","(+310, +155)");
+  const LR=lidar(310,-155,"right","우","(+310, −155)");
+  const LB=lidar(-55,0,"rear","뒤","(−55, 0)");
+
+  // front lidar ROI (±90°, 반원 방향 지시 — 축소 반경)
+  const roiR=150;
+  E("path",{d:`M ${LF.cx-roiR} ${LF.cy} A ${roiR} ${roiR} 0 0 1 ${LF.cx+roiR} ${LF.cy} Z`,
+            fill:LF.c,opacity:.09,stroke:LF.c,"stroke-width":1,"stroke-dasharray":"4 4","stroke-opacity":.5},svg);
+  T(LF.cx,LF.cy-roiR+18,"stack_avoid ROI ±90°",'s-lblsoft',{"text-anchor":"middle","font-size":11});
+
+  // callouts
+  T(LF.cx+22,LF.cy-6,"앞",'s-lbl');   T(LF.cx+22,LF.cy+13,LF.tag,'s-lblsoft',{"font-size":12});
+  T(LL.cx-22,LL.cy-6,"좌",'s-lbl',{"text-anchor":"end"}); T(LL.cx-22,LL.cy+13,LL.tag,'s-lblsoft',{"text-anchor":"end","font-size":12});
+  T(LR.cx+22,LR.cy-6,"우",'s-lbl');   T(LR.cx+22,LR.cy+13,LR.tag,'s-lblsoft',{"font-size":12});
+  T(LB.cx+22,LB.cy+5,"뒤",'s-lbl');   T(LB.cx+22,LB.cy+23,LB.tag,'s-lblsoft',{"font-size":12});
+
+  // ---------- dimension helpers ----------
+  function hdim(xa,xb,y,label,cls){
+    const c=cls?"s-hi":"s-dim", tc=cls?"hi":"s-dimtxt";
+    E("line",{x1:xa,y1:y,x2:xb,y2:y,class:c},svg);
+    [xa,xb].forEach(xx=>E("line",{x1:xx,y1:y-5,x2:xx,y2:y+5,class:c},svg));
+    const t=T((xa+xb)/2,y-7,label,tc,{"text-anchor":"middle"});
+    // bg for legibility
+  }
+  function vdim(x,ya,yb,label,cls){
+    const c=cls?"s-hi":"s-dim", tc=cls?"hi":"s-dimtxt";
+    E("line",{x1:x,y1:ya,x2:x,y2:yb,class:c},svg);
+    [ya,yb].forEach(yy=>E("line",{x1:x-5,y1:yy,x2:x+5,y2:yy,class:c},svg));
+    T(x+7,(ya+yb)/2+5,label,tc);
+  }
+
+  // width dims (top)
+  hdim(SX(210),SX(-210),110,"420");
+  hdim(SX(282.6),SX(-282.6),74,"565.2");
+  // extension ticks
+  E("line",{x1:SX(210),y1:120,x2:SX(210),y2:SY(140),class:"s-dim",opacity:.5},svg);
+  E("line",{x1:SX(-210),y1:120,x2:SX(-210),y2:SY(140),class:"s-dim",opacity:.5},svg);
+
+  // wheelbase (right)
+  vdim(SX(-330),SY(0),SY(595),"593.8");
+  T(SX(-330)+7,(SY(0)+SY(595))/2+22,"축거",'s-lblsoft');
+
+  // longitudinal lidar positions (left stack, from rear axle)
+  vdim(SX(330),SY(0),SY(760),"760");
+  vdim(SX(300),SY(0),SY(310),"310");
+  vdim(SX(300),SY(0),SY(-55),"−55");
+
+  // KEY: lateral ±155 offset of side lidars (highlighted)
+  hdim(SX(0),SX(155),LL.cy,"155",true);
+  hdim(SX(-155),SX(0),LR.cy,"155",true);
+
+  // direction compass
+  const ax=175, ay=1000;
+  E("line",{x1:ax,y1:ay,x2:ax,y2:ay-46,class:"s-hi"},svg);
+  E("path",{d:`M ${ax} ${ay-52} l -5 10 l 10 0 z`,fill:"var(--accent)"},svg);
+  T(ax,ay-58,"전방 +x",'hi',{"text-anchor":"middle","font-size":13});
+  E("line",{x1:ax,y1:ay,x2:ax-46,y2:ay,class:"s-hi"},svg);
+  E("path",{d:`M ${ax-52} ${ay} l 10 -5 l 0 10 z`,fill:"var(--accent)"},svg);
+  T(ax-30,ay+18,"좌 +y",'hi',{"text-anchor":"middle","font-size":13});
+})();
+
+/* ---------- SIDE VIEW ---------- */
+(function(){
+  const svg=document.getElementById("side");
+  const GY=250, s=0.24, X0=120;              // ground y, scale, left pad
+  const SXx=x=>X0+(760-x)*s;                 // front(760) at left
+  const SZ=z=>GY-z*s;                        // z up
+  // ground
+  E("line",{x1:40,y1:GY,x2:980,y2:GY,stroke:"var(--ink-soft)","stroke-width":1.5},svg);
+  for(let i=40;i<980;i+=22){E("line",{x1:i,y1:GY,x2:i-8,y2:GY+8,stroke:"var(--line)","stroke-width":1},svg);}
+  // body slab (representative height)
+  const bx1=SXx(760), bx2=SXx(-90);
+  E("rect",{x:Math.min(bx1,bx2),y:SZ(200),width:Math.abs(bx2-bx1),height:(200-95)*s,rx:5,fill:"var(--body-fill)",stroke:"var(--ink)","stroke-width":2},svg);
+  // wheels Ø180 (r90) centers z=90
+  [595,0].forEach(cx=>{
+    E("circle",{cx:SXx(cx),cy:SZ(90),r:90*s,fill:"none",stroke:"var(--ink)","stroke-width":2.5},svg);
+    E("circle",{cx:SXx(cx),cy:SZ(90),r:26*s,fill:"var(--wheel)"},svg);
+  });
+  // Ø180 label
+  T(SXx(0),SZ(90)+5,"Ø180",'s-lblsoft',{"text-anchor":"middle","font-size":12});
+  // scan plane z=65
+  E("line",{x1:60,y1:SZ(65),x2:965,y2:SZ(65),stroke:"var(--accent)","stroke-width":1.4,"stroke-dasharray":"8 5"},svg);
+  T(965,SZ(65)-7,"스캔평면 z=65mm",'hi',{"text-anchor":"end","font-size":12});
+  // lidar ticks at x=760(앞),310(좌/우),-55(뒤)
+  const lz=SZ(65);
+  [["front",760,"앞"],["left",310,"좌·우"],["rear",-55,"뒤"]].forEach(([k,x,nm])=>{
+    const c=`var(--l-${k})`, X=SXx(x);
+    E("rect",{x:X-7,y:lz-8,width:14,height:16,rx:3,fill:c,stroke:"var(--panel)","stroke-width":2},svg);
+    T(X,lz-14,nm,'s-lblsoft',{"text-anchor":"middle","font-size":11});
+  });
+  // height dim 233.7 (ref) & ground
+  T(SXx(760)-4,GY+22,"앞",'hi',{"text-anchor":"middle","font-size":13});
+  T(SXx(-90)+4,GY+22,"뒤",'s-lblsoft',{"text-anchor":"middle","font-size":13});
+})();
+</script>
