@@ -13,7 +13,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker, MarkerArray
-from fma_interfaces.msg import AvoidStatus
+from fma_interfaces.msg import AvoidStatus, TargetRef
 
 
 def _mk(ns, mid, mtype, frame='base_link'):
@@ -46,9 +46,17 @@ class AvoidViz(Node):
 
         self.pub = self.create_publisher(MarkerArray, 'avoid_markers', 1)
         self.sub = self.create_subscription(AvoidStatus, '/perception/avoid', self.cb, 10)
+        # 실제로 dSPACE 로 나가는 ref 점. 인지 목표점과 다를 수 있다(당김 방식) —
+        # RViz 에 목표점만 그리면 "바뀐 게 없어 보이는" 착시가 생겨서 같이 그린다.
+        self.last_ref = None
+        self.ref_sub = self.create_subscription(
+            TargetRef, '/adas/target_ref', self._on_ref, 1)
         self.get_logger().info(
             f"avoid_viz → /avoid_markers | corridor ±{self.corr:.2f}m, "
             f"detect {self.detect_range}m, FOV ±{math.degrees(self.half):.0f}deg")
+
+    def _on_ref(self, msg: TargetRef):
+        self.last_ref = msg.ref_points[0] if msg.ref_points else None
 
     def cb(self, msg: AvoidStatus):
         arr = MarkerArray()
@@ -116,6 +124,32 @@ class AvoidViz(Node):
         fwd.color.r, fwd.color.g, fwd.color.b, fwd.color.a = 1.0, 0.9, 0.1, 1.0
         fwd.points = [_pt(0.0, 0.0), _pt(1.0, 0.0)]      # 후축 원점 → 전방 1m
         arr.markers.append(fwd)
+
+        # ── 실제 송신 ref 점 (당김 적용 후) ──
+        # 인지 목표점(초록)과 별개. 이게 dSPACE 가 실제로 받는 점이다.
+        if self.last_ref is not None:
+            r = self.last_ref
+            sent = _mk('sent_ref', 8, Marker.SPHERE)
+            sent.pose.position.x, sent.pose.position.y = float(r.x), float(r.y)
+            sent.scale.x = sent.scale.y = sent.scale.z = 0.16
+            sent.color.r, sent.color.g, sent.color.b, sent.color.a = 1.0, 0.35, 0.0, 0.95
+            arr.markers.append(sent)
+
+            line = _mk('sent_ref', 9, Marker.LINE_LIST)
+            line.scale.x = 0.025
+            line.color.r, line.color.g, line.color.b, line.color.a = 1.0, 0.35, 0.0, 0.8
+            line.points = [_pt(0.0, 0.0), _pt(r.x, r.y)]
+            arr.markers.append(line)
+
+            st = _mk('sent_ref', 10, Marker.TEXT_VIEW_FACING)
+            st.pose.position.x, st.pose.position.y = float(r.x), float(r.y)
+            st.pose.position.z = 0.35
+            st.scale.z = 0.13
+            st.color.r, st.color.g, st.color.b, st.color.a = 1.0, 0.6, 0.2, 0.95
+            deg = math.degrees(math.atan(0.595 * r.curvature))
+            st.text = (f"SENT ({r.x:.2f}, {r.y:+.2f})\n"
+                       f"k {r.curvature:+.3f} = {deg:+.1f}deg")
+            arr.markers.append(st)
 
         for mid, side, y in ((6, 'LEFT (+y)', 0.7), (7, 'RIGHT (-y)', -0.7)):
             lab = _mk('side_label', mid, Marker.TEXT_VIEW_FACING)

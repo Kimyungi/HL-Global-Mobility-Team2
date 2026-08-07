@@ -48,13 +48,40 @@ class AvoidToRef(Node):
         # lookahead를 MPC 미리보기 창 안으로 강제하는 비율. 1.0 = 창 끝, 0.5 = 창 절반.
         # 0 으로 두면 클램프 없이 lookahead_m 을 그대로 쓴다(예전 동작).
         self.preview_frac = float(self.declare_parameter('preview_frac', 0.5).value)
-        # 송신 ref 의 횡방향 성분(y·yaw·curvature) 부호. 기본 -1.
-        # 2026-08-07 실차: 인지가 낸 회피 목표점 y 는 RViz에서 실제와 일치하는데
-        # (인지 프레임은 정상), 그대로 보내면 바퀴가 반대로 꺾인다 → 반전은
-        # 명령→서보 구간에 있다. 인지 쪽(scan) 부호를 뒤집는 것으로 고치려 했으나
-        # 목표점이 엉뚱한 구역에 찍혀 원복했다. 근원 위치는 dSPACE 측 조향 부호 규약
-        # 으로 추정되며, 여기서는 그 규약에 맞춰 송신 부호를 맞춘다.
-        self.lat_sign = float(self.declare_parameter('lateral_sign', -1.0).value)
+        # ★ lookahead 절대 상한 [m]. preview_frac 만 쓰면 속도에 비례해 lookahead 가
+        #   늘어나는데, 4~6cm 를 넘으면 조향 부호가 뒤집힌다(2026-08-07 실측:
+        #   v 0.2→0.6 에서 str −4.99 → −0.89 로 죽다가 반전).
+        #   이유: dSPACE 는 궤적 시작 곡률을 curvature0 = tan(현재 조향)/wheelbase 로
+        #   잡으므로 조향→궤적→조향이 폐루프다. 호가 미리보기보다 길면
+        #   κ_sampled ≈ κ0 가 되어 어떤 조향값이든 평형점이 되고 응답이 눌러붙는다.
+        #   호를 짧게 유지해 샘플이 목표점에서 클램프되면 κ_sampled = κ_target 이
+        #   되어 폐루프 축퇴가 깨진다. 실측 안정 동작점 2cm 를 기본값으로.
+        self.lookahead_max = float(self.declare_parameter('lookahead_max_m', 0.02).value)
+        # ★ 당김 방식 파라미터 (기본 동작). 0 이하면 기존 호-lookahead 방식으로 돌아간다.
+        #   목표점 y 는 유지하고 x 만 이만큼 당긴다 → κ=2y/(x²+y²) 가 커져 조향이 커지고,
+        #   점이 장애물보다 앞에 놓여 더 일찍 꺾는다(충돌 여유 확보).
+        self.pullback = float(self.declare_parameter('pullback_m', 1.2).value)
+        # 당긴 뒤에도 이 값보다 가까이는 두지 않는다(너무 가까우면 quintic 이 무너진다).
+        self.ref_x_min = float(self.declare_parameter('ref_x_min_m', 0.8).value)
+        # 곡률 클램프 기준 — params.yaml 의 vehicle.min_turn_radius_m 과 같은 값.
+        self.min_turn_radius = float(self.declare_parameter('min_turn_radius_m', 1.15).value)
+        # 송신 ref 의 횡방향 성분(y·yaw·curvature) 부호. ★기본 +1 = 기하학적으로 올바름.
+        #
+        # 2026-08-07 실차에서 확인된 것:
+        #   - 인지가 낸 회피 목표점 y 는 RViz 표시·실물과 일치한다(인지 프레임 정상).
+        #   - 그런데 그대로 보내면 바퀴가 반대로 꺾인다.
+        #   - vehicle_vector.str 은 우리 명령과 같은 부호로 돌아온다(κ +0.25 → str +5.77°).
+        #     즉 텔레메트리까지는 맞고 실제 서보 구동만 반대 → 반전은 str 보고 지점보다 하류.
+        #   - dSPACE MPC 소스에도 대응되는 대목이 있다:
+        #       wheelSteering  = -deg2rad(Actuator_Cmd.target_angle)
+        #       target_angle   = -rad2deg(outWheelSteering)
+        #     MPC 내부 조향(REP-103, +가 좌)과 액추에이터 명령 사이에 부호 반전이 있다.
+        #
+        # -1 로 두면 바퀴는 맞게 돌지만 **기하학적으로 틀린 점**을 보내게 되어
+        # CLAUDE.md §3(ref_points 는 vehicle frame)에 어긋나고, MGM 통합 시
+        # 다른 스택(GPS·차선)과 규약이 어긋난다. 그래서 기본은 +1 로 둔다.
+        # 서보 부호 규약이 정리되기 전까지는 실차에서 바퀴가 반대로 돌 수 있다.
+        self.lat_sign = float(self.declare_parameter('lateral_sign', 1.0).value)
         self.period = float(self.declare_parameter('period_ms', 10).value) / 1000.0
         # ── estop 게이트 (박찬미 stack_estop) — 공용 모듈 ──
         # 기본 ON. 끄는 것은 스탠드 위 단독 디버깅 전용 — 실차 주행에서는 켜둘 것.
@@ -90,6 +117,12 @@ class AvoidToRef(Node):
                 self.lat_sign = float(p.value)
             elif p.name == 'preview_frac':
                 self.preview_frac = float(p.value)
+            elif p.name == 'lookahead_max_m':
+                self.lookahead_max = float(p.value)
+            elif p.name == 'pullback_m':
+                self.pullback = float(p.value)
+            elif p.name == 'ref_x_min_m':
+                self.ref_x_min = float(p.value)
             elif p.name == 'straight_x_m':
                 self.straight_x = float(p.value)
         self.get_logger().info(
@@ -110,7 +143,44 @@ class AvoidToRef(Node):
         preview = MPC_HORIZON_STEPS * MPC_SAMPLE_TIME_S * abs(v_ref)
         if preview <= 1e-6:                 # v_ref=0 이면 창이 없다 — 원래 값 유지
             return self.lookahead
-        return min(self.lookahead, self.preview_frac * preview)
+        # 절대 상한도 같이 건다 — 속도가 올라도 호가 길어지지 않게(폐루프 축퇴 방지).
+        return min(self.lookahead, self.preview_frac * preview, self.lookahead_max)
+
+    def _pullback_point(self, p):
+        """★ 당김 방식 — 목표점의 측방(y)은 그대로 두고 전방거리(x)만 당긴다.
+
+        κ = 2y/(x²+y²) 이므로 y 를 고정한 채 x 를 줄이면 곡률이 급격히 커진다.
+        (호 위 lookahead 방식은 x·y 가 함께 줄어 κ 가 불변이라 조향이 안 커졌다.)
+
+        효과 3가지 — 2026-08-07 모델 시뮬레이션으로 확인:
+          ① 속도가 오를수록 조향이 커진다. dSPACE 미리보기(N_p·Ts·v)가 넓어질수록
+             당겨진 점이 만드는 급한 quintic 을 더 많이 샘플하기 때문.
+             x=1.0 기준 v 0.2/0.4/0.6 → 7.2° / 17.0° / 24.3°
+          ② 크기 자체가 3~8배 커진다 (기존 방식 −2.9°/−0.9°/+0.9°)
+          ③ 점이 장애물보다 앞(가까이)에 놓여 더 일찍 꺾으므로 충돌 여유가 커진다
+
+        반환: (x, y, yaw, curvature) — 부호(lateral_sign)는 호출측에서 적용.
+        """
+        y = p.y
+        x = max(self.ref_x_min, min(p.x, p.x - self.pullback))
+        d2 = x * x + y * y
+        kappa = 2.0 * y / d2
+        # 물리적으로 낼 수 없는 곡률은 잘라낸다(최소회전반경). 넘겨봐야 MPC가 포화.
+        k_max = 1.0 / self.min_turn_radius
+        kappa = max(-k_max, min(k_max, kappa))
+        yaw = 2.0 * math.atan2(y, x)
+        return x, y, yaw, kappa
+
+    def _arc_lookahead_point(self, p, v_ref):
+        """기존 방식 — 목표점으로 가는 호 위 lookahead 지점. 비교용(pullback_m=0)."""
+        kappa = 2.0 * p.y / (p.x * p.x + p.y * p.y)
+        if abs(kappa) > 1e-4:
+            s_total = 2.0 * math.atan2(p.y, p.x) / kappa
+            length = min(self._lookahead_in_preview(v_ref), abs(s_total))
+            th = kappa * length
+            return math.sin(th) / kappa, (1.0 - math.cos(th)) / kappa, th, kappa
+        length = min(self._lookahead_in_preview(v_ref), math.hypot(p.x, p.y))
+        return length, 0.0, 0.0, kappa
 
     @staticmethod
     def _rp(x, y=0.0, yaw=0.0, curv=0.0):
@@ -136,15 +206,10 @@ class AvoidToRef(Node):
             p = a.points[0]
             d2 = p.x * p.x + p.y * p.y
             if d2 > 1e-6:
-                kappa = 2.0 * p.y / d2                          # 회피 arc 곡률
-                if abs(kappa) > 1e-4:
-                    s_total = 2.0 * math.atan2(p.y, p.x) / kappa  # 목표까지 호길이
-                    L = min(self._lookahead_in_preview(m.v_ref), abs(s_total))
-                    th = kappa * L                                # 접선 헤딩 (김윤기 방식)
-                    lx, ly = math.sin(th) / kappa, (1.0 - math.cos(th)) / kappa
-                else:                                             # 거의 직진
-                    L = min(self._lookahead_in_preview(m.v_ref), math.hypot(p.x, p.y))
-                    th, lx, ly = 0.0, L, 0.0
+                if self.pullback > 0.0:
+                    lx, ly, th, kappa = self._pullback_point(p)
+                else:
+                    lx, ly, th, kappa = self._arc_lookahead_point(p, m.v_ref)
                 # 횡방향 성분에만 부호 적용 — x(전방거리)는 그대로 둔다.
                 s = self.lat_sign
                 m.ref_points = [self._rp(lx, s * ly, s * th, s * kappa * self.curv_gain)]
