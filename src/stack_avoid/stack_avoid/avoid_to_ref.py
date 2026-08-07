@@ -45,18 +45,38 @@ class AvoidToRef(Node):
         self.straight_x = float(self.declare_parameter('straight_x_m', 2.0).value)
         self.straight_when_clear = bool(self.declare_parameter('straight_when_clear', False).value)
         self.curv_gain = float(self.declare_parameter('curvature_gain', 1.0).value)  # 조향 증폭 시험용
-        # ★ 세로 여유 (clear_before_m) — 회피 기동의 핵심 설계값.
-        #   회피 목표점은 (장애물의 x, 통과 열림의 y) 이므로, 그대로 쓰면
-        #   "장애물에 도달하는 그 순간 딱 옆에 있어라" = 세로 여유 0 이 된다.
-        #   그 순간에 겨우 비켜 있으면 차 옆면이 장애물을 스친다. 실제로는 장애물보다
-        #   이만큼 **먼저** 다 비켜 있어야 한다.
-        #   요구 곡률 κ = 2y / ((x_obs − clear_before)² + y²) 이므로 이 값이 곧
-        #   조향 크기를 정한다 (장애물 2.96m·측방 0.93m 기준):
-        #       0.00 m (여유 없음) →  6.56°
-        #       0.85 m (전장 하나) → 11.76°   ← 기본값
-        #       1.20 m             → 15.60°
-        #   기본 0.85 = 차 전장. 차 한 대 길이만큼 먼저 비켜 있으면 옆면이 안 스친다.
+        # ★ 송신 yaw 배수. ★기본 0 = 목표점에서 원래 헤딩과 나란(GPS 방식).
+        #   1.0 = 호 접선각(2·atan2(y,x)) — 측방 오프셋이 크면 80°가 넘는다.
+        #   GPS 는 트랙 접선(≈0°)을 보내는데 우리는 60~85° 를 보낸다. dSPACE quintic 의
+        #   끝점 접선이 거의 옆을 보게 되어 초기 구간이 완만해지는 것으로 의심된다.
+        #   2026-08-07 GPS bag 분석: 실제 조향은 curvature 보다 atan2(y,x) 와 강상관
+        #   (S자 −0.952 vs −0.394). 이 값으로 yaw 기여를 분리 측정한다.
+        self.yaw_gain = float(self.declare_parameter('yaw_gain', 0.0).value)
+        # ★ 진단용 — 송신 측방 y 배수. κ 도 축소된 점에 맞춰 재계산해 자기정합 유지.
+        #   GPS 는 y 가 경로 이탈량(평균 0.15m)이라 작고, 우리는 측방 도약(0.7~0.9m)이다.
+        #   dSPACE 응답이 y 에 어떻게 의존하는지 분리 측정하기 위한 값. 기본 1.0.
+        self.y_scale = float(self.declare_parameter('y_scale', 1.0).value)
+        # ★ 기본 동작 — 인지 회피 목표점을 그대로 송신 (2026-08-07 지시 B).
+        #   true 면 아래 clear_before/scale_match 계산을 건너뛰고 초록점 자체를 보낸다.
+        #   위치(x,y)는 손대지 않고 yaw·curvature 만 채운다.
+        self.send_as_is = bool(self.declare_parameter('send_target_as_is', True).value)
+        # ★ 세로 여유 (clear_before_m) — 회피 기동의 핵심 설계값. **앞범퍼 기준**.
+        #   측방 이동이 끝나는 시점에 앞범퍼와 장애물 사이에 남길 세로 거리다.
+        #
+        #   주의: 회피 목표점 x 는 base_link(후축 중심) 기준이고 앞범퍼는 그보다
+        #   front_offset_m(0.76) 앞에 있다. 그래서 후축 기준으로 잡으면 앞범퍼
+        #   여유가 그만큼 깎여, 0.76 미만 값은 "앞범퍼가 이미 장애물을 지난 뒤에야
+        #   측방 이동 완료" = 충돌을 뜻하게 된다. 여기서는 앞범퍼를 기준으로 삼아
+        #   파라미터 값이 곧 실제 여유가 되게 한다.
+        #
+        #   요구 곡률 κ = 2y / (x_clear² + y²),  x_clear = x_obs − front_offset − clear_before
+        #   장애물 2.96m·측방 0.93m 기준 요구 조향:
+        #       0.00 m (앞범퍼가 장애물 옆에 닿는 순간) → 10.98°
+        #       0.85 m (차 한 대 길이 먼저)            → 22.38°   ← 기본값
+        #   조향 크기를 바꾸려면 이 값 하나만 만지면 된다.
         self.clear_before = float(self.declare_parameter('clear_before_m', 0.85).value)
+        # 후축 중심 → 앞범퍼 [m]. params.yaml 의 wheelbase + front_overhang (= lidar_mount.x_m).
+        self.front_offset = float(self.declare_parameter('front_offset_m', 0.76).value)
         # 조향 지연 보상 [s]. 조향이 다 서기까지 차는 v·τ 만큼 더 간다 → 그만큼 더
         # 먼저 비켜야 한다. 속도가 오를수록 요구 조향이 커지는 물리적 근거.
         # 8/6 실측 참고: dead 0.111s / 63% 0.330s / 95% 0.451s.
@@ -125,12 +145,18 @@ class AvoidToRef(Node):
         for p in params:
             if p.name == 'curvature_gain':
                 self.curv_gain = float(p.value)
+            elif p.name == 'yaw_gain':
+                self.yaw_gain = float(p.value)
+            elif p.name == 'y_scale':
+                self.y_scale = float(p.value)
             elif p.name == 'target_speed_mps':
                 self.target_speed = float(p.value)
             elif p.name == 'lateral_sign':
                 self.lat_sign = float(p.value)
             elif p.name == 'clear_before_m':
                 self.clear_before = float(p.value)
+            elif p.name == 'front_offset_m':
+                self.front_offset = float(p.value)
             elif p.name == 'steer_lag_s':
                 self.steer_lag = float(p.value)
             elif p.name == 'ref_x_min_m':
@@ -173,11 +199,14 @@ class AvoidToRef(Node):
         return (d1[0] * d2[1] - d1[1] * d2[0]) / sp2 ** 1.5
 
     def _required_curvature(self, p, v_ref):
-        """회피 기하가 요구하는 곡률 — 장애물보다 clear_before 만큼 먼저 다 비키기.
+        """회피 기하가 요구하는 곡률 — 앞범퍼가 장애물보다 clear_before 만큼 먼저 다 비키기.
 
         조향 지연(v·τ) 동안 차가 더 가므로 그만큼 더 먼저 비켜야 한다.
         """
-        x_clear = max(self.ref_x_min, p.x - self.clear_before - abs(v_ref) * self.steer_lag)
+        # 앞범퍼 기준: 후축 원점 좌표에서 front_offset 을 먼저 빼야 앞범퍼 위치가 된다.
+        x_clear = max(self.ref_x_min,
+                      p.x - self.front_offset - self.clear_before
+                      - abs(v_ref) * self.steer_lag)
         k_max = 1.0 / self.min_turn_radius
         k = 2.0 * p.y / (x_clear * x_clear + p.y * p.y)
         return x_clear, max(-k_max, min(k_max, k))
@@ -239,10 +268,24 @@ class AvoidToRef(Node):
             p = a.points[0]
             d2 = p.x * p.x + p.y * p.y
             if d2 > 1e-6:
-                lx, ly, th, kappa = self._scale_matched_point(p, m.v_ref)
+                if self.send_as_is:
+                    k_max = 1.0 / self.min_turn_radius
+                    kappa = max(-k_max, min(k_max, 2.0 * p.y / d2))
+                    lx, ly, th = p.x, p.y, 2.0 * math.atan2(p.y, p.x)
+                else:
+                    lx, ly, th, kappa = self._scale_matched_point(p, m.v_ref)
                 # 횡방향 성분에만 부호 적용 — x(전방거리)는 그대로 둔다.
                 s = self.lat_sign
-                m.ref_points = [self._rp(lx, s * ly, s * th, s * kappa * self.curv_gain)]
+                # y_scale 적용 시 κ 를 축소된 점 기준으로 재계산 (자기정합)
+                ly2 = ly * self.y_scale
+                if abs(self.y_scale - 1.0) > 1e-9:
+                    d2b = lx * lx + ly2 * ly2
+                    kappa = 2.0 * ly2 / d2b if d2b > 1e-9 else 0.0
+                    kmax = 1.0 / self.min_turn_radius
+                    kappa = max(-kmax, min(kmax, kappa))
+                    th = 2.0 * math.atan2(ly2, lx)
+                m.ref_points = [self._rp(lx, s * ly2, s * th * self.yaw_gain,
+                                         s * kappa * self.curv_gain)]
             else:
                 m.ref_points = [self._rp(self.straight_x)]
         elif a is not None and a.obstacle_detected:      # narrow_gap: 통과 불가
