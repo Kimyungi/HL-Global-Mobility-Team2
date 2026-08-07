@@ -68,7 +68,8 @@ def main():
         v = n.last_v
         ok = (v is not None) and ((v > 1e-3) == expect_moving)
         results.append((name, v, expect_moving, ok))
-        print(f"{'✓' if ok else '✗'} {name:34s} v_ref={v}  (기대: {'주행' if expect_moving else '정지'})")
+        want = '주행' if expect_moving else '정지'
+        print(f"{'✓' if ok else '✗'} {name:34s} v_ref={v}  (기대: {want})")
 
     settle(n, 1.0)   # 노드 연결 대기
     step('1) estop 미수신', None, 1.0, False)

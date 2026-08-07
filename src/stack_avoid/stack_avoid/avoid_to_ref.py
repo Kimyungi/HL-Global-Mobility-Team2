@@ -9,16 +9,9 @@ stack_avoid의 회피 목표점을 dSPACE로 바로 보내, 라이다가 본 장
   - 장애물 감지 + 목표점 없음(narrow_gap) → v_ref=0 (통과 불가 → 정지)
   - 장애물 없음 → clear: straight_when_clear=true면 직진, 아니면 v_ref=0(정지)
 
-★ estop 게이트 (박찬미 stack_estop): 위 판단 결과 위에 **최상위 우선권**으로
-  `/perception/estop`(EstopRequest)을 덮어쓴다 — estop=true면 v_ref=0.
-  - 이 하네스는 MGM 대체물이므로, estop을 받아 v_ref=0으로 반영하는 것은
-    CLAUDE.md §4 "정지는 스테이트가 아니다 — 우선권 표의 최상위 요구"와 동일한 처리다.
-    회피 판단(무엇을 피할지)은 stack_avoid, 안전 바닥(설지)은 stack_estop.
-  - **조향은 건드리지 않는다** (ref_points 유지) — §3 "정지 시 조향은 직전 값 유지, 급조향 금지".
-  - **신선도 watchdog**: EstopRequest 미수신(기동 직후) 또는 stale(기본 250ms
-    = 하트비트 50ms×5)이면 estop=true로 보정한다. CLAUDE.md §5.7 MGM wrapper와
-    같은 페일세이프 — 판단이 아니라 입력 컨디셔닝.
-  - estop_gate:=false 로 끌 수 있으나 **실차에서는 켠 채로 쓸 것**.
+★ estop 게이트 (박찬미 stack_estop): 위 판단 결과를 **최상위 우선권**으로 덮어쓴다 —
+  estop=true면 v_ref=0. 상세·페일세이프 규칙은 `estop_gate.EstopGate` 참조.
+  estop_gate:=false 로 끌 수 있으나 **실차에서는 켠 채로 쓸 것**.
 
 ★ 안전: 바퀴 들고(스탠드) 먼저, 물리 비상정지 준비, v_ref 낮게.
 """
@@ -27,7 +20,9 @@ import math
 import rclpy
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
-from fma_interfaces.msg import AvoidStatus, EstopRequest, RefPoint, TargetRef
+from fma_interfaces.msg import AvoidStatus, RefPoint, TargetRef
+
+from stack_avoid.estop_gate import EstopGate
 
 
 class AvoidToRef(Node):
@@ -41,73 +36,27 @@ class AvoidToRef(Node):
         self.lookahead = float(self.declare_parameter('lookahead_m', 0.4).value)
         self.curv_gain = float(self.declare_parameter('curvature_gain', 1.0).value)  # 조향 증폭 시험용
         self.period = float(self.declare_parameter('period_ms', 10).value) / 1000.0
-        # ── estop 게이트 (박찬미 stack_estop) ──
+        # ── estop 게이트 (박찬미 stack_estop) — 공용 모듈 ──
         # 기본 ON. 끄는 것은 스탠드 위 단독 디버깅 전용 — 실차 주행에서는 켜둘 것.
-        self.estop_gate = bool(self.declare_parameter('estop_gate', True).value)
-        # 하트비트 50ms × 5 = 250ms (CLAUDE.md §5.7 MGM wrapper와 동일 기본값)
-        self.estop_stale_s = float(self.declare_parameter('estop_stale_s', 0.25).value)
+        self.gate = EstopGate(
+            self,
+            enabled=bool(self.declare_parameter('estop_gate', True).value),
+            # 하트비트 50ms × 5 = 250ms (CLAUDE.md §5.7 MGM wrapper와 동일 기본값)
+            stale_s=float(self.declare_parameter('estop_stale_s', 0.25).value))
 
         self.last = None
-        self.estop = False
-        self.estop_stamp = None
-        self._last_reason = None
-        self._stale_age = 0.0
         self.pub = self.create_publisher(TargetRef, '/adas/target_ref', 1)
         self.sub = self.create_subscription(AvoidStatus, '/perception/avoid', self._on_avoid, 10)
-        # estop은 안전 신호 — 최신값만 의미 있으므로 depth 1.
-        self.estop_sub = self.create_subscription(
-            EstopRequest, '/perception/estop', self._on_estop, 1)
         self.timer = self.create_timer(self.period, self.tick)
         # 라이브 튜닝: ros2 param set 으로 curv_gain·lookahead·속도 즉석 변경 (재시작 불필요)
         self.add_on_set_parameters_callback(self._on_set_params)
         self.get_logger().warn(
             f"avoid_to_ref (테스트 하네스): /perception/avoid → /adas/target_ref | "
             f"v={self.target_speed}m/s, clear시 {'직진' if self.straight_when_clear else '정지'} | "
-            f"estop 게이트 {'ON' if self.estop_gate else '★OFF★'} (stale {self.estop_stale_s}s). "
-            f"★실차 조향 — 안전 주의")
-        if not self.estop_gate:
-            self.get_logger().error(
-                "estop_gate=false — stack_estop 안전 바닥이 무시된다. 실차 주행 금지.")
+            f"{self.gate.banner()}. ★실차 조향 — 안전 주의")
 
     def _on_avoid(self, msg):
         self.last = msg
-
-    def _on_estop(self, msg):
-        self.estop = bool(msg.estop)
-        self.estop_stamp = self.get_clock().now()
-
-    def _estop_block(self):
-        """estop 게이트 판정 → (정지시킬 것인가, 사유 문자열).
-
-        미수신·stale을 estop=true로 보는 페일세이프. 이것은 판단이 아니라 입력
-        컨디셔닝이며, 정지의 근거는 어디까지나 stack_estop의 요구다.
-        """
-        if not self.estop_gate:
-            return False, None
-        if self.estop_stamp is None:
-            return True, 'ESTOP(미수신)'          # 기동 직후 — estop 노드가 뜨기 전
-        age = (self.get_clock().now() - self.estop_stamp).nanoseconds * 1e-9
-        if age > self.estop_stale_s:
-            # 사유 문자열에 age를 넣지 말 것 — 매 틱 값이 바뀌어 변경-트리거 로그가
-            # 100Hz로 도배된다. 경과시간은 전이 시점에 한 번만 찍는다.
-            self._stale_age = age
-            return True, 'ESTOP(stale)'           # 노드 사망·스캔 끊김
-        if self.estop:
-            return True, 'ESTOP'
-        return False, None
-
-    def _log_reason(self, reason):
-        """정지 사유가 바뀔 때만 로그 — ⓐⓑⓒ 시험에서 어느 쪽이 세웠는지 구분용."""
-        if reason != self._last_reason:
-            if reason is None:
-                self.get_logger().info('주행 재개')
-            elif 'stale' in reason:
-                self.get_logger().warn(
-                    f'v_ref=0 ← {reason} — estop 미갱신 {self._stale_age:.2f}s '
-                    f'(> {self.estop_stale_s}s). stack_estop 사망/스캔 끊김 확인')
-            else:
-                self.get_logger().warn(f'v_ref=0 ← {reason}')
-            self._last_reason = reason
 
     def _on_set_params(self, params):
         for p in params:
@@ -176,11 +125,11 @@ class AvoidToRef(Node):
         # v_ref만 0으로. ref_points는 그대로 둔다 (§3 조향 직전 값 유지·급조향 금지).
         # 사유를 estop으로 덮어써서, ⓒ처럼 narrow_gap과 estop이 동시에 성립하는
         # 경우에도 "안전 바닥이 실제로 걸렸다"가 로그에 남게 한다.
-        blocked, why = self._estop_block()
+        blocked, why = self.gate.block()
         if blocked:
             m.v_ref = 0.0
             reason = why if reason is None else f'{why} + {reason}'
-        self._log_reason(reason)
+        self.gate.log_reason(reason)
 
         self.pub.publish(m)
 

@@ -31,6 +31,8 @@ setup(
             'angle_labels = stack_avoid.angle_labels:main',  # 테스트: 각도 눈금(방향 확인)
             'avoid_drive_sim = stack_avoid.avoid_drive_sim:main',  # 테스트: 폐루프 회피주행 sim
             'avoid_to_ref = stack_avoid.avoid_to_ref:main',        # 테스트: 회피점→dSPACE(실차 조향)
+            'step_injector = stack_avoid.step_injector:main',      # 실측 ①②: 측방 스텝 주입
+            'mark = stack_avoid.mark:main',                        # 실측: 구간 라벨(/test/event)
         ],
     },
 )
