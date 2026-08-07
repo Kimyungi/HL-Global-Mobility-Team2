@@ -45,23 +45,30 @@ class AvoidToRef(Node):
         self.straight_x = float(self.declare_parameter('straight_x_m', 2.0).value)
         self.straight_when_clear = bool(self.declare_parameter('straight_when_clear', False).value)
         self.curv_gain = float(self.declare_parameter('curvature_gain', 1.0).value)  # 조향 증폭 시험용
-        # ★ 스케일 정합 방식 (기본 동작) — dSPACE 기준에 맞춰 ref 점을 역산한다.
-        #   MPC 는 궤적의 앞 (N_p × Ts × v_ref) m 만 본다(v=0.2 → 4cm). 회피 기하는
-        #   2~3m 스케일이라 두 자릿수가 어긋난다. 그래서 "회피에 필요한 곡률이
-        #   그 미리보기 지점에서 실제로 나오도록" x_ref 를 이분법으로 푼다.
-        #   결과: 속도가 변해도 실행 조향이 회피 기하가 요구하는 값으로 유지된다
-        #   (당김량이 자동으로 1.32m→0.55m 로 조절된다).
-        #   scale_match=false 면 아래 pullback_ratio 고정 당김으로 되돌아간다(비교용).
-        self.scale_match = bool(self.declare_parameter('scale_match', False).value)
-        # 조향 지연 보상 [s]. 조향이 다 서기까지 차는 v·τ 만큼 더 간다 → 남은 거리가
-        # 짧아지므로 더 급한 곡률이 필요하다. 이 항이 "속도↑ → 조향↑"의 물리적 근거다.
+        # ★ 세로 여유 (clear_before_m) — 회피 기동의 핵심 설계값.
+        #   회피 목표점은 (장애물의 x, 통과 열림의 y) 이므로, 그대로 쓰면
+        #   "장애물에 도달하는 그 순간 딱 옆에 있어라" = 세로 여유 0 이 된다.
+        #   그 순간에 겨우 비켜 있으면 차 옆면이 장애물을 스친다. 실제로는 장애물보다
+        #   이만큼 **먼저** 다 비켜 있어야 한다.
+        #   요구 곡률 κ = 2y / ((x_obs − clear_before)² + y²) 이므로 이 값이 곧
+        #   조향 크기를 정한다 (장애물 2.96m·측방 0.93m 기준):
+        #       0.00 m (여유 없음) →  6.56°
+        #       0.85 m (전장 하나) → 11.76°   ← 기본값
+        #       1.20 m             → 15.60°
+        #   기본 0.85 = 차 전장. 차 한 대 길이만큼 먼저 비켜 있으면 옆면이 안 스친다.
+        self.clear_before = float(self.declare_parameter('clear_before_m', 0.85).value)
+        # 조향 지연 보상 [s]. 조향이 다 서기까지 차는 v·τ 만큼 더 간다 → 그만큼 더
+        # 먼저 비켜야 한다. 속도가 오를수록 요구 조향이 커지는 물리적 근거.
         # 8/6 실측 참고: dead 0.111s / 63% 0.330s / 95% 0.451s.
         self.steer_lag = float(self.declare_parameter('steer_lag_s', 0.35).value)
-        # 당김량 = 전장 × 비율. ★기본 0 = 인지 목표점을 그대로 송신(2026-08-07 지시).
-        #   당김·lookahead 변환 없이 회피 목표점 자체가 quintic 끝점이 된다.
-        self.vehicle_length = float(self.declare_parameter('vehicle_length_m', 0.85).value)
-        self.pullback_ratio = float(self.declare_parameter('pullback_ratio', 0.0).value)
-        # 당긴 뒤에도 이 값보다 가까이는 두지 않는다(너무 가까우면 quintic 이 무너진다).
+        # ★ 위에서 정한 "요구 곡률"을 dSPACE 가 실제로 실행하게 만들지 여부.
+        #   MPC 는 궤적의 앞 (N_p × Ts × v_ref) m 만 본다(v=0.2 → 4cm). 요구 곡률을
+        #   가진 점을 그냥 보내면 그 4cm 구간의 곡률은 아직 시작 경계조건(현재 조향)
+        #   근처라 실행 조향이 훨씬 작아진다. true 면 "미리보기 지점에서 요구 곡률이
+        #   나오도록" 송신점 x 를 역산한다(측방 y 는 항상 목표 그대로).
+        #   false 면 요구 곡률 지점을 그대로 보낸다(기하는 정직하나 실행이 약함).
+        self.scale_match = bool(self.declare_parameter('scale_match', True).value)
+        # 송신점을 이보다 가까이는 두지 않는다(너무 가까우면 quintic 이 무너진다).
         self.ref_x_min = float(self.declare_parameter('ref_x_min_m', 0.8).value)
         # 곡률 클램프 기준 — params.yaml 의 vehicle.min_turn_radius_m 과 같은 값.
         self.min_turn_radius = float(self.declare_parameter('min_turn_radius_m', 1.15).value)
@@ -101,7 +108,7 @@ class AvoidToRef(Node):
         self.pub = self.create_publisher(TargetRef, '/adas/target_ref', 1)
         self.sub = self.create_subscription(AvoidStatus, '/perception/avoid', self._on_avoid, 10)
         self.timer = self.create_timer(self.period, self.tick)
-        # 라이브 튜닝: ros2 param set 으로 curv_gain·pullback_ratio·속도 즉석 변경
+        # 라이브 튜닝: ros2 param set 으로 clear_before·curv_gain·속도 즉석 변경
         self.add_on_set_parameters_callback(self._on_set_params)
         self.get_logger().warn(
             f"avoid_to_ref (테스트 하네스): /perception/avoid → /adas/target_ref | "
@@ -122,18 +129,16 @@ class AvoidToRef(Node):
                 self.target_speed = float(p.value)
             elif p.name == 'lateral_sign':
                 self.lat_sign = float(p.value)
-            elif p.name == 'pullback_ratio':
-                self.pullback_ratio = float(p.value)
+            elif p.name == 'clear_before_m':
+                self.clear_before = float(p.value)
             elif p.name == 'steer_lag_s':
                 self.steer_lag = float(p.value)
-            elif p.name == 'vehicle_length_m':
-                self.vehicle_length = float(p.value)
             elif p.name == 'ref_x_min_m':
                 self.ref_x_min = float(p.value)
             elif p.name == 'straight_x_m':
                 self.straight_x = float(p.value)
         self.get_logger().info(
-            f"param 변경 → v={self.target_speed} pullback_ratio={self.pullback_ratio} "
+            f"param 변경 → v={self.target_speed} clear_before={self.clear_before} "
             f"curv_gain={self.curv_gain} scale_match={self.scale_match}")
         return SetParametersResult(successful=True)
 
@@ -167,26 +172,28 @@ class AvoidToRef(Node):
         sp2 = max(d1[0] * d1[0] + d1[1] * d1[1], 1e-12)
         return (d1[0] * d2[1] - d1[1] * d2[0]) / sp2 ** 1.5
 
+    def _required_curvature(self, p, v_ref):
+        """회피 기하가 요구하는 곡률 — 장애물보다 clear_before 만큼 먼저 다 비키기.
+
+        조향 지연(v·τ) 동안 차가 더 가므로 그만큼 더 먼저 비켜야 한다.
+        """
+        x_clear = max(self.ref_x_min, p.x - self.clear_before - abs(v_ref) * self.steer_lag)
+        k_max = 1.0 / self.min_turn_radius
+        k = 2.0 * p.y / (x_clear * x_clear + p.y * p.y)
+        return x_clear, max(-k_max, min(k_max, k))
+
     def _scale_matched_point(self, p, v_ref):
-        """★ dSPACE 스케일에 맞춘 ref 점 역산.
+        """요구 곡률이 MPC 미리보기 지점에서 실제로 나오도록 송신점 x 를 역산.
 
-        MPC 는 궤적의 앞 (N_p × Ts × v_ref) m 만 본다. 회피 기하(2~3m)와 두 자릿수가
-        어긋나므로, **회피에 필요한 곡률이 그 미리보기 지점에서 실제로 나오도록**
-        ref 점의 전방거리 x 를 이분법으로 푼다(측방 y 는 목표 그대로 유지).
-
-        필요 곡률에는 조향 지연을 보상한다: 조향이 서는 동안 차가 v·τ 만큼 더 가므로
-        남은 거리가 짧아지고 더 급한 곡률이 필요하다 → 속도가 오를수록 조향이 커진다.
+        측방 y 는 목표 그대로 유지하고 x 만 움직인다. scale_match=false 면
+        요구 곡률 지점을 그대로 보낸다.
         """
         yt = p.y
+        x_clear, k_des = self._required_curvature(p, v_ref)
         k_max = 1.0 / self.min_turn_radius
-        # ① 필요 곡률 (조향 지연 보상 포함)
-        x_eff = max(self.ref_x_min, p.x - abs(v_ref) * self.steer_lag)
-        k_des = 2.0 * yt / (x_eff * x_eff + yt * yt)
-        k_des = max(-k_max, min(k_max, k_des))
-        # ② MPC 미리보기 거리
         preview = MPC_HORIZON_STEPS * MPC_SAMPLE_TIME_S * abs(v_ref)
-        if preview <= 1e-6:                      # v_ref=0 이면 창이 없다 — 당김만 적용
-            return self._pullback_point(p)
+        if not self.scale_match or preview <= 1e-6:
+            return x_clear, yt, 2.0 * math.atan2(yt, x_clear), k_des
         k0 = math.tan(self.cur_steer) / self.wheelbase
 
         def excess(x):
@@ -194,12 +201,12 @@ class AvoidToRef(Node):
             return self._quintic_kappa(x, yt, kt, k0, preview) - k_des
 
         lo, hi = self.ref_x_min, max(self.ref_x_min + 1e-3, p.x)
-        if excess(hi) >= 0.0:                    # 당길 필요 없음
+        if excess(hi) >= 0.0:
             x = hi
-        elif excess(lo) <= 0.0:                  # 최대로 당겨도 부족 — 한계까지
+        elif excess(lo) <= 0.0:
             x = lo
         else:
-            for _ in range(SOLVE_ITERS):         # x 감소 → 지평 곡률 증가 (단조)
+            for _ in range(SOLVE_ITERS):     # x 감소 → 지평 곡률 증가 (단조)
                 mid = 0.5 * (lo + hi)
                 if excess(mid) > 0.0:
                     lo = mid
@@ -208,32 +215,6 @@ class AvoidToRef(Node):
             x = 0.5 * (lo + hi)
         kappa = max(-k_max, min(k_max, 2.0 * yt / (x * x + yt * yt)))
         return x, yt, 2.0 * math.atan2(yt, x), kappa
-
-    def _pullback_point(self, p):
-        """★ 당김 방식 — 목표점의 측방(y)은 그대로 두고 전방거리(x)만 당긴다.
-
-        κ = 2y/(x²+y²) 이므로 y 를 고정한 채 x 를 줄이면 곡률이 급격히 커진다.
-        (호 위 lookahead 방식은 x·y 가 함께 줄어 κ 가 불변이라 조향이 안 커졌다.)
-
-        효과 3가지 — 2026-08-07 모델 시뮬레이션으로 확인:
-          ① 속도가 오를수록 조향이 커진다. dSPACE 미리보기(N_p·Ts·v)가 넓어질수록
-             당겨진 점이 만드는 급한 quintic 을 더 많이 샘플하기 때문.
-             x=1.0 기준 v 0.2/0.4/0.6 → 7.2° / 17.0° / 24.3°
-          ② 크기 자체가 3~8배 커진다 (기존 방식 −2.9°/−0.9°/+0.9°)
-          ③ 점이 장애물보다 앞(가까이)에 놓여 더 일찍 꺾으므로 충돌 여유가 커진다
-
-        반환: (x, y, yaw, curvature) — 부호(lateral_sign)는 호출측에서 적용.
-        """
-        y = p.y
-        pullback = self.pullback_ratio * self.vehicle_length
-        x = max(self.ref_x_min, min(p.x, p.x - pullback))
-        d2 = x * x + y * y
-        kappa = 2.0 * y / d2
-        # 물리적으로 낼 수 없는 곡률은 잘라낸다(최소회전반경). 넘겨봐야 MPC가 포화.
-        k_max = 1.0 / self.min_turn_radius
-        kappa = max(-k_max, min(k_max, kappa))
-        yaw = 2.0 * math.atan2(y, x)
-        return x, y, yaw, kappa
 
     @staticmethod
     def _rp(x, y=0.0, yaw=0.0, curv=0.0):
@@ -258,10 +239,7 @@ class AvoidToRef(Node):
             p = a.points[0]
             d2 = p.x * p.x + p.y * p.y
             if d2 > 1e-6:
-                if self.scale_match:
-                    lx, ly, th, kappa = self._scale_matched_point(p, m.v_ref)
-                else:
-                    lx, ly, th, kappa = self._pullback_point(p)
+                lx, ly, th, kappa = self._scale_matched_point(p, m.v_ref)
                 # 횡방향 성분에만 부호 적용 — x(전방거리)는 그대로 둔다.
                 s = self.lat_sign
                 m.ref_points = [self._rp(lx, s * ly, s * th, s * kappa * self.curv_gain)]
