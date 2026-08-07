@@ -275,6 +275,38 @@ def analyze_boundary(events, estop, static_e, dynamic_e, avoid, out):
                    + (' · narrow_gap' if narrow else ''))
 
 
+def analyze_sweep(events, refs, vv, out):
+    """게인 스윕 — 구간별 "명령한 것" 대비 "실제 조향한 것".
+
+    어느 레버(lookahead_m / curvature_gain)가 실제로 조향을 키우는지 판정한다.
+    명령 쪽은 ref의 y·κ를, 응답 쪽은 |str| 최대·중앙값을 본다.
+    """
+    if not events or not refs or not vv:
+        return
+    segs = [s for s in segments(events, vv[-1][0]) if s[2].startswith('sweep ')]
+    if not segs:
+        return
+    out.append('\n조향 게인 스윕 — 명령 vs 실제')
+    out.append(f'{"구간":>30s} {"ref y[m]":>9s} {"κ[1/m]":>8s} '
+               f'{"|str|중앙":>9s} {"|str|최대":>9s} {"등가°":>7s}')
+    for ts, end, label in segs:
+        if label.startswith('sweep end'):
+            continue
+        r = window(refs, ts, end)
+        s = window(vv, ts, end)
+        pts = [m.ref_points[0] for _, m in r if m.ref_points]
+        if not pts or not s:
+            continue
+        ys = statistics.median([abs(p.y) for p in pts])
+        ks = statistics.median([abs(p.curvature) for p in pts])
+        strs = [abs(m.str) for _, m in s]
+        out.append(f'{label.replace("sweep ", ""):>30s} {ys:9.4f} {ks:8.4f} '
+                   f'{statistics.median(strs):9.4f} {max(strs):9.4f} '
+                   f'{math.degrees(max(strs)):7.2f}')
+    out.append('  ★ 값이 커질 때 |str|이 같이 커지는 쪽이 실제로 듣는 레버다.')
+    out.append('  ★ 물리 한계: κ 0.870 1/m = 최소회전반경 1.15m = 등가 조향 27.3°')
+
+
 def _f(v):
     return '-' if v is None else f'{v:.3f}'
 
@@ -311,6 +343,7 @@ def main():
 
     analyze_steering(refs, vv, out)
     analyze_lateral(refs, vv, out)
+    analyze_sweep(events, refs, vv, out)
     analyze_detection(events, avoid, out)
     analyze_boundary(events, estop, static_e, dynamic_e, avoid, out)
 
