@@ -24,6 +24,16 @@ from fma_interfaces.msg import AvoidStatus, RefPoint, TargetRef
 
 from stack_avoid.estop_gate import EstopGate
 
+# ── dSPACE MPC 미리보기 창 (FMA_rev1.slx / MPC_Controller 차트에서 확인) ──
+# Generate_Trajectory:  pointSpacing = sampleTime * abs(v_ref)
+#                       requestedArc = (0:N_p) * pointSpacing
+# 즉 MPC가 실제로 보는 궤적 길이 = N_p × Ts × v_ref 이고, v_ref=0.2 에서 겨우 4cm다.
+# 그보다 멀리 찍은 ref 점은 지평 밖이라 조향에 반영되지 않는다(그 구간 곡률은
+# quintic 시작 경계조건 = 현재 조향에 지배된다). 2026-08-07 실측에서 lookahead를
+# 0.05~2.8m 로 흔들어도 조향이 무반응이었던 원인.
+MPC_HORIZON_STEPS = 20      # N_p
+MPC_SAMPLE_TIME_S = 0.01    # Ts (dSPACE 10ms 태스크)
+
 
 class AvoidToRef(Node):
 
@@ -35,6 +45,9 @@ class AvoidToRef(Node):
         # REF_POINT_00를 회피 arc 위 lookahead 지점으로 (짧을수록 강한 조향). GPS 최근접점 방식.
         self.lookahead = float(self.declare_parameter('lookahead_m', 0.4).value)
         self.curv_gain = float(self.declare_parameter('curvature_gain', 1.0).value)  # 조향 증폭 시험용
+        # lookahead를 MPC 미리보기 창 안으로 강제하는 비율. 1.0 = 창 끝, 0.5 = 창 절반.
+        # 0 으로 두면 클램프 없이 lookahead_m 을 그대로 쓴다(예전 동작).
+        self.preview_frac = float(self.declare_parameter('preview_frac', 0.5).value)
         self.period = float(self.declare_parameter('period_ms', 10).value) / 1000.0
         # ── estop 게이트 (박찬미 stack_estop) — 공용 모듈 ──
         # 기본 ON. 끄는 것은 스탠드 위 단독 디버깅 전용 — 실차 주행에서는 켜둘 것.
@@ -66,12 +79,29 @@ class AvoidToRef(Node):
                 self.lookahead = float(p.value)
             elif p.name == 'target_speed_mps':
                 self.target_speed = float(p.value)
+            elif p.name == 'preview_frac':
+                self.preview_frac = float(p.value)
             elif p.name == 'straight_x_m':
                 self.straight_x = float(p.value)
         self.get_logger().info(
             f"param 변경 → v={self.target_speed} lookahead={self.lookahead} "
             f"curv_gain={self.curv_gain}")
         return SetParametersResult(successful=True)
+
+    def _lookahead_in_preview(self, v_ref):
+        """lookahead를 dSPACE MPC 미리보기 창 안으로 클램프한다.
+
+        창 = N_p × Ts × v_ref (v_ref=0.2 → 4cm). 이보다 멀리 찍은 점은 MPC의
+        샘플 구간 밖이라, 그 구간 곡률이 quintic 시작 경계조건(= 현재 조향)에
+        지배되어 조향 명령이 사실상 "현재 유지"가 된다.
+        preview_frac=0 이면 클램프하지 않는다(예전 동작, 비교용).
+        """
+        if self.preview_frac <= 0.0:
+            return self.lookahead
+        preview = MPC_HORIZON_STEPS * MPC_SAMPLE_TIME_S * abs(v_ref)
+        if preview <= 1e-6:                 # v_ref=0 이면 창이 없다 — 원래 값 유지
+            return self.lookahead
+        return min(self.lookahead, self.preview_frac * preview)
 
     @staticmethod
     def _rp(x, y=0.0, yaw=0.0, curv=0.0):
@@ -100,11 +130,11 @@ class AvoidToRef(Node):
                 kappa = 2.0 * p.y / d2                          # 회피 arc 곡률
                 if abs(kappa) > 1e-4:
                     s_total = 2.0 * math.atan2(p.y, p.x) / kappa  # 목표까지 호길이
-                    L = min(self.lookahead, abs(s_total))         # 목표를 넘지 않게 클램프
+                    L = min(self._lookahead_in_preview(m.v_ref), abs(s_total))
                     th = kappa * L                                # 접선 헤딩 (김윤기 방식)
                     lx, ly = math.sin(th) / kappa, (1.0 - math.cos(th)) / kappa
                 else:                                             # 거의 직진
-                    L = min(self.lookahead, math.hypot(p.x, p.y))
+                    L = min(self._lookahead_in_preview(m.v_ref), math.hypot(p.x, p.y))
                     th, lx, ly = 0.0, L, 0.0
                 m.ref_points = [self._rp(lx, ly, th, kappa * self.curv_gain)]
             else:
