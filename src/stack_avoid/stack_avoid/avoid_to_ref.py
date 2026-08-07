@@ -44,21 +44,7 @@ class AvoidToRef(Node):
         self.target_speed = float(self.declare_parameter('target_speed_mps', 0.2).value)
         self.straight_x = float(self.declare_parameter('straight_x_m', 2.0).value)
         self.straight_when_clear = bool(self.declare_parameter('straight_when_clear', False).value)
-        # REF_POINT_00를 회피 arc 위 lookahead 지점으로 (짧을수록 강한 조향). GPS 최근접점 방식.
-        self.lookahead = float(self.declare_parameter('lookahead_m', 0.4).value)
         self.curv_gain = float(self.declare_parameter('curvature_gain', 1.0).value)  # 조향 증폭 시험용
-        # lookahead를 MPC 미리보기 창 안으로 강제하는 비율. 1.0 = 창 끝, 0.5 = 창 절반.
-        # 0 으로 두면 클램프 없이 lookahead_m 을 그대로 쓴다(예전 동작).
-        self.preview_frac = float(self.declare_parameter('preview_frac', 0.5).value)
-        # ★ lookahead 절대 상한 [m]. preview_frac 만 쓰면 속도에 비례해 lookahead 가
-        #   늘어나는데, 4~6cm 를 넘으면 조향 부호가 뒤집힌다(2026-08-07 실측:
-        #   v 0.2→0.6 에서 str −4.99 → −0.89 로 죽다가 반전).
-        #   이유: dSPACE 는 궤적 시작 곡률을 curvature0 = tan(현재 조향)/wheelbase 로
-        #   잡으므로 조향→궤적→조향이 폐루프다. 호가 미리보기보다 길면
-        #   κ_sampled ≈ κ0 가 되어 어떤 조향값이든 평형점이 되고 응답이 눌러붙는다.
-        #   호를 짧게 유지해 샘플이 목표점에서 클램프되면 κ_sampled = κ_target 이
-        #   되어 폐루프 축퇴가 깨진다. 실측 안정 동작점 2cm 를 기본값으로.
-        self.lookahead_max = float(self.declare_parameter('lookahead_max_m', 0.02).value)
         # ★ 스케일 정합 방식 (기본 동작) — dSPACE 기준에 맞춰 ref 점을 역산한다.
         #   MPC 는 궤적의 앞 (N_p × Ts × v_ref) m 만 본다(v=0.2 → 4cm). 회피 기하는
         #   2~3m 스케일이라 두 자릿수가 어긋난다. 그래서 "회피에 필요한 곡률이
@@ -66,14 +52,15 @@ class AvoidToRef(Node):
         #   결과: 속도가 변해도 실행 조향이 회피 기하가 요구하는 값으로 유지된다
         #   (당김량이 자동으로 1.32m→0.55m 로 조절된다).
         #   scale_match=false 면 아래 pullback_ratio 고정 당김으로 되돌아간다(비교용).
-        self.scale_match = bool(self.declare_parameter('scale_match', True).value)
+        self.scale_match = bool(self.declare_parameter('scale_match', False).value)
         # 조향 지연 보상 [s]. 조향이 다 서기까지 차는 v·τ 만큼 더 간다 → 남은 거리가
         # 짧아지므로 더 급한 곡률이 필요하다. 이 항이 "속도↑ → 조향↑"의 물리적 근거다.
         # 8/6 실측 참고: dead 0.111s / 63% 0.330s / 95% 0.451s.
         self.steer_lag = float(self.declare_parameter('steer_lag_s', 0.35).value)
-        # 고정 당김 방식(scale_match=false)용. 당김량 = 전장 × 비율.
+        # 당김량 = 전장 × 비율. ★기본 0 = 인지 목표점을 그대로 송신(2026-08-07 지시).
+        #   당김·lookahead 변환 없이 회피 목표점 자체가 quintic 끝점이 된다.
         self.vehicle_length = float(self.declare_parameter('vehicle_length_m', 0.85).value)
-        self.pullback_ratio = float(self.declare_parameter('pullback_ratio', 0.5).value)
+        self.pullback_ratio = float(self.declare_parameter('pullback_ratio', 0.0).value)
         # 당긴 뒤에도 이 값보다 가까이는 두지 않는다(너무 가까우면 quintic 이 무너진다).
         self.ref_x_min = float(self.declare_parameter('ref_x_min_m', 0.8).value)
         # 곡률 클램프 기준 — params.yaml 의 vehicle.min_turn_radius_m 과 같은 값.
@@ -114,7 +101,7 @@ class AvoidToRef(Node):
         self.pub = self.create_publisher(TargetRef, '/adas/target_ref', 1)
         self.sub = self.create_subscription(AvoidStatus, '/perception/avoid', self._on_avoid, 10)
         self.timer = self.create_timer(self.period, self.tick)
-        # 라이브 튜닝: ros2 param set 으로 curv_gain·lookahead·속도 즉석 변경 (재시작 불필요)
+        # 라이브 튜닝: ros2 param set 으로 curv_gain·pullback_ratio·속도 즉석 변경
         self.add_on_set_parameters_callback(self._on_set_params)
         self.get_logger().warn(
             f"avoid_to_ref (테스트 하네스): /perception/avoid → /adas/target_ref | "
@@ -131,16 +118,10 @@ class AvoidToRef(Node):
         for p in params:
             if p.name == 'curvature_gain':
                 self.curv_gain = float(p.value)
-            elif p.name == 'lookahead_m':
-                self.lookahead = float(p.value)
             elif p.name == 'target_speed_mps':
                 self.target_speed = float(p.value)
             elif p.name == 'lateral_sign':
                 self.lat_sign = float(p.value)
-            elif p.name == 'preview_frac':
-                self.preview_frac = float(p.value)
-            elif p.name == 'lookahead_max_m':
-                self.lookahead_max = float(p.value)
             elif p.name == 'pullback_ratio':
                 self.pullback_ratio = float(p.value)
             elif p.name == 'steer_lag_s':
@@ -152,25 +133,9 @@ class AvoidToRef(Node):
             elif p.name == 'straight_x_m':
                 self.straight_x = float(p.value)
         self.get_logger().info(
-            f"param 변경 → v={self.target_speed} lookahead={self.lookahead} "
-            f"curv_gain={self.curv_gain}")
+            f"param 변경 → v={self.target_speed} pullback_ratio={self.pullback_ratio} "
+            f"curv_gain={self.curv_gain} scale_match={self.scale_match}")
         return SetParametersResult(successful=True)
-
-    def _lookahead_in_preview(self, v_ref):
-        """lookahead를 dSPACE MPC 미리보기 창 안으로 클램프한다.
-
-        창 = N_p × Ts × v_ref (v_ref=0.2 → 4cm). 이보다 멀리 찍은 점은 MPC의
-        샘플 구간 밖이라, 그 구간 곡률이 quintic 시작 경계조건(= 현재 조향)에
-        지배되어 조향 명령이 사실상 "현재 유지"가 된다.
-        preview_frac=0 이면 클램프하지 않는다(예전 동작, 비교용).
-        """
-        if self.preview_frac <= 0.0:
-            return self.lookahead
-        preview = MPC_HORIZON_STEPS * MPC_SAMPLE_TIME_S * abs(v_ref)
-        if preview <= 1e-6:                 # v_ref=0 이면 창이 없다 — 원래 값 유지
-            return self.lookahead
-        # 절대 상한도 같이 건다 — 속도가 올라도 호가 길어지지 않게(폐루프 축퇴 방지).
-        return min(self.lookahead, self.preview_frac * preview, self.lookahead_max)
 
     def _quintic_kappa(self, xt, yt, kt, k0, s):
         """dSPACE Generate_Trajectory 와 동일한 quintic 의 호길이 s 지점 곡률.
@@ -270,17 +235,6 @@ class AvoidToRef(Node):
         yaw = 2.0 * math.atan2(y, x)
         return x, y, yaw, kappa
 
-    def _arc_lookahead_point(self, p, v_ref):
-        """기존 방식 — 목표점으로 가는 호 위 lookahead 지점. 비교용(pullback_m=0)."""
-        kappa = 2.0 * p.y / (p.x * p.x + p.y * p.y)
-        if abs(kappa) > 1e-4:
-            s_total = 2.0 * math.atan2(p.y, p.x) / kappa
-            length = min(self._lookahead_in_preview(v_ref), abs(s_total))
-            th = kappa * length
-            return math.sin(th) / kappa, (1.0 - math.cos(th)) / kappa, th, kappa
-        length = min(self._lookahead_in_preview(v_ref), math.hypot(p.x, p.y))
-        return length, 0.0, 0.0, kappa
-
     @staticmethod
     def _rp(x, y=0.0, yaw=0.0, curv=0.0):
         p = RefPoint()
@@ -296,21 +250,18 @@ class AvoidToRef(Node):
         if a is not None and a.obstacle_detected and a.points:
             m.state = TargetRef.STATE_AVOID
             m.v_ref = float(a.v_suggest) if a.v_suggest > 1e-3 else self.target_speed
-            # 회피점(x,y)로 가는 호(arc)의 곡률·헤딩을 채운다 → quintic 경계조건이
-            # 명확해져 조향이 회피 방향으로 확실히 반응 (yaw=0/curv=0면 S자라 초기조향≈0).
-            #   κ = 2y/(x²+y²),  yaw = 2·atan2(y,x)   (dummy_ref_publisher 규약과 동일)
-            # dSPACE는 REF_POINT_00(첫 점)만 디코딩 → 그 점을 회피 arc 위 lookahead 지점으로.
-            # (먼 목표점은 MPC 짧은 지평 밖이라 언더스티어 → 가까운 점이어야 강하게 조향, GPS 방식)
-            # 헤딩(yaw) = 경로 접선 κ·s, curvature = 국소 arc 곡률 κ  (김윤기 path_engine과 동일 정의)
+            # ★ 인지 회피 목표점을 그대로 dSPACE 로 보낸다 (2026-08-07 지시).
+            # 위치(x, y)는 손대지 않고, 그 점으로 가는 등곡률 호의 헤딩·곡률만 채운다:
+            #   κ = 2y/(x²+y²),  yaw = 2·atan2(y,x)   (dummy_ref_publisher·path_engine 규약)
+            # yaw/curvature 를 0으로 두면 quintic 이 S자가 되어 초기 조향이 ≈0 이 된다.
+            # dSPACE 는 REF_POINT_00(첫 점) 하나만 디코딩한다.
             p = a.points[0]
             d2 = p.x * p.x + p.y * p.y
             if d2 > 1e-6:
                 if self.scale_match:
                     lx, ly, th, kappa = self._scale_matched_point(p, m.v_ref)
-                elif self.pullback_ratio > 0.0:
-                    lx, ly, th, kappa = self._pullback_point(p)
                 else:
-                    lx, ly, th, kappa = self._arc_lookahead_point(p, m.v_ref)
+                    lx, ly, th, kappa = self._pullback_point(p)
                 # 횡방향 성분에만 부호 적용 — x(전방거리)는 그대로 둔다.
                 s = self.lat_sign
                 m.ref_points = [self._rp(lx, s * ly, s * th, s * kappa * self.curv_gain)]
