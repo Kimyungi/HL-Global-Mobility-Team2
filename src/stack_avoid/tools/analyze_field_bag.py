@@ -74,6 +74,19 @@ def window(series, t0, t1):
     return [(ts, m) for ts, m in series if t0 <= ts < t1]
 
 
+def segments(events, end_default):
+    """이벤트 목록 → [(시작, 끝, 라벨)].
+
+    끝은 **종류를 가리지 않고** 바로 다음 이벤트다. 같은 종류(cone 등)만 보고
+    끝을 잡으면 마지막 cone 구간이 뒤따르는 ⓐⓑⓒ를 통째로 삼킨다.
+    """
+    out = []
+    for i, (ts, m) in enumerate(events):
+        end = events[i + 1][0] if i + 1 < len(events) else end_default
+        out.append((ts, end, m.data))
+    return out
+
+
 def find_steps(refs):
     """조향 명령이 계단처럼 바뀐 시점 → [(시각, 이전κ, 이후κ)].
 
@@ -213,13 +226,14 @@ def analyze_lateral(refs, vv, out):
 
 def analyze_detection(events, avoid, out):
     """③ 감지 신뢰 거리 — cone 구간별 감지율·gap 통계."""
-    segs = [(ts, m.data) for ts, m in events if 'cone' in m.data]
-    if not segs or not avoid:
+    if not events or not avoid:
+        return
+    segs = [s for s in segments(events, avoid[-1][0]) if 'cone' in s[2]]
+    if not segs:
         return
     out.append('\n③ 감지 신뢰 거리')
     out.append(f'{"구간":>34s} {"감지율":>7s} {"gap평균":>8s} {"gap표준편차":>10s} {"샘플":>5s}')
-    for i, (ts, label) in enumerate(segs):
-        end = segs[i + 1][0] if i + 1 < len(segs) else avoid[-1][0]
+    for ts, end, label in segs:
         seg = window(avoid, ts, end)
         if not seg:
             continue
@@ -235,12 +249,14 @@ def analyze_detection(events, avoid, out):
 
 def analyze_boundary(events, estop, static_e, dynamic_e, avoid, out):
     """ⓐⓑⓒ — 구간별 estop 발동 여부와 회피 목표점 유무."""
-    segs = [(ts, m.data) for ts, m in events if m.data.startswith(('ⓐ', 'ⓑ', 'ⓒ'))]
+    if not events:
+        return
+    end_default = estop[-1][0] if estop else (avoid[-1][0] if avoid else events[-1][0] + 60)
+    segs = [s for s in segments(events, end_default) if s[2].startswith(('ⓐ', 'ⓑ', 'ⓒ'))]
     if not segs:
         return
     out.append('\nⓐⓑⓒ 경계 시험')
-    for i, (ts, label) in enumerate(segs):
-        end = segs[i + 1][0] if i + 1 < len(segs) else (estop[-1][0] if estop else ts + 60)
+    for ts, end, label in segs:
         fired = any(m.estop for _, m in window(estop, ts, end))
         st = any(m.data for _, m in window(static_e, ts, end)) if static_e else None
         dy = any(m.data for _, m in window(dynamic_e, ts, end)) if dynamic_e else None
@@ -284,7 +300,9 @@ def main():
     dynamic_e = load(f, '/perception/dynamic_estop')
 
     out = [f'=== {os.path.basename(os.path.dirname(f)) or bagdir} ===']
-    dur = (vv[-1][0] - vv[0][0]) if vv else 0
+    # vehicle_vector가 없는 bag(인지 전용·합성)에서도 길이는 나와야 한다.
+    span = vv or avoid or refs or events
+    dur = (span[-1][0] - span[0][0]) if span else 0
     out.append(f'길이 {dur:.0f}s · ref {len(refs)} · vv {len(vv)} · avoid {len(avoid)} '
                f'· event {len(events)} · estop {len(estop)}')
     if not events:

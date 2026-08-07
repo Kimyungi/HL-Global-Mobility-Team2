@@ -150,12 +150,44 @@ avoidable = (통과 가능 gap 존재)  AND  ttc >= (0.70 + 측방이동거리 +
 
 ## 4. 사전 점검 (하드웨어 없이)
 
-현장에 나가기 전 안전 게이트가 살아 있는지 확인:
+현장에 나가기 전 4가지를 확인한다. 하나라도 깨지면 세션이 통째로 무효가 될 수 있는 것들.
 
+**① 안전 게이트 — 5케이스**
 ```bash
 ros2 run stack_avoid avoid_to_ref --ros-args -p straight_when_clear:=true   # 터미널 1
-python3 src/stack_avoid/tools/test_estop_gate.py                            # 터미널 2 — 5케이스 ✓
+python3 src/stack_avoid/tools/test_estop_gate.py                            # 터미널 2
+```
 
+**② 스텝 주입기 — 4케이스** (계단 생성 + estop 최상위)
+```bash
 ros2 run stack_avoid step_injector --ros-args -p hold_s:=1.0 -p settle_s:=1.0  # 터미널 1
-python3 src/stack_avoid/tools/test_step_injector.py                            # 터미널 2 — 4케이스 ✓
+python3 src/stack_avoid/tools/test_step_injector.py                            # 터미널 2
+```
+
+**③ 구간 표시기** — 이게 안 돌면 ③ⓐⓑⓒ 분석이 통째로 불가능하다
+```bash
+ros2 topic echo /test/event                        # 터미널 1
+ros2 run stack_avoid mark                          # 터미널 2 — 3, a 등 입력해 수신 확인
+```
+
+**④ 분석기 — 합성 세션으로 왕복 확인**
+```bash
+ros2 bag record -o /tmp/synbag /perception/avoid /perception/estop \
+    /perception/static_estop /perception/dynamic_estop /test/event \
+    /adas/target_ref /vehicle/vector                          # 터미널 1
+python3 src/stack_avoid/tools/synth_session.py                # 터미널 2 (20초)
+# 터미널 1 Ctrl+C 후
+python3 src/stack_avoid/tools/analyze_field_bag.py /tmp/synbag
+```
+기대 출력 — 이 값이 안 나오면 분석기가 고장난 것:
+
+| 구간 | 감지율 | gap |
+|---|---|---|
+| cone 3m | 100.0% | 3.000 |
+| cone 1m | 50.0% | 1.000 |
+
+```
+ⓐ  estop 미발동 · 회피목표점 있었음
+ⓑ  estop 발동 (정적) · 회피목표점 없었음
+ⓒ  estop 발동 (정적) · 회피목표점 없었음 · narrow_gap
 ```
