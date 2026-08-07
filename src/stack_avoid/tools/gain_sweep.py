@@ -45,9 +45,18 @@ class Sweeper(Node):
         self.get_cli = self.create_client(GetParameters, f'{target}/get_parameters')
 
     def wait(self, timeout=10.0):
-        """대상 노드가 뜰 때까지 대기."""
+        """대상 노드 서비스 + /test/event 구독자가 붙을 때까지 대기.
+
+        구독자 매칭을 기다리지 않으면 **첫 마크가 유실된다** — 8/7 실차 스윕에서
+        `curvature_gain=1.0` 구간 라벨이 통째로 날아가 그 구간을 못 썼다.
+        """
         ok = self.set_cli.wait_for_service(timeout_sec=timeout)
         ok &= self.get_cli.wait_for_service(timeout_sec=timeout)
+        end = time.time() + timeout
+        while time.time() < end and self.event.get_subscription_count() == 0:
+            rclpy.spin_once(self, timeout_sec=0.1)
+        if self.event.get_subscription_count() == 0:
+            print('⚠ /test/event 구독자 없음 — bag 기록 중인지 확인 (라벨이 유실된다)')
         return ok
 
     def get(self, name):
