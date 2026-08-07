@@ -107,6 +107,26 @@ class AvoidViz(Node):
                     f"target {tgt_s} | v_suggest {msg.v_suggest:.2f}")
         arr.markers.append(txt)
 
+        # ── 차량 정면(+x) 화살표 + 좌/우 라벨 ──
+        # 조향 방향 뒤집힘을 눈으로 가리기 위한 기준. base_link 규약(REP-103):
+        #   +x = 전방, +y = 좌측, 좌회전 곡률 κ > 0.
+        # 회피 목표점 y 가 +면 화살표 왼쪽으로 벗어나야 정상이다.
+        fwd = _mk('vehicle_forward', 5, Marker.ARROW)
+        fwd.scale.x, fwd.scale.y, fwd.scale.z = 0.04, 0.10, 0.15
+        fwd.color.r, fwd.color.g, fwd.color.b, fwd.color.a = 1.0, 0.9, 0.1, 1.0
+        fwd.points = [_pt(0.0, 0.0), _pt(1.0, 0.0)]      # 후축 원점 → 전방 1m
+        arr.markers.append(fwd)
+
+        for mid, side, y in ((6, 'LEFT (+y)', 0.7), (7, 'RIGHT (-y)', -0.7)):
+            lab = _mk('side_label', mid, Marker.TEXT_VIEW_FACING)
+            lab.pose.position.x, lab.pose.position.y = 0.9, y
+            lab.pose.position.z = 0.25
+            lab.scale.z = 0.14
+            lab.color.r = lab.color.g = lab.color.b = 0.9
+            lab.color.a = 0.9
+            lab.text = side
+            arr.markers.append(lab)
+
         self.pub.publish(arr)
 
 

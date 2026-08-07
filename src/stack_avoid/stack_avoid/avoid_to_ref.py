@@ -48,6 +48,13 @@ class AvoidToRef(Node):
         # lookahead를 MPC 미리보기 창 안으로 강제하는 비율. 1.0 = 창 끝, 0.5 = 창 절반.
         # 0 으로 두면 클램프 없이 lookahead_m 을 그대로 쓴다(예전 동작).
         self.preview_frac = float(self.declare_parameter('preview_frac', 0.5).value)
+        # 송신 ref 의 횡방향 성분(y·yaw·curvature) 부호. 기본 -1.
+        # 2026-08-07 실차: 인지가 낸 회피 목표점 y 는 RViz에서 실제와 일치하는데
+        # (인지 프레임은 정상), 그대로 보내면 바퀴가 반대로 꺾인다 → 반전은
+        # 명령→서보 구간에 있다. 인지 쪽(scan) 부호를 뒤집는 것으로 고치려 했으나
+        # 목표점이 엉뚱한 구역에 찍혀 원복했다. 근원 위치는 dSPACE 측 조향 부호 규약
+        # 으로 추정되며, 여기서는 그 규약에 맞춰 송신 부호를 맞춘다.
+        self.lat_sign = float(self.declare_parameter('lateral_sign', -1.0).value)
         self.period = float(self.declare_parameter('period_ms', 10).value) / 1000.0
         # ── estop 게이트 (박찬미 stack_estop) — 공용 모듈 ──
         # 기본 ON. 끄는 것은 스탠드 위 단독 디버깅 전용 — 실차 주행에서는 켜둘 것.
@@ -79,6 +86,8 @@ class AvoidToRef(Node):
                 self.lookahead = float(p.value)
             elif p.name == 'target_speed_mps':
                 self.target_speed = float(p.value)
+            elif p.name == 'lateral_sign':
+                self.lat_sign = float(p.value)
             elif p.name == 'preview_frac':
                 self.preview_frac = float(p.value)
             elif p.name == 'straight_x_m':
@@ -136,7 +145,9 @@ class AvoidToRef(Node):
                 else:                                             # 거의 직진
                     L = min(self._lookahead_in_preview(m.v_ref), math.hypot(p.x, p.y))
                     th, lx, ly = 0.0, L, 0.0
-                m.ref_points = [self._rp(lx, ly, th, kappa * self.curv_gain)]
+                # 횡방향 성분에만 부호 적용 — x(전방거리)는 그대로 둔다.
+                s = self.lat_sign
+                m.ref_points = [self._rp(lx, s * ly, s * th, s * kappa * self.curv_gain)]
             else:
                 m.ref_points = [self._rp(self.straight_x)]
         elif a is not None and a.obstacle_detected:      # narrow_gap: 통과 불가
