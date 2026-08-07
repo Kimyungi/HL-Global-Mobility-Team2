@@ -195,3 +195,80 @@ detect_range_m    3.0            ← 3.141 > 3.0 이라 전량 폐기 (node.py:2
 
 **⚠ 이 이슈가 stage2 전체를 막고 있다.** ①(조향 응답)·②(측방 이동 곡선)·ⓐⓒ(경계 시험)
 모두 조향이 명령을 따르는 것이 전제다.
+
+## F-7. ★ dSPACE 모델(FMA_rev1.slx) 직접 분석 — 조향 무반응의 구조적 원인
+
+`~/다운로드/FMA_rev1.slx`(=`FMA_rev1/` 에 이미 전개됨)를 직접 열어 확인했다.
+
+### 배선은 정상
+
+```
+CAN_Input → Bus Selector1 ┬ out1~5 (TARGET_HEADER.counter/state/n_points/v_ref/reserved)
+                          │        → Bus Creator1 → CAN_Processor → v_ref → MPC in:1
+                          └ out6~9 (REF_POINT_00.x / .y / .yaw / .curvature)
+                                   → Bus Creator ────────────────────→ MPC in:2 (ref_point)
+```
+
+`REF_POINT_00`의 4필드가 정확히 MPC로 들어간다. **PROTOCOL.md와 신호명·경로 모두 일치.**
+(주의: `CAN_Processor`는 헤더만 처리하고 v_ref만 낸다. ref_point는 이 블록을 거치지 않는다.)
+
+MPC_Controller = Stateflow 차트(`chart_93.xml`), `Generate_Trajectory()` → `MPC()` 순차 호출.
+
+### 원인 1 — 궤적 미리보기 거리가 v_ref에 비례해 붕괴한다
+
+`Generate_Trajectory`:
+```matlab
+pointSpacing = sampleTime * abs(v_ref);      % 10ms × v
+requestedArc = (0:predictionHorizon).' * pointSpacing;
+```
+
+| v_ref [m/s] | 점 간격 | **궤적이 덮는 거리** |
+|---|---|---|
+| 0.2 | 2 mm | **0.04 m** |
+| 0.8 | 8 mm | 0.16 m |
+
+회피 기하는 0.4~2.9 m 스케일인데 MPC가 보는 것은 **앞 4 cm**뿐이다. 그 구간의 곡률은
+quintic 시작 경계조건 `curvature0 = tan(vehicle_vector.steering)/wheelbase`
+(= **현재 조향**)에 지배된다 → 레퍼런스가 사실상 "지금 조향을 유지하라"가 된다.
+
+### 원인 2 — 제어 벌점이 궤적 추종항을 압도한다
+
+`MPC()`: `R = 500·I`, `F = 200·I`, `Q = kron(I, diag([200 300 500]))`,
+`B_k = [0; 0; v·Ts/wheelbase]`, `Θ ∝ B_k`
+
+| v_ref | B_k | 추종항 B²·Q | 제어벌점 R | 비율 |
+|---|---|---|---|---|
+| 0.2 | 0.00336 | 5.6e-3 | 500 | **1.1e-5** |
+| 0.8 | 0.01345 | 9.0e-2 | 500 | 1.8e-4 |
+
+추종항이 벌점과 맞먹으려면 v ≈ wheelbase/Ts = **59.5 m/s** 가 필요하다(비현실).
+저속에서는 `quadprog` 최적해가 dU ≈ 0으로 눌린다.
+
+### 실측이 이 구조와 정확히 일치한다
+
+오늘 str이 기준선에서 벗어난 것은 **전체의 0.38%, 단 0.9초**뿐이었고 그 구간은 **전부 v_ref = 0**:
+
+```
+t=238.5s  str −4.57°   v_ref 0.000
+t=238.9s  str −18.42°  v_ref 0.000     ← 약 30°/s (MPC duMax 50°/s 이내)
+t=239.4s  str −7.54°   v_ref 0.000
+```
+
+v_ref = 0 이면 `B_k = 0 → Θ = 0` 으로 궤적 추종항이 **완전히 소멸**하고,
+동시에 `pointSpacing ≤ 1e-12` degenerate 분기가 발동해 전 궤적점 곡률이 `curvature0`가 된다.
+남는 구동력은 `EU_k = (이전 명령) − (실측 조향)` 뿐인데 이 항은 **B_k 스케일이 없어**
+그대로 작동한다 → **v_ref=0 에서만 조향이 움직인다.** 실측과 일치.
+
+### 추가로 확인된 것
+
+- `if isempty(dU) → outWheelSteering = wheelSteering` — QP 실패 시 **직전 조향을 무진단으로 유지**.
+  진단 신호가 없어 실패해도 알 수 없다
+- 지평 4cm 안의 곡률은 `lookahead`·`curvature_gain` 조합에 극도로 민감하다(모델 재현 계산):
+  `(0.4, 1) → steeringRef 3.03°` / `(0.05, 6) → −0.11°(상쇄)` / `(0.02, 6) → 24.56°`
+  우리가 시험한 조합들이 하필 레퍼런스가 작거나 상쇄되는 구간이었다
+
+### → 손상민 확인 요청 지점 (dSPACE 측)
+
+1. `pointSpacing = Ts × v_ref` 를 **미리보기 거리 기반**으로 분리 (예: 0.1~0.5 m 간격 고정)
+2. `R`·`F` 대비 `Q` 가중 재조정 — 현 조합은 운용 속도에서 추종항이 1e-5로 눌린다
+3. `isempty(dU)` 경로에 진단 출력 추가
