@@ -188,6 +188,7 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
                         ref_point0_extrap_mode: str = "quadratic",
                         ref_point0_min_confidence: float = 0.5,
                         prev_y: float | None = None, max_y_jump_m: float = 1.0,
+                        prev_coeffs: np.ndarray | None = None, coeff_smoothing_alpha: float = 1.0,
                         fit_kwargs: dict | None = None,
                         confidence_kwargs: dict | None = None):
     """points_x_start 기본 2.5m = 카메라 최소 가시거리(PROJECT_BRIEF.md §6) —
@@ -208,6 +209,18 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
     직전에 채택했던 y를 prev_y로 넘겨주면, 그로부터 max_y_jump_m(기본 1.0m)보다
     많이 튄 결과는 'none' 처리한다 — 속도(~0.5m/s)·프레임 간격(~45ms) 기준
     실제 물리적 이동은 한 프레임에 수 cm뿐이라 1m 이상 점프는 대부분 오검출.
+
+    prev_coeffs/coeff_smoothing_alpha: 다항식 계수 지수이동평균(EMA) 저역통과
+    필터 (2026-08-08, 오실레이션 완화 — GPS stack_gps의 fusion_alpha와 동일 기법).
+    REF_POINT_00을 가깝게 당길수록(조향 게인↑) 정상 검출 중에도 남아있는
+    프레임 간 미세 흔들림(~0.05~0.1m)까지 증폭돼 저주파 오실레이션으로 나타남 —
+    연속성 체크(위)는 "엉뚱한 값"만 거르지 "정상 범위 내 미세 흔들림"은 못 잡음.
+    smoothed = alpha*이번프레임 + (1-alpha)*직전_smoothed로 매끄럽게 만든다.
+    **주의**: 이상치 검사(연속성/타당성)는 반드시 원본(raw) 계수로 먼저 하고,
+    통과한 것만 스무딩한다 — 스무딩을 먼저 하면 큰 튐이 여러 프레임에 걸쳐
+    서서히 섞여 들어가 연속성 체크가 아예 못 잡게 되는 부작용이 있기 때문.
+    alpha=1.0(기본)은 스무딩 없음 = 기존 동작과 동일. 작을수록 부드럽지만
+    실제 경로 변화에 대한 반응도 함께 느려짐(트레이드오프, 실측 튜닝 필요).
     """
     x_end = points_x_end if points_x_end is not None else grid.x_max
     bev_mask = warp_to_bev(lane_mask, H, grid)
@@ -223,19 +236,13 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
         return estimate, {"bev_mask": bev_mask, "fit": result}
 
     confidence = compute_confidence(result, **(confidence_kwargs or {}))
-    x, y, yaw, curvature = lookahead_from_fit(result.center_coeffs, lookahead_m)
-    points = sample_path_points(result.center_coeffs, points_x_start, x_end, n_points)
 
-    near_pt = _compute_ref_point0(
-        result.center_coeffs, x_start=points_x_start, lookahead_m=ref_point0_lookahead_m,
-        extrap_mode=ref_point0_extrap_mode, confidence=confidence,
-        min_confidence=ref_point0_min_confidence)
-    ref_point0_applied = near_pt is not None
-    if ref_point0_applied:
-        points = [near_pt] + points[:-1]  # 맨 앞 치환, 총 개수(n_points)는 유지
-
-    implausible = not _is_plausible([PathPoint(x=x, y=y, yaw=yaw, curvature=curvature)] + points)
-    discontinuous = prev_y is not None and abs(y - prev_y) > max_y_jump_m
+    # 1) 원본(raw) 계수로 먼저 이상치 검사 — 스무딩을 거치기 전에 걸러야
+    # 큰 튐이 여러 프레임에 걸쳐 섞여 들어가는 걸 막을 수 있다(docstring 참조).
+    raw_x, raw_y, raw_yaw, raw_curvature = lookahead_from_fit(result.center_coeffs, lookahead_m)
+    raw_points = sample_path_points(result.center_coeffs, points_x_start, x_end, n_points)
+    implausible = not _is_plausible([PathPoint(x=raw_x, y=raw_y, yaw=raw_yaw, curvature=raw_curvature)] + raw_points)
+    discontinuous = prev_y is not None and abs(raw_y - prev_y) > max_y_jump_m
 
     if implausible or discontinuous:
         # 피팅은 됐지만(mode는 both/left_only/right_only) 신뢰 못 함 — 외삽 폭주
@@ -246,9 +253,28 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
         estimate = LaneEstimate(x=neutral.x, y=neutral.y, yaw=neutral.yaw, curvature=neutral.curvature,
                                  confidence=0.0, mode="none", points=[neutral],
                                  ref_point0_applied=False, ref_point0_x=neutral.x)
-        return estimate, {"bev_mask": bev_mask, "fit": result}
+        return estimate, {"bev_mask": bev_mask, "fit": result, "raw_y": raw_y}
+
+    # 2) 통과한 것만 스무딩 — 최종 출력(x/y/yaw/curvature/points/REF_POINT_00)은
+    # 전부 스무딩된 계수 하나로부터 일관되게 계산한다.
+    coeffs = result.center_coeffs
+    if prev_coeffs is not None and coeff_smoothing_alpha < 1.0:
+        smoothed_coeffs = coeff_smoothing_alpha * coeffs + (1.0 - coeff_smoothing_alpha) * prev_coeffs
+    else:
+        smoothed_coeffs = coeffs
+
+    x, y, yaw, curvature = lookahead_from_fit(smoothed_coeffs, lookahead_m)
+    points = sample_path_points(smoothed_coeffs, points_x_start, x_end, n_points)
+
+    near_pt = _compute_ref_point0(
+        smoothed_coeffs, x_start=points_x_start, lookahead_m=ref_point0_lookahead_m,
+        extrap_mode=ref_point0_extrap_mode, confidence=confidence,
+        min_confidence=ref_point0_min_confidence)
+    ref_point0_applied = near_pt is not None
+    if ref_point0_applied:
+        points = [near_pt] + points[:-1]  # 맨 앞 치환, 총 개수(n_points)는 유지
 
     estimate = LaneEstimate(x=x, y=y, yaw=yaw, curvature=curvature, confidence=confidence,
                              mode=result.mode, points=points,
                              ref_point0_applied=ref_point0_applied, ref_point0_x=points[0].x)
-    return estimate, {"bev_mask": bev_mask, "fit": result}
+    return estimate, {"bev_mask": bev_mask, "fit": result, "raw_y": raw_y, "smoothed_coeffs": smoothed_coeffs}

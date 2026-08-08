@@ -22,6 +22,10 @@ FIELDNAMES = [
     # 실제 적용됐는지·최종 x가 얼마였는지를 남겨서, 세 완화안(접선 외삽/신뢰도
     # 게이팅/거리) 중 뭘 켰을 때 str 반응이 어떻게 달라졌는지 사후 대조 가능하게 함.
     "ref_point0_applied", "ref_point0_x",
+    # 계수 EMA 스무딩 로깅 (2026-08-08, 오실레이션 완화) — raw_y(스무딩 전)와
+    # y_m(스무딩 후, 위에 이미 있음)을 대조하면 필터가 실제로 얼마나/언제
+    # 작동하는지 사후 확인 가능.
+    "raw_y_m",
     "n_left_candidates", "n_right_candidates", "width_m",
     "left_hit_ratio", "left_rms_residual_m", "left_c2", "left_c1", "left_c0",
     "right_hit_ratio", "right_rms_residual_m", "right_c2", "right_c1", "right_c0",
@@ -39,7 +43,7 @@ class CsvFrameLogger:
         self._frame_idx = 0
         self._is_placeholder = is_placeholder_homography
 
-    def log(self, *, infer_ms: float, estimate, fit_result) -> None:
+    def log(self, *, infer_ms: float, estimate, fit_result, raw_y: float | None = None) -> None:
         row = {
             "frame_idx": self._frame_idx,
             "wall_time": round(time.time(), 3),
@@ -56,6 +60,7 @@ class CsvFrameLogger:
             "is_placeholder_homography": self._is_placeholder,
             "ref_point0_applied": getattr(estimate, "ref_point0_applied", False),
             "ref_point0_x": round(getattr(estimate, "ref_point0_x", 0.0), 4),
+            "raw_y_m": round(raw_y, 4) if raw_y is not None else "",
         }
         points = getattr(estimate, "points", None) or []
         if points:

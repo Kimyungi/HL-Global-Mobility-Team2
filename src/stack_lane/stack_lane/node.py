@@ -68,6 +68,10 @@ class StackLaneNode(Node):
         # estimate_lane_path()의 prev_y/max_y_jump_m 참조).
         self.declare_parameter('max_y_jump_m', 1.0)
         self.declare_parameter('y_jump_reset_after', 15)  # 연속 이만큼 거부되면 리셋(고착 방지)
+        # 다항식 계수 EMA 저역통과 필터 (2026-08-08, 오실레이션 완화 — lane_path.py
+        # estimate_lane_path()의 prev_coeffs/coeff_smoothing_alpha 참조).
+        # 1.0 = 비활성(기존 동작). 작을수록 부드럽지만 반응이 느려짐 — 실측 튜닝 필요.
+        self.declare_parameter('coeff_smoothing_alpha', 1.0)
         self.declare_parameter('homography_path', str(DEFAULT_HOMOGRAPHY_PATH))
         self.declare_parameter('camera_fps', 30)
         self.declare_parameter('warmup_frames', 30)
@@ -86,7 +90,9 @@ class StackLaneNode(Node):
         self.ref_point0_min_confidence = float(self.get_parameter('ref_point0_min_confidence').value)
         self.max_y_jump_m = float(self.get_parameter('max_y_jump_m').value)
         self.y_jump_reset_after = int(self.get_parameter('y_jump_reset_after').value)
-        self._prev_y = None  # 연속성 체크용 — 마지막으로 채택(mode!=none)됐던 y
+        self.coeff_smoothing_alpha = float(self.get_parameter('coeff_smoothing_alpha').value)
+        self._prev_y = None  # 연속성 체크용 — 마지막으로 채택(mode!=none)됐던 raw y
+        self._prev_coeffs = None  # 스무딩용 — 직전 프레임의 smoothed 계수
         self._reject_streak = 0
         self.warmup_frames = int(self.get_parameter('warmup_frames').value)
         self._frames_seen = 0
@@ -170,24 +176,30 @@ class StackLaneNode(Node):
         _da_mask, ll_mask = infer(self.model, tensor)
         infer_ms = (self.get_clock().now() - t0).nanoseconds / 1e6
         # 연속 거부가 너무 오래 지속되면(오검출이 아니라 실제로 차가 이동해서
-        # 직전 기준이 낡은 것일 수 있음) 리셋 — 영구 고착 방지.
-        prev_y = self._prev_y if self._reject_streak < self.y_jump_reset_after else None
+        # 직전 기준이 낡은 것일 수 있음) 리셋 — 영구 고착 방지. 스무딩 기준도 같이 리셋
+        # (낡은 계수에 새 값을 섞으면 안 되므로).
+        reset = self._reject_streak >= self.y_jump_reset_after
+        prev_y = None if reset else self._prev_y
+        prev_coeffs = None if reset else self._prev_coeffs
         estimate, debug = estimate_lane_path(
             ll_mask.astype(np.uint8), self.H, self.grid, lookahead_m=self.lookahead_m,
             n_points=self.n_points, points_x_start=self.points_x_start, points_x_end=self.points_x_end,
             ref_point0_lookahead_m=self.ref_point0_lookahead_m,
             ref_point0_extrap_mode=self.ref_point0_extrap_mode,
             ref_point0_min_confidence=self.ref_point0_min_confidence,
-            prev_y=prev_y, max_y_jump_m=self.max_y_jump_m)
+            prev_y=prev_y, max_y_jump_m=self.max_y_jump_m,
+            prev_coeffs=prev_coeffs, coeff_smoothing_alpha=self.coeff_smoothing_alpha)
 
         if estimate.mode == 'none':
             self._reject_streak += 1
         else:
             self._reject_streak = 0
-            self._prev_y = estimate.y
+            self._prev_y = debug.get('raw_y', estimate.y)  # 연속성 체크는 항상 raw 기준
+            self._prev_coeffs = debug.get('smoothed_coeffs')
 
         if self.logger_csv is not None:
-            self.logger_csv.log(infer_ms=infer_ms, estimate=estimate, fit_result=debug['fit'])
+            self.logger_csv.log(infer_ms=infer_ms, estimate=estimate, fit_result=debug['fit'],
+                                 raw_y=debug.get('raw_y'))
 
         if self.debug_pub is not None:
             frame_vis = build_debug_frame(
