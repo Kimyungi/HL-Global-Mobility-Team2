@@ -56,10 +56,22 @@ class AvoidToRef(Node):
         #   GPS 는 y 가 경로 이탈량(평균 0.15m)이라 작고, 우리는 측방 도약(0.7~0.9m)이다.
         #   dSPACE 응답이 y 에 어떻게 의존하는지 분리 측정하기 위한 값. 기본 1.0.
         self.y_scale = float(self.declare_parameter('y_scale', 1.0).value)
-        # ★ 기본 동작 — 인지 회피 목표점을 그대로 송신 (2026-08-07 지시 B).
-        #   true 면 아래 clear_before/scale_match 계산을 건너뛰고 초록점 자체를 보낸다.
-        #   위치(x,y)는 손대지 않고 yaw·curvature 만 채운다.
-        self.send_as_is = bool(self.declare_parameter('send_target_as_is', True).value)
+        # 인지 회피 목표점을 그대로 송신할지. ★기본 false — 초록점 직송으로는
+        #   물리적으로 회피가 불가능함이 실측으로 확인됐다(2026-08-07):
+        #     초록점 직송  κ 0.169 → str 1.16° → 회전반경 29m → 측방 이동 0.15m
+        #     당김+역산    κ 0.870 → str 6.89° → 회전반경 4.9m → 측방 이동 0.89m ✓
+        #   dSPACE 가 명령의 20~25% 만 실행하므로, 기하가 요구하는 조향을 실제로
+        #   내려면 그만큼 큰 곡률을 주문해야 한다. true 로 두면 초록점 자체를 보낸다.
+        self.send_as_is = bool(self.declare_parameter('send_target_as_is', False).value)
+        # ★ GPS 미션과 동일한 방식으로 ref 점 생성 (2026-08-07 지시).
+        #   gps-bags-20260807 실측 규약: n_points 20 · 등간격 0.321m · 첫 점 x≈1.39m
+        #   · yaw = 경로 접선(다음 점 방향각과 2.41° 이내) · curvature = 경로 국소 곡률.
+        #   회피는 목표점까지의 등곡률 호를 "경로"로 삼아 그 위를 같은 규약으로 샘플한다.
+        #   호 위 점이므로 yaw = κ·s, curvature = κ (일정) 가 곧 경로 접선·곡률이다.
+        self.gps_style = bool(self.declare_parameter('gps_style', False).value)
+        self.gps_lookahead = float(self.declare_parameter('gps_lookahead_m', 1.0).value)
+        self.gps_spacing = float(self.declare_parameter('gps_spacing_m', 0.321).value)
+        self.gps_n = int(self.declare_parameter('gps_n_points', 20).value)
         # ★ 세로 여유 (clear_before_m) — 회피 기동의 핵심 설계값. **앞범퍼 기준**.
         #   측방 이동이 끝나는 시점에 앞범퍼와 장애물 사이에 남길 세로 거리다.
         #
@@ -143,12 +155,22 @@ class AvoidToRef(Node):
 
     def _on_set_params(self, params):
         for p in params:
-            if p.name == 'curvature_gain':
+            if p.name == 'gps_style':
+                self.gps_style = bool(p.value)
+            elif p.name == 'send_target_as_is':
+                self.send_as_is = bool(p.value)
+            elif p.name == 'scale_match':
+                self.scale_match = bool(p.value)
+            elif p.name == 'curvature_gain':
                 self.curv_gain = float(p.value)
             elif p.name == 'yaw_gain':
                 self.yaw_gain = float(p.value)
             elif p.name == 'y_scale':
                 self.y_scale = float(p.value)
+            elif p.name == 'gps_lookahead_m':
+                self.gps_lookahead = float(p.value)
+            elif p.name == 'gps_spacing_m':
+                self.gps_spacing = float(p.value)
             elif p.name == 'target_speed_mps':
                 self.target_speed = float(p.value)
             elif p.name == 'lateral_sign':
@@ -165,7 +187,8 @@ class AvoidToRef(Node):
                 self.straight_x = float(p.value)
         self.get_logger().info(
             f"param 변경 → v={self.target_speed} clear_before={self.clear_before} "
-            f"curv_gain={self.curv_gain} scale_match={self.scale_match}")
+            f"curv_gain={self.curv_gain} gps_style={self.gps_style} "
+            f"as_is={self.send_as_is} scale_match={self.scale_match}")
         return SetParametersResult(successful=True)
 
     def _quintic_kappa(self, xt, yt, kt, k0, s):
@@ -197,6 +220,30 @@ class AvoidToRef(Node):
         d2 = [2 * cc[2] + 6 * cc[3] * u + 12 * cc[4] * u**2 + 20 * cc[5] * u**3 for cc in c]
         sp2 = max(d1[0] * d1[0] + d1[1] * d1[1], 1e-12)
         return (d1[0] * d2[1] - d1[1] * d2[0]) / sp2 ** 1.5
+
+    def _gps_style_points(self, p):
+        """GPS 미션과 동일한 규약으로 ref 점 목록 생성.
+
+        목표점까지의 등곡률 호를 경로로 삼아, lookahead 지점부터 등간격으로
+        n 개 샘플한다. 각 점의 yaw = 경로 접선(κ·s), curvature = 경로 곡률(κ).
+        GPS 실측 규약(간격 0.321m · 20점 · 첫 점 x≈1.39m)과 같은 형태.
+        """
+        k_max = 1.0 / self.min_turn_radius
+        kappa = max(-k_max, min(k_max, 2.0 * p.y / (p.x * p.x + p.y * p.y)))
+        sg = self.lat_sign
+        if abs(kappa) < 1e-4:                       # 거의 직진
+            return [self._rp(self.gps_lookahead + i * self.gps_spacing)
+                    for i in range(self.gps_n)]
+        # 목표점을 넘어서도 호를 연장한다 — GPS 는 트랙이 이어져 20점이 모두 다르다.
+        # 클램프하면 뒷점들이 한 자리에 뭉쳐 경로가 "멈춘 것"처럼 보인다.
+        pts = []
+        for i in range(self.gps_n):
+            s = self.gps_lookahead + i * self.gps_spacing
+            th = kappa * s                          # 경로 접선각
+            pts.append(self._rp(math.sin(th) / kappa,
+                                sg * (1.0 - math.cos(th)) / kappa,
+                                sg * th, sg * kappa))
+        return pts
 
     def _required_curvature(self, p, v_ref):
         """회피 기하가 요구하는 곡률 — 앞범퍼가 장애물보다 clear_before 만큼 먼저 다 비키기.
@@ -268,6 +315,11 @@ class AvoidToRef(Node):
             p = a.points[0]
             d2 = p.x * p.x + p.y * p.y
             if d2 > 1e-6:
+                if self.gps_style:
+                    m.ref_points = self._gps_style_points(p)
+                    self.gate.log_reason(reason)
+                    self.pub.publish(m)
+                    return
                 if self.send_as_is:
                     k_max = 1.0 / self.min_turn_radius
                     kappa = max(-k_max, min(k_max, 2.0 * p.y / d2))
