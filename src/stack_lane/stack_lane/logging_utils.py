@@ -18,6 +18,10 @@ FIELDNAMES = [
     # 바로 확인하기 위함 (조향 진단의 핵심 변수가 됨).
     "n_points", "points_x_min", "points_x_max", "points_y_min", "points_y_max",
     "points_raw",  # "x:y:yaw:curv|x:y:yaw:curv|..." 전체 점 원본 (디버깅용)
+    # REF_POINT_00 근거리 치환 실험 로깅 (2026-08-08, 조향 게인 진단) — 이 프레임에
+    # 실제 적용됐는지·최종 x가 얼마였는지를 남겨서, 세 완화안(접선 외삽/신뢰도
+    # 게이팅/거리) 중 뭘 켰을 때 str 반응이 어떻게 달라졌는지 사후 대조 가능하게 함.
+    "ref_point0_applied", "ref_point0_x",
     "n_left_candidates", "n_right_candidates", "width_m",
     "left_hit_ratio", "left_rms_residual_m", "left_c2", "left_c1", "left_c0",
     "right_hit_ratio", "right_rms_residual_m", "right_c2", "right_c1", "right_c0",
@@ -50,6 +54,8 @@ class CsvFrameLogger:
             "n_right_candidates": fit_result.n_right_candidates,
             "width_m": round(fit_result.width_m, 4) if fit_result.width_m is not None else "",
             "is_placeholder_homography": self._is_placeholder,
+            "ref_point0_applied": getattr(estimate, "ref_point0_applied", False),
+            "ref_point0_x": round(getattr(estimate, "ref_point0_x", 0.0), 4),
         }
         points = getattr(estimate, "points", None) or []
         if points:

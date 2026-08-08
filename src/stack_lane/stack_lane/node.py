@@ -59,6 +59,15 @@ class StackLaneNode(Node):
         self.declare_parameter('n_points', 20)
         self.declare_parameter('points_x_start', 2.5)
         self.declare_parameter('points_x_end', 6.0)
+        # REF_POINT_00 근거리 치환 실험 (2026-08-08, 조향 게인 진단 — lane_path.py
+        # estimate_lane_path() docstring 참조). 기본값(0.0)은 비활성 = 기존 동작 그대로.
+        self.declare_parameter('ref_point0_lookahead_m', 0.0)
+        self.declare_parameter('ref_point0_extrap_mode', 'quadratic')  # 'linear' | 'quadratic'
+        self.declare_parameter('ref_point0_min_confidence', 0.5)
+        # 프레임 간 연속성 체크 (2026-08-08, 편측 오검출 진단 — lane_path.py
+        # estimate_lane_path()의 prev_y/max_y_jump_m 참조).
+        self.declare_parameter('max_y_jump_m', 1.0)
+        self.declare_parameter('y_jump_reset_after', 15)  # 연속 이만큼 거부되면 리셋(고착 방지)
         self.declare_parameter('homography_path', str(DEFAULT_HOMOGRAPHY_PATH))
         self.declare_parameter('camera_fps', 30)
         self.declare_parameter('warmup_frames', 30)
@@ -71,6 +80,14 @@ class StackLaneNode(Node):
         self.n_points = int(self.get_parameter('n_points').value)
         self.points_x_start = float(self.get_parameter('points_x_start').value)
         self.points_x_end = float(self.get_parameter('points_x_end').value)
+        ref_point0_lookahead_m = float(self.get_parameter('ref_point0_lookahead_m').value)
+        self.ref_point0_lookahead_m = ref_point0_lookahead_m if ref_point0_lookahead_m > 0.0 else None
+        self.ref_point0_extrap_mode = str(self.get_parameter('ref_point0_extrap_mode').value)
+        self.ref_point0_min_confidence = float(self.get_parameter('ref_point0_min_confidence').value)
+        self.max_y_jump_m = float(self.get_parameter('max_y_jump_m').value)
+        self.y_jump_reset_after = int(self.get_parameter('y_jump_reset_after').value)
+        self._prev_y = None  # 연속성 체크용 — 마지막으로 채택(mode!=none)됐던 y
+        self._reject_streak = 0
         self.warmup_frames = int(self.get_parameter('warmup_frames').value)
         self._frames_seen = 0
 
@@ -108,7 +125,11 @@ class StackLaneNode(Node):
         self.pub = self.create_publisher(LanePath, '/perception/lane_path', 1)
         period = float(self.get_parameter('poll_period_sec').value)
         self.timer = self.create_timer(period, self.tick)
-        self.get_logger().info('stack_lane_node 준비됨')
+        self.get_logger().info(
+            f'stack_lane_node 준비됨 (ref_point0_lookahead_m={self.ref_point0_lookahead_m}, '
+            f'extrap_mode={self.ref_point0_extrap_mode}, '
+            f'min_confidence={self.ref_point0_min_confidence}) — CSV의 ref_point0_applied/'
+            f'ref_point0_x와 대조해 사후 분석할 것')
 
     def _warmup_model(self) -> None:
         dummy = torch.zeros(1, 3, self.img_size, self.img_size, device=self.device)
@@ -148,9 +169,22 @@ class StackLaneNode(Node):
         t0 = self.get_clock().now()
         _da_mask, ll_mask = infer(self.model, tensor)
         infer_ms = (self.get_clock().now() - t0).nanoseconds / 1e6
+        # 연속 거부가 너무 오래 지속되면(오검출이 아니라 실제로 차가 이동해서
+        # 직전 기준이 낡은 것일 수 있음) 리셋 — 영구 고착 방지.
+        prev_y = self._prev_y if self._reject_streak < self.y_jump_reset_after else None
         estimate, debug = estimate_lane_path(
             ll_mask.astype(np.uint8), self.H, self.grid, lookahead_m=self.lookahead_m,
-            n_points=self.n_points, points_x_start=self.points_x_start, points_x_end=self.points_x_end)
+            n_points=self.n_points, points_x_start=self.points_x_start, points_x_end=self.points_x_end,
+            ref_point0_lookahead_m=self.ref_point0_lookahead_m,
+            ref_point0_extrap_mode=self.ref_point0_extrap_mode,
+            ref_point0_min_confidence=self.ref_point0_min_confidence,
+            prev_y=prev_y, max_y_jump_m=self.max_y_jump_m)
+
+        if estimate.mode == 'none':
+            self._reject_streak += 1
+        else:
+            self._reject_streak = 0
+            self._prev_y = estimate.y
 
         if self.logger_csv is not None:
             self.logger_csv.log(infer_ms=infer_ms, estimate=estimate, fit_result=debug['fit'])

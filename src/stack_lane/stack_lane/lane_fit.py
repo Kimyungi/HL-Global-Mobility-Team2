@@ -97,7 +97,7 @@ def _find_base_candidates(hist: np.ndarray, threshold: float, min_width: int = 3
 
 
 def _climb_windows(bev_mask: np.ndarray, base_col: int, n_windows: int, margin: int, minpix: int,
-                    max_window_spread_px: float | None = None):
+                    max_window_spread_px: float | None = None, row_start: int | None = None):
     """윈도우별로 위로 올라가며 픽셀을 모은다.
 
     max_window_spread_px: 한 윈도우 안에서 검출된 픽셀의 좌우 폭이 이 값을 넘으면
@@ -105,17 +105,26 @@ def _climb_windows(bev_mask: np.ndarray, base_col: int, n_windows: int, margin: 
     마킹(과속방지턱 등)이 차선과 마스크 상에서 맞닿아 있으면 연결요소 필터만으론
     못 걸러지는데(2026-08-07 실주행에서 발견 — 맞닿으면 하나의 연결요소로 합쳐짐),
     그 마킹이 걸리는 윈도우는 폭이 비정상적으로 넓어지므로 여기서 잡아낼 수 있다.
+
+    row_start: 클라이밍을 시작할 행(row) — 기본(None)은 이미지 맨 아래(bev_mask.shape[0],
+    즉 x=0m, 차량 바로 앞)부터. 2026-08-08 발견: 카메라 최소 가시거리(기본 2.5m) 안쪽은
+    항상 빈 구간인데도 여기서부터 세면 n_windows 중 상당수가 처음부터 무조건 빈 윈도우가
+    됨(예: 9개 중 3개, 실측 hit_ratio가 완벽한 조건에서도 ~0.67을 못 넘던 원인). 호출부
+    (_fit_side)가 실제 가시거리에 해당하는 row를 계산해 넘겨주면, n_windows 전부가 실제로
+    뭔가 보일 수 있는 구간에만 배치된다.
     """
     h, _w = bev_mask.shape
-    window_h = max(1, h // n_windows)
+    if row_start is None:
+        row_start = h
+    window_h = max(1, row_start // n_windows)
     ys_all, xs_all = bev_mask.nonzero()
     current_col = base_col
     xs: list[int] = []
     ys: list[int] = []
     hits = 0
     for i in range(n_windows):
-        row_hi = h - i * window_h
-        row_lo = h - (i + 1) * window_h
+        row_hi = row_start - i * window_h
+        row_lo = row_start - (i + 1) * window_h
         col_lo = current_col - margin
         col_hi = current_col + margin
         sel = (ys_all >= row_lo) & (ys_all < row_hi) & (xs_all >= col_lo) & (xs_all < col_hi)
@@ -136,9 +145,11 @@ def _climb_windows(bev_mask: np.ndarray, base_col: int, n_windows: int, margin: 
 
 def _fit_side(bev_mask: np.ndarray, base_col: int, grid: BevGrid,
               n_windows: int, margin: int, minpix: int,
-              max_window_spread_m: float | None = 0.5) -> SideFit | None:
+              max_window_spread_m: float | None = 0.5,
+              row_start: int | None = None) -> SideFit | None:
     max_spread_px = max_window_spread_m * grid.scale if max_window_spread_m is not None else None
-    px_x, px_y, hit_ratio = _climb_windows(bev_mask, base_col, n_windows, margin, minpix, max_spread_px)
+    px_x, px_y, hit_ratio = _climb_windows(bev_mask, base_col, n_windows, margin, minpix, max_spread_px,
+                                            row_start=row_start)
     if len(px_x) < 3:
         return None
     x_m, y_m = grid.px_to_world(px_x, px_y)
@@ -158,7 +169,9 @@ def fit_lane(bev_mask: np.ndarray, grid: BevGrid, *,
              n_windows: int = 9, margin_px: int = 60, minpix: int = 40,
              width_tolerance_m: float = 0.6,
              filter_perpendicular_markings: bool = True,
-             max_window_spread_m: float | None = 0.5) -> LaneFitResult:
+             max_window_spread_m: float | None = 0.5,
+             visible_x_min_m: float | None = 2.5,
+             max_c2_diff: float = 0.15) -> LaneFitResult:
     """strip_frac: 후보 탐색에 쓸 BEV 하단(근거리) 비율. 기본 1.0(전체 높이) —
     카메라 최소 가시거리(예: 2.5m)로 인한 근거리 사각지대가 있으면 좁은 근거리
     스트립만 볼 경우 그 안에 픽셀이 아예 없어 후보가 0개로 잡히는 문제가 있었음
@@ -168,6 +181,17 @@ def fit_lane(bev_mask: np.ndarray, grid: BevGrid, *,
     filter_perpendicular_markings: 과속방지턱·정지선 등 진행방향에 수직인 마킹을
     후보에서 제외 (2026-08-07 실주행에서 발견 — strip_frac을 전체 높이로 넓힌 부작용
     으로 이런 마킹까지 후보 히스토그램에 들어와 경로가 프레임마다 크게 튀는 문제 있었음).
+
+    visible_x_min_m: 슬라이딩 윈도우 클라이밍을 시작할 최소 x — 기본 2.5m(카메라
+    최소 가시거리, points_x_start와 동일 값이어야 함). 2026-08-08 발견: 이걸 안
+    쓰고 이미지 맨 아래(x=0m)부터 클라이밍하면 n_windows 중 상당수가 항상 빈
+    사각지대만 훑게 돼 hit_ratio가 구조적으로 낮아지고(실측: 점선/흐린 구간에서
+    윈도우 9개 중 1~3개만 적중 → 점 3개짜리 불안정한 다항식 피팅 → yaw 폭주),
+    None이면 기존 동작(x=0부터)으로 되돌아감.
+
+    max_c2_diff: "both" 조합 채택 전 좌우 곡률(c2) 일치성 검사 임계값 — 근거는
+    "1) 폭 검증 통과" 분기 코드 주석 참조(연석 오검출 사례). 0.15는 실측 1건 기반
+    임시값이라 향후 실주행 로그로 재검토 필요.
     """
     if filter_perpendicular_markings:
         bev_mask = filter_lane_like_components(bev_mask, grid)
@@ -185,8 +209,14 @@ def fit_lane(bev_mask: np.ndarray, grid: BevGrid, *,
     lane_width_px = LANE_WIDTH_M * grid.scale
     tol_px = width_tolerance_m * grid.scale
 
+    row_start = None
+    if visible_x_min_m is not None:
+        _col_ignore, row_start_f = grid.world_to_px(visible_x_min_m, 0.0)
+        row_start = int(round(row_start_f))
+
     def try_side(col: int) -> SideFit | None:
-        return _fit_side(bev_mask, col, grid, n_windows, margin_px, minpix, max_window_spread_m)
+        return _fit_side(bev_mask, col, grid, n_windows, margin_px, minpix, max_window_spread_m,
+                          row_start=row_start)
 
     # 1) 폭 검증 통과하는 좌우 조합 탐색 (중심에 가까운 후보부터, greedy)
     for lc in left_cands:
@@ -195,6 +225,17 @@ def fit_lane(bev_mask: np.ndarray, grid: BevGrid, *,
                 left_fit = try_side(lc)
                 right_fit = try_side(rc)
                 if left_fit is not None and right_fit is not None:
+                    # 곡률 일치성 검사 (2026-08-08, 연석 오검출 진단) — 폭만 맞으면
+                    # "both"로 확정하던 게 문제: 실주행에서 왼쪽(진짜 차선, c2=-0.004)과
+                    # 오른쪽(연석, c2=-0.516)이 우연히 폭 조건(3.7±0.6m)을 통과해
+                    # 잘못 짝지어짐 — 연석이 코너를 따라 급하게 꺾이면서 중심선 yaw가
+                    # 58°까지 폭주했음. 절대 각도로는 진짜 급커브(S자/ㄱ자, 반경
+                    # 1.4~2.6m 코스 표준)와 구분이 안 되지만(진짜 급커브도 60°대 나옴),
+                    # "두 차선이 서로 평행하게 같이 휘는가"는 급커브에서도 유지되는
+                    # 성질이라 여기서 걸러낸다 — 진짜 차선 쌍은 곡률(c2)이 비슷해야 하고,
+                    # 연석처럼 한쪽만 이상하게 휘면 큰 차이가 남.
+                    if abs(left_fit.coeffs[0] - right_fit.coeffs[0]) > max_c2_diff:
+                        continue  # 평행한 차선 쌍이 아님 — 이 조합 버리고 다음 후보 시도
                     center = (left_fit.coeffs + right_fit.coeffs) / 2.0
                     width_m = (rc - lc) / grid.scale
                     return LaneFitResult("both", center, left_fit, right_fit, width_m, n_left, n_right)

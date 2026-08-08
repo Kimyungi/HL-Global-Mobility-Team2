@@ -17,6 +17,29 @@ import numpy as np
 from stack_lane.bev import BevGrid, warp_to_bev
 from stack_lane.lane_fit import LANE_WIDTH_M, LaneFitResult, SideFit, fit_lane
 
+# 물리적 타당성 상한 (2026-08-08, 조향 진단).
+#
+# yaw는 절대각도로 거르지 않기로 함 (2026-08-08, 연석 오검출 사례 이후 재검토):
+# 처음엔 ±20°를 넘으면 'none' 처리했는데, 실제 코스에 S자/ㄱ자(반경 1.4~2.6m)가
+# 있어서 진짜 급커브도 근거리 점에서 yaw가 60°대까지 나올 수 있음(κ=1/1.4≈0.714,
+# x=2.5m → atan(κx)≈61°) — 연석 오검출 사례(58°)와 크기가 겹쳐 절대각도로는
+# 구분이 안 됨. "both"(양쪽 다 검출) 모드는 대신 좌우 곡률 일치성 검사로 대체
+# (lane_fit.py의 max_c2_diff — 진짜 평행한 차선 쌍은 곡률이 비슷하고, 연석처럼
+# 한쪽만 이상하게 휘면 크게 어긋남, 급커브에도 안전). 편측(한쪽만 검출)은 비교할
+# 상대가 없어 애초에 이 방법도 못 씀 — 검출 품질(hit_ratio 기반 confidence·편측
+# 페널티)로만 신뢰도를 매기고 그대로 따라간다(사용자 판단, 2026-08-08).
+#
+# y(횡오프셋)는 여전히 절대값으로 거른다 — 다항식이 수치적으로 폭주하면(예:
+# 근거리 사각지대 낭비 시절 실측된 y=35m) yaw보다 y가 먼저/더 극단적으로 튀는
+# 경향이 있었고, 이건 급커브로도 설명 안 되는 명백한 이상값이라 판단.
+#
+# 2.5m -> 4.0m로 완화 (2026-08-08, 실주행에서 발견): 편측 폴백은 검출된 한쪽
+# 위치에 차선폭 절반(1.85m)을 더해 중심을 추정하는데, 정상적으로 잘 검출된
+# (hit_ratio 0.78~0.89) 직선 하나가 근거리 점에서 2.539m로 옛 기준(2.5m)을
+# 3.9cm 초과했다는 이유만으로 20개 점 전체가 폐기되고 차량이 정지함. 실제
+# 폭주 사례(35m)와는 자릿수가 다른 정상 범위라 4.0m로 여유를 둠.
+MAX_ABS_Y_M = 4.0
+
 
 @dataclass
 class PathPoint:
@@ -35,6 +58,11 @@ class LaneEstimate:
     confidence: float
     mode: str  # 'both' | 'left_only' | 'right_only' | 'none'
     points: list[PathPoint] = field(default_factory=list)  # 근거리->원거리 순, 1개 이상
+    # REF_POINT_00 근거리 치환 실험 로깅용 (2026-08-08, 조향 게인 진단) — 이 프레임에서
+    # 실제로 치환이 적용됐는지·points[0]의 최종 x가 얼마였는지. 실차 로그로 세 완화
+    # 방법(접선 외삽/신뢰도 게이팅/거리)의 효과를 사후 판단하기 위한 필드.
+    ref_point0_applied: bool = False
+    ref_point0_x: float = 0.0
 
 
 def _side_score(side: SideFit, hit_ratio_target: float, residual_tolerance_m: float) -> float:
@@ -112,27 +140,115 @@ def sample_path_points(center_coeffs: np.ndarray, x_start: float, x_end: float,
     return [_point_from_fit(center_coeffs, x) for x in xs]
 
 
+def _linear_extrapolate(center_coeffs: np.ndarray, x_ref: float, x_target: float) -> PathPoint:
+    """x_ref 지점의 접선(기울기 고정)으로 x_target을 선형 추정.
+
+    완화안 1(접선 외삽) — 2차항(c2)이 실측 범위(x_ref) 밖에서 오차를 빠르게
+    키우는 걸 피하려고, x_ref에서의 기울기만 가져와 직선으로 연장한다.
+    곡률 정보가 없는 근사라 curvature는 명시적으로 0.
+    """
+    c2, c1, c0 = center_coeffs
+    y_ref = c2 * x_ref * x_ref + c1 * x_ref + c0
+    dy = 2 * c2 * x_ref + c1
+    y = y_ref + dy * (x_target - x_ref)
+    yaw = float(np.arctan(dy))
+    return PathPoint(x=float(x_target), y=float(y), yaw=yaw, curvature=0.0)
+
+
+def _compute_ref_point0(center_coeffs: np.ndarray, *, x_start: float, lookahead_m: float | None,
+                         extrap_mode: str, confidence: float, min_confidence: float) -> PathPoint | None:
+    """REF_POINT_00(dSPACE가 실제 조향 계산에 쓰는 유일한 점, avoid_to_ref.py 주석 근거)을
+    카메라 가시 범위(x_start) 밖의 더 가까운 지점으로 당길지 결정.
+
+    완화안 2(신뢰도 게이팅) — 피팅이 불안정할 때(confidence 낮음) 근거리 외삽은
+    노이즈를 오히려 증폭시키므로, confidence가 충분할 때만 적용하고 아니면
+    None을 반환해 원래(x_start) 배열을 그대로 쓰게 한다.
+    완화안 3(거리) — lookahead_m을 얼마로 줄지는 호출부(파라미터)가 결정 —
+    작을수록 조향 게인은 커지지만(κ=2y/(x²+y²)) 외삽 거리도 늘어남.
+    """
+    if lookahead_m is None or lookahead_m <= 0.0 or lookahead_m >= x_start:
+        return None  # 비활성 또는 당길 필요 없음 — 기존 동작 그대로
+    if confidence < min_confidence:
+        return None  # 완화안 2: 신뢰도 부족 — 원래 x_start 배열 유지
+    if extrap_mode == "linear":
+        return _linear_extrapolate(center_coeffs, x_start, lookahead_m)
+    return _point_from_fit(center_coeffs, lookahead_m)  # 'quadratic' (또는 그 외 값) 기본 동작
+
+
+def _is_plausible(points: list[PathPoint]) -> bool:
+    """다항식 외삽이 물리적으로 타당한 범위 안에 있는지. yaw는 검사 안 함(근거는
+    모듈 상단 주석 — 급커브와 오검출을 각도만으론 구분 못 함)."""
+    return all(abs(p.y) <= MAX_ABS_Y_M for p in points)
+
+
 def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
                         lookahead_m: float = 3.0,
                         n_points: int = 20, points_x_start: float = 2.5, points_x_end: float | None = None,
+                        ref_point0_lookahead_m: float | None = None,
+                        ref_point0_extrap_mode: str = "quadratic",
+                        ref_point0_min_confidence: float = 0.5,
+                        prev_y: float | None = None, max_y_jump_m: float = 1.0,
                         fit_kwargs: dict | None = None,
                         confidence_kwargs: dict | None = None):
     """points_x_start 기본 2.5m = 카메라 최소 가시거리(PROJECT_BRIEF.md §6) —
     그보다 가까운 구간은 실측 근거 없이 다항식을 외삽하는 것이라 신뢰도가 낮음.
-    points_x_end 기본값은 grid.x_max(현재 6.0m, GPS 실측 범위와 유사)."""
+    points_x_end 기본값은 grid.x_max(현재 6.0m, GPS 실측 범위와 유사).
+
+    ref_point0_* 세 파라미터는 2026-08-08 조향 게인 진단에서 나온 실험용 옵션
+    (모듈 docstring 최신 항목 참조) — dSPACE가 points[0](REF_POINT_00)만 실제
+    조향 계산에 쓰는 것으로 확인됨(avoid_to_ref.py 주석, GPS 실측). 기본값
+    (ref_point0_lookahead_m=None)은 기존 동작과 완전히 동일 — 셋 다 명시적으로
+    켜야 적용된다.
+
+    prev_y/max_y_jump_m: 프레임 간 연속성 체크 (2026-08-08, 편측 오검출 진단) —
+    fit_lane()은 매 프레임 후보를 처음부터 새로 찾기 때문에(직전 프레임 기억 없음),
+    검출이 애매한 순간 "왼쪽"이라 부르는 대상이 프레임마다 다른 실제 선으로
+    튈 수 있음. 실측: 3초 사이 모드가 6번 넘게 바뀌다가 엉뚱한 선에 고정돼
+    y가 갑자기 -2.58m로 튀고 그 상태로 여러 초 유지된 사례 확인. 호출부(node.py)가
+    직전에 채택했던 y를 prev_y로 넘겨주면, 그로부터 max_y_jump_m(기본 1.0m)보다
+    많이 튄 결과는 'none' 처리한다 — 속도(~0.5m/s)·프레임 간격(~45ms) 기준
+    실제 물리적 이동은 한 프레임에 수 cm뿐이라 1m 이상 점프는 대부분 오검출.
+    """
     x_end = points_x_end if points_x_end is not None else grid.x_max
     bev_mask = warp_to_bev(lane_mask, H, grid)
-    result = fit_lane(bev_mask, grid, **(fit_kwargs or {}))
+    # visible_x_min_m 기본값을 points_x_start와 맞춰 단일 진실원천으로 유지 —
+    # fit_kwargs가 명시하면 그쪽이 우선(오버라이드 가능).
+    result = fit_lane(bev_mask, grid, **{"visible_x_min_m": points_x_start, **(fit_kwargs or {})})
 
     if result.mode == "none" or result.center_coeffs is None:
         neutral = PathPoint(x=lookahead_m, y=0.0, yaw=0.0, curvature=0.0)
         estimate = LaneEstimate(x=neutral.x, y=neutral.y, yaw=neutral.yaw, curvature=neutral.curvature,
-                                 confidence=0.0, mode="none", points=[neutral])
+                                 confidence=0.0, mode="none", points=[neutral],
+                                 ref_point0_applied=False, ref_point0_x=neutral.x)
         return estimate, {"bev_mask": bev_mask, "fit": result}
 
+    confidence = compute_confidence(result, **(confidence_kwargs or {}))
     x, y, yaw, curvature = lookahead_from_fit(result.center_coeffs, lookahead_m)
     points = sample_path_points(result.center_coeffs, points_x_start, x_end, n_points)
-    confidence = compute_confidence(result, **(confidence_kwargs or {}))
+
+    near_pt = _compute_ref_point0(
+        result.center_coeffs, x_start=points_x_start, lookahead_m=ref_point0_lookahead_m,
+        extrap_mode=ref_point0_extrap_mode, confidence=confidence,
+        min_confidence=ref_point0_min_confidence)
+    ref_point0_applied = near_pt is not None
+    if ref_point0_applied:
+        points = [near_pt] + points[:-1]  # 맨 앞 치환, 총 개수(n_points)는 유지
+
+    implausible = not _is_plausible([PathPoint(x=x, y=y, yaw=yaw, curvature=curvature)] + points)
+    discontinuous = prev_y is not None and abs(y - prev_y) > max_y_jump_m
+
+    if implausible or discontinuous:
+        # 피팅은 됐지만(mode는 both/left_only/right_only) 신뢰 못 함 — 외삽 폭주
+        # (implausible) 또는 직전 추적 위치에서 갑자기 너무 멀리 튐(discontinuous,
+        # 엉뚱한 선을 잡았을 가능성). 'none'과 동일하게: confidence=0으로 MGM
+        # 히스테리시스가 lane 이탈 판단을 하게 둔다(판단은 여전히 MGM 스테이트머신 몫).
+        neutral = PathPoint(x=lookahead_m, y=0.0, yaw=0.0, curvature=0.0)
+        estimate = LaneEstimate(x=neutral.x, y=neutral.y, yaw=neutral.yaw, curvature=neutral.curvature,
+                                 confidence=0.0, mode="none", points=[neutral],
+                                 ref_point0_applied=False, ref_point0_x=neutral.x)
+        return estimate, {"bev_mask": bev_mask, "fit": result}
+
     estimate = LaneEstimate(x=x, y=y, yaw=yaw, curvature=curvature, confidence=confidence,
-                             mode=result.mode, points=points)
+                             mode=result.mode, points=points,
+                             ref_point0_applied=ref_point0_applied, ref_point0_x=points[0].x)
     return estimate, {"bev_mask": bev_mask, "fit": result}
