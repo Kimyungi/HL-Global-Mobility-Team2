@@ -11,13 +11,17 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/models', glob('models/*')),
+        (
+            'share/' + package_name + '/models',
+            ['models/yolov8n.pt', 'models/README.md'],
+        ),
+        ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='김재민',
     maintainer_email='kyg100800@gmail.com',
-    description='신호등·정지선 인식 → 정지 요구',
+    description='YOLO 신호등·OAK 정지선 거리 판정 → 정지 요구',
     license='MIT',
     entry_points={
         'console_scripts': [
