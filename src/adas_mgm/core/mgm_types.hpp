@@ -114,6 +114,14 @@ struct CoreState
   int32_t n_out;                          // 유효 점 수 (선택 소스의 n, 소스 미도착 시 hold)
   CorePoint ref_out[MGM_NUM_POINTS];      // 내부는 20 고정(블렌드용) — 출력 유효분은 n_out개
   CorePoint blend_from[MGM_NUM_POINTS];
+  // 인지 갱신 지연 구간 이동 보정 (2026-08-08, 조향 미반영 진단) — 인지 소스가
+  // 이전 틱과 완전히 같은 값을 낼 때(아직 새 추론 미도착) ref_out을 그대로
+  // 복사하지 않고 x를 st.v만큼 깎아 내보내기 위한 "직전 원본 스냅샷" 기억.
+  // ref_out 자체(blend 적용된 출력)와는 별도로 둔다 — target_differs 판정은
+  // 항상 "인지가 준 원본"끼리 비교해야 하기 때문.
+  bool has_raw_target;
+  int32_t raw_n;
+  CorePoint last_raw_target[MGM_NUM_POINTS];
   // 종방향 병합 (rate limit)
   float v;
 };

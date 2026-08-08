@@ -22,6 +22,24 @@ float min_f(float a, float b)
   return (a < b) ? a : b;
 }
 
+// 부동소수 그대로 통과된 값이라 실질적으로는 완전 동일 비교지만, 혹시 모를
+// 미세 오차에 대비해 아주 작은 허용치를 둔다.
+bool points_equal(const CorePoint & a, const CorePoint & b)
+{
+  constexpr float eps = 1e-6f;
+  auto close = [](float x, float y) {return (x > y ? x - y : y - x) <= eps;};
+  return close(a.x, b.x) && close(a.y, b.y) && close(a.yaw, b.yaw) &&
+    close(a.curvature, b.curvature);
+}
+
+bool paths_equal(const CorePoint * a, const CorePoint * b, int32_t n)
+{
+  for (int32_t i = 0; i < n; ++i) {
+    if (!points_equal(a[i], b[i])) {return false;}
+  }
+  return true;
+}
+
 // ── 판단: 스테이트 전이 (§4 전이 조건표)
 void transition(const CoreSnapshot & s, CoreState & st)
 {
@@ -177,6 +195,16 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
     target[i] = path->pts[i < last ? i : last];
   }
+
+  // 인지 소스가 이전 틱과 완전히 같은 값을 냈는지(= 아직 새 추론이 안 나와
+  // wrapper가 같은 스냅샷을 또 읽어준 것) 판정. 2026-08-08 조향 미반영 진단:
+  // dSPACE가 완전 동일한 CAN 페이로드 반복 수신 시 이를 무시하는 것으로 실측
+  // 확인됨(실카메라 로그에서 78.7%가 직전 틱과 동일값이었고 그 구간 str 무반응,
+  // 명시적으로 매틱 값이 바뀌게 한 진단 스크립트는 45도 반응). stack_lane 추론이
+  // ~21Hz로 CAN 주기(100Hz)보다 느려 구조적으로 발생.
+  const bool is_stale_repeat = st.has_raw_target && st.raw_n == n &&
+    paths_equal(target, st.last_raw_target, n);
+
   st.n_out = n;
 
   if (src != st.last_src) {  // 스테이트 전환 → ref 불연속 방지 블렌드 시작
@@ -197,10 +225,29 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
       st.ref_out[i].curvature = lerp(st.blend_from[i].curvature, target[i].curvature, a);
     }
     --st.blend_left;
+  } else if (is_stale_repeat) {
+    // 새 인지 값이 아직 안 옴 → 직전 출력을 그대로 반복 송신하지 않고, 그동안
+    // 차량이 이동했을 거리만큼 x(전방 거리)를 깎아서 내보낸다. 실제 속도 피드백
+    // (dSPACE 0x202 vehicle_vector.v) 배선 없이, 우리가 직전 틱에 명령한 st.v를
+    // 등속 근사로 사용 — 10ms 구간·저속 주행에서는 근사 오차가 무시할 수준.
+    // y/yaw/curvature는 보정하지 않음(차로 진행방향 유지 가정) — 이 근사가 틀리는
+    // 급커브 등은 어차피 다음 실제 인지값(21Hz)이 금방 덮어써서 누적되지 않음.
+    const float dx = st.v * MGM_PERIOD_S;
+    for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
+      st.ref_out[i].x -= dx;
+    }
   } else {
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.ref_out[i] = target[i];
     }
+  }
+
+  if (!is_stale_repeat) {
+    for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
+      st.last_raw_target[i] = target[i];
+    }
+    st.raw_n = n;
+    st.has_raw_target = true;
   }
 }
 

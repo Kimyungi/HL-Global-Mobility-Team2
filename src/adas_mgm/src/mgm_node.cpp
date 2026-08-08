@@ -164,6 +164,18 @@ public:
     estop_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("estop_stale_timeout_sec", 0.25) * 1e9);
 
+    // lane_path 입력 신선도 watchdog (2026-08-07 실차 테스트에서 발견 — estop과
+    // 달리 lane_path엔 신선도 체크가 없어서, stack_lane이 죽어도 MGM이 죽기
+    // 직전 마지막 값을 계속 재사용해 계속 주행 명령을 냈음). estop과 동일하게
+    // "입력 컨디셔닝"으로 처리 — state==LANE일 때만 적용(다른 스테이트는
+    // lane_path를 안 쓰므로), 판단(정지)은 기존 estop 경로를 그대로 재사용.
+    lane_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("lane_stale_timeout_sec", 0.5) * 1e9);
+    // gps_path도 동일 — waypoint 스테이트가 gps_path 없이도 v_base로 계속
+    // 주행하던 문제 방지 (2026-08-07, lane watchdog과 같은 날 발견).
+    gps_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("gps_stale_timeout_sec", 0.5) * 1e9);
+
     jitter_ = std::make_unique<JitterLogger>(
       get_logger(),
       declare_parameter<std::string>("jitter_csv_path", ""),
@@ -188,11 +200,15 @@ public:
     sub_lane_ = create_subscription<fma_interfaces::msg::LanePath>(
       "/perception/lane_path", qos,
       [this](fma_interfaces::msg::LanePath::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); msgs_.lane = *m;});
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.lane = *m;
+        last_lane_rx_ns_ = monotonicNs();});
     sub_gps_ = create_subscription<fma_interfaces::msg::GpsPath>(
       "/perception/gps_path", qos,
       [this](fma_interfaces::msg::GpsPath::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); msgs_.gps = *m;});
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.gps = *m;
+        last_gps_rx_ns_ = monotonicNs();});
     sub_avoid_ = create_subscription<fma_interfaces::msg::AvoidStatus>(
       "/perception/avoid", qos,
       [this](fma_interfaces::msg::AvoidStatus::ConstSharedPtr m) {
@@ -267,16 +283,41 @@ private:
   {
     LatestMsgs m;
     int64_t estop_rx_ns;
+    int64_t lane_rx_ns;
+    int64_t gps_rx_ns;
     {
       std::lock_guard<std::mutex> lk(mtx_);
       m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
       estop_rx_ns = last_estop_rx_ns_;
+      lane_rx_ns = last_lane_rx_ns_;
+      gps_rx_ns = last_gps_rx_ns_;
     }
     // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
     // counter watchdog의 PC측 대응물). stack_estop 미수신/사망 시 스냅샷의
     // estop을 true로 보정하고, 정지 판단(v_ref=0) 자체는 코어가 한다.
-    if (estop_rx_ns < 0 || monotonicNs() - estop_rx_ns > estop_stale_ns_) {
+    const bool estop_stale = estop_rx_ns < 0 || monotonicNs() - estop_rx_ns > estop_stale_ns_;
+    if (estop_stale) {
       m.estop.estop = true;
+    }
+    // lane_path 입력 신선도 watchdog (2026-08-07 실차 테스트에서 발견) — state가
+    // 현재 LANE일 때만 적용(다른 스테이트는 lane_path를 안 씀). stack_lane이
+    // 죽었는데도 MGM이 마지막 값을 계속 재사용해 주행을 계속하던 문제를 막는다.
+    // estop 경로를 그대로 재사용 — 새 판단 로직을 추가하는 게 아니라 기존
+    // "estop=true → 전 스테이트 정지" 판단에 태우는 것 (§5.1 준수).
+    const bool lane_stale = lane_rx_ns < 0 || monotonicNs() - lane_rx_ns > lane_stale_ns_;
+    if (core_state_.state == MGM_STATE_LANE && lane_stale && !estop_stale) {
+      m.estop.estop = true;
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+        "lane_path 신선도 초과(state=lane) — estop 강제 (stack_lane 확인 필요)");
+    }
+    // gps_path 신선도 watchdog — lane과 대칭. waypoint 스테이트가 gps_path 없이도
+    // v_base로 계속 주행하던 문제 방지 (실제로 lane→waypoint 자동 전이 후 이
+    // 경로로 재현됨, 2026-08-07).
+    const bool gps_stale = gps_rx_ns < 0 || monotonicNs() - gps_rx_ns > gps_stale_ns_;
+    if (core_state_.state == MGM_STATE_WAYPOINT && gps_stale && !estop_stale) {
+      m.estop.estop = true;
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+        "gps_path 신선도 초과(state=waypoint) — estop 강제 (stack_gps 확인 필요)");
     }
     const CoreSnapshot s = toSnapshot(m);
 
@@ -329,6 +370,10 @@ private:
   LatestMsgs msgs_;
   int64_t last_estop_rx_ns_{-1};  // 마지막 EstopRequest 수신 시각 (미수신 = -1)
   int64_t estop_stale_ns_{250'000'000};
+  int64_t last_lane_rx_ns_{-1};   // 마지막 LanePath 수신 시각 (미수신 = -1)
+  int64_t lane_stale_ns_{500'000'000};
+  int64_t last_gps_rx_ns_{-1};    // 마지막 GpsPath 수신 시각 (미수신 = -1)
+  int64_t gps_stale_ns_{500'000'000};
 
   rclcpp::Publisher<TargetRef>::SharedPtr pub_;
   rclcpp::Subscription<fma_interfaces::msg::LanePath>::SharedPtr sub_lane_;
