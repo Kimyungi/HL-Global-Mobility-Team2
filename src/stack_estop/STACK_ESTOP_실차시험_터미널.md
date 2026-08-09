@@ -18,10 +18,17 @@
 - static hard stop: 0.7m
 - CAN: can0, 1 Mbps
 
+각 터미널에서 작업공간과 외부 YDLIDAR 작업공간을 환경변수로 지정합니다. 다른 PC로 옮길 때 이 두 값만 바꾸면 됩니다.
+
+```bash
+export TEAM_WS="$(pwd)"
+export YDLIDAR_WS="${YDLIDAR_WS:-$HOME/ydlidar_ws}"
+```
+
 # 1. LiDAR 포트 확인
 
 ```bash
-cd /home/chanmi/HL-Global-Mobility-Team2-1
+cd "$TEAM_WS"
 
 ls -l /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
 lsusb | grep -i -E "ydlidar|serial|uart|cp210|ch340"
@@ -36,7 +43,7 @@ grep -n "ttyUSB" \
 `/dev/ttyUSB0`이 `/dev/ttyUSB1`로 바뀌었으면 `LIDAR_PORT=/dev/ttyUSB1`, 반대이면 `LIDAR_PORT=/dev/ttyUSB0`으로 지정합니다.
 
 ```bash
-cd /home/chanmi/HL-Global-Mobility-Team2-1
+cd "$TEAM_WS"
 
 LIDAR_PORT=/dev/ttyUSB0
 
@@ -48,7 +55,7 @@ grep -n "ttyUSB" \
   src/stack_estop/launch/REAL_VEHICLE_stack_estop_mgm_can.launch.py
 
 source /opt/ros/humble/setup.bash
-source /home/chanmi/ydlidar_ws/install/setup.bash
+source "$YDLIDAR_WS/install/setup.bash"
 
 colcon build \
   --packages-select stack_estop \
@@ -78,9 +85,9 @@ candump -L can0 2>&1 | tee "$LOG_DIR/candump.log"
 # 4. 터미널 2 — 실제 코드 실행 및 launch 로그
 
 ```bash
-cd /home/chanmi/HL-Global-Mobility-Team2-1
+cd "$TEAM_WS"
 source /opt/ros/humble/setup.bash
-source /home/chanmi/ydlidar_ws/install/setup.bash
+source "$YDLIDAR_WS/install/setup.bash"
 source install/setup.bash
 
 LOG_DIR=$(cat /tmp/stack_estop_log_dir)
@@ -89,6 +96,7 @@ ros2 launch stack_estop \
   REAL_VEHICLE_stack_estop_mgm_can.launch.py \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
   can_interface:=can0 \
+  ydlidar_params:="$YDLIDAR_WS/src/ydlidar_ros2_driver/params/Tmini-Plus-SH.yaml" \
   2>&1 | tee "$LOG_DIR/launch.log"
 ```
 
@@ -102,9 +110,9 @@ ros2 launch stack_estop \
 # 5. 터미널 3 — ROS bag 기록
 
 ```bash
-cd /home/chanmi/HL-Global-Mobility-Team2-1
+cd "$TEAM_WS"
 source /opt/ros/humble/setup.bash
-source /home/chanmi/ydlidar_ws/install/setup.bash
+source "$YDLIDAR_WS/install/setup.bash"
 source install/setup.bash
 
 LOG_DIR=$(cat /tmp/stack_estop_log_dir)
@@ -131,7 +139,7 @@ ros2 bag record \
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/chanmi/HL-Global-Mobility-Team2-1/install/setup.bash
+source "$TEAM_WS/install/setup.bash"
 
 while true; do
   clear
@@ -159,7 +167,20 @@ done
 8. 0.7m `static_estop`보다 먼저 정지해야 성공
 9. 더미 제거 후 latch 해제 확인
 
-# 8. 종료 및 로그 확인
+# 8. 오탐률 기록
+
+`cluster_min_points=3`은 작은 장애물도 놓치지 않도록 민감도를 높인 설정입니다.
+실차 시험마다 다음 항목을 기록하고, 장애물이 없는데 `static_estop=true`가 된
+횟수를 전체 시험 시간과 함께 공유합니다.
+
+- 시험 시간 및 주행 거리
+- 정적 E-stop 발생 횟수
+- 실제 장애물로 확인된 정지 횟수
+- 오탐으로 판정된 정지 횟수와 당시 `/scan` 로그
+
+오탐률은 `오탐 정지 횟수 / 전체 정적 E-stop 발생 횟수`로 계산합니다.
+
+# 9. 종료 및 로그 확인
 
 종료 순서:
 

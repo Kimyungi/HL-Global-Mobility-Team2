@@ -16,35 +16,28 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-TEAM_WS = '/home/chanmi/HL-Global-Mobility-Team2-1'
-YDLIDAR_WS = '/home/chanmi/ydlidar_ws'
-YDLIDAR_LAUNCH = os.path.join(
-    YDLIDAR_WS,
-    'src',
-    'ydlidar_ros2_driver',
-    'launch',
-    'ydlidar_launch.py',
-)
-YDLIDAR_PARAMS = os.path.join(
-    YDLIDAR_WS,
-    'src',
-    'ydlidar_ros2_driver',
-    'params',
-    'Tmini-Plus-SH.yaml',
-)
-
-
 def generate_launch_description():
+    default_ydlidar_ws = os.path.join(os.path.expanduser('~'), 'ydlidar_ws')
+    default_ydlidar_launch = os.path.join(
+        default_ydlidar_ws, 'src', 'ydlidar_ros2_driver', 'launch',
+        'ydlidar_launch.py')
+    default_ydlidar_params = os.path.join(
+        default_ydlidar_ws, 'src', 'ydlidar_ros2_driver', 'params',
+        'Tmini-Plus-SH.yaml')
+
     # The external launch contains only the YDLIDAR lifecycle node and its
     # base_link -> laser_frame static TF. It does not contain bridge_dspace.
     ydlidar = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(YDLIDAR_LAUNCH),
-        launch_arguments={'params_file': YDLIDAR_PARAMS}.items(),
+        PythonLaunchDescriptionSource(LaunchConfiguration('ydlidar_launch')),
+        launch_arguments={
+            'params_file': LaunchConfiguration('ydlidar_params')
+        }.items(),
     )
 
     mgm_launch = os.path.join(
@@ -69,6 +62,12 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'ydlidar_launch', default_value=default_ydlidar_launch,
+            description='Path to the external YDLIDAR launch file.'),
+        DeclareLaunchArgument(
+            'ydlidar_params', default_value=default_ydlidar_params,
+            description='Path to the external YDLIDAR parameter YAML.'),
         ydlidar,
         stack_estop,
         mgm,

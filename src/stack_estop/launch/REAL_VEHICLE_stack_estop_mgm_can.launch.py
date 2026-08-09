@@ -25,8 +25,8 @@ def validate_real_vehicle_confirmation(context):
 
 
 def generate_launch_description():
-    ydlidar_params = os.path.join(
-        '/home/chanmi/ydlidar_ws', 'src', 'ydlidar_ros2_driver',
+    default_ydlidar_params = os.path.join(
+        os.path.expanduser('~'), 'ydlidar_ws', 'src', 'ydlidar_ros2_driver',
         'params', 'Tmini-Plus-SH.yaml')
 
     return LaunchDescription([
@@ -38,6 +38,12 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'can_interface',
             default_value='can0',
+        ),
+
+        DeclareLaunchArgument(
+            'ydlidar_params',
+            default_value=default_ydlidar_params,
+            description='Path to the YDLIDAR parameter YAML file.',
         ),
 
         DeclareLaunchArgument(
@@ -69,7 +75,7 @@ def generate_launch_description():
             executable='ydlidar_ros2_driver_node',
             name='ydlidar_ros2_driver_node',
             namespace='/',
-            parameters=[ydlidar_params, {
+            parameters=[LaunchConfiguration('ydlidar_params'), {
                 'port': '/dev/ttyUSB0',
                 'baudrate': 230400,
                 'lidar_type': 1,
