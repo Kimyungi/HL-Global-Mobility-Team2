@@ -35,7 +35,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 
 | 필드 | CAN 매핑 | 설명 |
 |---|---|---|
-| ref_points[n] | `0x101`~`0x114` (점당 1프레임, int16 양자화: 1mm / 1e-4rad / 5e-4 1/m) | **vehicle frame** — 생성 시점 차량 위치 = (0,0,0). 모든 모드 동일 포맷. **점 수는 모든 소스 1개** (차선/GPS/회피/주차, 2026-07-29 합의) — dSPACE 궤적 생성(quintic)이 목표점으로부터 MPC 지평을 채움 |
+| ref_points[n] | `0x101`~`0x114` (점당 1프레임, int16 양자화: 1mm / 1e-4rad / 5e-4 1/m) | **vehicle frame** — 생성 시점 차량 위치 = (0,0,0). 모든 모드 동일 포맷. **점 수는 다점(권장 20)** — 2026-07-29 "모든 소스 1점" 합의는 2026-08-08 실측으로 **폐기**: 동일 세션 대조에서 n_points=1은 dSPACE str 무반응(변동 0.1°), 20점은 정상(55.6°). 각 스택은 목표 경로를 다점 샘플링해 송신할 것 (dSPACE 궤적 생성의 다점 전제 여부는 손상민 확인 중) |
 | v_ref | `0x100` 헤더 프레임 (int16, 1mm/s) | 종방향 병합의 최종 목표 속도. 정지 = v_ref 0 (별도 정지 명령 없음) |
 | flags | `0x100` 헤더 프레임 (state u8 + n_points u8 + counter u16) | **counter는 watchdog 필수 입력** |
 
@@ -84,7 +84,8 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 4. **모든 경로 소스는 동일 ref points 포맷.** 차선/GPS/회피/주차 어느 것이 이기든 dSPACE는 구분할 필요 없음 — MPC 무수정 원칙.
 5. **PWM 주파수 혼동 금지.** 서보 = 50Hz(펄스폭이 위치), 구동 모터 드라이버 = 20kHz(duty가 전압). 
 6. 스테이트 전환 시 ref 불연속 방지(전환 연속 처리), 급격한 v_ref 변화 rate limit — 조립 블록의 허용 업무.
-7. **estop 입력 신선도 watchdog (MGM wrapper).** EstopRequest 미수신(기동 직후) 또는 staleness(기본 250ms = stack_estop 하트비트 50ms × 5) 시 wrapper가 스냅샷의 estop을 true로 보정한다. 이는 §3 dSPACE counter watchdog의 PC측 대응물이며 판단이 아니라 입력 컨디셔닝 — 정지 판단(v_ref=0)은 여전히 코어 스테이트 머신이 한다. (2026-07-30, PR #17 안전 이슈 시험에서 도출)
+7. **인지 입력 신선도 watchdog (MGM wrapper).** ① estop: EstopRequest 미수신(기동 직후) 또는 staleness(기본 250ms = stack_estop 하트비트 50ms × 5) 시 wrapper가 스냅샷의 estop을 true로 보정 (2026-07-30, PR #17 안전 이슈 시험에서 도출). ② lane_path/gps_path: 현재 스테이트가 해당 소스를 사용 중일 때(lane→LANE, gps→WAYPOINT) 미수신/staleness(기본 0.5s) 시 동일하게 estop=true로 보정 — 인지 노드 사망 시 마지막 값으로 계속 주행하던 구멍 차단 (2026-08-07 실차에서 발견, PR #28). 모두 §3 dSPACE counter watchdog의 PC측 대응물이며 판단이 아니라 입력 컨디셔닝 — 정지 판단(v_ref=0)은 여전히 코어 스테이트 머신이 한다.
+8. **인지 갱신 지연 틱의 ref 이동 보정 (조립 블록).** 인지 소스가 직전 틱과 완전 동일한 값이면(새 추론 미도착 — 예: 카메라 21Hz vs 루프 100Hz) ref x를 직전 명령 속도 × 10ms만큼 감쇠해 송신한다. 근거: dSPACE가 동일 REF_POINT 페이로드 반복 수신 시 무시하는 것으로 실측(2026-08-08, PR #28) + 차량 이동에 따른 물리적 보정. §5.6과 같은 조립 블록의 허용 업무(판단 아님). **§5.5 이중 트랙 주의: Simulink 모델(김재민)도 동일 반영해야 back-to-back 일치.**
 
 ## 5.5 MGM 개발 전략 (이중 트랙)
 
