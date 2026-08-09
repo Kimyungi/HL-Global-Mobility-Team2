@@ -29,19 +29,18 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
 
 
 def generate_launch_description():
     pkg = get_package_share_directory('stack_avoid')
     params = os.path.join(pkg, 'config', 'params.yaml')
     rviz_cfg = os.path.join(pkg, 'config', 'avoid_test.rviz')
-    ydlidar_launch = os.path.join(
-        get_package_share_directory('ydlidar_ros2_driver'), 'launch', 'ydlidar_launch.py')
+    ydlidar_params = os.path.join(
+        get_package_share_directory('ydlidar_ros2_driver'), 'params', 'ydlidar.yaml')
 
     drive = LaunchConfiguration('drive')
     v_ref = LaunchConfiguration('v_ref')
@@ -68,7 +67,11 @@ def generate_launch_description():
             description='estop 정지 거리 [m] — 바꾸면 stack_avoid 측방여유 부등식 재확인 필요'),
 
         # LiDAR → /scan  (두 스택이 같은 스캔을 구독)
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(ydlidar_launch)),
+        # 드라이버 노드만 — launch 를 include 하면 placeholder static TF 가 딸려와
+        # stack_avoid_node 의 실측 TF 와 충돌한다. 사유는 field_session.launch.py 참조.
+        LifecycleNode(package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node',
+                      name='ydlidar_ros2_driver_node', namespace='/', output='screen',
+                      emulate_tty=True, parameters=[ydlidar_params]),
 
         # 회피 인지 (방향 raw 270° 고정)
         Node(package='stack_avoid', executable='stack_avoid_node', name='stack_avoid_node',
@@ -95,6 +98,14 @@ def generate_launch_description():
              condition=IfCondition(drive)),
         Node(package='bridge_dspace', executable='can_bridge_node', name='can_bridge_node',
              output='screen', parameters=[{'can_interface': 'can0'}],
+             condition=IfCondition(drive)),
+
+        # ── 종료 시 dSPACE 목표값 0 복귀 (안전 가드) ──
+        # dSPACE 에 watchdog 이 없다(2026-08-09 실측) — PC 송신이 끊겨도 마지막 v_ref 를
+        # 무기한 유지한다. launch 를 끄는 것만으로는 정지 상태가 되지 않으므로, 이 가드가
+        # SIGINT 를 받아 SocketCAN 에 직접 0 을 쓴다(브리지가 이미 죽어도 동작).
+        # ★ `ros2 run` 으로 감싸면 래퍼가 SIGINT 를 삼켜 안 돈다 — Node 액션이어야 한다.
+        Node(package='stack_avoid', executable='can_zero', name='can_zero', output='screen',
              condition=IfCondition(drive)),
 
         ExecuteProcess(cmd=['ros2', 'bag', 'record', '-o', bag_dir] + bag_topics, output='screen'),

@@ -119,6 +119,17 @@ class StepInjector(Node):
         """현재 시퀀스 단계의 오프셋을 ref로 내보낸다. estop이면 v_ref=0."""
         now = self.get_clock().now()
         if self.t_start is None:
+            # ★ 첫 라벨은 /test/event 구독자(bag 기록기)가 붙은 뒤에만 낸다 — 매칭 전에
+            # 내면 첫 구간 라벨이 통째로 유실된다 (8/7 실차 스윕에서 실제 발생, gain_sweep
+            # 과 동일 처리. PR #27 리뷰 반영). 구독자가 없으면 스텝 시작도 미룬다.
+            if self.event_pub.get_subscription_count() == 0:
+                self.get_logger().warning(
+                    '/test/event 구독자 대기 중 — bag 기록이 떠야 스텝을 시작한다 '
+                    '(라벨 유실 방지). 구독자가 없으면 10s 후 자동 진행.', once=True)
+                if not hasattr(self, '_wait_since'):
+                    self._wait_since = now
+                elif (now - self._wait_since).nanoseconds * 1e-9 < 10.0:
+                    return
             self.t_start = now
             self.phase_start = now
             self._event(f'RUN start v_ref={self.v_ref}')

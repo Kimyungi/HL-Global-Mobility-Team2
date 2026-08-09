@@ -33,6 +33,7 @@ setup(
             'avoid_to_ref = stack_avoid.avoid_to_ref:main',        # 테스트: 회피점→dSPACE(실차 조향)
             'step_injector = stack_avoid.step_injector:main',      # 실측 ①②: 측방 스텝 주입
             'mark = stack_avoid.mark:main',                        # 실측: 구간 라벨(/test/event)
+            'can_zero = stack_avoid.can_zero:main',   # 안전: 종료 시 dSPACE 목표값 0 복귀
         ],
     },
 )

@@ -48,11 +48,20 @@ read -r -p "확인했으면 Enter, 취소 Ctrl+C: " _
 
 if ! ls /dev/ttyUSB* >/dev/null 2>&1; then echo "⚠ 라이다 미검출"; fi
 
-# 이중 발행 방지 — 같은 토픽을 내는 노드가 이미 떠 있으면 중단.
-if ros2 node list 2>/dev/null | grep -qE "mgm_node|dummy_ref_publisher"; then
-  echo "⚠ mgm_node/dummy_ref_publisher 실행 중 — /adas/target_ref 이중 발행. 종료 후 재시도."; exit 1
+# 이중 발행 방지 — 같은 토픽을 내는 노드가 이미 떠 있으면 중단 (PR #27 리뷰 반영:
+# ① avoid_to_ref·step_injector 포함 — 이 launch 가 avoid_to_ref 를 띄우므로 좀비 잔존
+#   시 field_session 과 동일한 이중 발행 위험. ② node list 실패 시 페일-클로즈).
+if ! NODES=$(ros2 node list 2>/dev/null); then
+  echo "⚠ ros2 node list 실패 — 그래프 상태를 확인할 수 없어 중단 (ros2 daemon stop 후 재시도)"
+  exit 1
 fi
-if ros2 node list 2>/dev/null | grep -q "stack_estop_node"; then
+if echo "$NODES" | grep -qE "mgm_node|dummy_ref_publisher|avoid_to_ref|step_injector"; then
+  echo "⚠ /adas/target_ref 를 내는 노드가 이미 실행 중 — 이중 발행:"
+  echo "$NODES" | grep -E "mgm_node|dummy_ref_publisher|avoid_to_ref|step_injector" | sed 's/^/    /'
+  echo "  정리:  pkill -f 'avoid_to_ref|step_injector|dummy_ref_publisher|mgm_node'"
+  exit 1
+fi
+if echo "$NODES" | grep -q "stack_estop_node"; then
   echo "⚠ stack_estop_node 이미 실행 중 — 이 launch가 또 띄운다. 종료 후 재시도."; exit 1
 fi
 

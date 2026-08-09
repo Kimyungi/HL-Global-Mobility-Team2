@@ -29,19 +29,18 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import LaunchConfigurationEquals
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
 
 
 def generate_launch_description():
     pkg = get_package_share_directory('stack_avoid')
     params = os.path.join(pkg, 'config', 'params.yaml')
     rviz_cfg = os.path.join(pkg, 'config', 'avoid_test.rviz')
-    ydlidar_launch = os.path.join(
-        get_package_share_directory('ydlidar_ros2_driver'), 'launch', 'ydlidar_launch.py')
+    ydlidar_params = os.path.join(
+        get_package_share_directory('ydlidar_ros2_driver'), 'params', 'ydlidar.yaml')
 
     v_ref = LaunchConfiguration('v_ref')
     bag_dir = LaunchConfiguration('bag_dir')
@@ -81,7 +80,18 @@ def generate_launch_description():
                               description='mode:=step 반복 횟수'),
 
         # ── 항상 동일: 인지 + 안전 + 시각화 + 로깅 ──
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(ydlidar_launch)),
+        # ★ 드라이버 launch를 include하지 않고 드라이버 노드만 직접 띄운다.
+        # ydlidar_launch.py 는 base_link→laser_frame 을 (0,0,0.02, yaw 0°) placeholder 로
+        # 함께 발행하는데, stack_avoid_node 도 params.yaml 실측값
+        # (0.76,0,0.065, yaw 90° = forward_angle 270 반영)으로 같은 쌍을 발행한다.
+        # 같은 parent→child 에 static TF publisher 가 둘이면 tf2 버퍼가 나중 도착분을
+        # 잡아, 어느 쪽이 이길지가 RViz 기동 타이밍에 따라 매번 달라진다. placeholder 가
+        # 이기면 스캔이 원점에 90° 틀어져 그려져 마커와 안 맞는다 (2026-08-09 규명).
+        # 드라이버 워크스페이스는 stack_parking 과 공유하므로 그쪽을 고치지 않고
+        # 여기서 TF publisher 만 뺀다. 실측 TF 의 단일 소스는 params.yaml 이다.
+        LifecycleNode(package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node',
+                      name='ydlidar_ros2_driver_node', namespace='/', output='screen',
+                      emulate_tty=True, parameters=[ydlidar_params]),
         Node(package='stack_avoid', executable='stack_avoid_node', name='stack_avoid_node',
              output='screen', parameters=[params]),
         # 박찬미 stack_estop — laser_yaw_in_base_rad=π/2 가 우리 forward_angle_deg=270 과 짝.
@@ -114,6 +124,15 @@ def generate_launch_description():
         # ── CAN 브리지 — 실차를 움직이는 모드에서만 ──
         *[Node(package='bridge_dspace', executable='can_bridge_node', name='can_bridge_node',
                output='screen', parameters=[{'can_interface': 'can0'}],
+               condition=LaunchConfigurationEquals('mode', d)) for d in drives],
+
+        # ── 종료 시 dSPACE 목표값 0 복귀 (안전 가드) ──
+        # dSPACE 에 watchdog 이 없다(2026-08-09 실측) — PC 송신이 끊겨도 마지막 v_ref 를
+        # 무기한 유지한다. launch 를 끄는 것만으로는 정지 상태가 되지 않으므로,
+        # 이 가드가 SIGINT 를 받아 SocketCAN 에 직접 0 을 쓴다(브리지가 이미 죽어도 동작).
+        # ★ `ros2 run` 으로 감싸면 안 된다 — 래퍼가 SIGINT 를 삼켜 가드가 안 돈다(실측).
+        #   Node 액션은 실행 파일을 직접 띄우므로 신호가 그대로 전달된다.
+        *[Node(package='stack_avoid', executable='can_zero', name='can_zero', output='screen',
                condition=LaunchConfigurationEquals('mode', d)) for d in drives],
 
         ExecuteProcess(cmd=['ros2', 'bag', 'record', '-o', bag_dir] + bag_topics, output='screen'),

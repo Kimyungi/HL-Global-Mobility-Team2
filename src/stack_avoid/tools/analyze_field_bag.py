@@ -43,6 +43,8 @@ STR_DEAD_AMP = 0.02
 # 38s짜리 허수 dead time이 나온 원인 — 통계에서 제외한다.
 MIN_HOLD_S = 0.5
 MAX_HOLD_S = 20.0
+# 축거 [m] — params.yaml vehicle.wheelbase_m. 명령 κ → 등가 조향 환산에 쓴다.
+WHEELBASE = 0.595
 
 
 def load(dbfile, topic):
@@ -278,32 +280,49 @@ def analyze_boundary(events, estop, static_e, dynamic_e, avoid, out):
 def analyze_sweep(events, refs, vv, out):
     """게인 스윕 — 구간별 "명령한 것" 대비 "실제 조향한 것".
 
-    어느 레버(lookahead_m / curvature_gain)가 실제로 조향을 키우는지 판정한다.
-    명령 쪽은 ref의 y·κ를, 응답 쪽은 |str| 최대·중앙값을 본다.
+    어느 레버(ray_n_points / ref_lookahead_m / curvature_gain)가 실제로 조향을
+    키우는지 판정한다. 명령 쪽은 **송신 점 0 의 기하 + 점 개수**를, 응답 쪽은
+    str 중앙값을 본다.
+
+    ★ 각 구간의 **뒤쪽 절반만** 쓴다 — dSPACE 조향은 정착에 수십 초가 걸려
+      (F-9) 구간 앞부분은 이전 값이 섞인다. 30s dwell 이면 뒤 15s 가 정착분이다.
+    ★ str 은 부호를 살린 중앙값이다. |str| 최대는 스파이크에 끌려가 비교에 못 쓴다.
     """
     if not events or not refs or not vv:
         return
     segs = [s for s in segments(events, vv[-1][0]) if s[2].startswith('sweep ')]
     if not segs:
         return
-    out.append('\n조향 게인 스윕 — 명령 vs 실제')
-    out.append(f'{"구간":>30s} {"ref y[m]":>9s} {"κ[1/m]":>8s} '
-               f'{"|str|중앙":>9s} {"|str|최대":>9s} {"등가°":>7s}')
+    out.append('\n조향 스윕 — 명령 vs 실제 (각 구간 뒤쪽 절반 = 정착분)')
+    out.append(f'{"구간":>26s} {"n":>3s} {"점0 x":>7s} {"점0 y":>7s} {"방향°":>7s} '
+               f'{"κ":>7s} {"str°":>7s} {"명령등가°":>9s} {"실행률":>7s} {"고유값":>6s}')
     for ts, end, label in segs:
         if label.startswith('sweep end'):
             continue
-        r = window(refs, ts, end)
-        s = window(vv, ts, end)
-        pts = [m.ref_points[0] for _, m in r if m.ref_points]
+        mid = ts + (end - ts) / 2.0          # 정착분만
+        r = window(refs, mid, end)
+        s = window(vv, mid, end)
+        pts = [(m.ref_points[0], len(m.ref_points)) for _, m in r if m.ref_points]
         if not pts or not s:
             continue
-        ys = statistics.median([abs(p.y) for p in pts])
-        ks = statistics.median([abs(p.curvature) for p in pts])
-        strs = [abs(m.str) for _, m in s]
-        out.append(f'{label.replace("sweep ", ""):>30s} {ys:9.4f} {ks:8.4f} '
-                   f'{statistics.median(strs):9.4f} {max(strs):9.4f} '
-                   f'{math.degrees(max(strs)):7.2f}')
-    out.append('  ★ 값이 커질 때 |str|이 같이 커지는 쪽이 실제로 듣는 레버다.')
+        npts = statistics.median([n for _, n in pts])
+        x0 = statistics.median([p.x for p, _ in pts])
+        y0 = statistics.median([p.y for p, _ in pts])
+        ks = statistics.median([p.curvature for p, _ in pts])
+        strs = [m.str for _, m in s]
+        st = statistics.median(strs)
+        # 명령 κ 의 등가 조향 = atan(wheelbase·κ). 실행률 = 실제 / 명령.
+        cmd_deg = math.degrees(math.atan(WHEELBASE * ks))
+        st_deg = math.degrees(st)
+        ratio = (st_deg / cmd_deg * 100.0) if abs(cmd_deg) > 1e-6 else float('nan')
+        direction = math.degrees(math.atan2(y0, x0)) if abs(x0) + abs(y0) > 1e-9 else 0.0
+        uniq = len({round(v, 5) for v in strs})
+        out.append(f'{label.replace("sweep ", ""):>26s} {npts:>3.0f} {x0:7.3f} {y0:+7.3f} '
+                   f'{direction:7.2f} {ks:+7.3f} {st_deg:+7.2f} {cmd_deg:+9.2f} '
+                   f'{ratio:6.1f}% {uniq:>6d}')
+    out.append('  ★ 값이 커질 때 str 이 같이 커지는 쪽이 실제로 듣는 레버다.')
+    out.append('  ★ 점 개수 스윕이면 "점0 x·y·방향"이 전 구간 동일해야 비교가 유효하다.')
+    out.append('  ★ 고유값이 1~2 면 그 구간 str 이 얼어붙은 것 — 액추에이션 사망 의심(무효 구간).')
     out.append('  ★ 물리 한계: κ 0.870 1/m = 최소회전반경 1.15m = 등가 조향 27.3°')
 
 

@@ -4,6 +4,11 @@
 stack_avoid의 회피 목표점을 dSPACE로 바로 보내, 라이다가 본 장애물에 따라 실제 조향/
 구동이 회피 기동을 하는지 확인한다. 스테이트 머신 없음 — 테스트 전용.
 
+송신점(기본 `ray_pull`): 인지 목표점(RViz 초록점) **방향은 그대로**, 원점→목표점 반직선
+위에서 **거리만** `ref_lookahead_m`(1.39m = GPS 미션 실측 규약)으로 당겨 보낸다. dSPACE 는
+REF_POINT_00 하나만 읽고 그 점의 방향각이 조향을 정하는데, 거리가 멀면 MPC 미리보기
+(N_p×Ts×v_ref = v0.2 에서 4cm) 안이 거의 평평해 조향이 죽는다. 자세한 근거는 클래스 주석.
+
 판단(테스트용 최소):
   - 장애물 감지 + 목표점 있음 → state=AVOID, v_ref=target_speed, 목표점 송신 (회피 조향)
   - 장애물 감지 + 목표점 없음(narrow_gap) → v_ref=0 (통과 불가 → 정지)
@@ -56,6 +61,34 @@ class AvoidToRef(Node):
         #   GPS 는 y 가 경로 이탈량(평균 0.15m)이라 작고, 우리는 측방 도약(0.7~0.9m)이다.
         #   dSPACE 응답이 y 에 어떻게 의존하는지 분리 측정하기 위한 값. 기본 1.0.
         self.y_scale = float(self.declare_parameter('y_scale', 1.0).value)
+        # ★ 기본 동작 (2026-08-09) — 초록점 **방향은 보존**하고 **거리만** 팀 규약에 맞춘다.
+        #   근거: dSPACE 는 REF_POINT_00 하나만 디코딩하고, 그 점의 방향각이 조향을
+        #   지배한다(F-11 상관 −0.95). 그런데 같은 각도라도 거리가 조향 크기를 정한다:
+        #       F-11  송신 x 0.80 · 12.4° → str 6.21°
+        #       H     송신 x 3.37 · 10.8° → str 2.27°
+        #   미리보기가 N_p×Ts×v_ref (v=0.2 → 4cm) 뿐이라 먼 점으로 가는 quintic 은
+        #   앞 4cm 가 거의 평평하기 때문이다.
+        #   GPS 미션은 첫 점을 x≈1.39m 에 두고 정상 주행한다 — MPC 는 그 lookahead 를
+        #   전제로 튜닝돼 있다. 우리만 "장애물이 있는 자리"(3.4m)를 보내 규약을 벗어나 있었다.
+        #   → 방향 atan2(y,x) 를 보존한 채 반직선 위에서 거리만 규약값으로 당긴다.
+        #     MPC 튜닝이 아니라 **다른 스택과 같은 ref 규약으로 맞추는 것**이다.
+        #   점은 매 스캔 갱신되므로, 접근할수록 같은 방향의 점이 계속 나와 측방 이동이
+        #   누적된다(GPS·pure-pursuit 와 같은 거동). 한 번에 큰 y 를 주문하지 않는다.
+        self.ray_pull = bool(self.declare_parameter('ray_pull', True).value)
+        # ★ 아래 3개는 GPS 미션 candump 를 직접 파싱해 얻은 실측 규약이다
+        #   (~/gps_bags/run1_20260803_182800, run1_20260806_192400 — I 절).
+        #   이전 세션 메모의 "첫 점 x≈1.39m" 은 **최댓값**을 규약으로 잘못 적은 것이었다.
+        #   실측: 첫 점 거리 중앙 0.25m(8/3) · 0.97m(8/6), 5~95% 0.07~1.15m
+        #        점 간격 중앙 0.314m(8/3) · 0.320m(8/6),  점 수 20
+        self.ref_lookahead = float(self.declare_parameter('ref_lookahead_m', 0.90).value)
+        # ★ 점 개수 기본 1 — J-1 통제 실험(2026-08-09)으로 확정: 기하 고정 상태에서
+        #   1→20 개수만 바꿔도 str 은 소수점 둘째 자리까지 동일(−2.91°). dSPACE 는
+        #   REF_POINT_00 만 쓴다(F-7 배선·I-3 상관과 일치). 20점은 효과 0 에 CAN 부하만
+        #   7%→32% — PROTOCOL.md "모든 소스 1점" 합의대로 1 로 되돌림.
+        #   ("1점이면 무반응" 통설은 GPS 트랙 종점 정지(v_ref→0)와의 교락이었다, I-2.)
+        #   dSPACE 모델이 나중에 다점 지평을 쓰도록 바뀌면 이 파라미터로 즉시 복원.
+        self.ray_n = int(self.declare_parameter('ray_n_points', 1).value)
+        self.ray_spacing = float(self.declare_parameter('ray_spacing_m', 0.32).value)
         # 인지 회피 목표점을 그대로 송신할지. ★기본 false — 초록점 직송으로는
         #   물리적으로 회피가 불가능함이 실측으로 확인됐다(2026-08-07):
         #     초록점 직송  κ 0.169 → str 1.16° → 회전반경 29m → 측방 이동 0.15m
@@ -142,10 +175,17 @@ class AvoidToRef(Node):
         self.timer = self.create_timer(self.period, self.tick)
         # 라이브 튜닝: ros2 param set 으로 clear_before·curv_gain·속도 즉석 변경
         self.add_on_set_parameters_callback(self._on_set_params)
+        if self.ray_pull:
+            mode = (f"방향보존 당김 {self.ref_lookahead:.2f}m "
+                    f"× {self.ray_n}점 @{self.ray_spacing:.2f}m")
+        elif self.send_as_is:
+            mode = "초록점 직송"
+        else:
+            mode = "당김+역산"
         self.get_logger().warn(
             f"avoid_to_ref (테스트 하네스): /perception/avoid → /adas/target_ref | "
             f"v={self.target_speed}m/s, clear시 {'직진' if self.straight_when_clear else '정지'} | "
-            f"{self.gate.banner()}. ★실차 조향 — 안전 주의")
+            f"송신점={mode} | {self.gate.banner()}. ★실차 조향 — 안전 주의")
 
     def _on_avoid(self, msg):
         self.last = msg
@@ -153,40 +193,47 @@ class AvoidToRef(Node):
     def _on_vv(self, msg):
         self.cur_steer = float(msg.str)
 
+    # 라이브 변경 지원 파라미터 → (속성명, 캐스터). ★여기 없는 자체 파라미터의 set 은
+    # 거부한다 — "성공 응답이 오는데 실제로는 무효"였던 사고(MEASUREMENTS §G, 8/7 비교
+    # 무효)의 재발 방지 (PR #27 리뷰 반영). estop_gate·estop_stale_s·min_turn_radius_m·
+    # wheelbase_m·period_ms 는 초기화 시점에만 쓰이므로 의도적으로 제외 = 거부 대상.
+    LIVE_PARAMS = {
+        'ray_pull': ('ray_pull', bool),
+        'ref_lookahead_m': ('ref_lookahead', float),
+        'ray_n_points': ('ray_n', int),
+        'ray_spacing_m': ('ray_spacing', float),
+        'gps_style': ('gps_style', bool),
+        'send_target_as_is': ('send_as_is', bool),
+        'scale_match': ('scale_match', bool),
+        'curvature_gain': ('curv_gain', float),
+        'yaw_gain': ('yaw_gain', float),
+        'y_scale': ('y_scale', float),
+        'gps_lookahead_m': ('gps_lookahead', float),
+        'gps_spacing_m': ('gps_spacing', float),
+        'gps_n_points': ('gps_n', int),
+        'target_speed_mps': ('target_speed', float),
+        'lateral_sign': ('lat_sign', float),
+        'clear_before_m': ('clear_before', float),
+        'front_offset_m': ('front_offset', float),
+        'steer_lag_s': ('steer_lag', float),
+        'ref_x_min_m': ('ref_x_min', float),
+        'straight_x_m': ('straight_x', float),
+        'straight_when_clear': ('straight_when_clear', bool),
+    }
+
     def _on_set_params(self, params):
         for p in params:
-            if p.name == 'gps_style':
-                self.gps_style = bool(p.value)
-            elif p.name == 'send_target_as_is':
-                self.send_as_is = bool(p.value)
-            elif p.name == 'scale_match':
-                self.scale_match = bool(p.value)
-            elif p.name == 'curvature_gain':
-                self.curv_gain = float(p.value)
-            elif p.name == 'yaw_gain':
-                self.yaw_gain = float(p.value)
-            elif p.name == 'y_scale':
-                self.y_scale = float(p.value)
-            elif p.name == 'gps_lookahead_m':
-                self.gps_lookahead = float(p.value)
-            elif p.name == 'gps_spacing_m':
-                self.gps_spacing = float(p.value)
-            elif p.name == 'target_speed_mps':
-                self.target_speed = float(p.value)
-            elif p.name == 'lateral_sign':
-                self.lat_sign = float(p.value)
-            elif p.name == 'clear_before_m':
-                self.clear_before = float(p.value)
-            elif p.name == 'front_offset_m':
-                self.front_offset = float(p.value)
-            elif p.name == 'steer_lag_s':
-                self.steer_lag = float(p.value)
-            elif p.name == 'ref_x_min_m':
-                self.ref_x_min = float(p.value)
-            elif p.name == 'straight_x_m':
-                self.straight_x = float(p.value)
+            if p.name == 'use_sim_time':          # rclpy 자동 선언 — 통과
+                continue
+            if p.name not in self.LIVE_PARAMS:
+                return SetParametersResult(
+                    successful=False,
+                    reason=f'{p.name}: 라이브 변경 미지원 — 노드 재시작 필요')
+            attr, cast = self.LIVE_PARAMS[p.name]
+            setattr(self, attr, cast(p.value))
         self.get_logger().info(
-            f"param 변경 → v={self.target_speed} clear_before={self.clear_before} "
+            f"param 변경 → v={self.target_speed} ray_pull={self.ray_pull} "
+            f"lookahead={self.ref_lookahead} n={self.ray_n} clear_before={self.clear_before} "
             f"curv_gain={self.curv_gain} gps_style={self.gps_style} "
             f"as_is={self.send_as_is} scale_match={self.scale_match}")
         return SetParametersResult(successful=True)
@@ -245,6 +292,42 @@ class AvoidToRef(Node):
                                 sg * th, sg * kappa))
         return pts
 
+    def _ray_points(self, p):
+        """초록점 방향을 보존한 반직선 위에 GPS 규약(20점·0.32m 간격)으로 샘플.
+
+        원점→초록점 반직선 위에서만 움직이므로 모든 점의 atan2(y,x) 가 초록점과
+        같다. "초록점 쪽으로 조향한다"는 요구를 지키면서 조향 크기만 규약에 맞춘다
+        (측방 y 를 유지한 채 x 만 줄이는 당김+역산 방식과 달리 방향이 안 변한다).
+
+        **직선 경로**인 이유 — GPS 8/3 직선 run 이 정확히 이 형태다: 점들은 차량
+        기준 옆으로 벗어나 있고(첫 점 y = 경로 이탈량 ±0.7m), yaw 는 경로 접선,
+        κ 는 거의 0(중앙 0.017). 조향을 만든 것은 점의 **위치**뿐이었다.
+        회피 목표점까지의 등곡률 호를 샘플하면(gps_style) 첫 점 y 가 0.005m 로
+        뭉개져 이탈량 신호가 사라진다 — 회피 의도가 근거리 점에 실리지 않는다.
+
+        점 0 은 ref_lookahead 거리(GPS 실측 0.25~0.97m 대역)에 놓여 회피 의도를
+        그대로 싣고, 점 1~19 가 같은 방향으로 이어져 경로를 이룬다.
+        """
+        d = math.hypot(p.x, p.y)
+        th = math.atan2(p.y, p.x)                  # ★ 보존 대상
+        # 점 0 은 목표점보다 멀리 두지 않는다 — 장애물 너머를 가리키면 안 된다.
+        # 다만 ref_x_min 아래로도 두지 않는다(quintic 붕괴). d < ref_x_min 은 앞범퍼가
+        # 장애물에 거의 닿은 상태라 회피 기동의 영역이 아니다(estop·narrow_gap 소관).
+        L0 = max(min(self.ref_lookahead, d), self.ref_x_min)
+        k_max = 1.0 / self.min_turn_radius
+        c, s = math.cos(th), math.sin(th)
+        out = []
+        for i in range(max(1, self.ray_n)):
+            L = L0 + i * self.ray_spacing
+            x, y = L * c, L * s
+            # 원점→그 점 등곡률 호의 곡률 (dummy_ref_publisher·path_engine 규약).
+            # H 절에서 조향에 무영향으로 확정됐으나 점마다 자기정합은 유지한다.
+            kappa = max(-k_max, min(k_max, 2.0 * y / (L * L)))
+            # yaw = 경로 접선 = 반직선 방향. GPS 실측 첫 점 |yaw| 3.1°(8/6)·18.1°(8/3)
+            # 과 같은 대역이다. yaw_gain 기본 0 이면 0 이 나간다(H 절 구성 유지).
+            out.append((x, y, th, kappa))
+        return out
+
     def _required_curvature(self, p, v_ref):
         """회피 기하가 요구하는 곡률 — 앞범퍼가 장애물보다 clear_before 만큼 먼저 다 비키기.
 
@@ -292,6 +375,22 @@ class AvoidToRef(Node):
         kappa = max(-k_max, min(k_max, 2.0 * yt / (x * x + yt * yt)))
         return x, yt, 2.0 * math.atan2(yt, x), kappa
 
+    def _apply_gains(self, lx, ly, th, kappa):
+        """송신 직전 공통 처리 — 횡방향 부호·진단 게인 적용 후 RefPoint 로.
+
+        부호는 횡방향 성분(y·yaw·curvature)에만 적용한다 — x(전방거리)는 그대로.
+        y_scale(진단용)을 쓰면 축소된 점 기준으로 κ 를 재계산해 자기정합을 유지한다.
+        yaw 는 모드마다 규약이 달라(ray=경로 접선, as_is=2·atan2) 여기서 손대지 않는다 —
+        yaw_gain 기본 0 이라 실제로 나가는 값은 0 이다.
+        """
+        s = self.lat_sign
+        ly2 = ly * self.y_scale
+        if abs(self.y_scale - 1.0) > 1e-9:
+            d2b = lx * lx + ly2 * ly2
+            k_max = 1.0 / self.min_turn_radius
+            kappa = max(-k_max, min(k_max, 2.0 * ly2 / d2b)) if d2b > 1e-9 else 0.0
+        return self._rp(lx, s * ly2, s * th * self.yaw_gain, s * kappa * self.curv_gain)
+
     @staticmethod
     def _rp(x, y=0.0, yaw=0.0, curv=0.0):
         p = RefPoint()
@@ -307,37 +406,29 @@ class AvoidToRef(Node):
         if a is not None and a.obstacle_detected and a.points:
             m.state = TargetRef.STATE_AVOID
             m.v_ref = float(a.v_suggest) if a.v_suggest > 1e-3 else self.target_speed
-            # ★ 인지 회피 목표점을 그대로 dSPACE 로 보낸다 (2026-08-07 지시).
-            # 위치(x, y)는 손대지 않고, 그 점으로 가는 등곡률 호의 헤딩·곡률만 채운다:
-            #   κ = 2y/(x²+y²),  yaw = 2·atan2(y,x)   (dummy_ref_publisher·path_engine 규약)
-            # yaw/curvature 를 0으로 두면 quintic 이 S자가 되어 초기 조향이 ≈0 이 된다.
+            # ★ 인지 회피 목표점의 **방향**을 dSPACE 로 보낸다 (기본 ray_pull).
+            # 거리만 팀 ref 규약(ref_lookahead_m)으로 당기고, 그 점으로 가는 등곡률 호의
+            # 헤딩·곡률을 채운다:  κ = 2y/(x²+y²),  yaw = 2·atan2(y,x) × yaw_gain
+            #   (dummy_ref_publisher·path_engine 규약. yaw_gain 기본 0 = GPS 와 같은 경로 접선)
             # dSPACE 는 REF_POINT_00(첫 점) 하나만 디코딩한다.
             p = a.points[0]
             d2 = p.x * p.x + p.y * p.y
             if d2 > 1e-6:
+                # 송신점 결정. 우선순위: gps_style(진단 전용) > ray_pull(★기본)
+                #   > send_as_is(초록점 직송) > 당김+역산.
                 if self.gps_style:
+                    # 20점 경로 — 부호·게인은 _gps_style_points 안에서 적용된다.
                     m.ref_points = self._gps_style_points(p)
-                    self.gate.log_reason(reason)
-                    self.pub.publish(m)
-                    return
-                if self.send_as_is:
-                    k_max = 1.0 / self.min_turn_radius
-                    kappa = max(-k_max, min(k_max, 2.0 * p.y / d2))
-                    lx, ly, th = p.x, p.y, 2.0 * math.atan2(p.y, p.x)
                 else:
-                    lx, ly, th, kappa = self._scale_matched_point(p, m.v_ref)
-                # 횡방향 성분에만 부호 적용 — x(전방거리)는 그대로 둔다.
-                s = self.lat_sign
-                # y_scale 적용 시 κ 를 축소된 점 기준으로 재계산 (자기정합)
-                ly2 = ly * self.y_scale
-                if abs(self.y_scale - 1.0) > 1e-9:
-                    d2b = lx * lx + ly2 * ly2
-                    kappa = 2.0 * ly2 / d2b if d2b > 1e-9 else 0.0
-                    kmax = 1.0 / self.min_turn_radius
-                    kappa = max(-kmax, min(kmax, kappa))
-                    th = 2.0 * math.atan2(ly2, lx)
-                m.ref_points = [self._rp(lx, s * ly2, s * th * self.yaw_gain,
-                                         s * kappa * self.curv_gain)]
+                    if self.ray_pull:
+                        raw = self._ray_points(p)          # 20점 (ray_n_points)
+                    elif self.send_as_is:
+                        k_max = 1.0 / self.min_turn_radius
+                        kappa = max(-k_max, min(k_max, 2.0 * p.y / d2))
+                        raw = [(p.x, p.y, 2.0 * math.atan2(p.y, p.x), kappa)]
+                    else:
+                        raw = [self._scale_matched_point(p, m.v_ref)]
+                    m.ref_points = [self._apply_gains(*r) for r in raw]
             else:
                 m.ref_points = [self._rp(self.straight_x)]
         elif a is not None and a.obstacle_detected:      # narrow_gap: 통과 불가
@@ -352,16 +443,25 @@ class AvoidToRef(Node):
             if not self.straight_when_clear:
                 reason = 'clear(직진 비활성)'
 
-        # ── estop 게이트: 위 판단을 덮어쓰는 최상위 우선권 ──
-        # v_ref만 0으로. ref_points는 그대로 둔다 (§3 조향 직전 값 유지·급조향 금지).
-        # 사유를 estop으로 덮어써서, ⓒ처럼 narrow_gap과 estop이 동시에 성립하는
-        # 경우에도 "안전 바닥이 실제로 걸렸다"가 로그에 남게 한다.
+        self._publish(m, reason)
+
+    def _publish(self, m, reason):
+        """모든 송신의 **유일한 출구** — estop 게이트가 마지막에 반드시 적용된다.
+
+        송신 경로(ray_pull/gps_style/직송/역산)가 늘어나도 게이트를 빼먹을 수 없도록
+        publish 를 이 헬퍼 한 곳으로 모은다. PR #27 리뷰 반영 — gps_style 분기의
+        조기 return 이 게이트를 우회했던 차단 버그의 구조적 재발 방지.
+        tick() 안에서 self.pub.publish() 를 직접 부르지 말 것.
+
+        게이트는 v_ref 만 0으로 만든다. ref_points 는 그대로 둔다 (§3 조향 직전 값
+        유지·급조향 금지). 사유를 estop 으로 덮어써서, narrow_gap 과 estop 이 동시에
+        성립해도 "안전 바닥이 실제로 걸렸다"가 로그에 남는다.
+        """
         blocked, why = self.gate.block()
         if blocked:
             m.v_ref = 0.0
             reason = why if reason is None else f'{why} + {reason}'
         self.gate.log_reason(reason)
-
         self.pub.publish(m)
 
 

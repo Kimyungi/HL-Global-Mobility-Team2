@@ -69,7 +69,11 @@ if ! ls /dev/ttyUSB* >/dev/null 2>&1; then echo "⚠ 라이다 미검출"; fi
 # 이중 발행 방지 — 같은 토픽을 내는 노드가 이미 떠 있으면 중단.
 # avoid_to_ref·step_injector 도 반드시 본다: 앞선 세션이나 단독 테스트의 잔여
 # 프로세스가 남아 있는 일이 실제로 있었다(ros2 run 자식이 Ctrl+C로 안 죽는 경우).
-NODES=$(ros2 node list 2>/dev/null)
+# node list 실패 시 페일-클로즈 — 빈 검사 결과로 조용히 통과하지 않는다 (PR #27 리뷰).
+if ! NODES=$(ros2 node list 2>/dev/null); then
+  echo "⚠ ros2 node list 실패 — 그래프 상태를 확인할 수 없어 중단 (ros2 daemon stop 후 재시도)"
+  exit 1
+fi
 if [ "$MOVES" = "true" ] && echo "$NODES" | grep -qE "mgm_node|dummy_ref_publisher|avoid_to_ref|step_injector"; then
   echo "⚠ /adas/target_ref 를 내는 노드가 이미 실행 중 — 이중 발행:"
   echo "$NODES" | grep -E "mgm_node|dummy_ref_publisher|avoid_to_ref|step_injector" | sed 's/^/    /'

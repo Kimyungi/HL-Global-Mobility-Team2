@@ -13,9 +13,11 @@ dSPACE가 어느 쪽에 반응하는지가 실증되지 않았다:
 이 도구는 한 파라미터를 값 목록대로 바꾸며 각 구간에 /test/event 라벨을 남긴다.
 그 bag을 analyze_field_bag.py에 넣으면 구간별 명령 κ 대비 실제 |str|이 표로 나온다.
 
-  # B 스윕 (권장 — 8/6 실측이 ref y에 반응했다)
-  python3 tools/gain_sweep.py --param lookahead_m --values 0.4 1.2 2.0 2.8 --dwell 15
-  # A 스윕
+  # C) ray_n_points — 몇 점부터 조향이 반응하는가 (2026-08-09, I-7). 정수 파라미터.
+  python3 tools/gain_sweep.py --param ray_n_points --values 1 2 3 5 8 12 16 20 1 --dwell 30
+  # D) ref_lookahead_m — 송신점 거리 (방향 보존, I-5)
+  python3 tools/gain_sweep.py --param ref_lookahead_m --values 0.4 0.9 1.4 2.0 --dwell 30
+  # B 스윕 (구식 — lookahead_m 파라미터는 제거됨)
   python3 tools/gain_sweep.py --param curvature_gain --values 1.0 3.0 5.0 7.0 --dwell 15
 
 ★ 한 번에 한 레버만. 둘을 같이 흔들면 어느 쪽이 들었는지 알 수 없다.
@@ -60,7 +62,11 @@ class Sweeper(Node):
         return ok
 
     def get(self, name):
-        """현재 double 파라미터 값 (없으면 None)."""
+        """현재 파라미터 값과 타입 → (값, 타입). 없으면 None.
+
+        double 뿐 아니라 integer 도 받는다 — `ray_n_points`(점 개수) 스윕처럼
+        정수 파라미터를 흔들어야 하는 시험이 있다 (2026-08-09 I-7).
+        """
         req = GetParameters.Request()
         req.names = [name]
         fut = self.get_cli.call_async(req)
@@ -69,16 +75,21 @@ class Sweeper(Node):
         if not res or not res.values:
             return None
         v = res.values[0]
-        if v.type != ParameterType.PARAMETER_DOUBLE:
-            return None
-        return v.double_value
+        if v.type == ParameterType.PARAMETER_DOUBLE:
+            return (v.double_value, v.type)
+        if v.type == ParameterType.PARAMETER_INTEGER:
+            return (v.integer_value, v.type)
+        return None
 
-    def set(self, name, value):
-        """double 파라미터 설정 → 성공 여부."""
+    def set(self, name, value, ptype):
+        """파라미터 설정 (선언된 타입에 맞춰) → 성공 여부."""
         p = Parameter()
         p.name = name
-        p.value = ParameterValue(type=ParameterType.PARAMETER_DOUBLE,
-                                 double_value=float(value))
+        if ptype == ParameterType.PARAMETER_INTEGER:
+            p.value = ParameterValue(type=ptype, integer_value=int(round(value)))
+        else:
+            p.value = ParameterValue(type=ParameterType.PARAMETER_DOUBLE,
+                                     double_value=float(value))
         req = SetParameters.Request()
         req.parameters = [p]
         fut = self.set_cli.call_async(req)
@@ -112,29 +123,35 @@ def main():
         rclpy.shutdown()
         return 1
 
-    original = n.get(a.param)
-    if original is None:
-        print(f'✗ {a.node} 에 double 파라미터 {a.param} 없음')
+    got = n.get(a.param)
+    if got is None:
+        print(f'✗ {a.node} 에 double/integer 파라미터 {a.param} 없음')
         n.destroy_node()
         rclpy.shutdown()
         return 1
-    print(f'{a.node} {a.param}: 현재값 {original} → 스윕 {a.values} (각 {a.dwell}s)')
+    original, ptype = got
+
+    def fmt(v):
+        return f'{int(round(v))}' if ptype == ParameterType.PARAMETER_INTEGER else f'{v}'
+
+    print(f'{a.node} {a.param}: 현재값 {fmt(original)} → '
+          f'스윕 {[fmt(v) for v in a.values]} (각 {a.dwell}s)')
 
     try:
         for v in a.values:
-            if not n.set(a.param, v):
-                print(f'✗ {a.param}={v} 설정 실패 — 중단')
+            if not n.set(a.param, v, ptype):
+                print(f'✗ {a.param}={fmt(v)} 설정 실패 — 중단')
                 break
-            n.mark(f'sweep {a.param}={v}')
+            n.mark(f'sweep {a.param}={fmt(v)}')
             end = time.time() + a.dwell
             while time.time() < end and rclpy.ok():
                 rclpy.spin_once(n, timeout_sec=0.1)
     except KeyboardInterrupt:
         print('\n중단됨')
     finally:
-        n.mark(f'sweep end ({a.param} → {original} 복원)')
-        n.set(a.param, original)
-        print(f'{a.param} 을 {original} 로 복원했다.')
+        n.mark(f'sweep end ({a.param} → {fmt(original)} 복원)')
+        n.set(a.param, original, ptype)
+        print(f'{a.param} 을 {fmt(original)} 로 복원했다.')
         n.destroy_node()
         rclpy.try_shutdown()
     return 0

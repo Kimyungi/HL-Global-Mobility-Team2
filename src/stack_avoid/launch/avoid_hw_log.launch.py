@@ -11,19 +11,18 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
 
 
 def generate_launch_description():
     pkg = get_package_share_directory('stack_avoid')
     params = os.path.join(pkg, 'config', 'params.yaml')
     rviz_cfg = os.path.join(pkg, 'config', 'avoid_test.rviz')
-    ydlidar_launch = os.path.join(
-        get_package_share_directory('ydlidar_ros2_driver'), 'launch', 'ydlidar_launch.py')
+    ydlidar_params = os.path.join(
+        get_package_share_directory('ydlidar_ros2_driver'), 'params', 'ydlidar.yaml')
 
     bag_dir = LaunchConfiguration('bag_dir')
     use_can = LaunchConfiguration('can')
@@ -42,8 +41,12 @@ def generate_launch_description():
                               description='CAN 브리지(can0) 실행 여부'),
         DeclareLaunchArgument('rviz', default_value='true'),
 
-        # 1) 실 LiDAR 드라이버 → /scan
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(ydlidar_launch)),
+        # 1) 실 LiDAR 드라이버 → /scan  (드라이버 노드만 — launch 를 include 하면
+        # placeholder static TF 가 딸려와 stack_avoid_node 의 실측 TF 와 충돌한다.
+        # 사유는 field_session.launch.py 참조)
+        LifecycleNode(package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node',
+                      name='ydlidar_ros2_driver_node', namespace='/', output='screen',
+                      emulate_tty=True, parameters=[ydlidar_params]),
 
         # 2) 회피 노드 (방향 270 고정) + 시각화
         Node(package='stack_avoid', executable='stack_avoid_node', name='stack_avoid_node',
