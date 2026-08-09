@@ -26,6 +26,7 @@ mgm_node:
     # 미수신 또는 이 시간 초과 staleness → 스냅샷 estop=true 보정.
     # stack_estop 하트비트 50ms 기준 5주기.
     estop_stale_timeout_sec: 0.25
+    traffic_stale_timeout_sec: 0.5   # 수신 이력 후 끊김만 보정 (§5.7 ③) — 미수신은 단독 스택 시험 허용
 
     # 조립/병합 (실행부 파라미터 — 판단 아님)
     blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)

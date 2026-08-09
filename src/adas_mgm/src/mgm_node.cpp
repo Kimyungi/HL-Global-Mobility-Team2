@@ -175,6 +175,9 @@ public:
     // 주행하던 문제 방지 (2026-08-07, lane watchdog과 같은 날 발견).
     gps_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("gps_stale_timeout_sec", 0.5) * 1e9);
+    // traffic_stop 신선도 watchdog — 수신 이력이 있은 뒤 끊긴 경우만 (§5.7 ③)
+    traffic_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("traffic_stale_timeout_sec", 0.5) * 1e9);
 
     jitter_ = std::make_unique<JitterLogger>(
       get_logger(),
@@ -220,7 +223,9 @@ public:
     sub_traffic_ = create_subscription<fma_interfaces::msg::TrafficStop>(
       "/perception/traffic_stop", qos,
       [this](fma_interfaces::msg::TrafficStop::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); msgs_.traffic = *m;});
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.traffic = *m;
+        last_traffic_rx_ns_ = monotonicNs();});
     sub_estop_ = create_subscription<fma_interfaces::msg::EstopRequest>(
       "/perception/estop", qos,
       [this](fma_interfaces::msg::EstopRequest::ConstSharedPtr m) {
@@ -285,12 +290,14 @@ private:
     int64_t estop_rx_ns;
     int64_t lane_rx_ns;
     int64_t gps_rx_ns;
+    int64_t traffic_rx_ns;
     {
       std::lock_guard<std::mutex> lk(mtx_);
       m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
       estop_rx_ns = last_estop_rx_ns_;
       lane_rx_ns = last_lane_rx_ns_;
       gps_rx_ns = last_gps_rx_ns_;
+      traffic_rx_ns = last_traffic_rx_ns_;
     }
     // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
     // counter watchdog의 PC측 대응물). stack_estop 미수신/사망 시 스냅샷의
@@ -318,6 +325,20 @@ private:
       m.estop.estop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "gps_path 신선도 초과(state=waypoint) — estop 강제 (stack_gps 확인 필요)");
+    }
+    // traffic_stop 신선도 watchdog (§5.7 ③) — lane/gps와 달리 **수신 이력이 있은
+    // 뒤 끊긴 경우만** 보정한다(사망 감지). 미수신은 보정하지 않음: traffic은
+    // 경로가 아니라 제약 입력이라, 단독 스택 시험(GPS 단독 등)이 stack_traffic
+    // 없이도 성립해야 하기 때문. 적색 래치 중 사망(마지막 발행 true)은 msgs_에
+    // true가 남아 어차피 정지 유지 — 위험 케이스는 false 상태로 죽은 뒤 적색이
+    // 켜지는 경우이며 이 보정이 그걸 막는다. estop이 아닌 traffic 요구로 태워
+    // 일반 감속 정지(rate limit)로 선다. (2026-08-08, PR #21 검토에서 도출)
+    if (traffic_rx_ns >= 0 && monotonicNs() - traffic_rx_ns > traffic_stale_ns_ &&
+      !m.traffic.stop_required)
+    {
+      m.traffic.stop_required = true;
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+        "traffic_stop 신선도 초과 — 정지 요구 강제 (stack_traffic 확인 필요)");
     }
     const CoreSnapshot s = toSnapshot(m);
 
@@ -374,6 +395,8 @@ private:
   int64_t lane_stale_ns_{500'000'000};
   int64_t last_gps_rx_ns_{-1};    // 마지막 GpsPath 수신 시각 (미수신 = -1)
   int64_t gps_stale_ns_{500'000'000};
+  int64_t last_traffic_rx_ns_{-1};  // 마지막 TrafficStop 수신 시각 (미수신 = -1)
+  int64_t traffic_stale_ns_{500'000'000};
 
   rclcpp::Publisher<TargetRef>::SharedPtr pub_;
   rclcpp::Subscription<fma_interfaces::msg::LanePath>::SharedPtr sub_lane_;
