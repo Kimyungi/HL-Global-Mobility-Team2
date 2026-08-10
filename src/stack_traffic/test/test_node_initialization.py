@@ -20,7 +20,11 @@ class FakeYolo:
 
 
 class FakeOakCamera:
+    last_kwargs = None
+
     def __init__(self, **_kwargs):
+        type(self).last_kwargs = _kwargs
+        self.mxid = _kwargs.get("mxid") or "fake-auto-mxid"
         self.usb_speed = "SUPER"
         self.last_read_status = "starting"
         self.depth_resized = False
@@ -48,6 +52,8 @@ class TestNodeInitialization(unittest.TestCase):
                 "-p",
                 "oak_depth_enabled:=false",
                 "-p",
+                "oak_mxid:=traffic-oak-mxid",
+                "-p",
                 "stopline_detection_enabled:=true",
                 "-p",
                 "stopline_stop_y_ratio:=0.90",
@@ -61,11 +67,22 @@ class TestNodeInitialization(unittest.TestCase):
             ):
                 node = StackTrafficNode()
             self.assertFalse(node.oak_depth_enabled)
+            self.assertEqual(node.oak_mxid, "traffic-oak-mxid")
+            self.assertEqual(
+                FakeOakCamera.last_kwargs["mxid"],
+                "traffic-oak-mxid",
+            )
+            self.assertIn(
+                "mxid=traffic-oak-mxid",
+                node._camera_description(),
+            )
             self.assertAlmostEqual(node.stopline_stop_y_ratio, 0.90)
             self.assertEqual(node.traffic_light_class_ids, [9])
             self.assertFalse(node.camera_fault_latched)
             self.assertTrue(node.startup_hold_latched)
+            self.assertTrue(node.resume_on_green)
             self.assertFalse(node.resume_on_red_clear)
+            self.assertFalse(node.show_debug)
 
             published_stops = []
             node._publish = (

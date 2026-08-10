@@ -115,14 +115,16 @@ adas_ws/src/
   stack_traffic(김재민)이 OAK-D RGB 한 대에서 신호등(YOLOv8n 상단 ROI + HSV 적/녹)과
   정지선(하단 ROI 흰색 띠 + y비율 게이트)을 **모두 자체 검출**한다. stack_lane은 정지선을
   발행하지 않는다. `StopLine.msg`는 발행자·구독자 모두 소멸 — 삭제 여부 미결.
-  정지 래치: 진입 = 적색 3/5 AND 정지선 근접. 해제 = **fresh YOLO 초록 3/5로만**(실차 launch
-  기준; 패키지 기본은 자동 해제 없음). 카메라 사망·정지선 소실·bbox 소실은 해제 조건이 아님.
+  정지 래치: 진입 = 적색 3/5 AND 정지선 근접. 해제 = **fresh YOLO 초록 3/5로만**
+  (`resume_on_green=true`가 패키지·실차 launch 기본). 카메라 사망·정지선 소실·bbox 소실은
+  해제 조건이 아님.
   **해제 정책 확정(2026-08-09, 팀장):** 시연 신호등은 적색=정지 / 초록=재출발 타입 —
   `resume_on_green`이 실차 표준, `resume_on_red_clear`는 불필요.
   **OAK-D 배분 확정 (2026-08-09, 팀장):** OAK-D Pro **2대** — stack_lane(이현준) 1대(차선용
   하향 pitch), stack_traffic(김재민) 1대(신호등·정지선용 상단 시야). 각자 독점 오픈은 유지하되
   **양쪽 노드에 MxID 핀닝 필수**(`dai.Device(pipeline, device_info)`) — 핀닝 없으면 어느 노드가
-  어느 카메라를 잡을지 비결정적이라 부팅 순서에 따라 뒤바뀐다 (담당: 이현준·김재민 각자 자기 노드).
+  어느 카메라를 잡을지 비결정적이라 부팅 순서에 따라 뒤바뀐다. stack_traffic은
+  `oak_mxid` 파라미터로 교통 카메라를 고정한다 (담당: 이현준·김재민 각자 자기 노드).
 - 부트스트랩 순서: ① bridge_dspace로 PC↔dSPACE 왕복 검증 (더미 ref로 바퀴 반응 + vehicle vector 회신 확인) → ② adas_mgm 10ms 루프 골격 + 지터 로깅 → ③ 각 스택 배포·병렬 개발.
 
 ## 7. 실시간성 검증 기준 (v1 유지 vs v3 이관)

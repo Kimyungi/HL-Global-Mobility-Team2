@@ -1,8 +1,14 @@
 import unittest
+from unittest.mock import Mock, patch
 
 import numpy as np
 
-from stack_traffic.oak_camera import OakRgbdCamera, build_oak_pipeline, dai
+from stack_traffic.oak_camera import (
+    OakRgbdCamera,
+    build_oak_pipeline,
+    dai,
+    open_oak_device,
+)
 
 
 class FakeQueue:
@@ -133,6 +139,75 @@ class TestOakCameraRead(unittest.TestCase):
         self.assertEqual(camera.last_read_status, "shape_error")
         self.assertEqual(camera.depth_native_shape, (3, 4))
         self.assertFalse(camera.depth_resized)
+
+
+class TestOakDeviceSelection(unittest.TestCase):
+    def test_explicit_mxid_is_passed_to_depthai(self):
+        pipeline = object()
+        device_info = object()
+        expected_device = object()
+        fake_dai = Mock()
+        fake_dai.DeviceInfo.return_value = device_info
+        fake_dai.Device.return_value = expected_device
+
+        with patch("stack_traffic.oak_camera.dai", fake_dai):
+            device = open_oak_device(pipeline, "14442C108144F1D000")
+
+        self.assertIs(device, expected_device)
+        fake_dai.DeviceInfo.assert_called_once_with(
+            "14442C108144F1D000"
+        )
+        fake_dai.Device.assert_called_once_with(pipeline, device_info)
+        fake_dai.Device.getAllConnectedDevices.assert_not_called()
+
+    def test_blank_mxid_opens_the_enumerated_single_device(self):
+        pipeline = object()
+        device_info = object()
+        expected_device = object()
+        fake_dai = Mock()
+        fake_dai.Device.getAllConnectedDevices.return_value = [device_info]
+        fake_dai.Device.return_value = expected_device
+
+        with patch("stack_traffic.oak_camera.dai", fake_dai):
+            device = open_oak_device(pipeline, "  ")
+
+        self.assertIs(device, expected_device)
+        fake_dai.DeviceInfo.assert_not_called()
+        fake_dai.Device.assert_called_once_with(pipeline, device_info)
+
+    def test_blank_mxid_with_no_device_uses_depthai_waiting_open(self):
+        pipeline = object()
+        expected_device = object()
+        fake_dai = Mock()
+        fake_dai.Device.getAllConnectedDevices.return_value = []
+        fake_dai.Device.return_value = expected_device
+
+        with patch("stack_traffic.oak_camera.dai", fake_dai):
+            device = open_oak_device(pipeline)
+
+        self.assertIs(device, expected_device)
+        fake_dai.DeviceInfo.assert_not_called()
+        fake_dai.Device.assert_called_once_with(pipeline)
+
+    def test_blank_mxid_rejects_ambiguous_multiple_devices(self):
+        pipeline = object()
+        first = Mock()
+        first.getMxId.return_value = "lane-oak"
+        second = Mock()
+        second.getMxId.return_value = "traffic-oak"
+        fake_dai = Mock()
+        fake_dai.Device.getAllConnectedDevices.return_value = [first, second]
+
+        with (
+            patch("stack_traffic.oak_camera.dai", fake_dai),
+            self.assertRaisesRegex(
+                RuntimeError,
+                "oak_mxid.*lane-oak.*traffic-oak",
+            ),
+        ):
+            open_oak_device(pipeline)
+
+        fake_dai.Device.assert_not_called()
 
 
 @unittest.skipIf(dai is None, "depthai is not installed")

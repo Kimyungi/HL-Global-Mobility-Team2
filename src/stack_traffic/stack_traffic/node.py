@@ -525,6 +525,7 @@ class StackTrafficNode(Node):
                 width=self.oak_width,
                 height=self.oak_height,
                 fps=self.oak_fps,
+                mxid=self.oak_mxid,
                 depth_enabled=self.oak_depth_enabled,
                 depth_confidence_threshold=(
                     self.oak_depth_confidence_threshold
@@ -564,9 +565,15 @@ class StackTrafficNode(Node):
         if self.camera_backend == "oak":
             depth_mode = "rgbd" if self.oak_depth_enabled else "rgb-only"
             usb_speed = getattr(self.oak_camera, "usb_speed", "unknown")
+            connected_mxid = getattr(
+                self.oak_camera,
+                "mxid",
+                self.oak_mxid or "unknown",
+            )
             return (
                 f"oak:{self.oak_width}x{self.oak_height}@"
-                f"{self.oak_fps:g}/{depth_mode}/usb={usb_speed}"
+                f"{self.oak_fps:g}/{depth_mode}/mxid={connected_mxid}/"
+                f"usb={usb_speed}"
             )
         return f"opencv:{self.camera_source}"
 
@@ -585,6 +592,7 @@ class StackTrafficNode(Node):
         self.declare_parameter("oak_width", 640)
         self.declare_parameter("oak_height", 360)
         self.declare_parameter("oak_fps", 30.0)
+        self.declare_parameter("oak_mxid", "")
         self.declare_parameter("oak_depth_enabled", True)
         # 작은 물체를 후처리가 지우는지 확인하는 raw 진단 기본값.
         self.declare_parameter("oak_depth_confidence_threshold", 245)
@@ -703,7 +711,7 @@ class StackTrafficNode(Node):
         self.declare_parameter("stopline_maximum_fit_residual_m", 0.25)
         self.declare_parameter("stopline_stop_distance_m", 0.0)
         self.declare_parameter("stopline_stop_y_ratio", 0.0)
-        self.declare_parameter("resume_on_green", False)
+        self.declare_parameter("resume_on_green", True)
         self.declare_parameter("resume_on_red_clear", False)
         self.declare_parameter("show_debug", False)
         self.declare_parameter("show_auxiliary_debug", False)
@@ -722,6 +730,9 @@ class StackTrafficNode(Node):
         self.oak_width = int(self.get_parameter("oak_width").value)
         self.oak_height = int(self.get_parameter("oak_height").value)
         self.oak_fps = float(self.get_parameter("oak_fps").value)
+        self.oak_mxid = str(
+            self.get_parameter("oak_mxid").value
+        ).strip()
         self.oak_depth_enabled = bool(
             self.get_parameter("oak_depth_enabled").value
         )

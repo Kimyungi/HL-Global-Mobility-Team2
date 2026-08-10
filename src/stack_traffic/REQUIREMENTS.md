@@ -31,8 +31,8 @@
 - unknown·미검출은 색상 투표창을 진행시키지 않는다. template 적색 투표는
   동일 target에서 fresh YOLO 적색을 먼저 확인한 뒤에만 허용한다. 초록
   해제는 fresh YOLO에서만 허용한다.
-- 패키지 기본은 자동 해제를 끄고, 실험 launch는 사용자 요구에 따라
-  fresh YOLO bbox의 초록 3/5로만 해제한다. `resume_on_red_clear`는 끄다.
+- 패키지와 실험 launch 모두 fresh YOLO bbox의 초록 3/5로만 해제하는
+  `resume_on_green=true`가 기본이다. `resume_on_red_clear`는 끈다.
 
 ## 정지선 판정
 
@@ -72,6 +72,14 @@ AND enabled_stopline_gates
 
 ## 카메라와 성능
 
+- OAK-D가 두 대 이상 연결되는 통합 환경에서는 `oak_mxid`에 교통용 카메라의
+  MxID를 반드시 지정한다. 빈 값은 OAK-D가 한 대뿐인 단독 시험에서만 자동
+  선택하며, 여러 대가 보이면 노드는 잘못된 장치 사용을 막기 위해 종료한다.
+  현재 차량의 교통용 OAK-D MxID는 `14442C10B167CFD200`이며 현장 launch의
+  기본값으로 고정한다. 다른 장치에서 시험할 때는 launch 인자로 재정의한다.
+- Python 의존성은 `python3 -m pip install -r
+  src/stack_traffic/requirements.txt`로 설치한다. DepthAI 3.x는 현재 파이프라인과
+  호환하지 않으므로 `depthai>=2.30,<3.0` 범위를 유지한다.
 - 기본 실험 입력: 1280x720, 30 FPS, RGB 정렬 depth.
 - y-only 실차 모드에서는 stereo depth를 장치 단계에서 꺼 RGB 처리량을
   우선한다. depth gate를 사용할 때만 다시 켠다.
@@ -103,6 +111,8 @@ y_raw, y_ratio, y_med, line_z, z_med, stable, accepted
 최종 정차 위치의 값을 그대로 쓰면 그 위치에서야 감속을 시작하므로 지나칠 수
 있다. 첫 시험은 0.28m/s 이하에서 보수적으로 조금 이른 요청 위치를 사용하고,
 실제 MGM·차량 응답을 측정해 임계값을 조정한다.
+현장값 `0.98`은 현재 정지선 ROI, 고정된 카메라 장착 자세, 0.28m/s 이하에서만
+검증된 값이며 범용 기본값이 아니다. 장착 자세·ROI·속도를 바꾸면 다시 측정한다.
 
 ## 안전 조건
 

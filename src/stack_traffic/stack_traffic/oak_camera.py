@@ -33,6 +33,7 @@ class OakRgbdCamera:
         depth_temporal_filter: bool,
         minimum_depth_m: float,
         maximum_depth_m: float,
+        mxid: str = "",
     ) -> None:
         if dai is None:
             raise RuntimeError(
@@ -41,6 +42,7 @@ class OakRgbdCamera:
             )
 
         self.depth_enabled = depth_enabled
+        self.requested_mxid = str(mxid).strip()
         self.pipeline = build_oak_pipeline(
             width,
             height,
@@ -58,12 +60,25 @@ class OakRgbdCamera:
             depth_enabled=depth_enabled,
         )
         try:
-            self.device = dai.Device(self.pipeline)
+            self.device = open_oak_device(
+                self.pipeline,
+                self.requested_mxid,
+            )
         except Exception as error:
+            requested = (
+                f" (oak_mxid={self.requested_mxid})"
+                if self.requested_mxid
+                else ""
+            )
             raise RuntimeError(
-                "OAK-D Pro를 열 수 없습니다. USB 연결과 권한을 확인하세요: "
+                "OAK-D Pro를 열 수 없습니다"
+                f"{requested}. USB 연결, 권한, MxID를 확인하세요: "
                 f"{error}"
             ) from error
+        try:
+            self.mxid = str(self.device.getMxId())
+        except (AttributeError, RuntimeError):
+            self.mxid = self.requested_mxid or "unknown"
         self.usb_speed = str(self.device.getUsbSpeed()).split(".")[-1]
         self.last_read_status = "starting"
         self.depth_native_shape: Optional[Tuple[int, int]] = None
@@ -126,6 +141,30 @@ class OakRgbdCamera:
         """DepthAI 장치를 닫는다."""
         if hasattr(self, "device"):
             self.device.close()
+
+
+def open_oak_device(pipeline, mxid: str = ""):
+    """MxID로 지정한 OAK 장치를 열고, 다중 장치 자동 선택은 거부한다."""
+    if dai is None:
+        raise RuntimeError("depthai가 설치되어 있지 않습니다.")
+
+    requested_mxid = str(mxid).strip()
+    if requested_mxid:
+        return dai.Device(pipeline, dai.DeviceInfo(requested_mxid))
+
+    # 이미 다른 프로세스가 연 장치도 포함해야 부팅 순서와 무관하게
+    # 다중 OAK 환경을 감지할 수 있다.
+    device_infos = list(dai.Device.getAllConnectedDevices())
+    if len(device_infos) > 1:
+        connected_mxids = [str(info.getMxId()) for info in device_infos]
+        raise RuntimeError(
+            "OAK-D가 여러 대 연결되어 있어 자동 선택할 수 없습니다. "
+            "stack_traffic의 oak_mxid를 지정하세요. "
+            f"connected_mxids={connected_mxids}"
+        )
+    if len(device_infos) == 1:
+        return dai.Device(pipeline, device_infos[0])
+    return dai.Device(pipeline)
 
 
 def build_oak_pipeline(

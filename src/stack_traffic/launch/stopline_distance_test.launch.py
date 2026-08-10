@@ -8,15 +8,18 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
+    oak_mxid = LaunchConfiguration("oak_mxid")
     oak_depth_enabled = LaunchConfiguration("oak_depth_enabled")
     stop_distance = LaunchConfiguration("stopline_stop_distance_m")
     stop_y_ratio = LaunchConfiguration("stopline_stop_y_ratio")
     resume_on_green = LaunchConfiguration("resume_on_green")
+    show_debug = LaunchConfiguration("show_debug")
     parameters = {
         "camera_backend": "oak",
         "oak_width": 1280,
         "oak_height": 720,
         "oak_fps": 30.0,
+        "oak_mxid": ParameterValue(oak_mxid, value_type=str),
         "oak_depth_enabled": ParameterValue(
             oak_depth_enabled,
             value_type=bool,
@@ -112,11 +115,19 @@ def generate_launch_description():
         "resume_on_red_clear": False,
         # interval=2와 로그 주기가 겹쳐 YOLO 프레임만 빠지지 않게 홀수 사용.
         "print_every": 9,
-        "show_debug": True,
+        "show_debug": ParameterValue(show_debug, value_type=bool),
         "show_auxiliary_debug": False,
     }
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "oak_mxid",
+                default_value="14442C10B167CFD200",
+                description=(
+                    "교통용 OAK-D MxID. 기본값은 현재 차량의 교통 카메라; "
+                    "다른 장치로 시험할 때만 명시적으로 재정의"
+                ),
+            ),
             DeclareLaunchArgument(
                 "oak_depth_enabled",
                 default_value="true",
@@ -135,7 +146,9 @@ def generate_launch_description():
                 description=(
                     "0이면 y 조건 비활성, 0~1.10이면 화면 높이 대비 "
                     "정지선 최하단 끝점의 시간 중앙값 임계값"
-                    "(1 초과는 화면 아래 외삽)"
+                    "(1 초과는 화면 아래 외삽). 현장값 0.98은 현재 ROI·"
+                    "고정 장착·0.28m/s 이하에서만 검증됐으며 카메라 장착, "
+                    "ROI 또는 속도 변경 시 재보정"
                 ),
             ),
             DeclareLaunchArgument(
@@ -144,6 +157,13 @@ def generate_launch_description():
                 description=(
                     "true=fresh YOLO 초록 3/5에서 재출발, "
                     "false=정지 래치 자동 해제 없음"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "show_debug",
+                default_value="false",
+                description=(
+                    "true=OpenCV 진단 창 표시, false=headless 실차 실행"
                 ),
             ),
             Node(
