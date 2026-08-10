@@ -60,7 +60,8 @@ class AvoidDriveSim(Node):
         self.veh_w = float(self.declare_parameter('vehicle_width_m', 0.62).value)
         self.veh_l = float(self.declare_parameter('vehicle_length_m', 0.85).value)
         self.lidar_x = float(self.declare_parameter('lidar_x_m', 0.76).value)
-        self.front_center = math.radians(float(self.declare_parameter('forward_angle_deg', 270.0).value))
+        self.front_center = math.radians(
+            float(self.declare_parameter('forward_angle_deg', 270.0).value))
         self.detect_range = float(self.declare_parameter('detect_range_m', 3.0).value)
         self.fov_half = math.radians(float(self.declare_parameter('fov_half_deg', 90.0).value))
         self.obst_r = float(self.declare_parameter('obstacle_radius_m', 0.10).value)
@@ -84,7 +85,8 @@ class AvoidDriveSim(Node):
         self.timer = self.create_timer(self.dt, self.step)
         self.get_logger().info(
             f"avoid_drive_sim: 장애물(map){self.obstacles} 차시작({self.px},{self.py}) "
-            f"v={self.target_speed} detect<{self.detect_range}m forward={math.degrees(self.front_center):.0f}deg")
+            f"v={self.target_speed} detect<{self.detect_range}m "
+            f"forward={math.degrees(self.front_center):.0f}deg")
 
     def _on_set(self, params):
         for p in params:

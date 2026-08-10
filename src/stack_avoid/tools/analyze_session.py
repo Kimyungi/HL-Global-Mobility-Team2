@@ -424,7 +424,8 @@ def print_verdict(bag):
                 if sm is not None:
                     j = json.loads(sm.data)
                     extra = (f" [{j.get('reason')}] static={j.get('static_estop')} "
-                             f"dyn={j.get('dynamic_estop')} 최근접={j.get('static_nearest_cluster_min_x')}")
+                             f"dyn={j.get('dynamic_estop')} "
+                             f"최근접={j.get('static_nearest_cluster_min_x')}")
             print(f'      {a:.1f}~{b:.1f}s 원인: {why}{extra}')
     else:
         print('  완주 ✓ (주행 중 v_ref=0 구간 없음)')
