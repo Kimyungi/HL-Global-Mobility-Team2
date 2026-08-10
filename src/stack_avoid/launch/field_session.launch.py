@@ -60,7 +60,8 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
-                            OpaqueFunction, Shutdown)
+                            OpaqueFunction, RegisterEventHandler, Shutdown)
+from launch.event_handlers import OnProcessExit
 from launch.conditions import LaunchConfigurationEquals
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
@@ -190,6 +191,54 @@ def _safety_node(context):
                      LaunchConfiguration('dynamic'), value_type=bool)}],
              # ③ 안전 노드가 죽으면 세션 전체를 내린다.
              on_exit=Shutdown(reason='stack_estop 종료 — 안전 노드 없이 주행 불가')),
+    ]
+
+
+def _can_actions(mode):
+    """CAN 브리지 + 종료 시 목표값 0 복귀. 실차를 움직이는 mode 에서만.
+
+    dSPACE 에 watchdog 이 없다(2026-08-09 실측, J-6) — PC 송신이 끊겨도 마지막 v_ref 를
+    무기한 유지한다. launch 를 끄는 것만으로는 정지 상태가 되지 않는다.
+
+    ★ 순서 문제 (팀장 리뷰 2026-08-10 ⑤). 예전에는 can_zero 를 그냥 나란히 띄워
+      SIGINT 를 받으면 0 을 쓰게 했는데, `ros2 launch` 는 SIGINT 를 **전 프로세스에
+      동시** 전달한다. 파이썬 teardown 이 수백 ms 걸리므로 can_zero 의 0 버스트
+      (30×10ms=0.3s)가 끝난 **뒤에** 브리지가 마지막 큐를 비우며 nonzero v_ref 를
+      한 프레임이라도 더 실으면 dSPACE 가 그것을 latch 한다 — 가드가 막으려던 바로
+      그 상황이다.
+
+    그래서 두 겹으로 둔다:
+      ⓐ `OnProcessExit(브리지)` → 브리지가 **완전히 죽은 뒤** `can_zero --once` 실행.
+         버스에 더 쓸 주체가 없는 시점이라 순서가 보장된다. 브리지가 세션 중간에
+         죽는 경우(크래시)에도 그대로 동작한다 — 오히려 그때가 더 필요하다.
+      ⓑ 기존 가드 프로세스는 폴백으로 남긴다. 이벤트가 안 걸리는 경우(강제 종료 등)를
+         대비한 것이고, 같은 0 을 쓰므로 ⓐ 와 겹쳐도 무해하다.
+
+    ★ `ros2 run` 으로 감싸면 안 된다 — 래퍼가 SIGINT 를 삼켜 가드가 안 돈다(실측).
+      Node 액션은 실행 파일을 직접 띄우므로 신호가 그대로 전달된다.
+    """
+    on_mode = LaunchConfigurationEquals('mode', mode)
+    bridge = Node(package='bridge_dspace', executable='can_bridge_node',
+                  name='can_bridge_node', output='screen',
+                  parameters=[{'can_interface': 'can0'}], condition=on_mode)
+    zero_exe = os.path.join(
+        get_package_share_directory('stack_avoid'), '..', '..',
+        'lib', 'stack_avoid', 'can_zero')
+    return [
+        bridge,
+        # ⓐ 브리지 종료 후 — 이 시점엔 버스에 쓸 주체가 없다
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=bridge,
+                on_exit=[
+                    LogInfo(msg='can_bridge 종료 확인 → dSPACE 목표값 0 송신'),
+                    ExecuteProcess(cmd=[os.path.normpath(zero_exe), '--once'],
+                                   name='can_zero_after_bridge', output='screen'),
+                ]),
+            condition=on_mode),
+        # ⓑ 폴백 가드 (SIGINT 동시 수신 — 순서 보장 없음)
+        Node(package='stack_avoid', executable='can_zero', name='can_zero',
+             output='screen', condition=on_mode),
     ]
 
 
@@ -389,19 +438,9 @@ def generate_launch_description():
                           'ray_pull': ParameterValue(ray_pull, value_type=bool)}],
              condition=LaunchConfigurationEquals('mode', 'avoid')),
 
-        # ── CAN 브리지 — 실차를 움직이는 모드에서만 ──
-        *[Node(package='bridge_dspace', executable='can_bridge_node', name='can_bridge_node',
-               output='screen', parameters=[{'can_interface': 'can0'}],
-               condition=LaunchConfigurationEquals('mode', d)) for d in DRIVES],
-
-        # ── 종료 시 dSPACE 목표값 0 복귀 (안전 가드) ──
-        # dSPACE 에 watchdog 이 없다(2026-08-09 실측) — PC 송신이 끊겨도 마지막 v_ref 를
-        # 무기한 유지한다. launch 를 끄는 것만으로는 정지 상태가 되지 않으므로,
-        # 이 가드가 SIGINT 를 받아 SocketCAN 에 직접 0 을 쓴다(브리지가 이미 죽어도 동작).
-        # ★ `ros2 run` 으로 감싸면 안 된다 — 래퍼가 SIGINT 를 삼켜 가드가 안 돈다(실측).
-        #   Node 액션은 실행 파일을 직접 띄우므로 신호가 그대로 전달된다.
-        *[Node(package='stack_avoid', executable='can_zero', name='can_zero', output='screen',
-               condition=LaunchConfigurationEquals('mode', d)) for d in DRIVES],
+        # ── CAN 브리지 + 종료 시 목표값 0 복귀 — 실차를 움직이는 모드에서만 ──
+        # 두 가지가 짝이라 _can_actions() 한 곳에서 만든다 (순서 보장 때문).
+        *[a for d in DRIVES for a in _can_actions(d)],
 
         # ── 로깅 3종 (bag + params + raw CAN) — 이름·경로는 _logging_actions 가 정한다 ──
         OpaqueFunction(function=_logging_actions),

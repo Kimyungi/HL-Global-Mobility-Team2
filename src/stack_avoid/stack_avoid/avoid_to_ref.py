@@ -29,6 +29,7 @@ from rcl_interfaces.msg import SetParametersResult
 from fma_interfaces.msg import AvoidStatus, RefPoint, TargetRef, VehicleVector
 
 from stack_avoid.estop_gate import EstopGate
+from stack_avoid.ref_points import ray_points
 
 # ── dSPACE MPC 미리보기 창 (FMA_rev1.slx / MPC_Controller 차트에서 확인) ──
 # Generate_Trajectory:  pointSpacing = sampleTime * abs(v_ref)
@@ -308,40 +309,19 @@ class AvoidToRef(Node):
         return pts
 
     def _ray_points(self, p):
-        """초록점 방향을 보존한 반직선 위에 GPS 규약(20점·0.32m 간격)으로 샘플.
+        """초록점 방향 보존 반직선 위 ref 점 — 계산은 공용 `ref_points` 모듈.
 
-        원점→초록점 반직선 위에서만 움직이므로 모든 점의 atan2(y,x) 가 초록점과
-        같다. "초록점 쪽으로 조향한다"는 요구를 지키면서 조향 크기만 규약에 맞춘다
-        (측방 y 를 유지한 채 x 만 줄이는 당김+역산 방식과 달리 방향이 안 변한다).
-
-        **직선 경로**인 이유 — GPS 8/3 직선 run 이 정확히 이 형태다: 점들은 차량
-        기준 옆으로 벗어나 있고(첫 점 y = 경로 이탈량 ±0.7m), yaw 는 경로 접선,
-        κ 는 거의 0(중앙 0.017). 조향을 만든 것은 점의 **위치**뿐이었다.
-        회피 목표점까지의 등곡률 호를 샘플하면(gps_style) 첫 점 y 가 0.005m 로
-        뭉개져 이탈량 신호가 사라진다 — 회피 의도가 근거리 점에 실리지 않는다.
-
-        점 0 은 ref_lookahead 거리(GPS 실측 0.25~0.97m 대역)에 놓여 회피 의도를
-        그대로 싣고, 점 1~19 가 같은 방향으로 이어져 경로를 이룬다.
+        ★ 2026-08-10: step_injector 와 계산이 갈라져 있던 것을 공용 모듈로 합쳤다
+          (팀장 리뷰 ⑦). 여기서는 파라미터만 넘긴다. 반환값은 이미 부호·게인이
+          적용된 최종 튜플이라 `_apply_gains` 를 다시 태우지 않는다.
+          실 bag 초록점 × 파라미터 10조합 6440건에서 기존 계산과 완전 일치 확인.
         """
-        d = math.hypot(p.x, p.y)
-        th = math.atan2(p.y, p.x)                  # ★ 보존 대상
-        # 점 0 은 목표점보다 멀리 두지 않는다 — 장애물 너머를 가리키면 안 된다.
-        # 다만 ref_x_min 아래로도 두지 않는다(quintic 붕괴). d < ref_x_min 은 앞범퍼가
-        # 장애물에 거의 닿은 상태라 회피 기동의 영역이 아니다(estop·narrow_gap 소관).
-        L0 = max(min(self.ref_lookahead, d), self.ref_x_min)
-        k_max = 1.0 / self.min_turn_radius
-        c, s = math.cos(th), math.sin(th)
-        out = []
-        for i in range(max(1, self.ray_n)):
-            L = L0 + i * self.ray_spacing
-            x, y = L * c, L * s
-            # 원점→그 점 등곡률 호의 곡률 (dummy_ref_publisher·path_engine 규약).
-            # H 절에서 조향에 무영향으로 확정됐으나 점마다 자기정합은 유지한다.
-            kappa = max(-k_max, min(k_max, 2.0 * y / (L * L)))
-            # yaw = 경로 접선 = 반직선 방향. GPS 실측 첫 점 |yaw| 3.1°(8/6)·18.1°(8/3)
-            # 과 같은 대역이다. yaw_gain 기본 0 이면 0 이 나간다(H 절 구성 유지).
-            out.append((x, y, th, kappa))
-        return out
+        return ray_points(
+            p.x, p.y,
+            lookahead_m=self.ref_lookahead, n_points=self.ray_n,
+            spacing_m=self.ray_spacing, min_turn_radius_m=self.min_turn_radius,
+            ref_x_min_m=self.ref_x_min, lat_sign=self.lat_sign,
+            yaw_gain=self.yaw_gain, curv_gain=self.curv_gain, y_scale=self.y_scale)
 
     def _required_curvature(self, p, v_ref):
         """회피 기하가 요구하는 곡률 — 앞범퍼가 장애물보다 clear_before 만큼 먼저 다 비키기.
@@ -448,10 +428,12 @@ class AvoidToRef(Node):
                 if self.gps_style:
                     # 20점 경로 — 부호·게인은 _gps_style_points 안에서 적용된다.
                     m.ref_points = self._gps_style_points(p)
+                elif self.ray_pull:
+                    # ★ 공용 ref_points 모듈이 부호·게인까지 **적용해서** 돌려준다.
+                    #   여기서 _apply_gains 를 또 태우면 게인이 두 번 곱해진다.
+                    m.ref_points = [self._rp(*r) for r in self._ray_points(p)]
                 else:
-                    if self.ray_pull:
-                        raw = self._ray_points(p)          # 20점 (ray_n_points)
-                    elif self.send_as_is:
+                    if self.send_as_is:
                         k_max = 1.0 / self.min_turn_radius
                         kappa = max(-k_max, min(k_max, 2.0 * p.y / d2))
                         raw = [(p.x, p.y, 2.0 * math.atan2(p.y, p.x), kappa)]

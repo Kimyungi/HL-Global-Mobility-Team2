@@ -2,8 +2,9 @@
 """실차 측정용 스텝 주입기 — 측방 목표 오프셋을 계단으로 주고 응답을 재게 한다.  이기돈
 
 stage2 실측 ①②의 입력 발생기. 회피 로직을 거치지 않고 /adas/target_ref를 직접 내되,
-**avoid_to_ref와 똑같은 방식으로 ref point를 만든다** — 그래야 여기서 잰 지연·이동곡선이
-실제 회피 기동에 그대로 적용된다 (κ = 2y/(x²+y²), yaw = κ·L, lookahead 지점 송신).
+**avoid_to_ref와 같은 코드로 ref point를 만든다** — 공용 `ref_points` 모듈을 두 노드가
+함께 import 한다. 그래야 여기서 잰 지연·이동곡선이 실제 회피 기동에 그대로 적용된다.
+(2026-08-10 이전에는 각자 구현이었고, step 쪽이 이미 삭제된 구방식을 복제하고 있었다.)
 
   ① 조향 응답 시간   : 스탠드(바퀴 듦)에서 실행 → ref y 스텝 → VehicleVector.str 응답
   ② 측방 이동 곡선   : 지상에서 v=0.3/0.5로 실행 → 스텝 후 |y| 0.30·0.46m 도달까지 전진거리
@@ -22,8 +23,6 @@ stage2 실측 ①②의 입력 발생기. 회피 로직을 거치지 않고 /ada
 ★ estop 게이트 상시 적용 (estop_gate.EstopGate) — 실차를 움직이므로 예외 없음.
 ★ 안전: 스탠드 먼저, 물리 비상정지 준비, 지상 주행은 통제된 직선 구간에서.
 """
-import math
-
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -31,6 +30,7 @@ from std_msgs.msg import String
 from fma_interfaces.msg import RefPoint, TargetRef
 
 from stack_avoid.estop_gate import EstopGate
+from stack_avoid.ref_points import lateral_step_point
 
 
 class StepInjector(Node):
@@ -48,8 +48,14 @@ class StepInjector(Node):
         self.repeats = int(self.declare_parameter('repeats', 3).value)
         # 가상 회피 목표점의 전방거리 [m] — avoid_to_ref가 쓰는 obs_x 자리.
         self.target_x = float(self.declare_parameter('target_x_m', 1.5).value)
-        # avoid_to_ref와 동일해야 응답이 실제 회피와 같다.
-        self.lookahead = float(self.declare_parameter('lookahead_m', 0.4).value)
+        # ★ 아래 3개는 avoid_to_ref 와 **같은 값**이어야 여기서 잰 응답이 실제 회피에
+        #   그대로 이전된다 (팀장 리뷰 2026-08-10 ⑦). 기본값을 avoid_to_ref 의
+        #   ray_pull 규약에 맞춘다: ref_lookahead_m 0.90 / min_turn_radius 1.15 /
+        #   ref_x_min 0.8. 예전 lookahead 기본 0.4 는 이미 삭제된 구방식의 값이라,
+        #   그대로 두면 스텝 시험이 실제 회피와 다른 점을 보내게 된다.
+        self.lookahead = float(self.declare_parameter('lookahead_m', 0.90).value)
+        self.min_turn_radius = float(self.declare_parameter('min_turn_radius_m', 1.15).value)
+        self.ref_x_min = float(self.declare_parameter('ref_x_min_m', 0.8).value)
         self.curv_gain = float(self.declare_parameter('curvature_gain', 1.0).value)
         self.period = float(self.declare_parameter('period_ms', 10).value) / 1000.0
         # 폭주 방지 상한 — 시퀀스 계산치와 무관하게 이 시간이 지나면 정지.
@@ -98,22 +104,22 @@ class StepInjector(Node):
         return p
 
     def _lookahead_point(self, ty):
-        """목표 (target_x, ty)로 가는 등곡률 호 위의 lookahead 점.
+        """목표 (target_x, ty) 를 **회피와 같은 생성기**로 ref 점 하나로.
 
-        avoid_to_ref.tick()과 같은 계산 — 여기서 잰 응답이 실제 회피에 그대로 적용되도록.
+        ★ 2026-08-10 (팀장 리뷰 ⑦). 예전에는 "avoid_to_ref 와 같은 계산"이라며 목표점
+          까지의 등곡률 호 위 lookahead 점을 직접 구현했는데, 그 방식은 avoid_to_ref
+          에서 이미 삭제된 구방식이었다. 현재 기본은 ray_pull — **방향 보존 반직선**
+          이고 yaw 는 0 이다. 두 계산은 같은 목표에 대해 다른 점을 낸다.
+          그 상태로 잰 ①(조향 응답)·②(측방 이동 곡선)은 실제 회피에 이전되지 않는다.
+          → 공용 `ref_points.lateral_step_point` 하나만 부른다. 이제 스텝 시험이 내는
+            ref 는 실제 회피가 내는 ref 와 **같은 코드**를 거친다.
         """
-        tx = self.target_x
-        d2 = tx * tx + ty * ty
-        if d2 <= 1e-6:
-            return self._rp(tx)
-        kappa = 2.0 * ty / d2
-        if abs(kappa) < 1e-4:                                   # 거의 직진
-            return self._rp(min(self.lookahead, math.hypot(tx, ty)))
-        s_total = 2.0 * math.atan2(ty, tx) / kappa
-        length = min(self.lookahead, abs(s_total))
-        th = kappa * length
-        return self._rp(math.sin(th) / kappa, (1.0 - math.cos(th)) / kappa,
-                        th, kappa * self.curv_gain)
+        pts = lateral_step_point(
+            ty, target_x_m=self.target_x,
+            lookahead_m=self.lookahead, n_points=1,
+            min_turn_radius_m=self.min_turn_radius,
+            ref_x_min_m=self.ref_x_min, curv_gain=self.curv_gain)
+        return self._rp(*pts[0])
 
     def tick(self):
         """현재 시퀀스 단계의 오프셋을 ref로 내보낸다. estop이면 v_ref=0."""
