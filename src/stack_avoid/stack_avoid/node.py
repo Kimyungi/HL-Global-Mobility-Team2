@@ -242,54 +242,52 @@ class StackAvoidNode(Node):
             self.get_logger().debug(
                 f"ttc {msg.ttc:.2f}s < ttc_stop {self.ttc_stop}s (gap {gap:.2f}m)")
 
-    # 경로 검사에서 무시할 근거리 [m]. 라이다가 차체·지면을 스치는 구간이라
-    # 여기까지 막힘으로 보면 모든 후보가 기각된다.
-    PATH_MIN_M = 0.30
-    # ★ 경계 여유 [m]. 후보는 **y 차이**로 만들고(blocker + clear) 검사는 **경로 수직
-    #   거리**로 한다. 목표 방향이 θ 만큼 기울면 수직거리 ≈ clear·cos θ 로 줄어들어,
-    #   여유가 없으면 설계대로 만든 정상 후보가 자기 자신 때문에 기각된다
-    #   (실측: 목표(3.12,+0.63) / blocker(3.16,+0.17) — y 차이 정확히 0.46 인데
-    #    수직거리는 0.458). 5cm 면 θ≲25° 의 정상 후보는 통과한다.
-    #   그보다 더 기운 목표가 기각되는 것은 부작용이 아니라 옳다 — 그 대역은
-    #   "옆으로 살짝 비켜 지나간다"가 아니라 "제자리에서 크게 튼다"라서 1차원 y 투영
-    #   모델 자체가 성립하지 않는다(실측 44° 목표에서 실제 이격이 y 차이의 70%).
-    PATH_MARGIN_M = 0.05
+    # 목표가 표면보다 이만큼 이상 멀면 "뒤"로 본다 [m]. 측정 잡음·클러스터 두께 흡수.
+    BEHIND_TOL_M = 0.10
+    # 목표 방위각 주변 이 각도 안의 측정치를 본다 [deg]. 3m 에서 ±0.10m 에 해당.
+    BEHIND_WIN_DEG = 2.0
 
-    def _path_blocked(self, tx, ty, forward, clear):
-        """원점→(tx,ty) 로 **가는 길**이 막혔는가.
+    def _behind_surface(self, scan, tx, ty):
+        """목표 (tx,ty) 가 **스캔된 표면보다 뒤**에 있는가 (vehicle frame 입력).
 
-        ★ 왜 필요한가 (2026-08-09 실차 규명). `_gap_target` 은 장면을 "한 깊이 슬래브에
-          늘어선 점들의 1차원 줄"로 모델링한다. 그런데 실제 장면은 2차원이라, **대각선
-          벽은 어느 깊이로 잘라도 그 단면에 '끝'이 생긴다.** 알고리즘은 그 가짜 끝을
-          돌아갈 수 있는 모서리로 착각해 벽 반대편에 목표를 찍는다.
-          실측(avoid_20260809_220343, t=9.89s): 왼쪽 벽이 x 1.5→4.0 에서 y +1.4→+0.2 로
-          기우는 하나의 연속 벽인데, 슬래브 3.02~4.22 에서는 y +0.38~+0.71 로만 보였다.
-          그 "끝" 바깥 +1.17 을 목표로 냈고, 같은 벽이 x=2.24 에서 y=+1.14 에 있었다 —
-          **목표가 벽 뒤였다.** 15프레임 재현.
-          `pass_w` 는 이걸 못 잡는다. 슬래브 안에서 이웃 간격을 재는 값이라 슬래브 밖
-          벽은 애초에 목록에 없다. depth_band 를 넓혀도 소용없다 — 벽이 대각선이면
-          어느 폭으로 잘라도 단면에는 항상 끝이 생긴다.
-          → 깊이와 무관하게 **목표까지의 경로 위**를 보는 검사가 필요하다.
+        ★ 왜 이 판정인가 (2026-08-10 실차 규명). `_gap_target` 은 장면을 "한 깊이
+          슬래브에 늘어선 점들의 1차원 줄"로 모델링한다. 실제 장면은 2차원이라
+          **대각선 벽은 어느 깊이로 잘라도 그 단면에 '끝'이 생기고**, 알고리즘은 그
+          가짜 끝을 돌아갈 수 있는 모서리로 착각해 벽 반대편에 목표를 찍는다.
+          실측(avoid_20260809_220343 t=9.89s): 왼쪽 벽이 x 1.5→4.0 에서 y +1.4→+0.2 로
+          기우는 하나의 연속 벽인데 슬래브 3.02~4.22 에서는 y +0.38~+0.71 로만 보여,
+          그 "끝" 바깥 +1.17 을 목표로 냈다. 15프레임 재현.
 
-        차가 실제로 그리는 것은 호지만 검사에는 **현**(직선)을 쓴다. 호는 시작 구간에서
-        현보다 안쪽(직진 쪽)을 지나므로 현 기준은 약간 낙관적이나, 계산이 단순해
-        100Hz 에서 안전하다. 더 엄밀히 하려면 호 중심 기준 거리로 바꾸면 된다.
+          스캔은 방위각의 함수 r(θ) 다. "장애물 뒤"의 정확한 정의는 **목표의 방위각에서
+          목표까지의 거리가 측정 거리보다 먼 것** — 즉 스캔된 표면을 뚫고 들어간 것이다.
+          위 프레임: 목표 거리 3.09m vs 그 방위각 측정 2.18m → 뒤 ✓
 
-        판정: 목표 방향 축으로 사영해 **목표보다 앞**(PATH_MIN_M < s < 목표거리)이면서
-        가로 이격이 (clear − PATH_MARGIN_M) 미만인 점이 하나라도 있으면 막힌 것.
+        ★ 처음에는 "경로 수직거리" 로 검사했는데 **너무 엄격해 실주행이 막혔다**
+          (2026-08-10 실차: 230/260 프레임 기각, 23초 정지). 통로를 따라 정상 주행할 때
+          벽은 항상 clear 언저리를 스치므로, 수직거리 기준은 "벽 옆을 지나감" 과
+          "벽을 뚫고 감" 을 구분하지 못한다. 같은 프레임에서 이 표면 판정은
+          목표 2.57m vs 측정 3.95m → 통과로 올바르게 판정한다.
         """
-        d = math.hypot(tx, ty)
-        if d < 1e-6:
+        xl, yl = tx - self.lidar_x, ty - self.lidar_y      # 라이다 프레임으로
+        tr = math.hypot(xl, yl)
+        if tr < 1e-6:
             return False
-        limit = clear - self.PATH_MARGIN_M
-        cs, sn = tx / d, ty / d                      # 목표 방향 단위벡터
-        for px, py in forward:
-            s = px * cs + py * sn                    # 목표축 방향 거리
-            if s <= self.PATH_MIN_M or s >= d:
+        tb = math.atan2(yl, xl)
+        win = math.radians(self.BEHIND_WIN_DEG)
+        nearest = None
+        angle = scan.angle_min
+        for r in scan.ranges:
+            rel = wrap_to_pi(angle - self.front_center)
+            angle += scan.angle_increment
+            if not math.isfinite(r) or r < scan.range_min:
                 continue
-            if abs(-px * sn + py * cs) < limit:      # 목표축에서 가로 이격
-                return True
-        return False
+            if r > min(scan.range_max, self.max_range):
+                continue
+            if abs(wrap_to_pi(rel - tb)) > win:
+                continue
+            if nearest is None or r < nearest:
+                nearest = r
+        return nearest is not None and tr > nearest + self.BEHIND_TOL_M
 
     def _gap_target(self, scan: LaserScan, gap: float):
         """follow-the-gap (양쪽 고려) — 회피 목표점 1개, vehicle frame(후축 원점).
@@ -305,11 +303,7 @@ class StackAvoidNode(Node):
         clear = self.vehicle_width / 2.0 + self.lateral_margin    # 편측 여유
 
         # 깊이 밴드 내 blocker들의 측방 y (vehicle frame)
-        # forward: 차 앞의 **모든** 점 — 목표까지 가는 길을 막는지 검사용(깊이 무관).
-        #   밴드 안팎을 가리지 않는다. 밴드 밖(더 가까운 벽)도, 밴드 안(같은 깊이의
-        #   다른 클러스터)도 경로를 막을 수 있다. 상세는 _path_blocked 주석 참조.
         ys = []
-        forward = []
         angle = scan.angle_min
         for r in scan.ranges:
             rel = wrap_to_pi(angle - self.front_center)
@@ -340,10 +334,8 @@ class StackAvoidNode(Node):
             y_v = r * math.sin(rel) + self.lidar_y
             if abs(y_v) > self.offset_max + clear:
                 continue
-            if x_v > self.lidar_x:
-                forward.append((x_v, y_v))          # 경로 검사용 (깊이 무관)
             if lo <= x_v <= hi:
-                ys.append(y_v)                      # 열림 후보 생성용 (밴드 안만)
+                ys.append(y_v)
         if not ys:
             return None
         ys.sort()
@@ -357,12 +349,12 @@ class StackAvoidNode(Node):
         # offset_max 안에서 통과 가능한 열림만 실현 가능. 하나도 없으면 안전한
         # 목표가 없는 것 → None (예전엔 ±offset_max로 클램프해 여유 미달 지점을
         # 목표로 냈음. 팀장 리뷰 반영). narrow_gap 판정은 호출측(on_scan)이 담당.
-        # ★ 후보를 고른 것만으로 끝내지 않고, **거기까지 가는 길**이 뚫려 있는지
-        #   확인한다. 열림 판정(pass_w)은 한 깊이 슬래브 안의 1차원 문제이고, 경로가
-        #   막히는 것은 2차원 문제라 서로 다른 검사가 필요하다 (_path_blocked 주석).
+        # ★ 후보가 **스캔된 표면 뒤**에 있으면 버린다. 열림 판정(pass_w)은 한 깊이
+        #   슬래브 안의 1차원 문제라, 대각선 벽의 단면에 생기는 가짜 '끝'을 걸러내지
+        #   못한다 (_behind_surface 주석).
         reach = [c for c in cands
                  if abs(c) <= self.offset_max
-                 and not self._path_blocked(obs_x, c, forward, clear)]
+                 and not self._behind_surface(scan, obs_x, c)]
         if not reach:
             return None
         center = min(reach, key=abs)   # 직진에서 가장 덜 벗어나는 열림 (이미 clamp 불필요)
