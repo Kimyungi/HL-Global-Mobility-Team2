@@ -199,7 +199,7 @@ class StackLaneNode(Node):
 
         if self.logger_csv is not None:
             self.logger_csv.log(infer_ms=infer_ms, estimate=estimate, fit_result=debug['fit'],
-                                 raw_y=debug.get('raw_y'))
+                                 raw_y=debug.get('raw_y'), reject_streak=self._reject_streak)
 
         if self.debug_pub is not None:
             frame_vis = build_debug_frame(

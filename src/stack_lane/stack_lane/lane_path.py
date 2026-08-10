@@ -63,6 +63,11 @@ class LaneEstimate:
     # 방법(접선 외삽/신뢰도 게이팅/거리)의 효과를 사후 판단하기 위한 필드.
     ref_point0_applied: bool = False
     ref_point0_x: float = 0.0
+    # 'none'이 된 이유 분류 (2026-08-10, 오실레이션 3계층 진단용) — 카메라/인식
+    # 계층에서 "애초에 검출 실패"인지 "검출은 됐지만 우리 필터가 거부"인지 로그로
+    # 구분하기 위함. 값: '' | 'no_fit'(fit_lane 자체가 none) | 'implausible'(y 폭주)
+    # | 'discontinuous'(직전값 대비 과도한 점프, 연속성 체크).
+    reject_reason: str = ""
 
 
 def _side_score(side: SideFit, hit_ratio_target: float, residual_tolerance_m: float) -> float:
@@ -232,7 +237,8 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
         neutral = PathPoint(x=lookahead_m, y=0.0, yaw=0.0, curvature=0.0)
         estimate = LaneEstimate(x=neutral.x, y=neutral.y, yaw=neutral.yaw, curvature=neutral.curvature,
                                  confidence=0.0, mode="none", points=[neutral],
-                                 ref_point0_applied=False, ref_point0_x=neutral.x)
+                                 ref_point0_applied=False, ref_point0_x=neutral.x,
+                                 reject_reason="no_fit")
         return estimate, {"bev_mask": bev_mask, "fit": result}
 
     confidence = compute_confidence(result, **(confidence_kwargs or {}))
@@ -250,9 +256,11 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
         # 엉뚱한 선을 잡았을 가능성). 'none'과 동일하게: confidence=0으로 MGM
         # 히스테리시스가 lane 이탈 판단을 하게 둔다(판단은 여전히 MGM 스테이트머신 몫).
         neutral = PathPoint(x=lookahead_m, y=0.0, yaw=0.0, curvature=0.0)
+        reason = "implausible" if implausible else "discontinuous"
         estimate = LaneEstimate(x=neutral.x, y=neutral.y, yaw=neutral.yaw, curvature=neutral.curvature,
                                  confidence=0.0, mode="none", points=[neutral],
-                                 ref_point0_applied=False, ref_point0_x=neutral.x)
+                                 ref_point0_applied=False, ref_point0_x=neutral.x,
+                                 reject_reason=reason)
         return estimate, {"bev_mask": bev_mask, "fit": result, "raw_y": raw_y}
 
     # 2) 통과한 것만 스무딩 — 최종 출력(x/y/yaw/curvature/points/REF_POINT_00)은
