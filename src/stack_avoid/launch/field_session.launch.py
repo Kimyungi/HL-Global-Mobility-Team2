@@ -29,6 +29,12 @@
   # 회차 메모 — 폴더 이름에 붙는다
   ros2 launch stack_avoid field_session.launch.py mode:=avoid v_ref:=0.4 \
       note:="콘 2개 3m 간격"
+  # estop 정지거리 변경 — estop_off 는 안 줘도 on+0.10 으로 자동 파생된다
+  ros2 launch stack_avoid field_session.launch.py mode:=avoid estop_on_distance_m:=0.90
+
+★ 안전 노드(stack_estop)가 뜨지 못하면 **세션 전체가 중단된다** — estop 없이 굴러가는
+  구성을 허용하지 않는다. 예전에는 그 노드만 조용히 죽고 나머지는 정상 기동해,
+  "차가 안 움직인다" 하나로만 드러나 원인 찾기가 어려웠다 (2026-08-10).
 
 별도 터미널에서 `ros2 run stack_avoid mark` 를 띄워 구간 라벨을 남길 것 —
 bag의 /test/event 로 나중에 "이 구간이 무슨 시험이었나"를 복원한다.
@@ -48,11 +54,13 @@ bag 은 "무엇을 publish 했나"만 남는다 — 어떤 설정이었나(_para
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import List
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
+                            OpaqueFunction, Shutdown)
 from launch.conditions import LaunchConfigurationEquals
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
@@ -109,6 +117,80 @@ def _slug(text, limit=40):
         elif ch in ' \t/\\:':
             out.append('_')
     return ''.join(out).strip('_')[:limit]
+
+
+ESTOP_HYSTERESIS_M = 0.10       # estop_off 를 자동 파생할 때의 간격
+
+
+def _safety_node(context):
+    """stack_estop(박찬미) 기동 — estop 거리 3중 안전장치.
+
+    ★ 배경 (2026-08-10). `estop_on_distance_m:=0.80` 이상을 주면 stack_estop 이
+      `Require 0 < estop_on_distance_m < estop_off_distance_m` 로 **즉사**한다
+      (off 기본 0.80). 그런데 launch 는 멈추지 않아 라이다·RViz·bag 은 정상 기동하고
+      **안전 노드만 없는 세션**이 된다. avoid_to_ref 의 estop 게이트가 미수신
+      페일세이프로 v_ref=0 을 걸어 차는 안 움직이지만, 증상이 "차가 안 감" 하나뿐이라
+      원인을 찾는 데 세션을 통째로 날린다.
+
+    그래서 세 겹으로 막는다 — 값 노출만으로는 못 막는다(on 만 올리면 그대로 재현):
+      ① off 를 안 주면 on + 0.10 으로 **자동 파생** → on 만 만져도 항상 on < off
+      ② 그래도 모순되면(둘 다 명시) launch 를 **기동 전에** 읽히는 메시지로 중단
+      ③ 그 밖의 이유로 stack_estop 이 죽으면 `on_exit=Shutdown` 으로 **세션 전체 중단**
+         — estop 없이 굴러가는 구성 자체를 허용하지 않는다. ①② 는 이 한 가지 원인만
+         막지만 ③ 은 원인과 무관하게 "안전 노드 없는 주행"을 막는다.
+    """
+    on_s = LaunchConfiguration('estop_on_distance_m').perform(context).strip()
+    off_s = LaunchConfiguration('estop_off_distance_m').perform(context).strip()
+    try:
+        on = float(on_s)
+    except ValueError:
+        return [LogInfo(msg=f'✗ estop_on_distance_m="{on_s}" 은 숫자가 아닙니다.'),
+                Shutdown(reason='estop_on_distance_m 파싱 실패')]
+    if off_s:
+        try:
+            off = float(off_s)
+        except ValueError:
+            return [LogInfo(msg=f'✗ estop_off_distance_m="{off_s}" 은 숫자가 아닙니다.'),
+                    Shutdown(reason='estop_off_distance_m 파싱 실패')]
+        derived = False
+    else:
+        # round: 0.70+0.10 이 0.7999999999999999 로 나와 로그·params 스냅샷에 남는다.
+        off = round(on + ESTOP_HYSTERESIS_M, 4)     # ① 자동 파생
+        derived = True
+
+    if on <= 0.0:                              # ② 기동 전 중단 (양수 아님)
+        return [LogInfo(msg=(
+            f'✗ estop_on_distance_m={on:.2f} — 0 보다 커야 합니다.\n'
+            f'   이 값은 "장애물이 이 거리 안에 들어오면 정지"라는 뜻이라 '
+            f'0 이하면 영원히 정지하지 않습니다.')),
+            Shutdown(reason='estop_on_distance_m 이 0 이하')]
+    if on >= off:                              # ② 기동 전 중단 (히스테리시스 역전)
+        return [LogInfo(msg=(
+            f'✗ estop 거리 설정이 모순입니다: on={on:.2f} off={off:.2f}\n'
+            f'   estop_on < estop_off 여야 합니다 (on 에서 정지, off 에서 해제 — '
+            f'해제 거리가 더 멀어야 채터링이 없습니다).\n'
+            f'   해결: estop_off_distance_m 을 더 크게 주거나(예: '
+            f'estop_off_distance_m:={on + ESTOP_HYSTERESIS_M:.2f}), '
+            f'estop_on_distance_m 을 {off:.2f} 미만으로 낮추세요.\n'
+            f'   estop_off 를 아예 주지 않으면 on+{ESTOP_HYSTERESIS_M:.2f} 로 '
+            f'자동 계산되어 이 오류가 나지 않습니다.')),
+            Shutdown(reason='estop 거리 설정 모순 (on >= off)')]
+
+    note = ' (estop_off 자동 파생)' if derived else ' (estop_off 직접 지정)'
+    return [
+        LogInfo(msg=f'estop 거리: 정지 {on:.2f}m / 해제 {off:.2f}m{note}'),
+        # 박찬미 stack_estop — laser_yaw_in_base_rad=π/2 가 우리 forward_angle_deg=270 과 짝.
+        # 라이다를 재장착하면 두 값을 같이 고칠 것.
+        Node(package='stack_estop', executable='stack_estop_node',
+             name='stack_estop_node', output='screen',
+             parameters=[{
+                 'estop_on_distance_m': float(on),
+                 'estop_off_distance_m': float(off),
+                 'dynamic_enabled': ParameterValue(
+                     LaunchConfiguration('dynamic'), value_type=bool)}],
+             # ③ 안전 노드가 죽으면 세션 전체를 내린다.
+             on_exit=Shutdown(reason='stack_estop 종료 — 안전 노드 없이 주행 불가')),
+    ]
 
 
 def _logging_actions(context):
@@ -172,14 +254,13 @@ def generate_launch_description():
     ydlidar_params = os.path.join(
         get_package_share_directory('ydlidar_ros2_driver'), 'params', 'ydlidar.yaml')
 
+    # estop_on/off·dynamic 은 _safety_node 안에서 직접 읽는다(검증·자동 파생 때문).
     v_ref = LaunchConfiguration('v_ref')
-    dynamic = LaunchConfiguration('dynamic')
     offset_max = LaunchConfiguration('offset_max')
     detect_range = LaunchConfiguration('detect_range')
     lateral_margin = LaunchConfiguration('lateral_margin')
     clear_before = LaunchConfiguration('clear_before')
     ray_pull = LaunchConfiguration('ray_pull')
-    estop_on = LaunchConfiguration('estop_on_distance_m')
     offsets = LaunchConfiguration('offsets')
     hold_s = LaunchConfiguration('hold_s')
     repeats = LaunchConfiguration('repeats')
@@ -201,7 +282,12 @@ def generate_launch_description():
             description='stack_estop 동적 물체 기준 (ⓐ 오탐 확인 시 false로 재시험)'),
         DeclareLaunchArgument(
             'estop_on_distance_m', default_value='0.70',
-            description='estop 정지 거리 [m] — 바꾸면 측방여유 부등식 재확인 (찬미와 공유)'),
+            description='estop 정지 거리 [m] — 바꾸면 측방여유 부등식 재확인 (찬미와 공유). '
+                        'estop_off 를 따로 안 주면 자동으로 on+0.10 이 된다'),
+        DeclareLaunchArgument(
+            'estop_off_distance_m', default_value='',
+            description='estop 해제 거리 [m] (히스테리시스 상단). '
+                        '비우면 estop_on + 0.10 으로 자동 파생 — on 만 올려도 항상 on < off'),
         DeclareLaunchArgument('offsets', default_value='[0.46, -0.46, 0.30, -0.30]',
                               description='mode:=step 측방 스텝 [m]'),
         DeclareLaunchArgument('hold_s', default_value='3.0',
@@ -239,6 +325,16 @@ def generate_launch_description():
             description='true=초록점 방향 보존·거리만 당김(기본). '
                         'false=당김+역산 경로(clear_before 가 살아난다)'),
 
+        # ★ 아래 노드들의 수치 파라미터는 전부 `ParameterValue(..., value_type=...)` 로
+        #   감싼다 (팀장 리뷰 2026-08-10 ④). launch 는 인자 문자열의 타입을 추론하므로
+        #   `v_ref:=1` 은 INTEGER 가 되는데 노드는 DOUBLE 로 선언해 두어
+        #   `InvalidParameterTypeException` 으로 **그 노드만 조용히 죽는다.**
+        #   라이다·RViz·bag 은 정상이라 화면상 멀쩡한데 차만 안 움직여, 현장에서
+        #   원인 찾다 세션을 통째로 날리기 쉽다. 실측으로 재현 확인:
+        #     ros2 run stack_avoid avoid_to_ref --ros-args -p target_speed_mps:=1
+        #     → Trying to set parameter 'target_speed_mps' to '1' of type 'INTEGER',
+        #       expecting type 'DOUBLE' / Process exited with failure 1
+        #   value_type 을 명시하면 "1" 도 1.0 으로 변환돼 들어간다.
         # ── 항상 동일: 인지 + 안전 + 시각화 + 로깅 ──
         # ★ 드라이버 launch를 include하지 않고 드라이버 노드만 직접 띄운다.
         # ydlidar_launch.py 는 base_link→laser_frame 을 (0,0,0.02, yaw 0°) placeholder 로
@@ -261,11 +357,9 @@ def generate_launch_description():
                  'avoid.detect_range_m': ParameterValue(detect_range, value_type=float),
                  'avoid.lateral_margin_m': ParameterValue(lateral_margin, value_type=float),
              }]),
-        # 박찬미 stack_estop — laser_yaw_in_base_rad=π/2 가 우리 forward_angle_deg=270 과 짝.
-        # 라이다를 재장착하면 두 값을 같이 고칠 것.
-        Node(package='stack_estop', executable='stack_estop_node', name='stack_estop_node',
-             output='screen',
-             parameters=[{'estop_on_distance_m': estop_on, 'dynamic_enabled': dynamic}]),
+        # stack_estop 은 estop 거리 검증·자동 파생·사망 시 세션 중단이 붙어 있어
+        # OpaqueFunction 으로 뺐다 (_safety_node 주석 참조).
+        OpaqueFunction(function=_safety_node),
         Node(package='stack_avoid', executable='avoid_viz', name='avoid_viz', output='screen',
              parameters=[{'lidar_x_m': 0.76, 'vehicle_width_m': 0.62, 'lateral_margin_m': 0.15,
                           'detect_range_m': 3.0, 'offset_max_m': 1.0, 'roi_angle_deg': 180.0}]),
@@ -275,8 +369,12 @@ def generate_launch_description():
         # ── mode:=step — ①② 측방 스텝 계단 ──
         Node(package='stack_avoid', executable='step_injector', name='step_injector',
              output='screen',
-             parameters=[{'v_ref': v_ref, 'offsets': offsets, 'hold_s': hold_s,
-                          'repeats': repeats, 'estop_gate': True}],
+             parameters=[{
+                 'v_ref': ParameterValue(v_ref, value_type=float),
+                 'offsets': ParameterValue(offsets, value_type=List[float]),
+                 'hold_s': ParameterValue(hold_s, value_type=float),
+                 'repeats': ParameterValue(repeats, value_type=int),
+                 'estop_gate': True}],
              condition=LaunchConfigurationEquals('mode', 'step')),
 
         # ── mode:=avoid — ⓐⓑⓒ 경계 시험 ──
@@ -284,7 +382,8 @@ def generate_launch_description():
         # clear 구간에 차가 움직여야 성립한다. 통제된 공간에서만.
         Node(package='stack_avoid', executable='avoid_to_ref', name='avoid_to_ref',
              output='screen',
-             parameters=[{'target_speed_mps': v_ref, 'straight_when_clear': True,
+             parameters=[{'target_speed_mps': ParameterValue(v_ref, value_type=float),
+                          'straight_when_clear': True,
                           'estop_gate': True, 'estop_stale_s': 0.25,
                           'clear_before_m': ParameterValue(clear_before, value_type=float),
                           'ray_pull': ParameterValue(ray_pull, value_type=bool)}],
