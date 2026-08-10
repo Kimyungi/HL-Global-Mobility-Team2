@@ -126,10 +126,15 @@ class StepInjector(Node):
                 self.get_logger().warning(
                     '/test/event 구독자 대기 중 — bag 기록이 떠야 스텝을 시작한다 '
                     '(라벨 유실 방지). 구독자가 없으면 10s 후 자동 진행.', once=True)
+                # ★ if/elif 로 쓰면 첫 틱에 elif 가 평가되지 않아 그대로 아래로
+                #   떨어진다 — 가드가 no-op 이 되고 10s 분기는 도달 불가 데드코드가
+                #   된다(팀장 리뷰 2026-08-10 ①). 대기 여부를 한 조건으로 판정한다.
                 if not hasattr(self, '_wait_since'):
                     self._wait_since = now
-                elif (now - self._wait_since).nanoseconds * 1e-9 < 10.0:
-                    return
+                if (now - self._wait_since).nanoseconds * 1e-9 < 10.0:
+                    return                      # 구독자 붙을 때까지 시작 자체를 미룬다
+                self.get_logger().warning(
+                    '/test/event 구독자 없이 10s 경과 — 라벨 유실을 감수하고 진행한다')
             self.t_start = now
             self.phase_start = now
             self._event(f'RUN start v_ref={self.v_ref}')

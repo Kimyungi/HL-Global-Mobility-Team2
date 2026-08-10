@@ -222,15 +222,30 @@ class AvoidToRef(Node):
     }
 
     def _on_set_params(self, params):
+        # ★ 검증을 **전부 끝낸 뒤에** 일괄 적용한다 (팀장 리뷰 2026-08-10 ③).
+        #   예전엔 루프 안에서 즉시 setattr 하고 뒤쪽 미지원 값에서 successful=False 를
+        #   반환했다. `ros2 param set` 으로 여러 개를 한 번에 넘기면 "거부 응답인데
+        #   앞쪽 값은 이미 적용됨" 이 되어, bag 만 봐서는 왜 결과가 달라졌는지 알 수
+        #   없다. §G("성공 응답인데 무효")의 정반대 사고다. ROS 파라미터 콜백은
+        #   all-or-nothing 이어야 한다.
+        pending = []
         for p in params:
             if p.name == 'use_sim_time':          # rclpy 자동 선언 — 통과
                 continue
             if p.name not in self.LIVE_PARAMS:
                 return SetParametersResult(
                     successful=False,
-                    reason=f'{p.name}: 라이브 변경 미지원 — 노드 재시작 필요')
+                    reason=f'{p.name}: 라이브 변경 미지원 — 노드 재시작 필요 '
+                           f'(이번 요청의 다른 값도 적용하지 않았다)')
             attr, cast = self.LIVE_PARAMS[p.name]
-            setattr(self, attr, cast(p.value))
+            try:
+                pending.append((attr, cast(p.value)))
+            except (TypeError, ValueError) as e:
+                return SetParametersResult(
+                    successful=False,
+                    reason=f'{p.name}: 값 변환 실패 ({e}) — 아무것도 적용하지 않았다')
+        for attr, value in pending:               # 여기서부터는 실패하지 않는다
+            setattr(self, attr, value)
         self.get_logger().info(
             f"param 변경 → v={self.target_speed} ray_pull={self.ray_pull} "
             f"lookahead={self.ref_lookahead} n={self.ray_n} clear_before={self.clear_before} "
@@ -359,15 +374,29 @@ class AvoidToRef(Node):
             kt = max(-k_max, min(k_max, 2.0 * yt / (x * x + yt * yt)))
             return self._quintic_kappa(x, yt, kt, k0, preview) - k_des
 
+        # ★ 부호 대칭 (팀장 리뷰 2026-08-10 ②). excess() 의 단조 방향은 k_des 부호에
+        #   따라 뒤집힌다: 좌회전(k_des>0)은 x 를 줄이면 excess 가 커지지만,
+        #   우회전(k_des<0)은 곡률이 더 음수가 되므로 excess 가 **작아진다**.
+        #   그래서 부호를 안 보는 `excess(hi) >= 0` 가드는 우회전에서 항상 즉시 참이
+        #   되어 이분법을 건너뛰고 최원점을 반환했다.
+        #   재현: p=(2.96,−0.90) 요구 κ −0.792 → 송신 κ −0.188 (24%),
+        #        좌회전 미러는 +0.870 (110%) — 우측 회피만 실패하는 비대칭.
+        #   sgn 을 곱해 "요구 방향으로 얼마나 초과했나"로 통일하면 양쪽 다 단조증가다.
+        sgn = 1.0 if k_des >= 0.0 else -1.0
+
+        def over(x):
+            """요구 곡률 대비 초과량(부호 무관). x 를 줄이면 항상 증가한다."""
+            return sgn * excess(x)
+
         lo, hi = self.ref_x_min, max(self.ref_x_min + 1e-3, p.x)
-        if excess(hi) >= 0.0:
+        if over(hi) >= 0.0:                  # 최원점으로도 이미 충분
             x = hi
-        elif excess(lo) <= 0.0:
+        elif over(lo) <= 0.0:                # 최근점으로도 부족
             x = lo
         else:
-            for _ in range(SOLVE_ITERS):     # x 감소 → 지평 곡률 증가 (단조)
+            for _ in range(SOLVE_ITERS):     # x 감소 → 초과량 증가 (단조)
                 mid = 0.5 * (lo + hi)
-                if excess(mid) > 0.0:
+                if over(mid) > 0.0:
                     lo = mid
                 else:
                     hi = mid
