@@ -35,6 +35,10 @@ python3 -c 'import depthai as dai; [print(x.getMxId(), x.name, x.state) for x in
 OAK-D가 두 대인 차량에서는 `stack_lane`과 `stack_traffic`에 서로 다른 MxID를
 반드시 지정한다. `stack_traffic`은 장치가 한 대일 때만 빈 MxID 자동 선택을 허용하고,
 두 대 이상인데 `oak_mxid`가 비어 있으면 잘못된 카메라 사용을 막기 위해 종료한다.
+장치가 일시적으로 보이지 않거나 재부팅 중이면 2초 간격으로 최대 3회 다시 열고,
+그 뒤에도 0대이거나 열 수 없으면 무핀 자동 선택 없이 종료한다. 현재 차량의 교통용
+MxID는 launch 기본값을 단일 기준으로 사용한다. 다른 장치로 시험할 때만 launch
+명령에 `oak_mxid:=확인한_MxID`를 추가한다.
 
 빌드 후에는 각 새 터미널에서 아래 세 줄을 먼저 실행한다.
 
@@ -54,9 +58,7 @@ cd ~/FMA_ws
 source /opt/ros/humble/setup.bash
 source ~/FMA_ws/install/setup.bash
 
-FMA_TRAFFIC_OAK_MXID=14442C10B167CFD200
 ros2 launch stack_traffic stopline_distance_test.launch.py \
-  oak_mxid:="${FMA_TRAFFIC_OAK_MXID}" \
   show_debug:=true
 ```
 
@@ -143,10 +145,8 @@ cd ~/FMA_ws
 source /opt/ros/humble/setup.bash
 source ~/FMA_ws/install/setup.bash
 
-FMA_TRAFFIC_OAK_MXID=14442C10B167CFD200
 read -rp "검증한 정지선 y_med 임계값(0~1.10): " FMA_STOPLINE_TRIGGER_Y
 ros2 launch stack_traffic stopline_distance_test.launch.py \
-  oak_mxid:="${FMA_TRAFFIC_OAK_MXID}" \
   oak_depth_enabled:=false \
   stopline_stop_y_ratio:="${FMA_STOPLINE_TRIGGER_Y}" \
   stopline_stop_distance_m:=0.0 \
@@ -174,11 +174,9 @@ depth도 위치를 안정적으로 구분한다는 것이 확인됐을 때만 �
 둘 다 활성화하면 `y >= y 임계값`과 `z <= z 임계값`을 모두 만족해야 한다.
 
 ```bash
-FMA_TRAFFIC_OAK_MXID=14442C10B167CFD200
 read -rp "검증한 정지선 y_med 임계값(0~1.10): " FMA_STOPLINE_TRIGGER_Y
 read -rp "검증한 정지선 z_med 임계값(m): " FMA_STOPLINE_TRIGGER_Z
 ros2 launch stack_traffic stopline_distance_test.launch.py \
-  oak_mxid:="${FMA_TRAFFIC_OAK_MXID}" \
   oak_depth_enabled:=true \
   stopline_stop_y_ratio:="${FMA_STOPLINE_TRIGGER_Y}" \
   stopline_stop_distance_m:="${FMA_STOPLINE_TRIGGER_Z}" \

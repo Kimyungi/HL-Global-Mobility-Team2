@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import numpy as np
 
@@ -175,19 +175,156 @@ class TestOakDeviceSelection(unittest.TestCase):
         fake_dai.DeviceInfo.assert_not_called()
         fake_dai.Device.assert_called_once_with(pipeline, device_info)
 
-    def test_blank_mxid_with_no_device_uses_depthai_waiting_open(self):
+    def test_blank_mxid_with_no_device_retries_then_fails_fast(self):
         pipeline = object()
-        expected_device = object()
         fake_dai = Mock()
         fake_dai.Device.getAllConnectedDevices.return_value = []
-        fake_dai.Device.return_value = expected_device
 
-        with patch("stack_traffic.oak_camera.dai", fake_dai):
+        with (
+            patch("stack_traffic.oak_camera.dai", fake_dai),
+            patch("stack_traffic.oak_camera.time.sleep") as sleep,
+            self.assertRaisesRegex(
+                RuntimeError,
+                "단일 OAK-D.*3회.*열거되지 않았습니다",
+            ),
+        ):
+            open_oak_device(pipeline)
+
+        fake_dai.DeviceInfo.assert_not_called()
+        self.assertEqual(
+            fake_dai.Device.getAllConnectedDevices.call_count,
+            3,
+        )
+        fake_dai.Device.assert_not_called()
+        self.assertEqual(sleep.call_args_list, [call(2.0), call(2.0)])
+
+    def test_blank_mxid_reenumerates_after_transient_open_failure(self):
+        pipeline = object()
+        stale_info = object()
+        fresh_info = object()
+        expected_device = object()
+        fake_dai = Mock()
+        fake_dai.Device.getAllConnectedDevices.side_effect = [
+            [stale_info],
+            [fresh_info],
+        ]
+        fake_dai.Device.side_effect = [
+            RuntimeError("X_LINK_BOOTED"),
+            expected_device,
+        ]
+
+        with (
+            patch("stack_traffic.oak_camera.dai", fake_dai),
+            patch("stack_traffic.oak_camera.time.sleep") as sleep,
+        ):
             device = open_oak_device(pipeline)
 
         self.assertIs(device, expected_device)
-        fake_dai.DeviceInfo.assert_not_called()
-        fake_dai.Device.assert_called_once_with(pipeline)
+        self.assertEqual(
+            fake_dai.Device.call_args_list,
+            [call(pipeline, stale_info), call(pipeline, fresh_info)],
+        )
+        sleep.assert_called_once_with(2.0)
+
+    def test_blank_mxid_accepts_device_appearing_during_retry(self):
+        pipeline = object()
+        device_info = object()
+        expected_device = object()
+        fake_dai = Mock()
+        fake_dai.Device.getAllConnectedDevices.side_effect = [
+            [],
+            [device_info],
+        ]
+        fake_dai.Device.return_value = expected_device
+
+        with (
+            patch("stack_traffic.oak_camera.dai", fake_dai),
+            patch("stack_traffic.oak_camera.time.sleep") as sleep,
+        ):
+            device = open_oak_device(pipeline)
+
+        self.assertIs(device, expected_device)
+        fake_dai.Device.assert_called_once_with(pipeline, device_info)
+        sleep.assert_called_once_with(2.0)
+
+    def test_blank_mxid_retries_enumeration_error(self):
+        pipeline = object()
+        device_info = object()
+        expected_device = object()
+        fake_dai = Mock()
+        fake_dai.Device.getAllConnectedDevices.side_effect = [
+            RuntimeError("X_LINK_ERROR"),
+            [device_info],
+        ]
+        fake_dai.Device.return_value = expected_device
+
+        with (
+            patch("stack_traffic.oak_camera.dai", fake_dai),
+            patch("stack_traffic.oak_camera.time.sleep") as sleep,
+        ):
+            device = open_oak_device(pipeline)
+
+        self.assertIs(device, expected_device)
+        fake_dai.Device.assert_called_once_with(pipeline, device_info)
+        sleep.assert_called_once_with(2.0)
+
+    def test_explicit_mxid_retries_transient_open_failure(self):
+        pipeline = object()
+        first_info = object()
+        second_info = object()
+        expected_device = object()
+        fake_dai = Mock()
+        fake_dai.DeviceInfo.side_effect = [first_info, second_info]
+        fake_dai.Device.side_effect = [
+            RuntimeError("X_LINK_BOOTED"),
+            expected_device,
+        ]
+
+        with (
+            patch("stack_traffic.oak_camera.dai", fake_dai),
+            patch("stack_traffic.oak_camera.time.sleep") as sleep,
+        ):
+            device = open_oak_device(
+                pipeline,
+                "14442C108144F1D000",
+            )
+
+        self.assertIs(device, expected_device)
+        self.assertEqual(
+            fake_dai.DeviceInfo.call_args_list,
+            [
+                call("14442C108144F1D000"),
+                call("14442C108144F1D000"),
+            ],
+        )
+        self.assertEqual(
+            fake_dai.Device.call_args_list,
+            [call(pipeline, first_info), call(pipeline, second_info)],
+        )
+        fake_dai.Device.getAllConnectedDevices.assert_not_called()
+        sleep.assert_called_once_with(2.0)
+
+    def test_explicit_mxid_reports_error_after_bounded_retries(self):
+        pipeline = object()
+        device_info = object()
+        fake_dai = Mock()
+        fake_dai.DeviceInfo.return_value = device_info
+        fake_dai.Device.side_effect = RuntimeError("X_LINK_BOOTED")
+
+        with (
+            patch("stack_traffic.oak_camera.dai", fake_dai),
+            patch("stack_traffic.oak_camera.time.sleep") as sleep,
+            self.assertRaisesRegex(
+                RuntimeError,
+                "oak_mxid=traffic-oak.*3회.*X_LINK_BOOTED",
+            ),
+        ):
+            open_oak_device(pipeline, "traffic-oak")
+
+        self.assertEqual(fake_dai.DeviceInfo.call_count, 3)
+        self.assertEqual(fake_dai.Device.call_count, 3)
+        fake_dai.Device.getAllConnectedDevices.assert_not_called()
+        self.assertEqual(sleep.call_args_list, [call(2.0), call(2.0)])
 
     def test_blank_mxid_rejects_ambiguous_multiple_devices(self):
         pipeline = object()
@@ -200,6 +337,7 @@ class TestOakDeviceSelection(unittest.TestCase):
 
         with (
             patch("stack_traffic.oak_camera.dai", fake_dai),
+            patch("stack_traffic.oak_camera.time.sleep") as sleep,
             self.assertRaisesRegex(
                 RuntimeError,
                 "oak_mxid.*lane-oak.*traffic-oak",
@@ -208,6 +346,7 @@ class TestOakDeviceSelection(unittest.TestCase):
             open_oak_device(pipeline)
 
         fake_dai.Device.assert_not_called()
+        sleep.assert_not_called()
 
 
 @unittest.skipIf(dai is None, "depthai is not installed")

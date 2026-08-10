@@ -7,14 +7,18 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
-def generate_launch_description():
+DEFAULT_TRAFFIC_OAK_MXID = "14442C10B167CFD200"
+
+
+def build_node_parameters():
+    """launch와 테스트가 공유하는 stack_traffic 파라미터를 만든다."""
     oak_mxid = LaunchConfiguration("oak_mxid")
     oak_depth_enabled = LaunchConfiguration("oak_depth_enabled")
     stop_distance = LaunchConfiguration("stopline_stop_distance_m")
     stop_y_ratio = LaunchConfiguration("stopline_stop_y_ratio")
     resume_on_green = LaunchConfiguration("resume_on_green")
     show_debug = LaunchConfiguration("show_debug")
-    parameters = {
+    return {
         "camera_backend": "oak",
         "oak_width": 1280,
         "oak_height": 720,
@@ -118,11 +122,15 @@ def generate_launch_description():
         "show_debug": ParameterValue(show_debug, value_type=bool),
         "show_auxiliary_debug": False,
     }
+
+
+def generate_launch_description():
+    parameters = build_node_parameters()
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "oak_mxid",
-                default_value="14442C10B167CFD200",
+                default_value=DEFAULT_TRAFFIC_OAK_MXID,
                 description=(
                     "교통용 OAK-D MxID. 기본값은 현재 차량의 교통 카메라; "
                     "다른 장치로 시험할 때만 명시적으로 재정의"

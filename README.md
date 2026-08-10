@@ -56,11 +56,18 @@ ros2 run stack_lane stack_lane_node      # 이현준
 ros2 run stack_gps stack_gps_node        # 김윤기
 ros2 run stack_parking stack_parking_node # 손상민
 ros2 run stack_avoid stack_avoid_node    # 이기돈
-ros2 run stack_traffic stack_traffic_node # 김재민
+ros2 launch stack_traffic stopline_distance_test.launch.py # 김재민
 ros2 run stack_estop stack_estop_node    # 박찬미
 ```
 
 각 스택 폴더의 `REQUIREMENTS.md`에 담당자별 출력 계약·금지사항 정리. 스켈레톤은 중립값을 퍼블리시하므로 전체 파이프라인(스택 → MGM → 브리지 → dSPACE sim)을 지금 바로 관통 실행할 수 있다.
+
+`stack_traffic` launch는 현재 차량의 교통용 OAK-D MxID를 기본값으로 사용한다.
+다른 카메라에서는 명령 끝에 `oak_mxid:=확인한_MxID`를 추가한다. 노드를 직접
+실행하거나 개인 launch를 쓰는 경우에도 OAK-D가 두 대라면 MxID를 반드시 지정한다.
+또한 `resume_on_green=true`가 패키지 기본값이므로 fresh YOLO 초록 3/5에서 정지
+래치가 자동 해제된다. 자동 해제를 원하지 않으면 `resume_on_green:=false`를
+명시한다.
 
 ## 토픽 맵
 

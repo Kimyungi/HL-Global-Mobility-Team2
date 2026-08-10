@@ -5,8 +5,6 @@ from pathlib import Path
 
 from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument
-from launch.utilities import perform_substitutions
-from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
@@ -28,29 +26,26 @@ def load_launch_module():
 class TestLaunchDefaults(unittest.TestCase):
     def test_safe_headless_field_defaults(self):
         os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
-        description = load_launch_module().generate_launch_description()
+        module = load_launch_module()
+        description = module.generate_launch_description()
         context = LaunchContext()
-        node_action = None
 
         for entity in description.entities:
             if isinstance(entity, DeclareLaunchArgument):
                 entity.execute(context)
-            elif isinstance(entity, Node):
-                node_action = entity
 
-        self.assertIsNotNone(node_action)
-        parameters = {}
-        for key_substitutions, value in node_action._Node__parameters[0].items():
-            key = perform_substitutions(context, list(key_substitutions))
-            parameters[key] = (
+        parameters = {
+            key: (
                 value.evaluate(context)
                 if isinstance(value, ParameterValue)
                 else value
             )
+            for key, value in module.build_node_parameters().items()
+        }
 
         self.assertEqual(
             parameters["oak_mxid"],
-            "14442C10B167CFD200",
+            module.DEFAULT_TRAFFIC_OAK_MXID,
         )
         self.assertTrue(parameters["resume_on_green"])
         self.assertFalse(parameters["show_debug"])

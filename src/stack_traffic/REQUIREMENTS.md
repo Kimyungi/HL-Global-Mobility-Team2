@@ -75,8 +75,10 @@ AND enabled_stopline_gates
 - OAK-D가 두 대 이상 연결되는 통합 환경에서는 `oak_mxid`에 교통용 카메라의
   MxID를 반드시 지정한다. 빈 값은 OAK-D가 한 대뿐인 단독 시험에서만 자동
   선택하며, 여러 대가 보이면 노드는 잘못된 장치 사용을 막기 위해 종료한다.
-  현재 차량의 교통용 OAK-D MxID는 `14442C10B167CFD200`이며 현장 launch의
-  기본값으로 고정한다. 다른 장치에서 시험할 때는 launch 인자로 재정의한다.
+  0대 열거 또는 단일 장치 open 실패는 2초 간격으로 최대 3회 재시도하고,
+  끝까지 실패하면 무핀 자동 선택 없이 종료한다. 현재 차량의 교통용 MxID는
+  현장 launch 기본값을 단일 기준으로 사용하며, 다른 장치에서 시험할 때만
+  launch 인자로 재정의한다.
 - Python 의존성은 `python3 -m pip install -r
   src/stack_traffic/requirements.txt`로 설치한다. DepthAI 3.x는 현재 파이프라인과
   호환하지 않으므로 `depthai>=2.30,<3.0` 범위를 유지한다.
