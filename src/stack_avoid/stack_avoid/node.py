@@ -263,12 +263,33 @@ class StackAvoidNode(Node):
             angle += scan.angle_increment
             if abs(rel) > self.front_half_angle:
                 continue
-            if not math.isfinite(r) or r < scan.range_min or r > self.detect_range:
+            # ★ blocker 범위는 **거리(r)가 아니라 기하**로 자른다 (2026-08-09 실차 규명).
+            #
+            #   detect_range(3.0)로 자르면: 깊이 밴드가 obs_x±depth_band 라 4.4m 까지
+            #   뻗는데 3.0m 초과 점이 통째로 빠져 **없는 빈틈이 생긴다.**
+            #   실측(avoid_20260809_214356 t=11.24s): 밴드 안 44점 중 33점이 빠져
+            #   y=+0.09 에 가짜 열림이 생겼고 목표점이 장애물 0.10m 앞에 찍혔다.
+            #
+            #   그렇다고 max_range(12m)로 풀면 반대로 망가진다: FOV 가 ±90° 라 거의
+            #   옆(rel≈89°)의 먼 벽이 x_v 만 밴드에 걸려 y=+6.98 로 들어오고, 그것이
+            #   ys[-1] 이 되어 좌측 바깥 후보를 +0.12 → +7.44 로 밀어낸다. 후보가
+            #   전멸해 **출발부터 narrow_gap** 이 됐다(2026-08-09 지상 시험 2회 정지).
+            #
+            #   올바른 경계는 **차가 실제로 갈 수 있는 가로 범위**다:
+            #       |y| <= offset_max + clear
+            #   목표 중심은 |y| <= offset_max 까지만 갈 수 있고 차 반쪽이 clear 안에
+            #   들어오므로, 이 밖의 점은 어떤 후보로도 부딪힐 수 없다(안전하게 무시 가능).
+            #   x 범위는 깊이 밴드가, y 범위는 이 식이 건다. 거리 컷은 쓰지 않는다.
+            if (not math.isfinite(r) or r < scan.range_min
+                    or r > min(scan.range_max, self.max_range)):
                 continue
             x_v = self.lidar_x + r * math.cos(rel)
             if x_v < lo or x_v > hi:
                 continue
-            ys.append(r * math.sin(rel) + self.lidar_y)
+            y_v = r * math.sin(rel) + self.lidar_y
+            if abs(y_v) > self.offset_max + clear:
+                continue
+            ys.append(y_v)
         if not ys:
             return None
         ys.sort()
