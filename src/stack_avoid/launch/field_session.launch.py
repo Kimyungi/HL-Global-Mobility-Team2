@@ -310,6 +310,7 @@ def generate_launch_description():
     lateral_margin = LaunchConfiguration('lateral_margin')
     clear_before = LaunchConfiguration('clear_before')
     ray_pull = LaunchConfiguration('ray_pull')
+    estop_gate = LaunchConfiguration('estop_gate')
     offsets = LaunchConfiguration('offsets')
     hold_s = LaunchConfiguration('hold_s')
     repeats = LaunchConfiguration('repeats')
@@ -373,6 +374,14 @@ def generate_launch_description():
             'ray_pull', default_value='true',
             description='true=초록점 방향 보존·거리만 당김(기본). '
                         'false=당김+역산 경로(clear_before 가 살아난다)'),
+        # ★★ 안전 바닥 스위치. 기본 true — 끄면 **자동 정지가 전혀 없다.**
+        #   estop 이 잘못 걸려 시험이 막힐 때 "코드를 지우지 않고 잠시 끄기" 위한 것.
+        #   먼저 dynamic:=false 를 시도할 것 — 동적 오탐만 끄고 정적 0.70m 는 남는다.
+        #   이걸 false 로 두면 정적 기준도 무시되므로 물리 비상정지 준비 필수.
+        DeclareLaunchArgument(
+            'estop_gate', default_value='true',
+            description='★안전★ 명령 노드의 estop 게이트. false = 자동 정지 전면 해제 '
+                        '(정적 0.70m 포함). 먼저 dynamic:=false 를 시도할 것'),
 
         # ★ 아래 노드들의 수치 파라미터는 전부 `ParameterValue(..., value_type=...)` 로
         #   감싼다 (팀장 리뷰 2026-08-10 ④). launch 는 인자 문자열의 타입을 추론하므로
@@ -423,7 +432,7 @@ def generate_launch_description():
                  'offsets': ParameterValue(offsets, value_type=List[float]),
                  'hold_s': ParameterValue(hold_s, value_type=float),
                  'repeats': ParameterValue(repeats, value_type=int),
-                 'estop_gate': True}],
+                 'estop_gate': ParameterValue(estop_gate, value_type=bool)}],
              condition=LaunchConfigurationEquals('mode', 'step')),
 
         # ── mode:=avoid — ⓐⓑⓒ 경계 시험 ──
@@ -433,7 +442,8 @@ def generate_launch_description():
              output='screen',
              parameters=[{'target_speed_mps': ParameterValue(v_ref, value_type=float),
                           'straight_when_clear': True,
-                          'estop_gate': True, 'estop_stale_s': 0.25,
+                          'estop_gate': ParameterValue(estop_gate, value_type=bool),
+                          'estop_stale_s': 0.25,
                           'clear_before_m': ParameterValue(clear_before, value_type=float),
                           'ray_pull': ParameterValue(ray_pull, value_type=bool)}],
              condition=LaunchConfigurationEquals('mode', 'avoid')),
