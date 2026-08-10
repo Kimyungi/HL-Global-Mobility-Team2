@@ -91,6 +91,15 @@ class StackAvoidNode(Node):
         self.offset_max = self.declare_parameter('avoid.offset_max_m', 1.0).value
         # follow-the-gap: 장애물 전방거리 ±이 값 안의 blocker를 양쪽 고려
         self.depth_band = self.declare_parameter('avoid.depth_band_m', 0.6).value
+        # ★ 목표 y 변화율 상한 [m/s]. 0 이면 제한 없음(구동작). 상세는 _rate_limit 주석.
+        #   3.0 = 10Hz 스캔에서 프레임당 0.30m. 2개 bag 재생으로 정한 값 —
+        #   1m 초과 점프를 24·32회 → 2·0회로 줄이면서 narrow_gap 은 늘지 않았다.
+        self.target_rate_mps = float(
+            self.declare_parameter('avoid.target_rate_limit_mps', 3.0).value)
+        # dt 이상치일 때 대체용 스캔 주기 [Hz] (T-mini Plus 실측 10Hz)
+        self.scan_rate_hz = float(self.declare_parameter('avoid.scan_rate_hz', 10.0).value)
+        self._prev_center = None        # 직전 목표 y (rate limit 상태)
+        self._prev_center_t = None
 
         self._recompute_derived()
 
@@ -173,6 +182,8 @@ class StackAvoidNode(Node):
                 self.offset_max = p.value
             elif p.name == 'avoid.depth_band_m':
                 self.depth_band = p.value
+            elif p.name == 'avoid.target_rate_limit_mps':
+                self.target_rate_mps = float(p.value)
             elif p.name == 'vehicle.width_m':
                 self.vehicle_width = p.value
             elif p.name == 'lidar_mount.forward_angle_deg':
@@ -223,7 +234,11 @@ class StackAvoidNode(Node):
         # 회피 목표점 1개(follow-the-gap, 양쪽 고려), vehicle frame — 감지 시에만.
         # offset_max 안에 통과 가능한 열림이 없으면 None (여유 미달 지점을 억지로
         # 내지 않음 — 팀장 리뷰 반영). 이 경우 narrow_gap 으로 감속 근거만 제공.
-        tgt = self._gap_target(scan, gap) if msg.obstacle_detected else None
+        if msg.obstacle_detected:
+            tgt = self._gap_target(scan, gap)
+        else:
+            tgt = None
+            self._prev_center = None        # 장애물 없음 → rate limit 이력 리셋
         msg.points = [tgt] if tgt is not None else []
 
         # TODO(stage2): avoidable = (측방 여유 확보 AND ttc >= ttc_stop). 판정 재료만.
@@ -337,6 +352,7 @@ class StackAvoidNode(Node):
             if lo <= x_v <= hi:
                 ys.append(y_v)
         if not ys:
+            self._prev_center = None       # 목표 없음 → 이력 리셋
             return None
         ys.sort()
 
@@ -356,9 +372,47 @@ class StackAvoidNode(Node):
                  if abs(c) <= self.offset_max
                  and not self._behind_surface(scan, obs_x, c)]
         if not reach:
+            self._prev_center = None       # 목표 소실 → 이력 리셋
             return None
         center = min(reach, key=abs)   # 직진에서 가장 덜 벗어나는 열림 (이미 clamp 불필요)
+        center = self._rate_limit(scan, obs_x, center)
         return self._rp(obs_x, center)
+
+    def _rate_limit(self, scan, obs_x, center):
+        """목표 y 의 프레임 간 변화를 제한한다 (급변 억제).
+
+        ★ 왜 필요한가 (2026-08-10 실측). 열림이 바뀌면 목표 y 가 한 프레임에 1.5m 씩
+          튄다. 조향은 63% 서는 데 0.33s 가 걸리는데 0.1s 마다 그런 명령이 오면 차는
+          어느 쪽도 못 따라간다. 실측: offset_max 1.6 에서 1m 초과 점프가 24회,
+          그 세션 4번 장애물에서 이격이 차폭 안(−0.04m)까지 들어갔다.
+
+          급변의 81% 는 "이전에 고르던 쪽 후보가 소멸" 이라 히스테리시스(전환 여유)로는
+          못 잡는다 — 없는 후보를 고를 수는 없기 때문이다(여유 0.5m 까지 시험, 무효).
+          그래서 후보 선택이 아니라 **출력 변화율**을 제한한다.
+
+        ★ 안전: 속도 제한된 중간값이 **표면 뒤면 쓰지 않고 그냥 점프**한다. 부드러움
+          보다 정확성이 우선 — 중간값이 장애물을 가리키면 안 된다. 실측에서 이 경우는
+          243프레임 중 3회였다.
+
+        효과 (2개 bag 재생, offset_max 1.6):
+            제한 없음 → 1m 초과 점프 24·32회
+            0.30m/프레임 → 2·0 회, narrow_gap 은 그대로 0·19
+        """
+        prev = self._prev_center
+        if prev is not None and self.target_rate_mps > 0.0:
+            now = self.get_clock().now().nanoseconds * 1e-9
+            dt = now - self._prev_center_t if self._prev_center_t else 0.0
+            # dt 이상치(첫 프레임·스캔 유실) 는 1스캔 주기로 본다
+            if not 0.0 < dt < 1.0:
+                dt = 1.0 / max(1.0, self.scan_rate_hz)
+            step = self.target_rate_mps * dt
+            if abs(center - prev) > step:
+                limited = prev + math.copysign(step, center - prev)
+                if not self._behind_surface(scan, obs_x, limited):
+                    center = limited
+        self._prev_center = center
+        self._prev_center_t = self.get_clock().now().nanoseconds * 1e-9
+        return center
 
     @staticmethod
     def _rp(x: float, y: float, yaw: float = 0.0, curvature: float = 0.0) -> RefPoint:
