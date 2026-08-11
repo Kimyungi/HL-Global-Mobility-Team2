@@ -171,28 +171,42 @@ class StackLaneNode(Node):
             torch.cuda.synchronize()
 
     def _setup_camera(self, fps: int) -> None:
+        # depthai v2/v3 겸용 (2026-08-11): 산업용 PC는 depthai 3.x라 v2 API
+        # (createColorCamera/XLinkOut)가 없어 기동이 즉사했다 — 첫 통합 run에서
+        # 차선 주행이 통째로 빠진 원인. 해상도·소켓은 양쪽 동일(1280x720/CAM_A).
         import depthai as dai
-
-        pipeline = dai.Pipeline()
-        cam = pipeline.createColorCamera()
-        cam.setPreviewSize(1280, 720)
-        cam.setInterleaved(False)
-        cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-        cam.setFps(fps)
-        xout = pipeline.createXLinkOut()
-        xout.setStreamName('rgb')
-        cam.preview.link(xout.input)
 
         mxid = str(self.get_parameter('camera_mxid').value).strip()
         if mxid:
-            self._dai_device = dai.Device(pipeline, dai.DeviceInfo(mxid))
             self.get_logger().info(f'OAK-D MxID 핀닝: {mxid}')
         else:
             self.get_logger().warn(
                 'camera_mxid 미지정 — 첫 가용 OAK-D 사용. 카메라 2대 연결 상태에선 '
                 '부팅 순서에 따라 신호등용 카메라를 잡을 수 있음 (CLAUDE.md §6)')
-            self._dai_device = dai.Device(pipeline)
-        self._queue = self._dai_device.getOutputQueue('rgb', maxSize=4, blocking=False)
+
+        if hasattr(dai.Pipeline(), 'createColorCamera'):  # v2
+            pipeline = dai.Pipeline()
+            cam = pipeline.createColorCamera()
+            cam.setPreviewSize(1280, 720)
+            cam.setInterleaved(False)
+            cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
+            cam.setFps(fps)
+            xout = pipeline.createXLinkOut()
+            xout.setStreamName('rgb')
+            cam.preview.link(xout.input)
+            self._dai_device = (dai.Device(pipeline, dai.DeviceInfo(mxid)) if mxid
+                                else dai.Device(pipeline))
+            self._queue = self._dai_device.getOutputQueue('rgb', maxSize=4, blocking=False)
+            self._dai_pipeline = None
+        else:  # v3
+            self._dai_device = dai.Device(dai.DeviceInfo(mxid)) if mxid else dai.Device()
+            pipeline = dai.Pipeline(self._dai_device)
+            cam = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
+            self._queue = cam.requestOutput(
+                (1280, 720), dai.ImgFrame.Type.BGR888i, fps=float(fps)
+            ).createOutputQueue(maxSize=4, blocking=False)
+            pipeline.start()
+            self._dai_pipeline = pipeline
 
     def tick(self) -> None:
         pkt = self._queue.tryGet()
@@ -290,6 +304,8 @@ class StackLaneNode(Node):
     def destroy_node(self) -> None:
         if self.logger_csv is not None:
             self.logger_csv.close()
+        if getattr(self, '_dai_pipeline', None) is not None:  # v3
+            self._dai_pipeline.stop()
         if hasattr(self, '_dai_device'):
             self._dai_device.close()
         super().destroy_node()

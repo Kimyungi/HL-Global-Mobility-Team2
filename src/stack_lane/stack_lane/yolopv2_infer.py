@@ -25,7 +25,9 @@ def resolve_device(device_arg: str) -> tuple[torch.device, bool]:
 
 
 def load_model(weights, device: torch.device, half: bool):
-    model = torch.jit.load(str(weights))
+    # map_location 필수 — 공식 TorchScript가 CUDA 매핑으로 저장돼 있어, GPU 없는
+    # PC에서 map_location 없이 load하면 "Found no NVIDIA driver"로 실패 (2026-08-11)
+    model = torch.jit.load(str(weights), map_location=device)
     model = model.to(device)
     if half:
         model.half()
