@@ -4,7 +4,7 @@
     --paper:#eef1f5; --panel:#ffffff; --ink:#1c2836; --ink-soft:#54657a;
     --line:#c3ccd6; --grid:#dde4ec; --grid2:#b7c2ce; --field:#f7f9fb; --accent:#2563eb;
     --l-front:#2563eb; --l-left:#0d9488; --l-right:#d97706; --l-rear:#7c3aed;
-    --body-fill:#dde5ee; --wheel:#2b3644;
+    --body-fill:#dde5ee; --wheel:#2b3644; --gap:#dc2626;
     --shadow:0 1px 2px rgba(20,35,55,.08),0 8px 24px rgba(20,35,55,.06);
   }
   @media (prefers-color-scheme:dark){
@@ -12,7 +12,7 @@
       --paper:#0e1620; --panel:#141d29; --ink:#dbe6f1; --ink-soft:#8ea0b4;
       --line:#2c3a4b; --grid:#1b2634; --grid2:#2f4256; --field:#0b131c; --accent:#60a5fa;
       --l-front:#60a5fa; --l-left:#2dd4bf; --l-right:#fbbf24; --l-rear:#a78bfa;
-      --body-fill:#1b2634; --wheel:#05090e;
+      --body-fill:#1b2634; --wheel:#05090e; --gap:#f87171;
       --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
     }
   }
@@ -20,13 +20,13 @@
     --paper:#eef1f5; --panel:#ffffff; --ink:#1c2836; --ink-soft:#54657a;
     --line:#c3ccd6; --grid:#dde4ec; --grid2:#b7c2ce; --field:#f7f9fb; --accent:#2563eb;
     --l-front:#2563eb; --l-left:#0d9488; --l-right:#d97706; --l-rear:#7c3aed;
-    --body-fill:#dde5ee; --wheel:#2b3644;
+    --body-fill:#dde5ee; --wheel:#2b3644; --gap:#dc2626;
   }
   :root[data-theme="dark"]{
     --paper:#0e1620; --panel:#141d29; --ink:#dbe6f1; --ink-soft:#8ea0b4;
     --line:#2c3a4b; --grid:#1b2634; --grid2:#2f4256; --field:#0b131c; --accent:#60a5fa;
     --l-front:#60a5fa; --l-left:#2dd4bf; --l-right:#fbbf24; --l-rear:#a78bfa;
-    --body-fill:#1b2634; --wheel:#05090e;
+    --body-fill:#1b2634; --wheel:#05090e; --gap:#f87171;
   }
   *{box-sizing:border-box;}
   body{margin:0; background:var(--paper); color:var(--ink);
@@ -84,11 +84,18 @@
       <li><span class="chip" style="background:var(--l-left)"></span> <span><b>좌</b> (310, +155) · 정좌 <b>110°</b> (+35°~+145°)</span></li>
       <li><span class="chip" style="background:var(--l-right)"></span> <span><b>우</b> (310, −155) · 정우 <b>110°</b> (−145°~−35°)</span></li>
       <li><span class="chip" style="background:var(--l-rear)"></span> <span><b>뒤</b> (−55, 0) · 정후 <b>160°</b> (+100°~+260°)</span></li>
+      <li><span class="chip" style="background:var(--gap)"></span> <span><b>미커버</b> · 근접 코너 4곳 (합 <span id="gap-area" class="mono">—</span> cm²)</span></li>
     </ul>
     <p class="note" style="margin-top:14px">
       각 부채꼴은 라이다 장착점에서 적용 시야각만큼 5 m 경계까지 뻗은 인식 범위(겹칠수록 진함).
-      <span class="ok">적용 시야각 합집합 = 차량 주위 360° 전방위 커버 (사각지대 없음)</span> —
-      앞 180° 의 좌우 경계(±90°)를 좌·우·뒤 시야가 이어받아 메운다. 색이 진한 곳은 2대 이상 중복 관측.
+      <span class="ok">원거리(≈0.9 m 밖) 기준 합집합 = 차량 주위 360° 커버</span> — 앞 180° 의
+      좌우 경계(±90°)를 좌·우·뒤 시야가 이어받아 메운다. 색이 진한 곳은 2대 이상 중복 관측.
+      <b>다만 근접에서는 코너 4곳이 비어 있다</b>(붉은 영역): 차체 측면에서 최대 <b>15 cm</b>
+      바깥까지, base_link 반경 <b>0.88 m</b> 이내. 주행 중에는 로컬맵 누적으로 메워지지만,
+      <b>정지 상태에서 이 영역에 처음 들어온 콘·연석은 관측되지 않는다.</b>
+      시야각 여유(좌·우 −6.7°, 뒤 −3°)를 걷어내고 기하 최대각으로 계산해도 남으므로
+      (640 → 372 cm²) 여유 탓이 아니라 <b>배치 자체의 결과</b>다. 근거·수치는
+      <span class="mono">MEASUREMENTS.md</span> E절.
       단위 m, 좌표 = base_link.
     </p>
   </div>
@@ -139,6 +146,37 @@ wedge(0.76,0,-90,90,"--l-front");
 wedge(0.31,0.155,35,145,"--l-left");
 wedge(0.31,-0.155,-145,-35,"--l-right");
 wedge(-0.055,0,100,260,"--l-rear");
+
+// ---- 미커버 영역 (근접 코너 4곳) ----
+// 위 부채꼴과 **같은 섹터 정의**로 매 렌더마다 계산한다. 그림이 범례·본문 수치와
+// 어긋날 수 없게 하려는 것 — 예전 판은 "사각지대 없음"이라고 적어두고 그림이
+// 그것을 반증하지 못했다 (팀장 지적, 2026-08-05).
+const SEC=[[0.76,0,-90,90],[0.31,0.155,35,145],[0.31,-0.155,-145,-35],[-0.055,0,100,260]];
+// 차체 내부는 관심 밖. EPS 는 격자 좌표의 부동소수 오차가 차체 경계선 위의 셀을
+// "차체 밖"으로 밀어내 면적을 부풀리는 것을 막는다 (없으면 640 → 742 cm² 로 뜬다).
+const EPS=1e-9;
+const inBody=(x,y)=>x>=-0.090-EPS&&x<=0.760+EPS&&Math.abs(y)<=0.31+EPS;
+const wrap=a=>((a%360)+360)%360;
+function seen(x,y){
+  return SEC.some(([lx,ly,a1,a2])=>{
+    const b=Math.atan2(y-ly,x-lx)*180/Math.PI;
+    return wrap(b-a1)<=wrap(a2-a1);
+  });
+}
+const GSTEP=0.01, gapG=E("g",{"clip-path":"url(#box)"},svg);   // 1cm 격자 = 본문 수치와 동일
+let gapCells=0;
+for(let i=0;i<300;i++){
+  const x=-1.5+i*GSTEP;
+  for(let j=0;j<300;j++){
+    const y=-1.5+j*GSTEP;
+    if(inBody(x,y)||seen(x,y)) continue;
+    gapCells++;
+    E("rect",{x:SX(y+GSTEP),y:SY(x+GSTEP),width:GSTEP*s,height:GSTEP*s,
+      fill:"var(--gap)",opacity:.5},gapG);
+  }
+}
+const gapEl=document.getElementById("gap-area");
+if(gapEl) gapEl.textContent=(gapCells*GSTEP*GSTEP*1e4).toFixed(0);
 
 // range reference rings from vehicle center (1..2 m)
 [1,2].forEach(r=>{
