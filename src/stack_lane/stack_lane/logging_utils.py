@@ -26,6 +26,11 @@ FIELDNAMES = [
     # y_m(스무딩 후, 위에 이미 있음)을 대조하면 필터가 실제로 얼마나/언제
     # 작동하는지 사후 확인 가능.
     "raw_y_m",
+    # 3계층(카메라인식/ADAS MGM천이/Vehicle MGM추종) 진단용 (2026-08-10) — 이
+    # 프레임이 왜 none이 됐는지(reject_reason: no_fit/implausible/discontinuous)와
+    # 그 시점의 연속 거부 카운터. 그래프에서 "검출 자체 실패" vs "우리 필터가
+    # 거부"를 색깔로 구분하기 위함.
+    "reject_reason", "reject_streak",
     "n_left_candidates", "n_right_candidates", "width_m",
     "left_hit_ratio", "left_rms_residual_m", "left_c2", "left_c1", "left_c0",
     "right_hit_ratio", "right_rms_residual_m", "right_c2", "right_c1", "right_c0",
@@ -43,7 +48,8 @@ class CsvFrameLogger:
         self._frame_idx = 0
         self._is_placeholder = is_placeholder_homography
 
-    def log(self, *, infer_ms: float, estimate, fit_result, raw_y: float | None = None) -> None:
+    def log(self, *, infer_ms: float, estimate, fit_result, raw_y: float | None = None,
+            reject_streak: int = 0) -> None:
         row = {
             "frame_idx": self._frame_idx,
             "wall_time": round(time.time(), 3),
@@ -61,6 +67,8 @@ class CsvFrameLogger:
             "ref_point0_applied": getattr(estimate, "ref_point0_applied", False),
             "ref_point0_x": round(getattr(estimate, "ref_point0_x", 0.0), 4),
             "raw_y_m": round(raw_y, 4) if raw_y is not None else "",
+            "reject_reason": getattr(estimate, "reject_reason", ""),
+            "reject_streak": reject_streak,
         }
         points = getattr(estimate, "points", None) or []
         if points:
