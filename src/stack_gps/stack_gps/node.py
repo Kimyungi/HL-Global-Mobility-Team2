@@ -322,8 +322,10 @@ class StackGpsNode(Node):
                                if self.fusion.rejected else "")
                             + (f" 재정렬 {self.fusion.reseeds}"
                                if self.fusion.reseeds else ""))
+        sats, hdop = self.link.latest_sat_info()
         self.get_logger().info(
-            f"{qnames.get(quality, quality)}  age {age:.1f}s  RTCM {rtcm:.0f}B/s"
+            f"{qnames.get(quality, quality)}  위성 {sats}개 HDOP {hdop:.1f}"
+            f"  age {age:.1f}s  RTCM {rtcm:.0f}B/s"
             f"  헤딩:{self._heading_src}{imu_stat}{detail}")
 
 
