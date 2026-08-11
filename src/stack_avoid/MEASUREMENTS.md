@@ -1839,3 +1839,42 @@ STATIC 기준 0.69m 로 세웠다 — 그 결과로 보인다.
 **1.6 + rate 3.0 이 1.3 + 무제한보다 모든 지표에서 같거나 낫다.** 표면 뒤 목표는 0 유지.
 → `params.yaml` 기본값을 `offset_max_m: 1.6`, `target_rate_limit_mps: 3.0` 으로 확정.
 두 값은 **반드시 함께** 써야 한다(1.6 단독은 급변으로 추종이 무너진다).
+
+---
+
+# V. 대체 송신 경로 3종 제거 — 코드에서 삭제한 이유 (2026-08-11)
+
+팀장 리뷰(8/10) 비차단 항목 "죽은 실험 경로는 J-1 결론이 났으면 삭제 권장"에 따른 정리.
+`avoid_to_ref` 가 갖고 있던 **송신 경로 4갈래를 1갈래로 줄였다.**
+
+## V-1. 무엇을 지웠나
+
+| 경로 | 파라미터 | 기각 근거 |
+|---|---|---|
+| GPS 규약 복제 | `gps_style`·`gps_lookahead_m`·`gps_spacing_m`·`gps_n_points` | H·I: 목표점까지의 호를 샘플하면 첫 점 y 가 0.005m 로 뭉개져 **회피 의도가 근거리 점에서 사라진다.** 초록점 직송과 결과 동일(str −1.16°) |
+| 초록점 직송 | `send_target_as_is` | G-표: κ 0.169 → str 1.16° → 측방 이동 **0.15m** (회피 불성립) |
+| 당김+역산 | `scale_match`·`clear_before_m`·`front_offset_m`·`steer_lag_s`·`wheelbase_m` | 측방 이동은 나오지만(0.89m) **방향이 변한다** — 반직선 방식이 방향을 보존하면서 같은 크기를 낸다. O 절: `clear_before` 는 이 경로에서만 읽혀 무효 실험 1건을 유발 |
+| **방향보존 당김 (유일 잔존)** | `ref_lookahead_m`·`ray_n_points`·`ray_spacing_m` | M-1·M-3 로 확정. `ray_pull` 스위치는 갈 곳이 없어져 함께 제거 |
+
+같이 사라진 것: `_quintic_kappa`·`_gps_style_points`·`_required_curvature`·
+`_scale_matched_point`·`_apply_gains`, `/vehicle/vector` 구독(역산의 시작 곡률 k0 전용),
+launch 인자 `clear_before`·`ray_pull`. 코드 421 → 285줄.
+
+## V-2. 왜 "안 쓰면 그만"이 아닌가
+
+경로가 여러 개인 것 자체가 안전 결함이었다.
+
+- **I-9**: `gps_style` 분기가 ref 를 채운 뒤 early return 해서 estop 게이트를 통째로
+  건너뛰었다. 경로가 하나면 성립할 수 없는 버그다.
+- **§G·O**: "껐다고 믿는데 실제로는 안 꺼진" 파라미터가 비교 실험 2건을 무효로 만들었다.
+  경로가 없으면 그 파라미터도 없다.
+- 회귀 시험도 바뀌었다. 예전 `test_estop_gate` 는 경로마다 estop 관통을 확인했는데(A~D),
+  이제는 **제거된 스위치가 거부되는지**와 **`self.pub.publish()` 가 소스에 1곳뿐인지**를
+  본다. "경로가 하나뿐"을 강제하는 쪽이 경로마다 게이트를 확인하는 것보다 강한 보증이다.
+
+## V-3. 되살리려면
+
+수치·근거는 이 문서 G~J 절에 그대로 있고 구현은 git 이력에 있다
+(`git log -p -- src/stack_avoid/stack_avoid/avoid_to_ref.py`, 삭제 커밋 이전).
+dSPACE MPC 가 다점 지평을 쓰도록 바뀌면 `ray_n_points` 로 즉시 대응되므로,
+그 경우에도 지운 경로를 되살릴 필요는 없다.

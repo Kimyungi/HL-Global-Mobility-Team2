@@ -25,7 +25,7 @@
   ros2 launch stack_avoid field_session.launch.py mode:=avoid v_ref:=0.4 dynamic:=true \
       offset_max:=1.3
   # 조향 크기를 키우기 (M-2 실행률 부족 대응)
-  ros2 launch stack_avoid field_session.launch.py mode:=avoid v_ref:=0.4 clear_before:=1.2
+  ros2 launch stack_avoid field_session.launch.py mode:=avoid v_ref:=0.4 lateral_margin:=0.25
   # 회차 메모 — 폴더 이름에 붙는다
   ros2 launch stack_avoid field_session.launch.py mode:=avoid v_ref:=0.4 \
       note:="콘 2개 3m 간격"
@@ -59,13 +59,14 @@ from typing import List
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
-                            OpaqueFunction, RegisterEventHandler, Shutdown)
-from launch.event_handlers import OnProcessExit
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
 from launch.conditions import LaunchConfigurationEquals
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode, Node
+from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+
+from stack_avoid.launch_parts import (can_bridge_with_zero_guard, safety_node,
+                                      ydlidar_driver)
 
 # /test/event 는 구간 라벨 — 이게 없으면 한 세션 bag을 나중에 못 자른다.
 BAG_TOPICS = ['/scan', '/scan_front', '/perception/avoid', '/avoid_markers',
@@ -120,126 +121,23 @@ def _slug(text, limit=40):
     return ''.join(out).strip('_')[:limit]
 
 
-ESTOP_HYSTERESIS_M = 0.10       # estop_off 를 자동 파생할 때의 간격
-
-
 def _safety_node(context):
-    """stack_estop(박찬미) 기동 — estop 거리 3중 안전장치.
+    """stack_estop 기동 — 공용 조각(stack_avoid.launch_parts.safety_node).
 
-    ★ 배경 (2026-08-10). `estop_on_distance_m:=0.80` 이상을 주면 stack_estop 이
-      `Require 0 < estop_on_distance_m < estop_off_distance_m` 로 **즉사**한다
-      (off 기본 0.80). 그런데 launch 는 멈추지 않아 라이다·RViz·bag 은 정상 기동하고
-      **안전 노드만 없는 세션**이 된다. avoid_to_ref 의 estop 게이트가 미수신
-      페일세이프로 v_ref=0 을 걸어 차는 안 움직이지만, 증상이 "차가 안 감" 하나뿐이라
-      원인을 찾는 데 세션을 통째로 날린다.
-
-    그래서 세 겹으로 막는다 — 값 노출만으로는 못 막는다(on 만 올리면 그대로 재현):
-      ① off 를 안 주면 on + 0.10 으로 **자동 파생** → on 만 만져도 항상 on < off
-      ② 그래도 모순되면(둘 다 명시) launch 를 **기동 전에** 읽히는 메시지로 중단
-      ③ 그 밖의 이유로 stack_estop 이 죽으면 `on_exit=Shutdown` 으로 **세션 전체 중단**
-         — estop 없이 굴러가는 구성 자체를 허용하지 않는다. ①② 는 이 한 가지 원인만
-         막지만 ③ 은 원인과 무관하게 "안전 노드 없는 주행"을 막는다.
+    estop 거리 3중 안전장치(자동 파생·기동 전 중단·사망 시 세션 중단)는 공용 모듈에
+    있다. avoid_estop_joint 도 같은 것을 쓴다 — 예전에는 이 launch 에만 있어서
+    joint launch 로는 여전히 "안전 노드 없는 세션"이 만들어질 수 있었다.
     """
-    on_s = LaunchConfiguration('estop_on_distance_m').perform(context).strip()
-    off_s = LaunchConfiguration('estop_off_distance_m').perform(context).strip()
-    try:
-        on = float(on_s)
-    except ValueError:
-        return [LogInfo(msg=f'✗ estop_on_distance_m="{on_s}" 은 숫자가 아닙니다.'),
-                Shutdown(reason='estop_on_distance_m 파싱 실패')]
-    if off_s:
-        try:
-            off = float(off_s)
-        except ValueError:
-            return [LogInfo(msg=f'✗ estop_off_distance_m="{off_s}" 은 숫자가 아닙니다.'),
-                    Shutdown(reason='estop_off_distance_m 파싱 실패')]
-        derived = False
-    else:
-        # round: 0.70+0.10 이 0.7999999999999999 로 나와 로그·params 스냅샷에 남는다.
-        off = round(on + ESTOP_HYSTERESIS_M, 4)     # ① 자동 파생
-        derived = True
-
-    if on <= 0.0:                              # ② 기동 전 중단 (양수 아님)
-        return [LogInfo(msg=(
-            f'✗ estop_on_distance_m={on:.2f} — 0 보다 커야 합니다.\n'
-            f'   이 값은 "장애물이 이 거리 안에 들어오면 정지"라는 뜻이라 '
-            f'0 이하면 영원히 정지하지 않습니다.')),
-            Shutdown(reason='estop_on_distance_m 이 0 이하')]
-    if on >= off:                              # ② 기동 전 중단 (히스테리시스 역전)
-        return [LogInfo(msg=(
-            f'✗ estop 거리 설정이 모순입니다: on={on:.2f} off={off:.2f}\n'
-            f'   estop_on < estop_off 여야 합니다 (on 에서 정지, off 에서 해제 — '
-            f'해제 거리가 더 멀어야 채터링이 없습니다).\n'
-            f'   해결: estop_off_distance_m 을 더 크게 주거나(예: '
-            f'estop_off_distance_m:={on + ESTOP_HYSTERESIS_M:.2f}), '
-            f'estop_on_distance_m 을 {off:.2f} 미만으로 낮추세요.\n'
-            f'   estop_off 를 아예 주지 않으면 on+{ESTOP_HYSTERESIS_M:.2f} 로 '
-            f'자동 계산되어 이 오류가 나지 않습니다.')),
-            Shutdown(reason='estop 거리 설정 모순 (on >= off)')]
-
-    note = ' (estop_off 자동 파생)' if derived else ' (estop_off 직접 지정)'
-    return [
-        LogInfo(msg=f'estop 거리: 정지 {on:.2f}m / 해제 {off:.2f}m{note}'),
-        # 박찬미 stack_estop — laser_yaw_in_base_rad=π/2 가 우리 forward_angle_deg=270 과 짝.
-        # 라이다를 재장착하면 두 값을 같이 고칠 것.
-        Node(package='stack_estop', executable='stack_estop_node',
-             name='stack_estop_node', output='screen',
-             parameters=[{
-                 'estop_on_distance_m': float(on),
-                 'estop_off_distance_m': float(off),
-                 'dynamic_enabled': ParameterValue(
-                     LaunchConfiguration('dynamic'), value_type=bool)}],
-             # ③ 안전 노드가 죽으면 세션 전체를 내린다.
-             on_exit=Shutdown(reason='stack_estop 종료 — 안전 노드 없이 주행 불가')),
-    ]
+    return safety_node(context)
 
 
 def _can_actions(mode):
-    """CAN 브리지 + 종료 시 목표값 0 복귀. 실차를 움직이는 mode 에서만.
+    """CAN 브리지 + 종료 시 목표값 0 복귀 — 공용 조각(stack_avoid.launch_parts).
 
-    dSPACE 에 watchdog 이 없다(2026-08-09 실측, J-6) — PC 송신이 끊겨도 마지막 v_ref 를
-    무기한 유지한다. launch 를 끄는 것만으로는 정지 상태가 되지 않는다.
-
-    ★ 순서 문제 (팀장 리뷰 2026-08-10 ⑤). 예전에는 can_zero 를 그냥 나란히 띄워
-      SIGINT 를 받으면 0 을 쓰게 했는데, `ros2 launch` 는 SIGINT 를 **전 프로세스에
-      동시** 전달한다. 파이썬 teardown 이 수백 ms 걸리므로 can_zero 의 0 버스트
-      (30×10ms=0.3s)가 끝난 **뒤에** 브리지가 마지막 큐를 비우며 nonzero v_ref 를
-      한 프레임이라도 더 실으면 dSPACE 가 그것을 latch 한다 — 가드가 막으려던 바로
-      그 상황이다.
-
-    그래서 두 겹으로 둔다:
-      ⓐ `OnProcessExit(브리지)` → 브리지가 **완전히 죽은 뒤** `can_zero --once` 실행.
-         버스에 더 쓸 주체가 없는 시점이라 순서가 보장된다. 브리지가 세션 중간에
-         죽는 경우(크래시)에도 그대로 동작한다 — 오히려 그때가 더 필요하다.
-      ⓑ 기존 가드 프로세스는 폴백으로 남긴다. 이벤트가 안 걸리는 경우(강제 종료 등)를
-         대비한 것이고, 같은 0 을 쓰므로 ⓐ 와 겹쳐도 무해하다.
-
-    ★ `ros2 run` 으로 감싸면 안 된다 — 래퍼가 SIGINT 를 삼켜 가드가 안 돈다(실측).
-      Node 액션은 실행 파일을 직접 띄우므로 신호가 그대로 전달된다.
+    액션 구성과 그 근거(브리지 종료 후 0 송신, 폴백 가드, ros2 run 금지)는 공용
+    모듈에 있다. 여기서는 이 mode 에서만 돌도록 조건만 붙인다.
     """
-    on_mode = LaunchConfigurationEquals('mode', mode)
-    bridge = Node(package='bridge_dspace', executable='can_bridge_node',
-                  name='can_bridge_node', output='screen',
-                  parameters=[{'can_interface': 'can0'}], condition=on_mode)
-    zero_exe = os.path.join(
-        get_package_share_directory('stack_avoid'), '..', '..',
-        'lib', 'stack_avoid', 'can_zero')
-    return [
-        bridge,
-        # ⓐ 브리지 종료 후 — 이 시점엔 버스에 쓸 주체가 없다
-        RegisterEventHandler(
-            OnProcessExit(
-                target_action=bridge,
-                on_exit=[
-                    LogInfo(msg='can_bridge 종료 확인 → dSPACE 목표값 0 송신'),
-                    ExecuteProcess(cmd=[os.path.normpath(zero_exe), '--once'],
-                                   name='can_zero_after_bridge', output='screen'),
-                ]),
-            condition=on_mode),
-        # ⓑ 폴백 가드 (SIGINT 동시 수신 — 순서 보장 없음)
-        Node(package='stack_avoid', executable='can_zero', name='can_zero',
-             output='screen', condition=on_mode),
-    ]
+    return can_bridge_with_zero_guard(condition=LaunchConfigurationEquals('mode', mode))
 
 
 def _logging_actions(context):
@@ -300,16 +198,12 @@ def generate_launch_description():
     pkg = get_package_share_directory('stack_avoid')
     params = os.path.join(pkg, 'config', 'params.yaml')
     rviz_cfg = os.path.join(pkg, 'config', 'avoid_test.rviz')
-    ydlidar_params = os.path.join(
-        get_package_share_directory('ydlidar_ros2_driver'), 'params', 'ydlidar.yaml')
 
     # estop_on/off·dynamic 은 _safety_node 안에서 직접 읽는다(검증·자동 파생 때문).
     v_ref = LaunchConfiguration('v_ref')
     offset_max = LaunchConfiguration('offset_max')
     detect_range = LaunchConfiguration('detect_range')
     lateral_margin = LaunchConfiguration('lateral_margin')
-    clear_before = LaunchConfiguration('clear_before')
-    ray_pull = LaunchConfiguration('ray_pull')
     offsets = LaunchConfiguration('offsets')
     hold_s = LaunchConfiguration('hold_s')
     repeats = LaunchConfiguration('repeats')
@@ -361,18 +255,11 @@ def generate_launch_description():
             'lateral_margin', default_value=_yaml_default(params, 'avoid', 'lateral_margin_m'),
             description='편측 안전 여유 [m] — 장애물을 얼마나 벌리고 지나갈지. '
                         '실측 이격이 부족하면 이 값을 키운다'),
-        # ⚠ ray_pull(기본 true) 경로에서는 **읽히지 않는다** — 2026-08-09 실측 확인.
-        #   clear_before 는 _required_curvature() 안에서만 쓰이고 그 함수는
-        #   _scale_matched_point() 에서만 불린다(= ray_pull:=false 일 때만).
-        #   ray_pull 을 끄지 않고 이 값만 바꾸면 아무 일도 일어나지 않는다.
-        DeclareLaunchArgument(
-            'clear_before', default_value='0.85',
-            description='세로 여유 [m]. ⚠ ray_pull:=false 일 때만 유효 '
-                        '(기본 ray_pull=true 에서는 무시됨)'),
-        DeclareLaunchArgument(
-            'ray_pull', default_value='true',
-            description='true=초록점 방향 보존·거리만 당김(기본). '
-                        'false=당김+역산 경로(clear_before 가 살아난다)'),
+        # ※ `clear_before`·`ray_pull` 인자는 2026-08-11 에 제거했다.
+        #   clear_before 는 역산 경로(_required_curvature)에서만 읽혔고 ray_pull 은 그
+        #   경로로 가는 스위치였는데, 역산·직송·gps_style 이 전부 기각·삭제되면서
+        #   둘 다 "줘도 아무 일이 안 일어나는 인자"가 됐다 (MEASUREMENTS V절).
+        #   O 절에 그 무효 실험 1건이 기록돼 있다 — 같은 사고를 인자 삭제로 원천 차단한다.
 
         # ★ 아래 노드들의 수치 파라미터는 전부 `ParameterValue(..., value_type=...)` 로
         #   감싼다 (팀장 리뷰 2026-08-10 ④). launch 는 인자 문자열의 타입을 추론하므로
@@ -394,9 +281,7 @@ def generate_launch_description():
         # 이기면 스캔이 원점에 90° 틀어져 그려져 마커와 안 맞는다 (2026-08-09 규명).
         # 드라이버 워크스페이스는 stack_parking 과 공유하므로 그쪽을 고치지 않고
         # 여기서 TF publisher 만 뺀다. 실측 TF 의 단일 소스는 params.yaml 이다.
-        LifecycleNode(package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node',
-                      name='ydlidar_ros2_driver_node', namespace='/', output='screen',
-                      emulate_tty=True, parameters=[ydlidar_params]),
+        ydlidar_driver(),
         # params.yaml 이 기본, 뒤의 dict 가 launch 인자로 덮어쓴다(뒤가 우선).
         # 인자를 안 주면 yaml 값이 그대로 들어가므로 거동은 변하지 않는다.
         Node(package='stack_avoid', executable='stack_avoid_node', name='stack_avoid_node',
@@ -434,8 +319,7 @@ def generate_launch_description():
              parameters=[{'target_speed_mps': ParameterValue(v_ref, value_type=float),
                           'straight_when_clear': True,
                           'estop_gate': True, 'estop_stale_s': 0.25,
-                          'clear_before_m': ParameterValue(clear_before, value_type=float),
-                          'ray_pull': ParameterValue(ray_pull, value_type=bool)}],
+                          }],
              condition=LaunchConfigurationEquals('mode', 'avoid')),
 
         # ── CAN 브리지 + 종료 시 목표값 0 복귀 — 실차를 움직이는 모드에서만 ──

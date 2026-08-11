@@ -15,12 +15,16 @@
   4) estop=false 복귀                 → v_ref>0 (재개)
   5) estop 발행 중단 (stale 0.25s)    → v_ref=0 (watchdog)
 
-이어서 **송신 경로별** estop 관통 검사 (PR #27 리뷰 반영 — gps_style 분기의 조기
-return 이 게이트를 우회한 차단 버그의 회귀 방지). 경로마다 estop=false→주행 /
-estop=true→정지 쌍을 확인한다:
-  A) ray_pull (기본)   B) gps_style   C) send_target_as_is   D) 당김+역산
+이어서 **대체 송신 경로가 되살아나지 않는지** 확인한다 (PR #27 리뷰 반영 —
+gps_style 분기의 조기 return 이 게이트를 우회한 차단 버그의 회귀 방지):
+  6) 제거된 스위치(ray_pull/gps_style/send_target_as_is/scale_match) set → 거부되어야 함
+  7) self.pub.publish() 가 소스에 정확히 1곳(_publish) 에만 있어야 함
+
+예전에는 경로가 4개라 경로마다 게이트를 확인했다. 2026-08-11 에 경로를 하나로 줄이면서
+(MEASUREMENTS V절) "경로가 하나뿐"임을 강제하는 쪽으로 바꿨다 — 더 강한 보증이다.
 """
 import time
+from pathlib import Path
 
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import SetParameters
@@ -104,23 +108,30 @@ def main():
     step('4) estop=false 복귀', False, 1.0, True)
     step('5) estop 발행 중단 (stale)', None, 1.5, False)
 
-    # ── 송신 경로별 estop 관통 검사 ──
-    # 각 경로로 전환한 뒤 estop=false→주행 / estop=true→정지 쌍이 성립해야 한다.
-    # (ray_pull=false·send_as_is=false 조합 = 당김+역산 경로)
-    paths = [
-        ('A) ray_pull',  dict(ray_pull=True,  gps_style=False, send_target_as_is=False)),
-        ('B) gps_style', dict(ray_pull=False, gps_style=True,  send_target_as_is=False)),
-        ('C) as_is',     dict(ray_pull=False, gps_style=False, send_target_as_is=True)),
-        ('D) 당김+역산',  dict(ray_pull=False, gps_style=False, send_target_as_is=False)),
-    ]
-    for label, cfg in paths:
-        if not n.set_params(**cfg):
-            results.append((label + ' param', None, True, False))
-            print(f'✗ {label}: 파라미터 설정 실패')
-            continue
-        step(f'{label} estop=false', False, 1.0, True)
-        step(f'{label} estop=true', True, 1.0, False)
-    n.set_params(ray_pull=True, gps_style=False, send_target_as_is=False)   # 기본 복원
+    # ── 제거된 대체 송신 경로가 되살아나지 않는지 ──
+    # 예전에는 경로가 4개(ray_pull/gps_style/직송/역산)라 경로마다 estop 관통을
+    # 확인해야 했다. 2026-08-11 에 경로를 하나로 줄이면서(팀장 리뷰 비차단 ①③,
+    # MEASUREMENTS V절) 그 검사는 아래 두 가지로 대체한다 — 경로가 하나뿐임을
+    # **강제**하는 편이 경로마다 게이트를 확인하는 것보다 강한 보증이다.
+    #
+    #   6) 제거된 스위치를 set 하면 거부되어야 한다. 조용히 무시되면 "껐다고 믿는데
+    #      실제로는 기본 경로가 도는" §G 유형 사고가 된다.
+    for name in ('ray_pull', 'gps_style', 'send_target_as_is', 'scale_match'):
+        ok = not n.set_params(**{name: True})     # 거부(=False) 되어야 정상
+        results.append((f'6) 제거된 파라미터 거부: {name}', None, True, ok))
+        print(f"{'✓' if ok else '✗'} {'6) 거부: ' + name:34s} "
+              f"{'거부됨' if ok else '★수용됨 — 경로가 되살아났다'}")
+
+    #   7) 송신 출구가 하나인지 소스로 확인한다. tick() 이 직접 publish 하면 게이트를
+    #      우회하게 된다 — I-9 차단 버그가 정확히 그 형태였다.
+    src = Path(__file__).resolve().parents[1] / 'stack_avoid' / 'avoid_to_ref.py'
+    body = src.read_text(encoding='utf-8')
+    # 문장 시작이 호출인 줄만 센다 — docstring 의 "직접 부르지 말 것" 언급은 제외.
+    calls = [ln for ln in body.splitlines() if ln.strip().startswith('self.pub.publish(')]
+    ok = len(calls) == 1
+    results.append(('7) publish 출구 단일', None, True, ok))
+    print(f"{'✓' if ok else '✗'} {'7) publish 출구 단일':34s} "
+          f"self.pub.publish() {len(calls)}곳 (기대: 1)")
 
     n.destroy_node()
     rclpy.shutdown()
