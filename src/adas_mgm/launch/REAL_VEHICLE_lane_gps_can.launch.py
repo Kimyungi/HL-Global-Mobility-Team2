@@ -12,22 +12,44 @@
   (estop/mgm/bridge 중복). 이 파일 하나만 띄운다.
 - 실제 CAN TX가 나가므로 동일한 확인 토큰을 요구한다.
 
+로깅 — run마다 ~/FMA_ws/drive_logs/run_<시각>/ 에 모아 저장:
+  rosbag/            MGM 입출력 전 토픽 + /scan + /rosout (record:=false로만 끔)
+  mgm_snapshots.bin  매 10ms CoreSnapshot 덤프 — core_replay로 판단 재현 (§5.5, 항상)
+  mgm_jitter.csv     10ms 루프 주기 실측 (§7 판정 근거, 항상)
+  lateral.csv        GPS 횡오차 (DRIVE_GUIDE와 동일 포맷, 항상)
+
 사용:
   ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
       REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv
 """
 import os
+from datetime import datetime
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
 CONFIRM_TOKEN = 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX'
+
+# run 단위 로그 디렉터리 — launch 파일은 실행마다 새로 파싱되므로 매 run 고유
+LOG_DIR = os.path.expanduser(
+    '~/FMA_ws/drive_logs/run_' + datetime.now().strftime('%m%d_%H%M%S'))
+
+# 버그 판단에 필요한 전 토픽 — MGM 입력(인지 6종)·출력·dSPACE 회신·라이다 원본·
+# 노드 로그(/rosout — watchdog "estop 강제" 경고 등이 여기 남는다)·TF.
+# 미발행 토픽(avoid/parking/traffic 미탑재 시)은 그냥 비어 있게 기록된다.
+RECORD_TOPICS = [
+    '/perception/lane_path', '/perception/gps_path', '/perception/gps_fix',
+    '/perception/estop', '/perception/avoid', '/perception/parking',
+    '/perception/traffic_stop', '/adas/target_ref', '/vehicle/vector',
+    '/scan', '/rosout', '/tf', '/tf_static',
+]
 
 # 실측 호모그래피 (2026-08-11 캘리브레이션, LOO RMS 0.041m) — 소스 트리 절대경로로
 # 지정해야 한다: 노드 기본 경로는 설치본 내부로 해석돼 파일을 못 찾는다
@@ -52,6 +74,8 @@ def validate(context):
         raise RuntimeError(
             f'호모그래피 파일 없음: {homography} — placeholder 실주행 금지 '
             '(stack_lane CALIBRATION_GUIDE.md)')
+    os.makedirs(LOG_DIR, exist_ok=True)
+    print(f'[record] 로그 디렉터리: {LOG_DIR}')
     return []
 
 
@@ -67,7 +91,11 @@ def generate_launch_description():
         DeclareLaunchArgument('waypoint_csv', default_value='',
                               description='코스 웨이포인트 CSV (필수)'),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
-        DeclareLaunchArgument('gps_error_log_csv', default_value=''),
+
+        # ── 로깅 (record:=false 는 rosbag만 끔 — CSV·스냅샷 덤프는 가벼워서 항상)
+        DeclareLaunchArgument('record', default_value='true'),
+        DeclareLaunchArgument('gps_error_log_csv',
+                              default_value=os.path.join(LOG_DIR, 'lateral.csv')),
 
         # ── stack_lane
         DeclareLaunchArgument('homography_path', default_value=DEFAULT_HOMOGRAPHY),
@@ -170,7 +198,19 @@ def generate_launch_description():
             package='adas_mgm',
             executable='mgm_node',
             name='mgm_node',
-            parameters=[mgm_params],   # 기존 REAL_VEHICLE launch의 params 누락 수정
+            parameters=[mgm_params, {   # 기존 REAL_VEHICLE launch의 params 누락 수정
+                # run별 진단 산출물 — back-to-back 재현(§5.5)과 지터 판정(§7)
+                'snapshot_dump_path': os.path.join(LOG_DIR, 'mgm_snapshots.bin'),
+                'jitter_csv_path': os.path.join(LOG_DIR, 'mgm_jitter.csv'),
+            }],
+            output='screen',
+        ),
+
+        # ── rosbag — 버그 사후 분석·재생용. 토픽 명시 목록(RECORD_TOPICS)만 기록
+        ExecuteProcess(
+            condition=IfCondition(LaunchConfiguration('record')),
+            cmd=['ros2', 'bag', 'record', '-o', os.path.join(LOG_DIR, 'rosbag')]
+                + RECORD_TOPICS,
             output='screen',
         ),
 
