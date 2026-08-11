@@ -1,6 +1,9 @@
 # stack_parking — 측정 기록 (라이다 4대 로컬리제이션)
 
-> 실측값의 단일 소스는 `config/`. 이 문서는 **측정 방법과 결과**를 남긴다.
+> 실측값의 단일 소스는 [`config/lidar_mounts.yaml`](config/lidar_mounts.yaml) — 라이다 4대
+> 장착 좌표와 적용 시야각. **차량 제원**(폭·전장·축거)의 원본은 그쪽이 아니라
+> [`../stack_avoid/config/params.yaml`](../stack_avoid/config/params.yaml) 이다.
+> 이 문서는 **측정 방법과 결과**를 남긴다.
 > 측정 도구: `tools/lidar_fov.py`, 시험 구성: `launch/dual_lidar_test.launch.py`
 
 ## A. 하드웨어
