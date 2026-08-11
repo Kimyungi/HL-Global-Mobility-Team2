@@ -210,6 +210,9 @@ def generate_launch_description():
                 # run별 진단 산출물 — back-to-back 재현(§5.5)과 지터 판정(§7)
                 'snapshot_dump_path': os.path.join(LOG_DIR, 'mgm_snapshots.bin'),
                 'jitter_csv_path': os.path.join(LOG_DIR, 'mgm_jitter.csv'),
+                # 출발 인가 게이트 — launch 직후 정지 대기, `ros2 run adas_mgm go`
+                # (RTK FIXED 등 점검 통과 시)로 출발 (2026-08-11)
+                'wait_go': True,
             }],
             output='screen',
         ),
