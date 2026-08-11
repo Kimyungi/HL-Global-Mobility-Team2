@@ -29,24 +29,23 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode, Node
+from launch_ros.actions import Node
+
+from stack_avoid.launch_parts import (can_bridge_with_zero_guard, safety_node,
+                                      ydlidar_driver)
 
 
 def generate_launch_description():
     pkg = get_package_share_directory('stack_avoid')
     params = os.path.join(pkg, 'config', 'params.yaml')
     rviz_cfg = os.path.join(pkg, 'config', 'avoid_test.rviz')
-    ydlidar_params = os.path.join(
-        get_package_share_directory('ydlidar_ros2_driver'), 'params', 'ydlidar.yaml')
 
     drive = LaunchConfiguration('drive')
     v_ref = LaunchConfiguration('v_ref')
     bag_dir = LaunchConfiguration('bag_dir')
-    dynamic = LaunchConfiguration('dynamic')
-    estop_on = LaunchConfiguration('estop_on_distance_m')
 
     bag_topics = ['/scan', '/scan_front', '/perception/avoid', '/avoid_markers',
                   '/perception/estop', '/perception/estop/status',
@@ -65,22 +64,24 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'estop_on_distance_m', default_value='0.70',
             description='estop 정지 거리 [m] — 바꾸면 stack_avoid 측방여유 부등식 재확인 필요'),
+        DeclareLaunchArgument(
+            'estop_off_distance_m', default_value='',
+            description='estop 해제 거리 [m]. 비우면 on+0.10 자동 파생 (권장)'),
 
         # LiDAR → /scan  (두 스택이 같은 스캔을 구독)
         # 드라이버 노드만 — launch 를 include 하면 placeholder static TF 가 딸려와
         # stack_avoid_node 의 실측 TF 와 충돌한다. 사유는 field_session.launch.py 참조.
-        LifecycleNode(package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node',
-                      name='ydlidar_ros2_driver_node', namespace='/', output='screen',
-                      emulate_tty=True, parameters=[ydlidar_params]),
+        ydlidar_driver(),
 
         # 회피 인지 (방향 raw 270° 고정)
         Node(package='stack_avoid', executable='stack_avoid_node', name='stack_avoid_node',
              output='screen', parameters=[params]),
-        # 긴급 정지 (박찬미) — laser_yaw_in_base_rad=π/2 가 위 forward_angle_deg=270 과 짝.
-        # 한쪽 라이다를 재장착하면 두 값을 같이 고쳐야 한다.
-        Node(package='stack_estop', executable='stack_estop_node', name='stack_estop_node',
-             output='screen',
-             parameters=[{'estop_on_distance_m': estop_on, 'dynamic_enabled': dynamic}]),
+        # 긴급 정지 (박찬미) — 공용 조각. estop 거리 3중 안전장치(자동 파생·기동 전
+        # 중단·사망 시 세션 중단)가 함께 걸린다. 예전에는 이 launch 가 estop_on 만 그대로
+        # 넘겨, `estop_on_distance_m:=0.80` 이상이면 stack_estop 이 즉사하고 **안전 노드
+        # 없는 세션**이 조용히 만들어졌다 (팀장 리뷰 2026-08-10 비차단, field_session 에만
+        # 적용돼 있던 수정).
+        OpaqueFunction(function=safety_node),
 
         Node(package='stack_avoid', executable='avoid_viz', name='avoid_viz', output='screen',
              parameters=[{'lidar_x_m': 0.76, 'vehicle_width_m': 0.62, 'lateral_margin_m': 0.15,
@@ -96,17 +97,11 @@ def generate_launch_description():
              parameters=[{'target_speed_mps': v_ref, 'straight_when_clear': True,
                           'estop_gate': True, 'estop_stale_s': 0.25}],
              condition=IfCondition(drive)),
-        Node(package='bridge_dspace', executable='can_bridge_node', name='can_bridge_node',
-             output='screen', parameters=[{'can_interface': 'can0'}],
-             condition=IfCondition(drive)),
-
-        # ── 종료 시 dSPACE 목표값 0 복귀 (안전 가드) ──
-        # dSPACE 에 watchdog 이 없다(2026-08-09 실측) — PC 송신이 끊겨도 마지막 v_ref 를
-        # 무기한 유지한다. launch 를 끄는 것만으로는 정지 상태가 되지 않으므로, 이 가드가
-        # SIGINT 를 받아 SocketCAN 에 직접 0 을 쓴다(브리지가 이미 죽어도 동작).
-        # ★ `ros2 run` 으로 감싸면 래퍼가 SIGINT 를 삼켜 안 돈다 — Node 액션이어야 한다.
-        Node(package='stack_avoid', executable='can_zero', name='can_zero', output='screen',
-             condition=IfCondition(drive)),
+        # ── CAN 브리지 + 종료 시 dSPACE 목표값 0 복귀 (안전 가드) ──
+        # 공용 조각. 예전에는 이 launch 가 상주 가드만 갖고 있어, 브리지 종료 순서를
+        # 보장하는 수정(팀장 리뷰 ⑤)이 field_session 에만 들어가 있었다 — 복붙의 전형적
+        # 피해다. 이제 세 launch 가 같은 구현을 쓴다.
+        *can_bridge_with_zero_guard(condition=IfCondition(drive)),
 
         ExecuteProcess(cmd=['ros2', 'bag', 'record', '-o', bag_dir] + bag_topics, output='screen'),
     ])
