@@ -30,6 +30,8 @@ x,y의 절대 거리 정확도는 보장되지 않으니 실측 캘리브레이�
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import rclpy
 import torch
@@ -67,7 +69,19 @@ class StackLaneNode(Node):
         # 프레임 간 연속성 체크 (2026-08-08, 편측 오검출 진단 — lane_path.py
         # estimate_lane_path()의 prev_y/max_y_jump_m 참조).
         self.declare_parameter('max_y_jump_m', 1.0)
-        self.declare_parameter('y_jump_reset_after', 15)  # 연속 이만큼 거부되면 리셋(고착 방지)
+        # HELD->SEARCH->LOST 점진적 신뢰도 감쇠 (2026-08-10, YOLOPv2_PC_LANE_CORRIDOR
+        # 참조 프로젝트의 LaneTrajectoryTracker 상태머신 이식) — 기존 "y_jump_reset_after
+        # 프레임 뒤 무조건 통과" 방식은 리셋 순간 검사 없이 큰 튐을 그대로 받아들이는
+        # 부작용이 실측으로 확인됨(steering_smooth_204404.csv t=6.37s, 3.1m 튐).
+        # 대신: 거부 시작 -> HELD(직전 값 유지, confidence만 매 프레임 hold_confidence_decay
+        # 배 감쇠) -> hold_frames 초과 시 SEARCH(같은 값 유지하되 confidence 바닥,
+        # 동시에 연속성 체크 허용폭을 서서히 넓힘) -> search_frames 초과 시 LOST(완전
+        # 리셋, 검사 없이 다음 값 수용) — 급격한 단일 리셋 지점이 없어짐.
+        self.declare_parameter('hold_frames', 12)            # ~0.6s @20Hz
+        self.declare_parameter('hold_confidence_decay', 0.65)
+        self.declare_parameter('search_frames', 30)           # ~1.5s @20Hz, 이후 LOST
+        self.declare_parameter('search_min_confidence', 0.05)
+        self.declare_parameter('search_max_jump_widen', 3.0)  # SEARCH 끝 시점 max_y_jump_m 배율
         # 다항식 계수 EMA 저역통과 필터 (2026-08-08, 오실레이션 완화 — lane_path.py
         # estimate_lane_path()의 prev_coeffs/coeff_smoothing_alpha 참조).
         # 1.0 = 비활성(기존 동작). 작을수록 부드럽지만 반응이 느려짐 — 실측 튜닝 필요.
@@ -89,11 +103,18 @@ class StackLaneNode(Node):
         self.ref_point0_extrap_mode = str(self.get_parameter('ref_point0_extrap_mode').value)
         self.ref_point0_min_confidence = float(self.get_parameter('ref_point0_min_confidence').value)
         self.max_y_jump_m = float(self.get_parameter('max_y_jump_m').value)
-        self.y_jump_reset_after = int(self.get_parameter('y_jump_reset_after').value)
+        self.hold_frames = int(self.get_parameter('hold_frames').value)
+        self.hold_confidence_decay = float(self.get_parameter('hold_confidence_decay').value)
+        self.search_frames = int(self.get_parameter('search_frames').value)
+        self.search_min_confidence = float(self.get_parameter('search_min_confidence').value)
+        self.search_max_jump_widen = float(self.get_parameter('search_max_jump_widen').value)
         self.coeff_smoothing_alpha = float(self.get_parameter('coeff_smoothing_alpha').value)
         self._prev_y = None  # 연속성 체크용 — 마지막으로 채택(mode!=none)됐던 raw y
         self._prev_coeffs = None  # 스무딩용 — 직전 프레임의 smoothed 계수
-        self._reject_streak = 0
+        # 추적 상태머신: 'valid'(방금 새로 검출) | 'held' | 'search' | 'lost'
+        self._track_status = 'lost'
+        self._age_frames = 0        # 현재 상태(held/search)에서 경과 프레임 수
+        self._held_estimate = None  # HELD/SEARCH 중 그대로 재발행할 마지막 정상 LaneEstimate
         self.warmup_frames = int(self.get_parameter('warmup_frames').value)
         self._frames_seen = 0
 
@@ -175,35 +196,65 @@ class StackLaneNode(Node):
         t0 = self.get_clock().now()
         _da_mask, ll_mask = infer(self.model, tensor)
         infer_ms = (self.get_clock().now() - t0).nanoseconds / 1e6
-        # 연속 거부가 너무 오래 지속되면(오검출이 아니라 실제로 차가 이동해서
-        # 직전 기준이 낡은 것일 수 있음) 리셋 — 영구 고착 방지. 스무딩 기준도 같이 리셋
-        # (낡은 계수에 새 값을 섞으면 안 되므로).
-        reset = self._reject_streak >= self.y_jump_reset_after
-        prev_y = None if reset else self._prev_y
-        prev_coeffs = None if reset else self._prev_coeffs
+        # SEARCH 중엔 연속성 체크 허용폭을 서서히 넓힘 — 급격한 단일 리셋 지점 없이
+        # 재검출이 자연스럽게 받아들여지게 함(§7 docstring 참조).
+        if self._track_status == 'search':
+            age_in_search = max(0, self._age_frames - self.hold_frames)
+            widen = 1.0 + min(1.0, age_in_search / max(1, self.search_frames)) * (self.search_max_jump_widen - 1.0)
+            effective_max_jump = self.max_y_jump_m * widen
+        else:
+            effective_max_jump = self.max_y_jump_m
+
+        prev_y = self._prev_y if self._track_status != 'lost' else None
+        prev_coeffs = self._prev_coeffs if self._track_status != 'lost' else None
         estimate, debug = estimate_lane_path(
             ll_mask.astype(np.uint8), self.H, self.grid, lookahead_m=self.lookahead_m,
             n_points=self.n_points, points_x_start=self.points_x_start, points_x_end=self.points_x_end,
             ref_point0_lookahead_m=self.ref_point0_lookahead_m,
             ref_point0_extrap_mode=self.ref_point0_extrap_mode,
             ref_point0_min_confidence=self.ref_point0_min_confidence,
-            prev_y=prev_y, max_y_jump_m=self.max_y_jump_m,
+            prev_y=prev_y, max_y_jump_m=effective_max_jump,
             prev_coeffs=prev_coeffs, coeff_smoothing_alpha=self.coeff_smoothing_alpha)
 
-        if estimate.mode == 'none':
-            self._reject_streak += 1
-        else:
-            self._reject_streak = 0
+        if estimate.mode != 'none':
+            # 정상 검출 -> VALID. 다음 HELD/SEARCH에 쓸 수 있게 이 값을 저장해둠.
+            self._track_status = 'valid'
+            self._age_frames = 0
             self._prev_y = debug.get('raw_y', estimate.y)  # 연속성 체크는 항상 raw 기준
             self._prev_coeffs = debug.get('smoothed_coeffs')
+            self._held_estimate = estimate
+            final_estimate = estimate
+        else:
+            self._age_frames += 1
+            if self._track_status == 'valid':
+                self._track_status = 'held' if self._held_estimate is not None else 'lost'
+            if self._track_status == 'held' and self._age_frames > self.hold_frames:
+                self._track_status = 'search'
+            if self._track_status == 'search' and self._age_frames > self.hold_frames + self.search_frames:
+                self._track_status = 'lost'
+
+            if self._track_status == 'held' and self._held_estimate is not None:
+                decay = self.hold_confidence_decay ** self._age_frames
+                final_estimate = replace(self._held_estimate,
+                                          confidence=self._held_estimate.confidence * decay,
+                                          reject_reason='held')
+            elif self._track_status == 'search' and self._held_estimate is not None:
+                final_estimate = replace(self._held_estimate,
+                                          confidence=self.search_min_confidence,
+                                          reject_reason='search')
+            else:  # lost — 완전 리셋, 다음 프레임은 검사 없이 수용
+                self._prev_y = None
+                self._prev_coeffs = None
+                self._held_estimate = None
+                final_estimate = estimate
 
         if self.logger_csv is not None:
-            self.logger_csv.log(infer_ms=infer_ms, estimate=estimate, fit_result=debug['fit'],
-                                 raw_y=debug.get('raw_y'))
+            self.logger_csv.log(infer_ms=infer_ms, estimate=final_estimate, fit_result=debug['fit'],
+                                 raw_y=debug.get('raw_y'), reject_streak=self._age_frames)
 
         if self.debug_pub is not None:
             frame_vis = build_debug_frame(
-                canvas, ll_mask, estimate, debug, self.grid, self.lookahead_m,
+                canvas, ll_mask, final_estimate, debug, self.grid, self.lookahead_m,
                 self.H_inv, infer_ms, self.is_placeholder)
             img_msg = self.bridge.cv2_to_imgmsg(frame_vis, encoding='bgr8')
             img_msg.header.stamp = self.get_clock().now().to_msg()
@@ -212,9 +263,9 @@ class StackLaneNode(Node):
         msg = LanePath()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
-        msg.confidence = float(estimate.confidence)
+        msg.confidence = float(final_estimate.confidence)
         points = []
-        for p in estimate.points:
+        for p in final_estimate.points:
             rp = RefPoint()
             rp.x = float(p.x)
             rp.y = float(p.y)
