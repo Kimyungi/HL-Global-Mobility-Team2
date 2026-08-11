@@ -70,7 +70,7 @@ class OakRgbdCamera:
             depth_enabled=depth_enabled,
         )
         try:
-            self.device = open_oak_device(
+            self.device = _open_oak_device_normalized(
                 self.pipeline,
                 self.requested_mxid,
             )
@@ -154,11 +154,16 @@ class OakRgbdCamera:
 
 
 def open_oak_device(pipeline, mxid: str = ""):
-    """OAK 장치를 결정적으로 열고 일시적인 재열거 상태만 재시도한다."""
+    """MxID를 한 번 정규화한 뒤 OAK 장치를 결정적으로 연다."""
     if dai is None:
         raise RuntimeError("depthai가 설치되어 있지 않습니다.")
 
     requested_mxid = normalize_oak_mxid(mxid)
+    return _open_oak_device_normalized(pipeline, requested_mxid)
+
+
+def _open_oak_device_normalized(pipeline, requested_mxid: str):
+    """이미 정규화된 MxID로 OAK를 열고 일시 오류만 재시도한다."""
     last_error: Optional[Exception] = None
 
     for attempt in range(1, OAK_OPEN_MAX_ATTEMPTS + 1):

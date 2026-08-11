@@ -53,7 +53,7 @@ from stack_traffic.logic import (
     should_record_color_vote,
     update_stop_latch,
 )
-from stack_traffic.oak_camera import OakRgbdCamera, normalize_oak_mxid
+from stack_traffic.oak_camera import OakRgbdCamera
 from stack_traffic.stopline_detector import (
     StopLineDetection,
     detect_stop_line,
@@ -730,9 +730,7 @@ class StackTrafficNode(Node):
         self.oak_width = int(self.get_parameter("oak_width").value)
         self.oak_height = int(self.get_parameter("oak_height").value)
         self.oak_fps = float(self.get_parameter("oak_fps").value)
-        self.oak_mxid = normalize_oak_mxid(
-            self.get_parameter("oak_mxid").value
-        )
+        self.oak_mxid = str(self.get_parameter("oak_mxid").value)
         self.oak_depth_enabled = bool(
             self.get_parameter("oak_depth_enabled").value
         )

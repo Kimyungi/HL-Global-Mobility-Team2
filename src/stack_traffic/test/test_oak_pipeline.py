@@ -142,6 +142,49 @@ class TestOakCameraRead(unittest.TestCase):
 
 
 class TestOakDeviceSelection(unittest.TestCase):
+    def test_camera_normalizes_mxid_once_before_opening_device(self):
+        pipeline = object()
+        expected_device = Mock()
+        expected_device.getMxId.return_value = "traffic-oak"
+        expected_device.getUsbSpeed.return_value = "UsbSpeed.SUPER"
+
+        with (
+            patch("stack_traffic.oak_camera.dai", Mock()),
+            patch(
+                "stack_traffic.oak_camera.build_oak_pipeline",
+                return_value=pipeline,
+            ),
+            patch(
+                "stack_traffic.oak_camera.normalize_oak_mxid",
+                return_value="traffic-oak",
+            ) as normalize,
+            patch(
+                "stack_traffic.oak_camera._open_oak_device_normalized",
+                return_value=expected_device,
+            ) as open_device,
+        ):
+            camera = OakRgbdCamera(
+                width=1280,
+                height=720,
+                fps=20.0,
+                depth_enabled=False,
+                depth_confidence_threshold=245,
+                depth_left_right_check=True,
+                depth_subpixel=True,
+                depth_median_filter_size=7,
+                depth_decimation_factor=1,
+                depth_speckle_filter=True,
+                depth_spatial_filter=True,
+                depth_temporal_filter=True,
+                minimum_depth_m=0.3,
+                maximum_depth_m=20.0,
+                mxid="  traffic-oak\n",
+            )
+
+        normalize.assert_called_once_with("  traffic-oak\n")
+        open_device.assert_called_once_with(pipeline, "traffic-oak")
+        self.assertEqual(camera.requested_mxid, "traffic-oak")
+
     def test_explicit_mxid_is_passed_to_depthai(self):
         pipeline = object()
         device_info = object()
@@ -151,7 +194,10 @@ class TestOakDeviceSelection(unittest.TestCase):
         fake_dai.Device.return_value = expected_device
 
         with patch("stack_traffic.oak_camera.dai", fake_dai):
-            device = open_oak_device(pipeline, "14442C108144F1D000")
+            device = open_oak_device(
+                pipeline,
+                "  14442C108144F1D000\n",
+            )
 
         self.assertIs(device, expected_device)
         fake_dai.DeviceInfo.assert_called_once_with(
