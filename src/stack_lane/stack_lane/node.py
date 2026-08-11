@@ -87,6 +87,10 @@ class StackLaneNode(Node):
         # 1.0 = 비활성(기존 동작). 작을수록 부드럽지만 반응이 느려짐 — 실측 튜닝 필요.
         self.declare_parameter('coeff_smoothing_alpha', 1.0)
         self.declare_parameter('homography_path', str(DEFAULT_HOMOGRAPHY_PATH))
+        # OAK-D MxID 핀닝 (CLAUDE.md §6 — 2대 운용 시 어느 노드가 어느 카메라를
+        # 잡을지 비결정적이므로 필수). 기본값 = 차선용 OAK-D Pro 실측 MxID
+        # (2026-08-11 확정, 팀장). 빈 문자열이면 첫 가용 장치 사용(단독 시험용).
+        self.declare_parameter('camera_mxid', '14442C105157D3D200')
         self.declare_parameter('camera_fps', 30)
         self.declare_parameter('warmup_frames', 30)
         self.declare_parameter('poll_period_sec', 0.02)
@@ -179,7 +183,15 @@ class StackLaneNode(Node):
         xout.setStreamName('rgb')
         cam.preview.link(xout.input)
 
-        self._dai_device = dai.Device(pipeline)
+        mxid = str(self.get_parameter('camera_mxid').value).strip()
+        if mxid:
+            self._dai_device = dai.Device(pipeline, dai.DeviceInfo(mxid))
+            self.get_logger().info(f'OAK-D MxID 핀닝: {mxid}')
+        else:
+            self.get_logger().warn(
+                'camera_mxid 미지정 — 첫 가용 OAK-D 사용. 카메라 2대 연결 상태에선 '
+                '부팅 순서에 따라 신호등용 카메라를 잡을 수 있음 (CLAUDE.md §6)')
+            self._dai_device = dai.Device(pipeline)
         self._queue = self._dai_device.getOutputQueue('rgb', maxSize=4, blocking=False)
 
     def tick(self) -> None:
