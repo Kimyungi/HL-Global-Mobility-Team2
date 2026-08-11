@@ -303,6 +303,9 @@ private:
     // counter watchdog의 PC측 대응물). stack_estop 미수신/사망 시 스냅샷의
     // estop을 true로 보정하고, 정지 판단(v_ref=0) 자체는 코어가 한다.
     const bool estop_stale = estop_rx_ns < 0 || monotonicNs() - estop_rx_ns > estop_stale_ns_;
+    // 보정 전 "실제 수신값" 보존 — at_end 래치 해제는 이 값으로만 한다 (CLAUDE.md
+    // §4 래치). stale이면 마지막 값을 조작 의사로 신뢰할 수 없으므로 false.
+    const bool estop_real = !estop_stale && m.estop.estop;
     if (estop_stale) {
       m.estop.estop = true;
     }
@@ -320,11 +323,18 @@ private:
     // gps_path 신선도 watchdog — lane과 대칭. waypoint 스테이트가 gps_path 없이도
     // v_base로 계속 주행하던 문제 방지 (실제로 lane→waypoint 자동 전이 후 이
     // 경로로 재현됨, 2026-08-07).
+    // fix 상실도 동일 취급 (2026-08-11 통합 점검에서 발견): stack_gps는 fix가
+    // 없거나 stale이면 fix_quality=0인 빈 GpsPath를 계속 발행한다 — 수신 시각만
+    // 보면 watchdog을 통과해, 조립 블록이 직전 ref를 hold한 채 v_base로 계속
+    // 주행 명령을 내던 구멍. "신선하지만 무효인 입력"을 stale과 같은 경로로
+    // 태운다 — 새 판단이 아니라 입력 컨디셔닝(§5.7 ②의 확장).
     const bool gps_stale = gps_rx_ns < 0 || monotonicNs() - gps_rx_ns > gps_stale_ns_;
-    if (core_state_.state == MGM_STATE_WAYPOINT && gps_stale && !estop_stale) {
+    const bool gps_no_fix = m.gps.fix_quality == 0 || m.gps.points.empty();
+    if (core_state_.state == MGM_STATE_WAYPOINT && (gps_stale || gps_no_fix) && !estop_stale) {
       m.estop.estop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-        "gps_path 신선도 초과(state=waypoint) — estop 강제 (stack_gps 확인 필요)");
+        gps_stale ? "gps_path 신선도 초과(state=waypoint) — estop 강제 (stack_gps 확인 필요)"
+                  : "gps fix 상실(state=waypoint, fix_quality=0/빈 경로) — estop 강제 (RTK 확인 필요)");
     }
     // traffic_stop 신선도 watchdog (§5.7 ③) — lane/gps와 달리 **수신 이력이 있은
     // 뒤 끊긴 경우만** 보정한다(사망 감지). 미수신은 보정하지 않음: traffic은
@@ -340,7 +350,8 @@ private:
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "traffic_stop 신선도 초과 — 정지 요구 강제 (stack_traffic 확인 필요)");
     }
-    const CoreSnapshot s = toSnapshot(m);
+    CoreSnapshot s = toSnapshot(m);
+    s.estop_latch_release = estop_real;  // toSnapshot은 LatestMsgs만 알므로 여기서 주입
 
     if (dump_.is_open()) {
       dump_.write(reinterpret_cast<const char *>(&s), sizeof(s));

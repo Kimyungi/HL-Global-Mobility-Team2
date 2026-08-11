@@ -54,9 +54,11 @@ void transition(const CoreSnapshot & s, CoreState & st)
   st.wrongway_cnt = wrongway ? st.wrongway_cnt + 1 : 0;
 
   // 종점 래치 (§4) — 정지 후 미세하게 밀려 최근접점이 뒤로 바뀌면 at_end가
-  // 풀려 재출발·유턴하던 것 방지 (2026-08-03 직선 run 실사례). estop 인가
-  // (= run 종료/새 run 준비)로만 해제.
-  if (s.estop) {
+  // 풀려 재출발·유턴하던 것 방지 (2026-08-03 직선 run 실사례). 해제는 **실제
+  // EstopRequest 인가**(= run 종료/새 run 준비)로만 — s.estop은 wrapper의
+  // staleness 보정이 섞여 있어, gps 단절→복구 같은 일시 장애로 래치가 풀려
+  // 재출발하는 구멍이 있었다 (2026-08-11, CLAUDE.md §4 래치).
+  if (s.estop_latch_release) {
     st.at_end_latched = false;
   } else if (st.state == MGM_STATE_WAYPOINT && s.gps_at_end) {
     st.at_end_latched = true;

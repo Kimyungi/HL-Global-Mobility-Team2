@@ -68,7 +68,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 
 **스테이트별 우선권 (매 10ms, 스테이트 내부에서 결정 — 전역 min/max 규칙 금지):**
 
-- **lane · waypoint** — 종방향: 긴급 정지 > 신호등 정지 > 트랙 종점 정지(waypoint만, `GpsPath.at_end` — 종점 통과 시 ref가 차량 뒤로 가 유턴하는 구조를 방지, 2026-08-03 직선 run에서 정지 작동 실증. **래치**: 정지 후 밀림·수동 이동으로 at_end가 풀려 재출발하지 않도록 방어적 유지, estop 인가 시에만 해제) > 역방향 정지(waypoint만 — |ref[0].yaw| > 120°가 0.5s 지속 = 차가 경로를 등짐. 유턴 후 트랙을 거꾸로 재추종하는 것 차단, 2026-08-03 2회 재현) > 가속구간 > 기본 속도 / 횡방향: 차선 경로 / GPS 경로
+- **lane · waypoint** — 종방향: 긴급 정지 > 신호등 정지 > 트랙 종점 정지(waypoint만, `GpsPath.at_end` — 종점 통과 시 ref가 차량 뒤로 가 유턴하는 구조를 방지, 2026-08-03 직선 run에서 정지 작동 실증. **래치**: 정지 후 밀림·수동 이동으로 at_end가 풀려 재출발하지 않도록 방어적 유지, **실제 EstopRequest의 estop 인가 시에만** 해제 — §5.7 watchdog이 staleness 보정으로 강제한 estop으로는 해제되지 않음(스냅샷에 `estop_latch_release` 별도 필드, 2026-08-11: gps_path 0.5s 단절→복구 시 래치가 풀려 재출발 가능하던 구멍 차단)) > 역방향 정지(waypoint만 — |ref[0].yaw| > 120°가 0.5s 지속 = 차가 경로를 등짐. 유턴 후 트랙을 거꾸로 재추종하는 것 차단, 2026-08-03 2회 재현) > 가속구간 > 기본 속도 / 횡방향: 차선 경로 / GPS 경로
 - **avoid** — 기동 완료 우선, 정지 요구는 기동 이탈 후 적용. 단 TTC < 임계 → 즉시 정지(안전 바닥). 횡: 회피 경로 / 종: v_ref는 회피 기하로 결정(여유 폭 좁으면 감속)
 - **parking** — 경로 침범 정지 > 주차 진행. 신호등·가속구간 요구 비활성. 정적 경계(콘·연석)는 정지 트리거가 아니라 로컬맵 입력
 
@@ -84,7 +84,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 4. **모든 경로 소스는 동일 ref points 포맷.** 차선/GPS/회피/주차 어느 것이 이기든 dSPACE는 구분할 필요 없음 — MPC 무수정 원칙.
 5. **PWM 주파수 혼동 금지.** 서보 = 50Hz(펄스폭이 위치), 구동 모터 드라이버 = 20kHz(duty가 전압). 
 6. 스테이트 전환 시 ref 불연속 방지(전환 연속 처리), 급격한 v_ref 변화 rate limit — 조립 블록의 허용 업무.
-7. **인지 입력 신선도 watchdog (MGM wrapper).** ① estop: EstopRequest 미수신(기동 직후) 또는 staleness(기본 250ms = stack_estop 하트비트 50ms × 5) 시 wrapper가 스냅샷의 estop을 true로 보정 (2026-07-30, PR #17 안전 이슈 시험에서 도출). ② lane_path/gps_path: 현재 스테이트가 해당 소스를 사용 중일 때(lane→LANE, gps→WAYPOINT) 미수신/staleness(기본 0.5s) 시 동일하게 estop=true로 보정 — 인지 노드 사망 시 마지막 값으로 계속 주행하던 구멍 차단 (2026-08-07 실차에서 발견, PR #28). ③ traffic_stop: **수신 이력이 있은 뒤** staleness(기본 0.5s) 시 stop_required=true 보정(estop 아닌 일반 감속 정지) — 미수신은 보정하지 않음(제약 입력이라 단독 스택 시험이 stack_traffic 없이 성립해야 함; false 상태로 사망 후 적색 점등되는 케이스를 막는 것이 목적, 2026-08-08 PR #21 검토에서 도출). 모두 §3 dSPACE counter watchdog의 PC측 대응물이며 판단이 아니라 입력 컨디셔닝 — 정지 판단(v_ref=0)은 여전히 코어 스테이트 머신이 한다.
+7. **인지 입력 신선도 watchdog (MGM wrapper).** ① estop: EstopRequest 미수신(기동 직후) 또는 staleness(기본 250ms = stack_estop 하트비트 50ms × 5) 시 wrapper가 스냅샷의 estop을 true로 보정 (2026-07-30, PR #17 안전 이슈 시험에서 도출). ② lane_path/gps_path: 현재 스테이트가 해당 소스를 사용 중일 때(lane→LANE, gps→WAYPOINT) 미수신/staleness(기본 0.5s) 시 동일하게 estop=true로 보정 — 인지 노드 사망 시 마지막 값으로 계속 주행하던 구멍 차단 (2026-08-07 실차에서 발견, PR #28). gps는 **"신선하지만 무효"도 동일 취급**: stack_gps는 fix 상실 시 fix_quality=0인 빈 GpsPath를 계속 발행하므로 수신 시각만으론 통과 — WAYPOINT 중 fix_quality=0 또는 빈 points도 estop=true 보정 (2026-08-11 통합 점검에서 발견). ③ traffic_stop: **수신 이력이 있은 뒤** staleness(기본 0.5s) 시 stop_required=true 보정(estop 아닌 일반 감속 정지) — 미수신은 보정하지 않음(제약 입력이라 단독 스택 시험이 stack_traffic 없이 성립해야 함; false 상태로 사망 후 적색 점등되는 케이스를 막는 것이 목적, 2026-08-08 PR #21 검토에서 도출). 모두 §3 dSPACE counter watchdog의 PC측 대응물이며 판단이 아니라 입력 컨디셔닝 — 정지 판단(v_ref=0)은 여전히 코어 스테이트 머신이 한다.
 8. **인지 갱신 지연 틱의 ref 이동 보정 (조립 블록).** 인지 소스가 직전 틱과 완전 동일한 값이면(새 추론 미도착 — 예: 카메라 21Hz vs 루프 100Hz) ref x를 직전 명령 속도 × 10ms만큼 감쇠해 송신한다. 근거: dSPACE가 동일 REF_POINT 페이로드 반복 수신 시 무시하는 것으로 실측(2026-08-08, PR #28) + 차량 이동에 따른 물리적 보정. §5.6과 같은 조립 블록의 허용 업무(판단 아님). **§5.5 이중 트랙 주의: Simulink 모델(김재민)도 동일 반영해야 back-to-back 일치.**
 
 ## 5.5 MGM 개발 전략 (이중 트랙)

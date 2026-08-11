@@ -77,7 +77,10 @@ struct CoreSnapshot
   // stack_traffic
   bool traffic_stop_required;
   // stack_estop
-  bool estop;
+  bool estop;                // 정지 판단 입력 — wrapper의 §5.7 staleness 보정 포함
+  bool estop_latch_release;  // at_end 래치 해제 전용 — **실제 EstopRequest 수신값만**
+                             // (watchdog 보정 estop으로 래치가 풀려 재출발하던 구멍
+                             //  차단, 2026-08-11 — CLAUDE.md §4 래치)
 };
 
 // 튜닝 파라미터 — params.yaml과 1:1, Simulink에서는 tunable parameter

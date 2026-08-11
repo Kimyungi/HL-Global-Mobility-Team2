@@ -27,6 +27,11 @@ mgm_node:
     # stack_estop 하트비트 50ms 기준 5주기.
     estop_stale_timeout_sec: 0.25
     traffic_stale_timeout_sec: 0.5   # 수신 이력 후 끊김만 보정 (§5.7 ③) — 미수신은 단독 스택 시험 허용
+    # lane/gps 경로 신선도 (§5.7 ②) — 해당 소스를 쓰는 스테이트에서만 적용.
+    # gps는 staleness 외에 fix_quality=0/빈 경로(신선하지만 무효)도 동일 보정.
+    # 코드 기본값과 동일하나 현장 튜닝 가시성을 위해 명시 (2026-08-11).
+    lane_stale_timeout_sec: 0.5
+    gps_stale_timeout_sec: 0.5
 
     # 조립/병합 (실행부 파라미터 — 판단 아님)
     blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)
