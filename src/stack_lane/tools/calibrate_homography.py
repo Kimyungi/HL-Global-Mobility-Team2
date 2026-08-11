@@ -29,7 +29,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-WINDOW = "calibration — click a marker, then answer in terminal"
+# 창 이름은 ASCII만 — 유니코드(—) 포함 시 OpenCV Qt 백엔드가 창 핸들 조회에
+# 실패해 setMouseCallback이 NULL window 에러를 낸다 (2026-08-11 현장에서 확인).
+WINDOW = "calibration - click a marker, then answer in terminal"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "config" / "homography.json"
 DEFAULT_BEV_PREVIEW = Path(__file__).resolve().parent.parent / "config" / "homography_bev_preview.png"
 
