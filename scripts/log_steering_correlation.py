@@ -64,8 +64,12 @@ class CorrelationLogger(Node):
                 # 수 있음(assemble() hold). state를 같이 남겨야 그 구간을 구분 가능.
                 # n_points/last_x: 2026-08-08 다점 진단의 핵심 변수 — 몇 점이
                 # 실제로 나갔는지, 원거리 점까지 채워졌는지 바로 확인하기 위함.
+                # p.x(REF_POINT_00의 x): 2026-08-10 3계층 진단용 — 지금까지 y만
+                # 남겨서 pure-pursuit 이론 곡률(κ=2y/(x²+y²))을 실측 str과 비교할
+                # 방법이 없었음. x가 있어야 Vehicle MGM 추종 품질을 이론값 대비로
+                # 따로 떼어 볼 수 있다.
                 self.latest_target = (
-                    p.y, p.yaw, msg.v_ref, msg.state, len(msg.ref_points), p_last.x, p_last.y)
+                    p.y, p.yaw, msg.v_ref, msg.state, len(msg.ref_points), p_last.x, p_last.y, p.x)
 
     def can_loop(self):
         while self.running:
@@ -91,6 +95,7 @@ class CorrelationLogger(Node):
                 'n_points': target[4] if target else None,
                 'target_last_x_m': target[5] if target else None,
                 'target_last_y_m': target[6] if target else None,
+                'target_x_m': target[7] if target else None,
             }
             with self.lock:
                 self.rows.append(row)
