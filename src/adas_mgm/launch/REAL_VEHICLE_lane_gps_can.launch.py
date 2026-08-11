@@ -105,10 +105,11 @@ def generate_launch_description():
             '~/FMA_ws/src/stack_lane/models/yolopv2.pt')),
         DeclareLaunchArgument('camera_mxid', default_value='14442C105157D3D200',
                               description='차선용 OAK-D MxID (2026-08-11 실측)'),
-        # 이 PC(산업용)는 NVIDIA GPU 없음 — 'cpu' 필수. '0'(CUDA)이면 기동 즉사
-        # (2026-08-11 첫 통합 run에서 stack_lane 사망 원인 ①로 실증).
-        DeclareLaunchArgument('lane_device', default_value='cpu',
-                              description="YOLOPv2 추론 장치: 'cpu' 또는 cuda 인덱스"),
+        # 이 PC(산업용)는 NVIDIA 없음 — 인텔 Arc iGPU를 XPU 백엔드로 사용
+        # (fp16 172ms/frame ≈ 5.8Hz, CPU 390ms 대비 2.3배 — 2026-08-11 실측).
+        # XPU 초기화 실패 시(드라이버 문제 등) lane_device:=cpu 로 폴백.
+        DeclareLaunchArgument('lane_device', default_value='xpu',
+                              description="YOLOPv2 추론 장치: 'xpu'(인텔 GPU)/'cpu'/cuda 인덱스"),
         # TESTING_LOG §7.3 잠정 최적값 — 1.8m가 오실레이션 최저(잔차 std 1.92°),
         # 단 표본 51초라 미확정. 재튜닝 시 인자만 바꿔 재실행.
         DeclareLaunchArgument('ref_point0_lookahead_m', default_value='1.8'),

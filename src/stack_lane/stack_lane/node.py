@@ -169,6 +169,8 @@ class StackLaneNode(Node):
             self.model(dummy)
         if self.device.type == 'cuda':
             torch.cuda.synchronize()
+        elif self.device.type == 'xpu':
+            torch.xpu.synchronize()
 
     def _setup_camera(self, fps: int) -> None:
         # depthai v2/v3 겸용 (2026-08-11): 산업용 PC는 depthai 3.x라 v2 API
@@ -184,6 +186,21 @@ class StackLaneNode(Node):
                 'camera_mxid 미지정 — 첫 가용 OAK-D 사용. 카메라 2대 연결 상태에선 '
                 '부팅 순서에 따라 신호등용 카메라를 잡을 수 있음 (CLAUDE.md §6)')
 
+        def open_device(factory):
+            # 직전 프로세스 강제 종료 직후엔 카메라가 USB 리셋 중이라 첫 오픈이
+            # 실패할 수 있다 (2026-08-11 실측: Couldn't open stream /
+            # X_LINK_DEVICE_NOT_FOUND 후 15s 뒤 정상). 재시도로 흡수.
+            import time
+            for attempt in range(4):
+                try:
+                    return factory()
+                except RuntimeError as e:
+                    if attempt == 3:
+                        raise
+                    self.get_logger().warn(
+                        f'카메라 오픈 실패({attempt + 1}/4): {e} — 8s 후 재시도')
+                    time.sleep(8.0)
+
         if hasattr(dai.Pipeline(), 'createColorCamera'):  # v2
             pipeline = dai.Pipeline()
             cam = pipeline.createColorCamera()
@@ -194,12 +211,14 @@ class StackLaneNode(Node):
             xout = pipeline.createXLinkOut()
             xout.setStreamName('rgb')
             cam.preview.link(xout.input)
-            self._dai_device = (dai.Device(pipeline, dai.DeviceInfo(mxid)) if mxid
-                                else dai.Device(pipeline))
+            self._dai_device = open_device(
+                lambda: dai.Device(pipeline, dai.DeviceInfo(mxid)) if mxid
+                else dai.Device(pipeline))
             self._queue = self._dai_device.getOutputQueue('rgb', maxSize=4, blocking=False)
             self._dai_pipeline = None
         else:  # v3
-            self._dai_device = dai.Device(dai.DeviceInfo(mxid)) if mxid else dai.Device()
+            self._dai_device = open_device(
+                lambda: dai.Device(dai.DeviceInfo(mxid)) if mxid else dai.Device())
             pipeline = dai.Pipeline(self._dai_device)
             cam = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
             self._queue = cam.requestOutput(

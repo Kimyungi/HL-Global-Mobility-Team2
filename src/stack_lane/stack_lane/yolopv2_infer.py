@@ -19,6 +19,15 @@ DEFAULT_WEIGHTS = Path(__file__).resolve().parent.parent / "models" / "yolopv2.p
 def resolve_device(device_arg: str) -> tuple[torch.device, bool]:
     if device_arg.lower() == "cpu":
         return torch.device("cpu"), False
+    if device_arg.lower() == "xpu":
+        # 인텔 GPU (산업용 PC = Arc 140V, 2026-08-11) — PyTorch XPU 빌드 +
+        # intel 컴퓨트 런타임(libze-intel-gpu1) 필요. fp16 172ms/frame 실측
+        # (fp32 338ms, CPU 390ms) — half 활성이 유의미해 True.
+        if not (hasattr(torch, "xpu") and torch.xpu.is_available()):
+            raise RuntimeError(
+                "XPU 요청됐지만 torch.xpu.is_available() == False — PyTorch XPU 빌드와 "
+                "libze-intel-gpu1 설치 확인. 임시로는 --device cpu 사용")
+        return torch.device("xpu"), True
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA 요청됐지만 torch.cuda.is_available() == False. --device cpu 사용")
     return torch.device(f"cuda:{device_arg}"), True
