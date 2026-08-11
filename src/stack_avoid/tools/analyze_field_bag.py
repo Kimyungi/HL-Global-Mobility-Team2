@@ -14,6 +14,7 @@ field_session.launch.py 로 딴 bag 하나를 넣으면 ①②③ⓐⓑⓒ 중 �
 ★ str이 통째로 고정이면 액추에이션 사망(조이스틱 전원 off) — 그 구간은 무효다.
   8/6 로그에서 실제로 있었던 일이라 자동으로 경고한다.
 """
+import bisect
 import glob
 import math
 import os
@@ -63,17 +64,37 @@ def load(dbfile, topic):
 
 def at(series, t):
     """시각 t 직전의 마지막 샘플 (없으면 None)."""
-    prev = None
-    for ts, m in series:
-        if ts > t:
-            break
-        prev = m
-    return prev
+    i = bisect.bisect_right(_Stamps(series), t)
+    return series[i - 1][1] if i else None
+
+
+class _Stamps:
+    """(ts, msg) 리스트를 ts 만 보는 시퀀스로 감싼다 — bisect 용, 복사 없음."""
+
+    __slots__ = ('s',)
+
+    def __init__(self, series):
+        self.s = series
+
+    def __len__(self):
+        return len(self.s)
+
+    def __getitem__(self, i):
+        return self.s[i][0]
 
 
 def window(series, t0, t1):
-    """[t0, t1) 구간 샘플."""
-    return [(ts, m) for ts, m in series if t0 <= ts < t1]
+    """[t0, t1) 구간 샘플.
+
+    ★ 이진 탐색 (팀장 리뷰 2026-08-10). 예전에는 전체를 선형 스캔했는데, 스텝마다
+      ①②③ 가 각각 window() 를 불러 O(스텝수 × 전체샘플) 이 됐다. bag 이 길어질수록
+      (10분 = vv 6만 샘플 × 스텝 수십 개) 체감되게 느려진다. 시계열은 bag 재생 순서라
+      이미 ts 오름차순이므로 이분 탐색이 그대로 성립한다.
+    """
+    stamps = _Stamps(series)
+    lo = bisect.bisect_left(stamps, t0)
+    hi = bisect.bisect_left(stamps, t1)
+    return series[lo:hi]
 
 
 def segments(events, end_default):
@@ -106,7 +127,20 @@ def find_steps(refs):
     return steps
 
 
-def analyze_steering(refs, vv, out):
+def estop_hit(estop, t0, t1):
+    """[t0, t1) 안에 estop=true 가 한 번이라도 있었나.
+
+    ★ 왜 필요한가 (팀장 리뷰 2026-08-10). estop 이 걸리면 avoid_to_ref 가 v_ref=0 으로
+      덮어쓴다. 그러면 차가 서므로 ①(조향 응답)은 "명령은 바뀌었는데 조향이 안 따라온"
+      것처럼, ②(측방 이동)는 "전진거리가 안 나온" 것처럼 보인다. 실제로는 안전 바닥이
+      정상 동작한 것이고 그 스텝은 **측정 자체가 성립하지 않는다.** 블립 하나가
+      중앙값·최악값을 통째로 오염시키므로 통계에서 제외한다.
+      (estop 은 이미 bag 에 담고 있으니 추가 기록 없이 판정 가능하다.)
+    """
+    return any(m.estop for _, m in window(estop, t0, t1))
+
+
+def analyze_steering(refs, vv, out, estop=()):
     """① 조향 응답 시간 — ref y 스텝에 대한 str의 dead time·상승 시간."""
     steps = find_steps(refs)
     if not steps or not vv:
@@ -122,11 +156,15 @@ def analyze_steering(refs, vv, out):
                f'{"63%[s]":>8s} {"95%[s]":>8s}')
     deads, t63s, t95s = [], [], []
     skipped = 0
+    estopped = 0
     for i, (ts, y0, y1) in enumerate(steps):
         nxt = steps[i + 1][0] if i + 1 < len(steps) else vv[-1][0]
         hold = nxt - ts
         if not (MIN_HOLD_S <= hold <= MAX_HOLD_S):
             skipped += 1                  # 정착 불가 / 무관 조작 혼입 구간
+            continue
+        if estop_hit(estop, ts, nxt):
+            estopped += 1                 # 안전 바닥이 걸린 구간 — 측정 무효
             continue
         base_w = window(vv, ts - BASE_S, ts)
         resp_w = window(vv, ts, nxt)
@@ -162,6 +200,9 @@ def analyze_steering(refs, vv, out):
     if skipped:
         out.append(f'  ({skipped}개 제외 — 스텝 간격이 {MIN_HOLD_S}~{MAX_HOLD_S}s 밖. '
                    f'정착 전 다음 스텝이 오거나 무관한 조작이 섞인 구간)')
+    if estopped:
+        out.append(f'  ({estopped}개 제외 — 구간 안에 estop 발동. v_ref=0 으로 덮여 '
+                   f'조향 응답 측정이 성립하지 않는다)')
     if deads:
         out.append(f'\n  중앙값: dead {statistics.median(deads):.3f}s · '
                    f'63% {statistics.median(t63s):.3f}s · '
@@ -173,7 +214,7 @@ def analyze_steering(refs, vv, out):
                        'step_injector로 깨끗한 스텝을 다시 딸 것.')
 
 
-def analyze_lateral(refs, vv, out):
+def analyze_lateral(refs, vv, out, estop=()):
     """② 측방 이동 곡선 — 스텝 후 |측방변위| 0.30·0.46m 도달까지의 전진거리."""
     steps = find_steps(refs)
     if not steps or not vv:
@@ -189,10 +230,14 @@ def analyze_lateral(refs, vv, out):
                ' 스탠드 bag에서도 숫자가 나오지만 의미 없다.')
     out.append(f'{"κ 스텝[1/m]":>20s} {"→0.30m":>9s} {"→0.46m":>9s}   (전진거리 [m])')
     d30s, d46s = [], []
+    estopped = 0
     for i, (ts, y0, y1) in enumerate(steps):
         if abs(y1) < RETURN_MAX_DK:       # κ≈0 = 직진 복귀(정렬) 구간 — 제외
             continue
         nxt = steps[i + 1][0] if i + 1 < len(steps) else vv[-1][0]
+        if estop_hit(estop, ts, nxt):     # v_ref=0 으로 덮인 구간 — 전진거리 측정 무효
+            estopped += 1
+            continue
         seg = window(vv, ts, nxt)
         if len(seg) < 10:
             continue
@@ -216,6 +261,9 @@ def analyze_lateral(refs, vv, out):
         if d46 is not None:
             d46s.append(d46)
 
+    if estopped:
+        out.append(f'  ({estopped}개 제외 — 구간 안에 estop 발동. v_ref=0 이라 '
+                   f'전진거리가 나오지 않는다)')
     if d30s or d46s:
         out.append('\n  중앙값: '
                    + (f'0.30m→{statistics.median(d30s):.2f}m  ' if d30s else '')
@@ -360,8 +408,8 @@ def main():
         out.append('⚠ /test/event 없음 — 구간 라벨이 없어 ③ⓐⓑⓒ는 분석 불가. '
                    '다음엔 `ros2 run stack_avoid mark`를 같이 띄울 것.')
 
-    analyze_steering(refs, vv, out)
-    analyze_lateral(refs, vv, out)
+    analyze_steering(refs, vv, out, estop)
+    analyze_lateral(refs, vv, out, estop)
     analyze_sweep(events, refs, vv, out)
     analyze_detection(events, avoid, out)
     analyze_boundary(events, estop, static_e, dynamic_e, avoid, out)
