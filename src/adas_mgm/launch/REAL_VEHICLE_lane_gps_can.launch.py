@@ -83,6 +83,9 @@ def generate_launch_description():
 
         # ── stack_estop (REAL_VEHICLE_stack_estop_mgm_can과 동일)
         DeclareLaunchArgument('ydlidar_params', default_value=DEFAULT_YDLIDAR_PARAMS),
+        # /dev/ttyUSB0 고정 금지 — 이 PC에선 USB0=무전기, USB1=IMU, USB2=라이다로
+        # 열거된다 (2026-08-11 확인). udev 별칭(ttyUSB_LIDAR, MODE 0666)으로 고정.
+        DeclareLaunchArgument('lidar_port', default_value='/dev/ttyUSB_LIDAR'),
         DeclareLaunchArgument('laser_yaw_in_base_rad', default_value='1.57079632679'),
         DeclareLaunchArgument('dynamic_enabled', default_value='true'),
         DeclareLaunchArgument('dynamic_stop_distance_m', default_value='1.20'),
@@ -96,7 +99,7 @@ def generate_launch_description():
             name='ydlidar_ros2_driver_node',
             namespace='/',
             parameters=[LaunchConfiguration('ydlidar_params'), {
-                'port': '/dev/ttyUSB0',
+                'port': LaunchConfiguration('lidar_port'),
                 'baudrate': 230400,
                 'lidar_type': 1,
                 'intensity_bit': 8,
