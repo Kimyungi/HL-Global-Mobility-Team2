@@ -10,6 +10,16 @@
   <depend>rclpy</depend>
   <depend>fma_interfaces</depend>
 
+  <!-- tools/lidar_fov.py · tools/lidar_overlap.py 가 쓰는 것 -->
+  <depend>sensor_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>python3-numpy</depend>
+
+  <!-- ydlidar_ros2_driver 는 의도적으로 선언하지 않는다. main 에 없는 패키지라
+       선언하면 rosdep/빌드가 깨진다. launch/dual_lidar_test.launch.py 는 실행
+       시점에 드라이버 워크스페이스(예: ~/ydlidar_ros2_ws)를 오버레이로 소스해
+       쓴다 — 시험용 launch 이므로 빌드 의존이 아니다. -->
+
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
 

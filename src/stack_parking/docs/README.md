@@ -48,6 +48,11 @@
 - 라이다 몸체·카메라·케이블·연석 등은 미반영 → 값을 **줄일 수만** 있음.
   **실측 mask**(`../tools/lidar_fov.py mask`)가 최종 확인 (MEASUREMENTS.md D절).
 
+> ⚠ **위 각도의 합집합이 근접에서까지 360°인 것은 아니다.** 차체 코너 4곳(측면에서
+> 최대 15cm, base_link 반경 0.88m 이내)이 비어 있다 — 수치·근거는
+> [`../MEASUREMENTS.md`](../MEASUREMENTS.md) E절, 그림은
+> [`lidar_coverage.html`](lidar_coverage.html). 시야각을 줄이면 넓어진다.
+
 **적용 방법 (참고):** 각 라이다 스캔에 위 vehicle-frame 각도창만 남기고 나머지는
 버린다. 스캔 프레임 각도 = vehicle-frame 각도 − (해당 라이다 yaw 장착각).
 라이다별 yaw는 외부 캘리브(MEASUREMENTS.md D절) 확정 후 대입. 이 문서는 **치수 참고용**이며
