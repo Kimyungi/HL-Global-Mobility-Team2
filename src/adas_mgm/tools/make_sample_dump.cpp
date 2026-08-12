@@ -125,6 +125,7 @@ int main(int argc, char ** argv)
     }
     if (t >= 950 && t < 1000) {
       s.estop = true;
+      s.estop_latch_release = true;  // 실제 EstopRequest 인가 시나리오 — 래치 해제 동반
     }
 
     out.write(reinterpret_cast<const char *>(&s), sizeof(s));

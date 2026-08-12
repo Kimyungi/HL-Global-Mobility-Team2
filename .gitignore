@@ -8,3 +8,4 @@ __pycache__/
 nohup.out
 drive_logs/
 field_logs/
+*.pt
