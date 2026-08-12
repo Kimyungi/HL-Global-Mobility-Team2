@@ -123,6 +123,12 @@ adas_ws/src/
   하향 pitch), stack_traffic(김재민) 1대(신호등·정지선용 상단 시야). 각자 독점 오픈은 유지하되
   **양쪽 노드에 MxID 핀닝 필수**(`dai.Device(pipeline, device_info)`) — 핀닝 없으면 어느 노드가
   어느 카메라를 잡을지 비결정적이라 부팅 순서에 따라 뒤바뀐다 (담당: 이현준·김재민 각자 자기 노드).
+  **MxID 확정 (2026-08-12, 팀장 — 2대 동시 연결 상태에서 실물 열거로 확인):**
+  | 용도 | MxID | 핀닝 위치 |
+  |---|---|---|
+  | 차선 (stack_lane) | `14442C105157D3D200` | `stack_lane/node.py` `camera_mxid` 기본값 (main 반영 완료) |
+  | 신호등·정지선 (stack_traffic) | `14442C10B167CFD200` | `stack_traffic` launch `oak_mxid` 기본값 (PR #29, draft) |
+  MxID는 18자리다 — PR #29 본문 메모의 차선용 19자리 표기는 오타(잘못된 `C` 삽입)이며 이 표가 정본.
 - 부트스트랩 순서: ① bridge_dspace로 PC↔dSPACE 왕복 검증 (더미 ref로 바퀴 반응 + vehicle vector 회신 확인) → ② adas_mgm 10ms 루프 골격 + 지터 로깅 → ③ 각 스택 배포·병렬 개발.
 
 ## 7. 실시간성 검증 기준 (v1 유지 vs v3 이관)
