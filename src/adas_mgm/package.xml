@@ -11,6 +11,7 @@
 
   <depend>rclcpp</depend>
   <depend>fma_interfaces</depend>
+  <depend>std_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
 

@@ -87,6 +87,10 @@ class StackLaneNode(Node):
         # 1.0 = 비활성(기존 동작). 작을수록 부드럽지만 반응이 느려짐 — 실측 튜닝 필요.
         self.declare_parameter('coeff_smoothing_alpha', 1.0)
         self.declare_parameter('homography_path', str(DEFAULT_HOMOGRAPHY_PATH))
+        # OAK-D MxID 핀닝 (CLAUDE.md §6 — 2대 운용 시 어느 노드가 어느 카메라를
+        # 잡을지 비결정적이므로 필수). 기본값 = 차선용 OAK-D Pro 실측 MxID
+        # (2026-08-11 확정, 팀장). 빈 문자열이면 첫 가용 장치 사용(단독 시험용).
+        self.declare_parameter('camera_mxid', '14442C105157D3D200')
         self.declare_parameter('camera_fps', 30)
         self.declare_parameter('warmup_frames', 30)
         self.declare_parameter('poll_period_sec', 0.02)
@@ -165,22 +169,63 @@ class StackLaneNode(Node):
             self.model(dummy)
         if self.device.type == 'cuda':
             torch.cuda.synchronize()
+        elif self.device.type == 'xpu':
+            torch.xpu.synchronize()
 
     def _setup_camera(self, fps: int) -> None:
+        # depthai v2/v3 겸용 (2026-08-11): 산업용 PC는 depthai 3.x라 v2 API
+        # (createColorCamera/XLinkOut)가 없어 기동이 즉사했다 — 첫 통합 run에서
+        # 차선 주행이 통째로 빠진 원인. 해상도·소켓은 양쪽 동일(1280x720/CAM_A).
         import depthai as dai
 
-        pipeline = dai.Pipeline()
-        cam = pipeline.createColorCamera()
-        cam.setPreviewSize(1280, 720)
-        cam.setInterleaved(False)
-        cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-        cam.setFps(fps)
-        xout = pipeline.createXLinkOut()
-        xout.setStreamName('rgb')
-        cam.preview.link(xout.input)
+        mxid = str(self.get_parameter('camera_mxid').value).strip()
+        if mxid:
+            self.get_logger().info(f'OAK-D MxID 핀닝: {mxid}')
+        else:
+            self.get_logger().warn(
+                'camera_mxid 미지정 — 첫 가용 OAK-D 사용. 카메라 2대 연결 상태에선 '
+                '부팅 순서에 따라 신호등용 카메라를 잡을 수 있음 (CLAUDE.md §6)')
 
-        self._dai_device = dai.Device(pipeline)
-        self._queue = self._dai_device.getOutputQueue('rgb', maxSize=4, blocking=False)
+        def open_device(factory):
+            # 직전 프로세스 강제 종료 직후엔 카메라가 USB 리셋 중이라 첫 오픈이
+            # 실패할 수 있다 (2026-08-11 실측: Couldn't open stream /
+            # X_LINK_DEVICE_NOT_FOUND 후 15s 뒤 정상). 재시도로 흡수.
+            import time
+            for attempt in range(4):
+                try:
+                    return factory()
+                except RuntimeError as e:
+                    if attempt == 3:
+                        raise
+                    self.get_logger().warn(
+                        f'카메라 오픈 실패({attempt + 1}/4): {e} — 8s 후 재시도')
+                    time.sleep(8.0)
+
+        if hasattr(dai.Pipeline(), 'createColorCamera'):  # v2
+            pipeline = dai.Pipeline()
+            cam = pipeline.createColorCamera()
+            cam.setPreviewSize(1280, 720)
+            cam.setInterleaved(False)
+            cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
+            cam.setFps(fps)
+            xout = pipeline.createXLinkOut()
+            xout.setStreamName('rgb')
+            cam.preview.link(xout.input)
+            self._dai_device = open_device(
+                lambda: dai.Device(pipeline, dai.DeviceInfo(mxid)) if mxid
+                else dai.Device(pipeline))
+            self._queue = self._dai_device.getOutputQueue('rgb', maxSize=4, blocking=False)
+            self._dai_pipeline = None
+        else:  # v3
+            self._dai_device = open_device(
+                lambda: dai.Device(dai.DeviceInfo(mxid)) if mxid else dai.Device())
+            pipeline = dai.Pipeline(self._dai_device)
+            cam = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
+            self._queue = cam.requestOutput(
+                (1280, 720), dai.ImgFrame.Type.BGR888i, fps=float(fps)
+            ).createOutputQueue(maxSize=4, blocking=False)
+            pipeline.start()
+            self._dai_pipeline = pipeline
 
     def tick(self) -> None:
         pkt = self._queue.tryGet()
@@ -278,6 +323,8 @@ class StackLaneNode(Node):
     def destroy_node(self) -> None:
         if self.logger_csv is not None:
             self.logger_csv.close()
+        if getattr(self, '_dai_pipeline', None) is not None:  # v3
+            self._dai_pipeline.stop()
         if hasattr(self, '_dai_device'):
             self._dai_device.close()
         super().destroy_node()

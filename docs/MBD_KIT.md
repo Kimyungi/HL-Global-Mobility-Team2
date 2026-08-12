@@ -20,6 +20,8 @@
 
 - 스테이트 4개 (lane=0, waypoint=1, avoid=2, parking=3), 전이 라벨·우선권 표 그대로.
 - avoid 복귀처 변수 1개(`avoid_return`)만 기억. parking→avoid 전이 없음.
+- at_end 래치 해제는 `estop_latch_release`(실제 EstopRequest 수신값)로만 —
+  `estop`(wrapper staleness 보정 포함)으로 해제 금지 (2026-08-11, CLAUDE.md §4 래치).
 - 판단 뒤의 실행부(ref 조립 블렌드·v_ref rate limit)는 Stateflow 밖의 일반 블록으로 —
   로직 배치는 레퍼런스 `core/mgm_step.cpp`의 `transition`/`prioritize`/`assemble`/`merge` 4함수 구조 참고.
 

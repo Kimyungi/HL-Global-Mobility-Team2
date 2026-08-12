@@ -11,19 +11,18 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+from stack_avoid.launch_parts import can_bridge_with_zero_guard, ydlidar_driver
 
 
 def generate_launch_description():
     pkg = get_package_share_directory('stack_avoid')
     params = os.path.join(pkg, 'config', 'params.yaml')
     rviz_cfg = os.path.join(pkg, 'config', 'avoid_test.rviz')
-    ydlidar_launch = os.path.join(
-        get_package_share_directory('ydlidar_ros2_driver'), 'launch', 'ydlidar_launch.py')
 
     drive = LaunchConfiguration('drive')
     v_ref = LaunchConfiguration('v_ref')
@@ -38,8 +37,9 @@ def generate_launch_description():
         DeclareLaunchArgument('v_ref', default_value='0.2', description='회피 주행 속도 [m/s]'),
         DeclareLaunchArgument('bag_dir', default_value='avoid_drive_bag'),
 
-        # LiDAR → /scan
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(ydlidar_launch)),
+        # LiDAR → /scan  (드라이버 노드만 — launch 를 include 하면 placeholder static TF 가
+        # 딸려와 stack_avoid_node 의 실측 TF 와 충돌한다. 사유는 field_session.launch.py 참조)
+        ydlidar_driver(),
         # 회피 인지 (방향 270 고정) + 시각화
         Node(package='stack_avoid', executable='stack_avoid_node', name='stack_avoid_node',
              output='screen', parameters=[params]),
@@ -53,9 +53,11 @@ def generate_launch_description():
         Node(package='stack_avoid', executable='avoid_to_ref', name='avoid_to_ref', output='screen',
              parameters=[{'target_speed_mps': v_ref, 'straight_when_clear': False}],
              condition=IfCondition(drive)),
-        Node(package='bridge_dspace', executable='can_bridge_node', name='can_bridge_node',
-             output='screen', parameters=[{'can_interface': 'can0'}],
-             condition=IfCondition(drive)),
+        # ── CAN 브리지 + 종료 시 dSPACE 목표값 0 복귀 (안전 가드) ──
+        # 공용 조각. 예전에는 이 launch 가 상주 가드만 갖고 있어, 브리지 종료 순서를
+        # 보장하는 수정(팀장 리뷰 ⑤)이 field_session 에만 들어가 있었다 — 복붙의 전형적
+        # 피해다. 이제 세 launch 가 같은 구현을 쓴다.
+        *can_bridge_with_zero_guard(condition=IfCondition(drive)),
 
         # 로그
         ExecuteProcess(cmd=['ros2', 'bag', 'record', '-o', bag_dir] + bag_topics, output='screen'),

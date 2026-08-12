@@ -29,16 +29,27 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-WINDOW = "calibration — click a marker, then answer in terminal"
+# 창 이름은 ASCII만 — 유니코드(—) 포함 시 OpenCV Qt 백엔드가 창 핸들 조회에
+# 실패해 setMouseCallback이 NULL window 에러를 낸다 (2026-08-11 현장에서 확인).
+WINDOW = "calibration - click a marker, then answer in terminal"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "config" / "homography.json"
 DEFAULT_BEV_PREVIEW = Path(__file__).resolve().parent.parent / "config" / "homography_bev_preview.png"
 
 
 class Picker:
-    def __init__(self, image: np.ndarray):
+    def __init__(self, image: np.ndarray, autosave_path: Path | None = None):
         self.image = image
         self.display = image.copy()
         self.points: list[dict] = []  # {u, v, x, y, validation}
+        # 클릭 유실 방지 (2026-08-11 현장 — 'c' 없이 종료해 11점 유실):
+        # 점이 바뀔 때마다 사이드카 json에 즉시 저장, 재실행 시 복구 제안.
+        self.autosave_path = autosave_path
+
+    def autosave(self) -> None:
+        if self.autosave_path is None:
+            return
+        with open(self.autosave_path, "w", encoding="utf-8") as f:
+            json.dump(self.points, f, ensure_ascii=False, indent=2)
 
     def draw(self) -> None:
         self.display = self.image.copy()
@@ -75,6 +86,7 @@ class Picker:
             return
         self.points.append({"u": float(u), "v": float(v), "x": x, "y": y, "validation": validation})
         self.draw()
+        self.autosave()
         n_val = sum(p["validation"] for p in self.points)
         print(f"  -> 등록됨 (총 {len(self.points)}점, 검증용 {n_val}개)")
 
@@ -141,23 +153,51 @@ def main() -> None:
     if image is None:
         raise FileNotFoundError(args.image)
 
-    picker = Picker(image)
+    autosave_path = Path(args.image).resolve().with_suffix(".points.json")
+    picker = Picker(image, autosave_path)
+    if autosave_path.exists():
+        try:
+            prev = json.loads(autosave_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            prev = []
+        if prev:
+            ans = input(f"이전 세션의 클릭 {len(prev)}점 발견 ({autosave_path.name}). 복구할까요? [Y/n]: ").strip().lower()
+            if ans in ("", "y", "yes"):
+                picker.points = prev
+                print(f"  -> {len(prev)}점 복구됨 — 이어서 진행 ('d 번호'로 특정 점 삭제 가능)")
     picker.draw()
     cv2.namedWindow(WINDOW)
     cv2.setMouseCallback(WINDOW, picker.on_click)
 
     print(__doc__)
-    print("창에서 마커를 클릭하세요. 'c'=계산+저장, 'u'=마지막 점 취소, 'q'=종료(저장 안 함)")
+    print("창에서 마커를 클릭하세요. 'c'=계산+저장, 'u'=마지막 점 취소, "
+          "'d'=번호로 특정 점 삭제, 'q'=종료(저장 안 함)")
 
     while True:
         cv2.imshow(WINDOW, picker.display)
         key = cv2.waitKey(50) & 0xFF
         if key == ord("q"):
+            if picker.points:
+                ans = input(f"클릭한 {len(picker.points)}점이 아직 H로 저장되지 않았습니다. "
+                            "정말 종료? (자동저장본은 남음) [y/N]: ").strip().lower()
+                if ans not in ("y", "yes"):
+                    continue
             break
         if key == ord("u") and picker.points:
             removed = picker.points.pop()
             picker.draw()
+            picker.autosave()
             print(f"제거됨: {removed}")
+        if key == ord("d") and picker.points:
+            listing = ", ".join(f'{i}:({p["x"]:.2f},{p["y"]:.2f})' for i, p in enumerate(picker.points))
+            raw = input(f"삭제할 점 번호 [{listing}] (빈 입력=취소): ").strip()
+            if raw.isdigit() and int(raw) < len(picker.points):
+                removed = picker.points.pop(int(raw))
+                picker.draw()
+                picker.autosave()
+                print(f"제거됨: {removed}")
+            elif raw:
+                print("잘못된 번호 — 취소됨")
         if key == ord("c"):
             try:
                 H = compute_homography(picker.points)
@@ -178,6 +218,7 @@ def main() -> None:
                 }, f, ensure_ascii=False, indent=2)
             print(f"\n저장됨: {out_path}")
             save_bev_preview(image, H, Path(args.bev_preview))
+            autosave_path.unlink(missing_ok=True)  # 정식 저장 완료 — 복구본 정리
             break
 
     cv2.destroyAllWindows()

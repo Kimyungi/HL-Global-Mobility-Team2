@@ -27,6 +27,13 @@ mgm_node:
     # stack_estop 하트비트 50ms 기준 5주기.
     estop_stale_timeout_sec: 0.25
     traffic_stale_timeout_sec: 0.5   # 수신 이력 후 끊김만 보정 (§5.7 ③) — 미수신은 단독 스택 시험 허용
+    # lane/gps 경로 신선도 (§5.7 ②) — 해당 소스를 쓰는 스테이트에서만 적용.
+    # gps는 staleness 외에 fix_quality=0/빈 경로(신선하지만 무효)도 동일 보정.
+    # lane 1.0s: 산업용 PC는 GPU 없어 CPU 추론 2.5Hz(프레임 간격 최대 0.45s 실측,
+    # 2026-08-11) — 0.5s면 정상 동작 중에도 오탐 estop. 사망 감지는 1.0s로도 성립
+    # (0.5m/s 기준 이동 0.5m).
+    lane_stale_timeout_sec: 1.0
+    gps_stale_timeout_sec: 0.5
 
     # 조립/병합 (실행부 파라미터 — 판단 아님)
     blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)

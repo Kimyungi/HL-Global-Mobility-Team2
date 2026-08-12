@@ -30,7 +30,11 @@ def parse_gga(line):
             lon = -lon
         alt_msl = float(f[9]) if f[9] else 0.0
         geoid = float(f[11]) if f[11] else 0.0
-        return f[1], lat, lon, alt_msl + geoid, int(f[6])
+        # sats/hdop: RTK 진단용 (2026-08-11 — DGPS 고착 원인 분리: 베이스 정상인데
+        # FIXED 불가 시 로버 위성 가시성 확인 수단이 없었음)
+        sats = int(f[7]) if f[7].isdigit() else 0
+        hdop = float(f[8]) if f[8] else 0.0
+        return f[1], lat, lon, alt_msl + geoid, int(f[6]), sats, hdop
     except ValueError:
         return None
 
@@ -65,6 +69,7 @@ class GgaLink:
         self._log = log
         self._lock = threading.Lock()
         self._fix = None          # (lat, lon, h, quality, monotonic_t)
+        self._sat_info = (0, 0.0)  # (위성 수, HDOP) — 마지막 GGA 기준 (진단용)
         self._cog = None          # (speed_mps, yaw_enu, monotonic_t) — RMC 이동방향
         self._rtcm_bytes = 0
         self._stop = threading.Event()
@@ -75,6 +80,11 @@ class GgaLink:
 
     def stop(self):
         self._stop.set()
+
+    def latest_sat_info(self):
+        """(위성 수, HDOP) — 마지막 GGA 기준. RTK 품질 진단용."""
+        with self._lock:
+            return self._sat_info
 
     def latest_fix(self):
         """(lat, lon, h, quality, age_s, t_mono) 또는 None — 스레드 안전 스냅샷.
@@ -160,7 +170,9 @@ class GgaLink:
                         parsed = parse_gga(line)
                         if parsed is None:
                             continue
-                        _, lat, lon, h, quality = parsed
+                        _, lat, lon, h, quality, sats, hdop = parsed
+                        with self._lock:
+                            self._sat_info = (sats, hdop)
                         if not (math.isfinite(lat) and math.isfinite(lon)):
                             continue
                         with self._lock:

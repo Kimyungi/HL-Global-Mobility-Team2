@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "fma_interfaces/msg/lane_path.hpp"
 #include "fma_interfaces/msg/gps_path.hpp"
 #include "fma_interfaces/msg/avoid_status.hpp"
@@ -179,6 +180,25 @@ public:
     traffic_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("traffic_stale_timeout_sec", 0.5) * 1e9);
 
+    // 출발 인가 게이트 (2026-08-11, 실차 launch 전용) — true면 /operator/go 수신
+    // 전까지 estop 보정 유지(v_ref 0 대기). launch 직후 바로 출발해 출발 전
+    // 점검이 불가능하던 문제 해결. 판단이 아니라 운용 입력 컨디셔닝 — §5.7의
+    // estop 경로 재사용(코어에 새 정지 로직 없음). 인가는 tools/go 스크립트가
+    // RTK FIXED 확인 후 발행한다.
+    wait_go_ = declare_parameter<bool>("wait_go", false);
+    if (wait_go_) {
+      sub_go_ = create_subscription<std_msgs::msg::Bool>(
+        "/operator/go", rclcpp::QoS(1),
+        [this](std_msgs::msg::Bool::ConstSharedPtr m) {
+          std::lock_guard<std::mutex> lk(mtx_);
+          if (m->data && !go_received_) {
+            RCLCPP_INFO(get_logger(), "출발 인가 수신 — 주행 시작");
+          }
+          go_received_ = m->data;});
+      RCLCPP_INFO(get_logger(),
+        "출발 대기 모드 — 점검 후 `ros2 run adas_mgm go` 로 출발 인가");
+    }
+
     jitter_ = std::make_unique<JitterLogger>(
       get_logger(),
       declare_parameter<std::string>("jitter_csv_path", ""),
@@ -291,6 +311,7 @@ private:
     int64_t lane_rx_ns;
     int64_t gps_rx_ns;
     int64_t traffic_rx_ns;
+    bool go;
     {
       std::lock_guard<std::mutex> lk(mtx_);
       m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
@@ -298,13 +319,24 @@ private:
       lane_rx_ns = last_lane_rx_ns_;
       gps_rx_ns = last_gps_rx_ns_;
       traffic_rx_ns = last_traffic_rx_ns_;
+      go = go_received_;
     }
     // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
     // counter watchdog의 PC측 대응물). stack_estop 미수신/사망 시 스냅샷의
     // estop을 true로 보정하고, 정지 판단(v_ref=0) 자체는 코어가 한다.
     const bool estop_stale = estop_rx_ns < 0 || monotonicNs() - estop_rx_ns > estop_stale_ns_;
+    // 보정 전 "실제 수신값" 보존 — at_end 래치 해제는 이 값으로만 한다 (CLAUDE.md
+    // §4 래치). stale이면 마지막 값을 조작 의사로 신뢰할 수 없으므로 false.
+    const bool estop_real = !estop_stale && m.estop.estop;
     if (estop_stale) {
       m.estop.estop = true;
+    }
+    // 출발 인가 게이트 — 인가 전까지 estop 보정으로 정지 대기 (운용 입력
+    // 컨디셔닝, §5.7과 동류). estop_real(래치 해제용)에는 영향 없음.
+    if (wait_go_ && !go) {
+      m.estop.estop = true;
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+        "출발 대기 중 — 점검 완료 후 `ros2 run adas_mgm go` 로 출발");
     }
     // lane_path 입력 신선도 watchdog (2026-08-07 실차 테스트에서 발견) — state가
     // 현재 LANE일 때만 적용(다른 스테이트는 lane_path를 안 씀). stack_lane이
@@ -320,11 +352,18 @@ private:
     // gps_path 신선도 watchdog — lane과 대칭. waypoint 스테이트가 gps_path 없이도
     // v_base로 계속 주행하던 문제 방지 (실제로 lane→waypoint 자동 전이 후 이
     // 경로로 재현됨, 2026-08-07).
+    // fix 상실도 동일 취급 (2026-08-11 통합 점검에서 발견): stack_gps는 fix가
+    // 없거나 stale이면 fix_quality=0인 빈 GpsPath를 계속 발행한다 — 수신 시각만
+    // 보면 watchdog을 통과해, 조립 블록이 직전 ref를 hold한 채 v_base로 계속
+    // 주행 명령을 내던 구멍. "신선하지만 무효인 입력"을 stale과 같은 경로로
+    // 태운다 — 새 판단이 아니라 입력 컨디셔닝(§5.7 ②의 확장).
     const bool gps_stale = gps_rx_ns < 0 || monotonicNs() - gps_rx_ns > gps_stale_ns_;
-    if (core_state_.state == MGM_STATE_WAYPOINT && gps_stale && !estop_stale) {
+    const bool gps_no_fix = m.gps.fix_quality == 0 || m.gps.points.empty();
+    if (core_state_.state == MGM_STATE_WAYPOINT && (gps_stale || gps_no_fix) && !estop_stale) {
       m.estop.estop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-        "gps_path 신선도 초과(state=waypoint) — estop 강제 (stack_gps 확인 필요)");
+        gps_stale ? "gps_path 신선도 초과(state=waypoint) — estop 강제 (stack_gps 확인 필요)"
+                  : "gps fix 상실(state=waypoint, fix_quality=0/빈 경로) — estop 강제 (RTK 확인 필요)");
     }
     // traffic_stop 신선도 watchdog (§5.7 ③) — lane/gps와 달리 **수신 이력이 있은
     // 뒤 끊긴 경우만** 보정한다(사망 감지). 미수신은 보정하지 않음: traffic은
@@ -340,7 +379,8 @@ private:
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "traffic_stop 신선도 초과 — 정지 요구 강제 (stack_traffic 확인 필요)");
     }
-    const CoreSnapshot s = toSnapshot(m);
+    CoreSnapshot s = toSnapshot(m);
+    s.estop_latch_release = estop_real;  // toSnapshot은 LatestMsgs만 알므로 여기서 주입
 
     if (dump_.is_open()) {
       dump_.write(reinterpret_cast<const char *>(&s), sizeof(s));
@@ -397,6 +437,8 @@ private:
   int64_t gps_stale_ns_{500'000'000};
   int64_t last_traffic_rx_ns_{-1};  // 마지막 TrafficStop 수신 시각 (미수신 = -1)
   int64_t traffic_stale_ns_{500'000'000};
+  bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
+  bool go_received_{false};         // /operator/go 마지막 수신값
 
   rclcpp::Publisher<TargetRef>::SharedPtr pub_;
   rclcpp::Subscription<fma_interfaces::msg::LanePath>::SharedPtr sub_lane_;
@@ -405,6 +447,7 @@ private:
   rclcpp::Subscription<fma_interfaces::msg::ParkingStatus>::SharedPtr sub_parking_;
   rclcpp::Subscription<fma_interfaces::msg::TrafficStop>::SharedPtr sub_traffic_;
   rclcpp::Subscription<fma_interfaces::msg::EstopRequest>::SharedPtr sub_estop_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_go_;
 
   std::atomic<bool> running_{true};
   std::thread loop_thread_;
