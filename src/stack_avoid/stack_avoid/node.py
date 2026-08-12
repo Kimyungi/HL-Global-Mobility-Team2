@@ -91,6 +91,15 @@ class StackAvoidNode(Node):
         self.offset_max = self.declare_parameter('avoid.offset_max_m', 1.0).value
         # follow-the-gap: 장애물 전방거리 ±이 값 안의 blocker를 양쪽 고려
         self.depth_band = self.declare_parameter('avoid.depth_band_m', 0.6).value
+        # ★ 목표 y 변화율 상한 [m/s]. 0 이면 제한 없음(구동작). 상세는 _rate_limit 주석.
+        #   3.0 = 10Hz 스캔에서 프레임당 0.30m. 2개 bag 재생으로 정한 값 —
+        #   1m 초과 점프를 24·32회 → 2·0회로 줄이면서 narrow_gap 은 늘지 않았다.
+        self.target_rate_mps = float(
+            self.declare_parameter('avoid.target_rate_limit_mps', 3.0).value)
+        # dt 이상치일 때 대체용 스캔 주기 [Hz] (T-mini Plus 실측 10Hz)
+        self.scan_rate_hz = float(self.declare_parameter('avoid.scan_rate_hz', 10.0).value)
+        self._prev_center = None        # 직전 목표 y (rate limit 상태)
+        self._prev_center_t = None
 
         self._recompute_derived()
 
@@ -173,6 +182,8 @@ class StackAvoidNode(Node):
                 self.offset_max = p.value
             elif p.name == 'avoid.depth_band_m':
                 self.depth_band = p.value
+            elif p.name == 'avoid.target_rate_limit_mps':
+                self.target_rate_mps = float(p.value)
             elif p.name == 'vehicle.width_m':
                 self.vehicle_width = p.value
             elif p.name == 'lidar_mount.forward_angle_deg':
@@ -223,7 +234,11 @@ class StackAvoidNode(Node):
         # 회피 목표점 1개(follow-the-gap, 양쪽 고려), vehicle frame — 감지 시에만.
         # offset_max 안에 통과 가능한 열림이 없으면 None (여유 미달 지점을 억지로
         # 내지 않음 — 팀장 리뷰 반영). 이 경우 narrow_gap 으로 감속 근거만 제공.
-        tgt = self._gap_target(scan, gap) if msg.obstacle_detected else None
+        if msg.obstacle_detected:
+            tgt = self._gap_target(scan, gap)
+        else:
+            tgt = None
+            self._prev_center = None        # 장애물 없음 → rate limit 이력 리셋
         msg.points = [tgt] if tgt is not None else []
 
         # TODO(stage2): avoidable = (측방 여유 확보 AND ttc >= ttc_stop). 판정 재료만.
@@ -241,6 +256,53 @@ class StackAvoidNode(Node):
         if msg.obstacle_detected and msg.ttc < self.ttc_stop:
             self.get_logger().debug(
                 f"ttc {msg.ttc:.2f}s < ttc_stop {self.ttc_stop}s (gap {gap:.2f}m)")
+
+    # 목표가 표면보다 이만큼 이상 멀면 "뒤"로 본다 [m]. 측정 잡음·클러스터 두께 흡수.
+    BEHIND_TOL_M = 0.10
+    # 목표 방위각 주변 이 각도 안의 측정치를 본다 [deg]. 3m 에서 ±0.10m 에 해당.
+    BEHIND_WIN_DEG = 2.0
+
+    def _behind_surface(self, scan, tx, ty):
+        """목표 (tx,ty) 가 **스캔된 표면보다 뒤**에 있는가 (vehicle frame 입력).
+
+        ★ 왜 이 판정인가 (2026-08-10 실차 규명). `_gap_target` 은 장면을 "한 깊이
+          슬래브에 늘어선 점들의 1차원 줄"로 모델링한다. 실제 장면은 2차원이라
+          **대각선 벽은 어느 깊이로 잘라도 그 단면에 '끝'이 생기고**, 알고리즘은 그
+          가짜 끝을 돌아갈 수 있는 모서리로 착각해 벽 반대편에 목표를 찍는다.
+          실측(avoid_20260809_220343 t=9.89s): 왼쪽 벽이 x 1.5→4.0 에서 y +1.4→+0.2 로
+          기우는 하나의 연속 벽인데 슬래브 3.02~4.22 에서는 y +0.38~+0.71 로만 보여,
+          그 "끝" 바깥 +1.17 을 목표로 냈다. 15프레임 재현.
+
+          스캔은 방위각의 함수 r(θ) 다. "장애물 뒤"의 정확한 정의는 **목표의 방위각에서
+          목표까지의 거리가 측정 거리보다 먼 것** — 즉 스캔된 표면을 뚫고 들어간 것이다.
+          위 프레임: 목표 거리 3.09m vs 그 방위각 측정 2.18m → 뒤 ✓
+
+        ★ 처음에는 "경로 수직거리" 로 검사했는데 **너무 엄격해 실주행이 막혔다**
+          (2026-08-10 실차: 230/260 프레임 기각, 23초 정지). 통로를 따라 정상 주행할 때
+          벽은 항상 clear 언저리를 스치므로, 수직거리 기준은 "벽 옆을 지나감" 과
+          "벽을 뚫고 감" 을 구분하지 못한다. 같은 프레임에서 이 표면 판정은
+          목표 2.57m vs 측정 3.95m → 통과로 올바르게 판정한다.
+        """
+        xl, yl = tx - self.lidar_x, ty - self.lidar_y      # 라이다 프레임으로
+        tr = math.hypot(xl, yl)
+        if tr < 1e-6:
+            return False
+        tb = math.atan2(yl, xl)
+        win = math.radians(self.BEHIND_WIN_DEG)
+        nearest = None
+        angle = scan.angle_min
+        for r in scan.ranges:
+            rel = wrap_to_pi(angle - self.front_center)
+            angle += scan.angle_increment
+            if not math.isfinite(r) or r < scan.range_min:
+                continue
+            if r > min(scan.range_max, self.max_range):
+                continue
+            if abs(wrap_to_pi(rel - tb)) > win:
+                continue
+            if nearest is None or r < nearest:
+                nearest = r
+        return nearest is not None and tr > nearest + self.BEHIND_TOL_M
 
     def _gap_target(self, scan: LaserScan, gap: float):
         """follow-the-gap (양쪽 고려) — 회피 목표점 1개, vehicle frame(후축 원점).
@@ -263,13 +325,34 @@ class StackAvoidNode(Node):
             angle += scan.angle_increment
             if abs(rel) > self.front_half_angle:
                 continue
-            if not math.isfinite(r) or r < scan.range_min or r > self.detect_range:
+            # ★ blocker 범위는 **거리(r)가 아니라 기하**로 자른다 (2026-08-09 실차 규명).
+            #
+            #   detect_range(3.0)로 자르면: 깊이 밴드가 obs_x±depth_band 라 4.4m 까지
+            #   뻗는데 3.0m 초과 점이 통째로 빠져 **없는 빈틈이 생긴다.**
+            #   실측(avoid_20260809_214356 t=11.24s): 밴드 안 44점 중 33점이 빠져
+            #   y=+0.09 에 가짜 열림이 생겼고 목표점이 장애물 0.10m 앞에 찍혔다.
+            #
+            #   그렇다고 max_range(12m)로 풀면 반대로 망가진다: FOV 가 ±90° 라 거의
+            #   옆(rel≈89°)의 먼 벽이 x_v 만 밴드에 걸려 y=+6.98 로 들어오고, 그것이
+            #   ys[-1] 이 되어 좌측 바깥 후보를 +0.12 → +7.44 로 밀어낸다. 후보가
+            #   전멸해 **출발부터 narrow_gap** 이 됐다(2026-08-09 지상 시험 2회 정지).
+            #
+            #   올바른 경계는 **차가 실제로 갈 수 있는 가로 범위**다:
+            #       |y| <= offset_max + clear
+            #   목표 중심은 |y| <= offset_max 까지만 갈 수 있고 차 반쪽이 clear 안에
+            #   들어오므로, 이 밖의 점은 어떤 후보로도 부딪힐 수 없다(안전하게 무시 가능).
+            #   x 범위는 깊이 밴드가, y 범위는 이 식이 건다. 거리 컷은 쓰지 않는다.
+            if (not math.isfinite(r) or r < scan.range_min
+                    or r > min(scan.range_max, self.max_range)):
                 continue
             x_v = self.lidar_x + r * math.cos(rel)
-            if x_v < lo or x_v > hi:
+            y_v = r * math.sin(rel) + self.lidar_y
+            if abs(y_v) > self.offset_max + clear:
                 continue
-            ys.append(r * math.sin(rel) + self.lidar_y)
+            if lo <= x_v <= hi:
+                ys.append(y_v)
         if not ys:
+            self._prev_center = None       # 목표 없음 → 이력 리셋
             return None
         ys.sort()
 
@@ -282,11 +365,54 @@ class StackAvoidNode(Node):
         # offset_max 안에서 통과 가능한 열림만 실현 가능. 하나도 없으면 안전한
         # 목표가 없는 것 → None (예전엔 ±offset_max로 클램프해 여유 미달 지점을
         # 목표로 냈음. 팀장 리뷰 반영). narrow_gap 판정은 호출측(on_scan)이 담당.
-        reach = [c for c in cands if abs(c) <= self.offset_max]
+        # ★ 후보가 **스캔된 표면 뒤**에 있으면 버린다. 열림 판정(pass_w)은 한 깊이
+        #   슬래브 안의 1차원 문제라, 대각선 벽의 단면에 생기는 가짜 '끝'을 걸러내지
+        #   못한다 (_behind_surface 주석).
+        reach = [c for c in cands
+                 if abs(c) <= self.offset_max
+                 and not self._behind_surface(scan, obs_x, c)]
         if not reach:
+            self._prev_center = None       # 목표 소실 → 이력 리셋
             return None
         center = min(reach, key=abs)   # 직진에서 가장 덜 벗어나는 열림 (이미 clamp 불필요)
+        center = self._rate_limit(scan, obs_x, center)
         return self._rp(obs_x, center)
+
+    def _rate_limit(self, scan, obs_x, center):
+        """목표 y 의 프레임 간 변화를 제한한다 (급변 억제).
+
+        ★ 왜 필요한가 (2026-08-10 실측). 열림이 바뀌면 목표 y 가 한 프레임에 1.5m 씩
+          튄다. 조향은 63% 서는 데 0.33s 가 걸리는데 0.1s 마다 그런 명령이 오면 차는
+          어느 쪽도 못 따라간다. 실측: offset_max 1.6 에서 1m 초과 점프가 24회,
+          그 세션 4번 장애물에서 이격이 차폭 안(−0.04m)까지 들어갔다.
+
+          급변의 81% 는 "이전에 고르던 쪽 후보가 소멸" 이라 히스테리시스(전환 여유)로는
+          못 잡는다 — 없는 후보를 고를 수는 없기 때문이다(여유 0.5m 까지 시험, 무효).
+          그래서 후보 선택이 아니라 **출력 변화율**을 제한한다.
+
+        ★ 안전: 속도 제한된 중간값이 **표면 뒤면 쓰지 않고 그냥 점프**한다. 부드러움
+          보다 정확성이 우선 — 중간값이 장애물을 가리키면 안 된다. 실측에서 이 경우는
+          243프레임 중 3회였다.
+
+        효과 (2개 bag 재생, offset_max 1.6):
+            제한 없음 → 1m 초과 점프 24·32회
+            0.30m/프레임 → 2·0 회, narrow_gap 은 그대로 0·19
+        """
+        prev = self._prev_center
+        if prev is not None and self.target_rate_mps > 0.0:
+            now = self.get_clock().now().nanoseconds * 1e-9
+            dt = now - self._prev_center_t if self._prev_center_t else 0.0
+            # dt 이상치(첫 프레임·스캔 유실) 는 1스캔 주기로 본다
+            if not 0.0 < dt < 1.0:
+                dt = 1.0 / max(1.0, self.scan_rate_hz)
+            step = self.target_rate_mps * dt
+            if abs(center - prev) > step:
+                limited = prev + math.copysign(step, center - prev)
+                if not self._behind_surface(scan, obs_x, limited):
+                    center = limited
+        self._prev_center = center
+        self._prev_center_t = self.get_clock().now().nanoseconds * 1e-9
+        return center
 
     @staticmethod
     def _rp(x: float, y: float, yaw: float = 0.0, curvature: float = 0.0) -> RefPoint:
@@ -329,7 +455,8 @@ class StackAvoidNode(Node):
         for r in scan.ranges:
             rel = wrap_to_pi(angle - self.front_center)  # 차량 전방 기준 상대각
             angle += scan.angle_increment
-            if not math.isfinite(r) or r < scan.range_min or r > min(scan.range_max, self.max_range):
+            if (not math.isfinite(r) or r < scan.range_min
+                    or r > min(scan.range_max, self.max_range)):
                 continue
             if abs(rel) > self.front_half_angle:
                 continue

@@ -12,6 +12,11 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>tf2_ros</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>visualization_msgs</depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <!-- avoid_estop_joint.launch.py 가 stack_estop_node 를 함께 띄운다 (ⓐⓑⓒ 경계 시험) -->
+  <exec_depend>stack_estop</exec_depend>
 
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

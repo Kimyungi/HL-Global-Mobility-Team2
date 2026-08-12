@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ydlidar_sdk</name>
+  <version>1.2.15</version>
+  <description>
+    YDLidar C++ SDK — FMA_ws 에 벤더링 (2026-08-09).
+    원본: https://github.com/YDLIDAR/YDLidar-SDK (이 노트북 ~/YDLidar-SDK 사본 기준).
+    벤더링 이유: SDK 가 ~/.local 에만 설치돼 있어 산업용 PC 이전 시 워크스페이스
+    복사만으로는 ydlidar_ros2_driver 빌드가 깨진다. FMA_ws 단독 빌드를 보장한다.
+  </description>
+  <maintainer email="kyg100800@gmail.com">이기돈</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>cmake</buildtool_depend>
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>

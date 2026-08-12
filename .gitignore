@@ -7,4 +7,5 @@ __pycache__/
 !.vscode/extensions.json
 nohup.out
 drive_logs/
+field_logs/
 *.pt
