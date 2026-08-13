@@ -170,6 +170,18 @@ def _build(context, *args, **kwargs):
         arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
     )
 
+    # 배치 그림(차체·라이다 위치·FOV 부채꼴). **융합 노드와 같은 parameters 목록**을
+    # 쓴다 — 그림과 실제 처리가 다른 값을 보면 검증 수단이 아니라 거짓말이 된다.
+    layout_node = Node(
+        package='multi_lidar_fusion',
+        executable='layout_markers.py',
+        name='layout_markers',
+        output='log',
+        condition=IfCondition(LaunchConfiguration('layout')),
+        parameters=[extrinsics_file, params_file] + ([overrides] if overrides else []),
+        remappings=[('vehicle_layout', '/lidar/vehicle_layout')],
+    )
+
     # 시뮬레이터에도 같은 장착값을 먹인다 — 합성 데이터와 융합 노드가 같은 위치를
     # 보게 해서, 어긋남이 보이면 그건 순수하게 알고리즘 문제다.
     sim_node = Node(
@@ -182,7 +194,7 @@ def _build(context, *args, **kwargs):
         parameters=[extrinsics_file, sim_params_file] + ([overrides] if overrides else []),
     )
 
-    return notes + [fusion_node, sim_node]
+    return notes + [fusion_node, layout_node, sim_node]
 
 
 def generate_launch_description():
@@ -211,6 +223,8 @@ def generate_launch_description():
                               description='실 센서 없이 합성 라이다 4대로 검증'),
         DeclareLaunchArgument('rviz', default_value='false',
                               description='RViz2 동시 실행'),
+        DeclareLaunchArgument('layout', default_value='true',
+                              description='차체·라이다 배치 그림(/lidar/vehicle_layout) 발행'),
         DeclareLaunchArgument('log_level', default_value='info'),
     ]
 

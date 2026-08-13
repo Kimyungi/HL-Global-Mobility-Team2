@@ -82,6 +82,7 @@ install(DIRECTORY launch config rviz
 install(PROGRAMS
   tools/identify_lidars.sh
   tools/identify_lidar_positions.py
+  tools/layout_markers.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

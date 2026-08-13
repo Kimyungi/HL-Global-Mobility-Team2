@@ -34,6 +34,22 @@ Visualization Manager:
       Plane Cell Count: 20
       Reference Frame: <Fixed Frame>
       Value: true
+    # 차체 외곽 · self filter 박스 · ROI · 라이다 4대 위치와 FOV 부채꼴.
+    # layout_markers.py 가 융합 노드와 같은 파라미터로 그린다 (그림 = 실제 설정값).
+    # 노드가 기본 QoS(Reliable) 로 발행하므로 여기도 Reliable 이어야 보인다.
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: vehicle layout (차체·라이다 배치)
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /lidar/vehicle_layout
+      Value: true
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
@@ -66,6 +82,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /lidar/a1/cloud
@@ -88,6 +105,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /lidar/a2/cloud
@@ -110,6 +128,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /lidar/b1/cloud
@@ -132,6 +151,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /lidar/b2/cloud
@@ -156,6 +176,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /lidar/merged_cloud
@@ -178,6 +199,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /lidar/merged_scan
@@ -212,6 +234,7 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /lidar/merged_cloud_debug
