@@ -1,0 +1,84 @@
+# multi_lidar_fusion — 합성 라이다 시뮬레이터 파라미터 (test_scan_publisher)
+#
+# 실 센서가 없어도 Phase 1~8 을 전부 돌려보기 위한 것(요구 §27).
+# 장착 위치(extrinsics)는 lidar_extrinsics.yaml 을 그대로 쓴다 — 시뮬레이터와 융합
+# 노드가 같은 값을 보게 해야, RViz 에서 어긋남이 보일 때 그것이 순수하게 알고리즘
+# 문제임을 알 수 있다.
+
+/**:
+  ros__parameters:
+    world_frame: "odom"
+    base_frame: "base_link"
+
+    # ── 월드: 직사각형 방 ──
+    # fusion_params.yaml 의 filter ROI(-5..10, -5..5) 안에 들어가도록 잡았다.
+    # 방을 ROI 보다 크게 만들면 그 바깥 벽이 필터에서 잘려 merged_scan 의
+    # 해당 방향이 inf 로 남는다 — 잘못이 아니라 ROI 가 일하고 있는 것이다.
+    room:
+      min_x: -4.0
+      max_x: 4.0
+      min_y: -3.0
+      max_y: 3.0
+
+    # ── 장애물 상자들: [center_x, center_y, size_x, size_y] 반복 ──
+    obstacles: [2.0, 0.5, 0.4, 0.4,
+                -2.0, -1.0, 0.6, 0.3,
+                0.0, 2.0, 1.2, 0.2]
+
+    # ── 차량 운동 ──
+    # 정지 검증은 전부 0. 이동 검증(Phase 7)에서 vx 를 올리고
+    # fusion_params.yaml 의 motion.enable_motion_compensation 을 켜서 비교한다.
+    vehicle:
+      vx: 0.0
+      vy: 0.0
+      yaw_rate: 0.0
+      start_x: 0.0
+      start_y: 0.0
+      start_yaw: 0.0
+      publish_odom: true
+      publish_tf: true
+      odom_topic: "/odom"
+
+    # ── 센서 4대 ──
+    # 일부러 주기를 다르게 준다 (A=10Hz, B=20Hz) — 요구 §8 검증용.
+    sensors:
+      a1:
+        topic: "/lidar/a1/scan"
+        frame_id: "lidar_a1_link"
+        rate_hz: 10.0
+        angle_min_deg: -180.0
+        angle_max_deg: 180.0
+        angle_increment_deg: 1.0
+        range_min: 0.05
+        range_max: 12.0
+        noise_std: 0.01
+      a2:
+        topic: "/lidar/a2/scan"
+        frame_id: "lidar_a2_link"
+        rate_hz: 10.0
+        angle_min_deg: -180.0
+        angle_max_deg: 180.0
+        angle_increment_deg: 1.0
+        range_min: 0.05
+        range_max: 12.0
+        noise_std: 0.01
+      b1:
+        topic: "/lidar/b1/scan"
+        frame_id: "lidar_b1_link"
+        rate_hz: 20.0
+        angle_min_deg: -180.0
+        angle_max_deg: 180.0
+        angle_increment_deg: 0.72
+        range_min: 0.08
+        range_max: 12.0
+        noise_std: 0.015
+      b2:
+        topic: "/lidar/b2/scan"
+        frame_id: "lidar_b2_link"
+        rate_hz: 20.0
+        angle_min_deg: -180.0
+        angle_max_deg: 180.0
+        angle_increment_deg: 0.72
+        range_min: 0.08
+        range_max: 12.0
+        noise_std: 0.015

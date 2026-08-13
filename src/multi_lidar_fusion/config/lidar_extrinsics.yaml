@@ -1,0 +1,161 @@
+# multi_lidar_fusion — 센서 정의 + 장착 위치(extrinsic) + 보는 범위(FOV)
+#
+# ★ 사용자가 가장 자주 만지는 파일. 코드는 건드리지 않는다 (요구 §29 금지5).
+#
+# 구성 (2026-08-13 기준):
+#   a1 = 전방  YDLiDAR T-mini Plus
+#   a2 = 후방  YDLiDAR T-mini Plus
+#   b1 = 좌측  SLAMTEC RPLiDAR C1M1
+#   b2 = 우측  SLAMTEC RPLiDAR C1M1
+#
+# TF 는 전부 base_link 직속이다 (요구 §4 — 라이다끼리 연쇄 금지):
+#   base_link ├── lidar_a1_link
+#             ├── lidar_a2_link
+#             ├── lidar_b1_link
+#             └── lidar_b2_link
+#
+# 좌표 규약 (REP-103): x = 전방, y = 좌측, z = 위. yaw 는 반시계 양수.
+#   전방 라이다 yaw=0, 후방 yaw=pi(3.14159), 좌측 yaw=+pi/2(1.5708), 우측 yaw=-pi/2.
+#
+# ▼▼ 아래 x/y/z/roll/pitch/yaw 값은 실측 전 자리표시자다. 반드시 줄자로 재서 채울 것.
+#    (여러 겹 벽 = extrinsic 오차. 검증 절차는 README §RViz 검증 참조)
+
+/**:
+  ros__parameters:
+    sensor_ids: ["a1", "a2", "b1", "b2"]
+    target_frame: "base_link"
+
+    # 이 노드가 base_link -> lidar_*_link static TF 를 직접 낸다.
+    # URDF/robot_state_publisher 로 이미 내보내고 있으면 false 로 끌 것.
+    publish_static_tf: true
+
+    extrinsics:
+      # ── 전방 YDLiDAR T-mini Plus ──
+      a1:
+        x: 0.30          # [m] base_link 기준 전방
+        y: 0.00
+        z: 0.20          # 스캔 평면 높이
+        roll: 0.0
+        pitch: 0.0
+        yaw: 0.0         # 라이다 0도 방향 = 차량 전방
+      # ── 후방 YDLiDAR T-mini Plus ──
+      a2:
+        x: -0.30
+        y: 0.00
+        z: 0.20
+        roll: 0.0
+        pitch: 0.0
+        yaw: 3.14159265  # 뒤를 본다
+      # ── 좌측 RPLiDAR C1M1 ──
+      b1:
+        x: 0.00
+        y: 0.15
+        z: 0.25
+        roll: 0.0
+        pitch: 0.0
+        yaw: 1.57079633
+      # ── 우측 RPLiDAR C1M1 ──
+      b2:
+        x: 0.00
+        y: -0.15
+        z: 0.25
+        roll: 0.0
+        pitch: 0.0
+        yaw: -1.57079633
+
+    sensors:
+      # ─────────────────────────────────────────────────────────────────
+      # 각 센서 공통 항목
+      #   input_topic : 드라이버가 내는 토픽 (드라이버 launch 의 remap 과 일치시킬 것)
+      #   input_type  : "scan"(LaserScan) | "cloud"(PointCloud2)
+      #                 → 나중에 3D 라이다로 바꿔도 이 한 줄만 고치면 된다 (요구 §34-J)
+      #   frame_id    : 드라이버가 뭘 박아 넣든 이 값으로 덮어쓴다 (TF 조회 키)
+      #   min/max_range: 그 센서를 믿을 수 있는 거리. 모델별로 다르다 (요구 §12)
+      #   time_field  : PointCloud2 입력에서 점별 시각 필드 이름 ("" = 없음)
+      #
+      # 보는 범위·방향 (센서 좌표계 기준, 단위 deg):
+      #   fov_enabled       : false = 360도 전부 사용 (기본)
+      #   fov_min_deg/max_deg
+      #       min < max  → 보통 구간.        예) -100 ~ 100 = 전방 200도만
+      #       min > max  → ±180 을 가로지름. 예)  150 ~ -150 = 후방 60도만
+      #   blind_sectors_deg : [min1, max1, min2, max2, ...] 로 가릴 구간들
+      #                       (브래킷·차체에 가려 못 믿는 각도)
+      # ─────────────────────────────────────────────────────────────────
+      a1:
+        enabled: true
+        input_topic: "/lidar/a1/scan"
+        input_type: "scan"
+        cloud_topic: "/lidar/a1/cloud"
+        frame_id: "lidar_a1_link"
+        min_range: 0.05      # T-mini Plus 사양 0.03 이지만 근거리는 신뢰도가 낮다
+        max_range: 12.0
+        time_field: ""
+        fov_enabled: false
+        fov_min_deg: -180.0
+        fov_max_deg: 180.0
+        # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
+      a2:
+        enabled: true
+        input_topic: "/lidar/a2/scan"
+        input_type: "scan"
+        cloud_topic: "/lidar/a2/cloud"
+        frame_id: "lidar_a2_link"
+        min_range: 0.05
+        max_range: 12.0
+        time_field: ""
+        fov_enabled: false
+        fov_min_deg: -180.0
+        fov_max_deg: 180.0
+        # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
+      b1:
+        enabled: true
+        input_topic: "/lidar/b1/scan"
+        input_type: "scan"
+        cloud_topic: "/lidar/b1/cloud"
+        frame_id: "lidar_b1_link"
+        min_range: 0.08      # C1 사양 0.05
+        max_range: 12.0
+        time_field: ""
+        fov_enabled: false
+        fov_min_deg: -180.0
+        fov_max_deg: 180.0
+        # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
+      b2:
+        enabled: true
+        input_topic: "/lidar/b2/scan"
+        input_type: "scan"
+        cloud_topic: "/lidar/b2/cloud"
+        frame_id: "lidar_b2_link"
+        min_range: 0.08
+        max_range: 12.0
+        time_field: ""
+        fov_enabled: false
+        fov_min_deg: -180.0
+        fov_max_deg: 180.0
+        # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
+
+# ── FOV 설정 예시 (그대로 복사해서 위 값에 덮어쓰면 된다) ─────────────────
+#
+#  ① 전방 라이다가 차체 뒤쪽을 못 보게: 앞 200도만 남긴다
+#       fov_enabled: true
+#       fov_min_deg: -100.0
+#       fov_max_deg:  100.0
+#
+#  ② 후방 라이다를 뒤 120도로 제한 (yaw=pi 로 이미 돌아가 있으므로 센서 기준 -60~60)
+#       fov_enabled: true
+#       fov_min_deg: -60.0
+#       fov_max_deg:  60.0
+#
+#  ③ ±180 을 가로지르는 구간 (센서를 돌리지 않고 뒤쪽만 보고 싶을 때)
+#       fov_enabled: true
+#       fov_min_deg:  150.0
+#       fov_max_deg: -150.0
+#
+#  ④ 브래킷이 두 군데를 가릴 때
+#       blind_sectors_deg: [85.0, 95.0, -95.0, -85.0]
+#
+# ★★ 주의: blind_sectors_deg 를 쓰지 않을 때는 **키를 통째로 지우거나 주석 처리**할 것.
+#    `blind_sectors_deg: []` 는 ROS 2 의 알려진 함정이다 — 빈 리스트는 타입을 알 수
+#    없어서, 이 YAML 을 읽는 노드가 생성자에서 즉시 죽는다:
+#        InvalidParameterValueException: ... 'No parameter value set'
+#    (rclcpp 가 파라미터 override 를 변환하는 시점이라 코드로는 막을 수 없다.)
