@@ -79,7 +79,9 @@ install(DIRECTORY include/
 install(DIRECTORY launch config rviz
   DESTINATION share/${PROJECT_NAME}
 )
-install(PROGRAMS tools/identify_lidars.sh
+install(PROGRAMS
+  tools/identify_lidars.sh
+  tools/identify_lidar_positions.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
