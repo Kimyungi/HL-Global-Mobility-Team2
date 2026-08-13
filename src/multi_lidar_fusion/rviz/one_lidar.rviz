@@ -1,0 +1,102 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /scan1
+      Splitter Ratio: 0.5
+    Tree Height: 600
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 0.5
+      Class: rviz_default_plugins/Grid
+      Color: 120; 120; 130
+      Enabled: true
+      Line Style:
+        Line Width: 0.02
+        Value: Lines
+      Name: Grid 0.5m
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 24
+      Reference Frame: <Fixed Frame>
+      Value: true
+    # 라이다 자신의 축 — 빨강(X)이 이 유닛의 0도 방향이다.
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 0.5
+      Name: lidar axes (X=0deg)
+      Radius: 0.02
+      Reference Frame: probe_frame
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/LaserScan
+      Color: 255; 80; 80
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Name: scan
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 5
+      Size (m): 0.02
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /probe/scan
+      Use Fixed Frame: true
+      Use rainbow: false
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 25; 25; 30
+    Fixed Frame: probe_frame
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 255; 255; 0
+    - Class: rviz_default_plugins/FocusCamera
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Angle: 0
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Scale: 120
+      Target Frame: <Fixed Frame>
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0
+      Y: 0
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 900
+  Hide Left Dock: false
+  Hide Right Dock: true
+  Width: 1400
+  X: 80
+  Y: 60
