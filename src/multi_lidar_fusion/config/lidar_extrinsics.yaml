@@ -20,11 +20,19 @@
 #             └── lidar_b2_link
 #
 # 좌표 규약 (REP-103): x = 전방, y = 좌측, z = 위. yaw 는 반시계 양수.
-#   전방 라이다 yaw=0, 후방 yaw=pi(3.14159), 좌측 yaw=+pi/2(1.5708), 우측 yaw=-pi/2.
 #
-# ⚠ yaw 는 아직 실측이 아니다. lidar_mounts.yaml 에 유닛별 장착 yaw 가 없어서
-#   "유효 시야의 중심 방향"(fov_center_deg)을 잠정 yaw 로 쓰고 있다. RViz 벽 겹침
-#   검증(README §8)에서 확정할 것 — 벽이 여러 겹으로 보이면 여기가 원인이다.
+# ★ yaw 는 "그 라이다의 스캔 0도가 차량 기준 어느 쪽을 보는가"다. 라이다를 설치한
+#   방향과 같지 않다 — 모델마다 스캔 0도의 위치가 다르기 때문이다.
+#
+#   a2/b1/b2 — 확정 (2026-08-13, view_one_lidar 의 0~360도 눈금으로 한 대씩 확인):
+#       b1/b2 (RPLiDAR C1M1) : **raw 180 이 정면**.
+#            좌측 정면=차량 +90 -> yaw = 90 - 180 = -90
+#            우측 정면=차량 -90 -> yaw = -90 - 180 ≡ +90
+#       a2 (T-mini Plus, 후방): **raw 270 이 정면**. yaw = 180 - 270 = -90
+#       ⚠ 좌·우는 예전 폴백 가정("센서 정면 = 시야 중심")과 정확히 180도 달랐다.
+#         그 가정 탓에 FOV 가 차체 쪽만 남기고 다 잘라내 좌/우가 empty 가 됐었다.
+#   a1 (전방) — 이 PR 범위 밖. lidar_mounts.yaml 에 yaw_deg 가 없어 launch 가
+#       fov_center_deg 를 잠정 yaw 로 쓰고 경고를 낸다.
 
 /**:
   ros__parameters:
@@ -51,21 +59,21 @@
         z: 0.065
         roll: 0.0
         pitch: 0.0
-        yaw: 3.14159265
+        yaw: -1.57079633  # -90deg — raw 270 이 정면(차량 후방) -> yaw = 180-270 = -90
       b1:                # left
         x: 0.310
         y: 0.155
         z: 0.065
         roll: 0.0
         pitch: 0.0
-        yaw: 1.57079633
+        yaw: -1.57079633  # -90deg — raw 180 이 정면(차량 좌측) -> yaw = 90-180 = -90
       b2:                # right
         x: 0.310
         y: -0.155
         z: 0.065
         roll: 0.0
         pitch: 0.0
-        yaw: -1.57079633
+        yaw: 1.57079633   # +90deg — raw 180 이 정면(차량 우측) -> yaw = -90-180 ≡ +90
 
     sensors:
       # ─────────────────────────────────────────────────────────────────
@@ -108,10 +116,12 @@
         min_range: 0.05
         max_range: 12.0
         time_field: ""
-        # 후방 160deg — 범퍼 자기가림 (lidar_mounts.yaml: 기하 상한, 실측 mask 로 줄어들 수 있음)
+        # 2026-08-13 지정: raw 270 이 정면(차량 후방), raw 200~340 만 사용.
+        # 센서 기준 = -160 ~ -20 (200-360, 340-360). 원천(lidar_mounts.yaml)의
+        # fov_center_deg 180 / fov_width_deg 140 과 같은 구간이다.
         fov_enabled: true
-        fov_min_deg: -80.0
-        fov_max_deg: 80.0
+        fov_min_deg: -160.0
+        fov_max_deg: -20.0
         # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
       b1:
         enabled: true
@@ -122,10 +132,11 @@
         min_range: 0.08      # C1 사양 0.05
         max_range: 12.0
         time_field: ""
-        # 좌측 110deg (lidar_mounts.yaml: 기하 상한, 실측 mask 로 줄어들 수 있음)
+        # 2026-08-13 지정: raw 180 이 정면(차량 좌측), raw 120~250 만 사용.
+        # ±180 을 가로지르므로 min > max 로 적는다 (250 을 그대로 쓰면 안 된다 — b2 주석 참조).
         fov_enabled: true
-        fov_min_deg: -55.0
-        fov_max_deg: 55.0
+        fov_min_deg: 120.0
+        fov_max_deg: -110.0
         # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
       b2:
         enabled: true
@@ -136,10 +147,13 @@
         min_range: 0.08
         max_range: 12.0
         time_field: ""
-        # 우측 110deg (lidar_mounts.yaml: 기하 상한, 실측 mask 로 줄어들 수 있음)
+        # 2026-08-13 지정: raw 180 이 정면(차량 우측), raw 110~230 만 사용.
+        # ★ max 를 230 으로 적으면 안 된다 — 노드는 각도를 (-180,180] 로 정규화해
+        #   비교하므로 180 을 넘는 상한은 절대 만족되지 않아 180~230 이 조용히 사라진다.
+        #   ±180 을 가로지르는 구간은 min > max 로 적는다 (AngularSector 가 감긴 구간으로 읽음).
         fov_enabled: true
-        fov_min_deg: -55.0
-        fov_max_deg: 55.0
+        fov_min_deg: 110.0
+        fov_max_deg: -130.0
         # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
 
 # ── FOV 설정 예시 (그대로 복사해서 위 값에 덮어쓰면 된다) ─────────────────

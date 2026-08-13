@@ -54,6 +54,15 @@ def _default_mounts_file():
         return ''
 
 
+def _wrap_deg(a):
+    """각도를 (-180, 180] 으로 정규화."""
+    while a > 180.0:
+        a -= 360.0
+    while a <= -180.0:
+        a += 360.0
+    return a
+
+
 def _read_yaml(path):
     if not path or not os.path.isfile(path):
         return {}
@@ -92,6 +101,7 @@ def _build(context, *args, **kwargs):
         else:
             have = _extrinsics_in_file(extrinsics_file)
             diffs = []
+            unverified = []
             for slot, key in MOUNT_OF_SLOT.items():
                 m = mounts.get(key)
                 if not isinstance(m, dict):
@@ -99,9 +109,17 @@ def _build(context, *args, **kwargs):
                 x = float(m.get('x', 0.0))
                 y = float(m.get('y', 0.0))
                 z = float(m.get('z', 0.0))
-                # ★ 장착 yaw 는 lidar_mounts.yaml 에 아직 없다(외부 캘리브 미완).
-                #   유효 시야의 중심 방향을 잠정 yaw 로 쓴다 — 캘리브 전 가정이다.
-                yaw = math.radians(float(m.get('fov_center_deg', 0.0)))
+                # 장착 yaw: yaw_deg 가 있으면 그것이 실측값이다.
+                # 없으면 "유효 시야의 중심 = 센서 정면"이라는 가정으로 축퇴한다 —
+                # 2026-08-13 실차에서 RPLiDAR 2대가 이 가정과 180도 어긋나 있었다
+                # (센서 0도가 차체 안쪽을 봄 → FOV 가 차체만 남겨 empty).
+                fov_center = float(m.get('fov_center_deg', 0.0))
+                if 'yaw_deg' in m:
+                    yaw_deg = float(m['yaw_deg'])
+                else:
+                    yaw_deg = fov_center
+                    unverified.append(slot)
+                yaw = math.radians(yaw_deg)
                 overrides[f'extrinsics.{slot}.x'] = x
                 overrides[f'extrinsics.{slot}.y'] = y
                 overrides[f'extrinsics.{slot}.z'] = z
@@ -109,13 +127,16 @@ def _build(context, *args, **kwargs):
                 overrides[f'extrinsics.{slot}.pitch'] = 0.0
                 overrides[f'extrinsics.{slot}.yaw'] = yaw
 
-                # 시야각도 같은 원천에서. vehicle frame 기준 폭을 센서 frame 으로 옮기면
-                # (yaw 를 위처럼 잡았으므로) 0도 중심의 +-w/2 가 된다.
+                # 시야각도 같은 원천에서. lidar_mounts.yaml 의 시야각은 **vehicle frame**
+                # 기준이므로 센서 frame 으로 옮긴다:  센서각 = vehicle각 - 장착 yaw.
+                # ±180 을 가로지르면 min > max 가 되는데, AngularSector 가 그 표기를
+                # 그대로 이해한다(감긴 구간).
                 w = float(m.get('fov_width_deg', 360.0))
                 if w < 359.0:
+                    center = _wrap_deg(fov_center - yaw_deg)
                     overrides[f'sensors.{slot}.fov_enabled'] = True
-                    overrides[f'sensors.{slot}.fov_min_deg'] = -0.5 * w
-                    overrides[f'sensors.{slot}.fov_max_deg'] = 0.5 * w
+                    overrides[f'sensors.{slot}.fov_min_deg'] = _wrap_deg(center - 0.5 * w)
+                    overrides[f'sensors.{slot}.fov_max_deg'] = _wrap_deg(center + 0.5 * w)
 
                 old = have.get(slot) or {}
                 for name, val in (('x', x), ('y', y), ('z', z)):
@@ -132,6 +153,11 @@ def _build(context, *args, **kwargs):
                 notes.append(LogInfo(msg=(
                     '[multi_lidar_fusion] ! lidar_extrinsics.yaml 이 원천과 다르다 — '
                     '원천 값으로 덮어쓴다: ' + ', '.join(diffs))))
+            if unverified:
+                notes.append(LogInfo(msg=(
+                    '[multi_lidar_fusion] ! 장착 yaw 미실측: ' + ', '.join(unverified) +
+                    ' — lidar_mounts.yaml 에 yaw_deg 가 없어 fov_center_deg 로 대체했다. '
+                    'FOV 가 엉뚱한 방향을 자를 수 있다(실차에서 겪음).')))
 
     fusion_node = Node(
         package='multi_lidar_fusion',
