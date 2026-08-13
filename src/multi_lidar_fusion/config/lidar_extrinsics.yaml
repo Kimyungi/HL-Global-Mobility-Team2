@@ -1,12 +1,17 @@
 # multi_lidar_fusion — 센서 정의 + 장착 위치(extrinsic) + 보는 범위(FOV)
 #
-# ★ 사용자가 가장 자주 만지는 파일. 코드는 건드리지 않는다 (요구 §29 금지5).
+# ★ 코드는 건드리지 않는다 (요구 §29 금지5).
 #
-# 구성 (2026-08-13 기준):
-#   a1 = 전방  YDLiDAR T-mini Plus
-#   a2 = 후방  YDLiDAR T-mini Plus
-#   b1 = 좌측  SLAMTEC RPLiDAR C1M1
-#   b2 = 우측  SLAMTEC RPLiDAR C1M1
+# ★★ 장착값(x/y/z/rpy)과 시야각의 **단일 원천은 stack_parking/config/lidar_mounts.yaml** 이다.
+#     multi_lidar_fusion.launch.py 가 그 파일을 읽어 아래 값을 런타임에 덮어쓰고,
+#     서로 다르면 경고를 찍는다. 값을 고칠 곳은 lidar_mounts.yaml 한 곳뿐이다.
+#     여기 적힌 값은 그 원천의 사본이며, `use_mounts:=false` 로 띄울 때의 대비책이다.
+#
+# 구성 (2026-08-13 실차 확정 — view_one_lidar.launch.py 로 한 대씩 눈으로 확인):
+#   a1 = 전방  YDLiDAR T-mini Plus   (unit yd0, by-path …1.2.4…)
+#   a2 = 후방  YDLiDAR T-mini Plus   (unit yd1, by-path …1.2.3…)
+#   b1 = 좌측  SLAMTEC RPLiDAR C1M1  (unit rp1, by-id …f2ee467b…)
+#   b2 = 우측  SLAMTEC RPLiDAR C1M1  (unit rp0, by-id …76d341fd…)
 #
 # TF 는 전부 base_link 직속이다 (요구 §4 — 라이다끼리 연쇄 금지):
 #   base_link ├── lidar_a1_link
@@ -17,8 +22,9 @@
 # 좌표 규약 (REP-103): x = 전방, y = 좌측, z = 위. yaw 는 반시계 양수.
 #   전방 라이다 yaw=0, 후방 yaw=pi(3.14159), 좌측 yaw=+pi/2(1.5708), 우측 yaw=-pi/2.
 #
-# ▼▼ 아래 x/y/z/roll/pitch/yaw 값은 실측 전 자리표시자다. 반드시 줄자로 재서 채울 것.
-#    (여러 겹 벽 = extrinsic 오차. 검증 절차는 README §RViz 검증 참조)
+# ⚠ yaw 는 아직 실측이 아니다. lidar_mounts.yaml 에 유닛별 장착 yaw 가 없어서
+#   "유효 시야의 중심 방향"(fov_center_deg)을 잠정 yaw 로 쓰고 있다. RViz 벽 겹침
+#   검증(README §8)에서 확정할 것 — 벽이 여러 겹으로 보이면 여기가 원인이다.
 
 /**:
   ros__parameters:
@@ -30,35 +36,33 @@
     publish_static_tf: true
 
     extrinsics:
-      # ── 전방 YDLiDAR T-mini Plus ──
-      a1:
-        x: 0.30          # [m] base_link 기준 전방
-        y: 0.00
-        z: 0.20          # 스캔 평면 높이
+      # ↓ stack_parking/config/lidar_mounts.yaml 의 사본 (2026-08-11 실측 좌표).
+      #   launch 가 원천을 읽어 덮어쓰므로, 원천을 고치면 여기는 자동으로 무시된다.
+      a1:                # front
+        x: 0.760         # 앞범퍼. stack_avoid 와 같은 물리 유닛
+        y: 0.000
+        z: 0.065         # 4대 동일 높이 — 2D 병합의 전제
         roll: 0.0
         pitch: 0.0
-        yaw: 0.0         # 라이다 0도 방향 = 차량 전방
-      # ── 후방 YDLiDAR T-mini Plus ──
-      a2:
-        x: -0.30
-        y: 0.00
-        z: 0.20
+        yaw: 0.0
+      a2:                # rear
+        x: -0.055        # 차체 뒷단(-0.090)보다 35mm 안쪽 — 자기가림이 가장 큼
+        y: 0.000
+        z: 0.065
         roll: 0.0
         pitch: 0.0
-        yaw: 3.14159265  # 뒤를 본다
-      # ── 좌측 RPLiDAR C1M1 ──
-      b1:
-        x: 0.00
-        y: 0.15
-        z: 0.25
+        yaw: 3.14159265
+      b1:                # left
+        x: 0.310
+        y: 0.155
+        z: 0.065
         roll: 0.0
         pitch: 0.0
         yaw: 1.57079633
-      # ── 우측 RPLiDAR C1M1 ──
-      b2:
-        x: 0.00
-        y: -0.15
-        z: 0.25
+      b2:                # right
+        x: 0.310
+        y: -0.155
+        z: 0.065
         roll: 0.0
         pitch: 0.0
         yaw: -1.57079633
@@ -90,9 +94,10 @@
         min_range: 0.05      # T-mini Plus 사양 0.03 이지만 근거리는 신뢰도가 낮다
         max_range: 12.0
         time_field: ""
-        fov_enabled: false
-        fov_min_deg: -180.0
-        fov_max_deg: 180.0
+        # 전방 180deg (lidar_mounts.yaml: 기하 상한, 실측 mask 로 줄어들 수 있음)
+        fov_enabled: true
+        fov_min_deg: -90.0
+        fov_max_deg: 90.0
         # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
       a2:
         enabled: true
@@ -103,9 +108,10 @@
         min_range: 0.05
         max_range: 12.0
         time_field: ""
-        fov_enabled: false
-        fov_min_deg: -180.0
-        fov_max_deg: 180.0
+        # 후방 160deg — 범퍼 자기가림 (lidar_mounts.yaml: 기하 상한, 실측 mask 로 줄어들 수 있음)
+        fov_enabled: true
+        fov_min_deg: -80.0
+        fov_max_deg: 80.0
         # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
       b1:
         enabled: true
@@ -116,9 +122,10 @@
         min_range: 0.08      # C1 사양 0.05
         max_range: 12.0
         time_field: ""
-        fov_enabled: false
-        fov_min_deg: -180.0
-        fov_max_deg: 180.0
+        # 좌측 110deg (lidar_mounts.yaml: 기하 상한, 실측 mask 로 줄어들 수 있음)
+        fov_enabled: true
+        fov_min_deg: -55.0
+        fov_max_deg: 55.0
         # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
       b2:
         enabled: true
@@ -129,9 +136,10 @@
         min_range: 0.08
         max_range: 12.0
         time_field: ""
-        fov_enabled: false
-        fov_min_deg: -180.0
-        fov_max_deg: 180.0
+        # 우측 110deg (lidar_mounts.yaml: 기하 상한, 실측 mask 로 줄어들 수 있음)
+        fov_enabled: true
+        fov_min_deg: -55.0
+        fov_max_deg: 55.0
         # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
 
 # ── FOV 설정 예시 (그대로 복사해서 위 값에 덮어쓰면 된다) ─────────────────

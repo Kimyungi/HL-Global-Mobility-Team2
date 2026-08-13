@@ -2,12 +2,12 @@
 
 2D LiDAR **4대를 하나의 가상 360° LiDAR로 추상화**하는 ROS 2 Humble 패키지.
 
-| 슬롯 | 위치 | 모델 |
-|---|---|---|
-| `a1` | 전방 | YDLiDAR T-mini Plus |
-| `a2` | 후방 | YDLiDAR T-mini Plus |
-| `b1` | 좌측 | SLAMTEC RPLiDAR C1M1 |
-| `b2` | 우측 | SLAMTEC RPLiDAR C1M1 |
+| 슬롯 | 위치 | 모델 | 포트 (2026-08-13 실차 확정) | 실측 |
+|---|---|---|---|---|
+| `a1` | 전방 | YDLiDAR T-mini Plus | by-path `…usb-0:1.2.4:1.0-port0` | 10.2 Hz, 0.839°, 12 m |
+| `a2` | 후방 | YDLiDAR T-mini Plus | by-path `…usb-0:1.2.3:1.0-port0` | 10.1 Hz, 0.839°, 12 m |
+| `b1` | 좌측 | SLAMTEC RPLiDAR C1M1 | by-id `…f2ee467b…` | 10 Hz, 0.499°, 16 m |
+| `b2` | 우측 | SLAMTEC RPLiDAR C1M1 | by-id `…76d341fd…` | 10 Hz, 0.499°, 16 m |
 
 회피 로직(`stack_avoid`)은 라이다가 4대라는 사실을 알 필요가 없다. **`/lidar/merged_scan` 하나만 구독**하면 된다.
 
@@ -165,36 +165,76 @@ ros2 launch multi_lidar_fusion multi_lidar_fusion.launch.py \
 
 ## 6. ⚠ 시리얼 포트 — 4대 구성의 첫 번째 함정
 
-YDLiDAR T-mini Plus와 RPLiDAR C1M1은 **둘 다 Silicon Labs CP210x** 를 쓴다. 이 PC의 `/etc/udev/rules.d/99-ydlidar.rules` 는 `10c4:ea60` 전체를 `/dev/ydlidar` 로 묶어버린다 — IMU까지 같은 칩이라, 2026-08-13 확인 시점에 `/dev/ydlidar` 는 **실제로 IMU를 가리키고 있었다**.
+YDLiDAR T-mini Plus와 RPLiDAR C1M1은 **둘 다 Silicon Labs CP210x** 를 쓴다. IMU까지 같은 칩이라 `/etc/udev/rules.d/99-ydlidar.rules` 가 `10c4:ea60` 전체를 `/dev/ydlidar` 로 묶어버린다. 2026-08-13 확인 시점에 `/dev/ydlidar` 와 `/dev/rplidar` 가 **둘 다 같은 장치**를 가리키고 있었다. 이 심볼릭 링크는 쓰지 않는다.
 
-`/dev/ttyUSB*` 도 재연결마다 번호가 바뀐다. **반드시 `/dev/serial/by-id/` 를 쓴다** (칩 시리얼이 들어가 개체마다 유일).
+### YDLiDAR 2대는 by-id 로도 구분되지 않는다 (실측 확인)
 
-```bash
-ros2 run multi_lidar_fusion identify_lidars.sh          # 후보 목록
-ros2 run multi_lidar_fusion identify_lidars.sh probe    # 한 대씩 띄워 확인하는 절차
+T-mini Plus 유닛의 CP210x 시리얼이 **둘 다 `0001`** 이라 by-id 이름이 완전히 같아진다. 4대를 동시에 붙여 확인한 결과:
+
+```
+by-path 항목 6개   vs   by-id 항목 5개      ← YDLiDAR 하나가 by-id 주소를 잃음
+usb-…CP2102_…_0001-if00-port0 -> ttyUSB5    ← 나중에 붙은 쪽이 먼저 것을 덮어씀
 ```
 
-확인한 값을 `launch/multi_lidar_drivers.launch.py` 의 `DEFAULT_PORTS` 에 적어두거나 인자로 넘긴다:
+따라서:
+
+| | 고정 방식 | 이유 |
+|---|---|---|
+| `a1`, `a2` (YDLiDAR) | **by-path** | 시리얼이 겹쳐 by-id 불가 |
+| `b1`, `b2` (RPLiDAR) | **by-id** | 시리얼이 고유 |
+
+> **by-path 는 "허브의 그 구멍"이 주소다.** 케이블을 다른 포트로 옮겨 꽂으면 앞/뒤가 조용히 뒤바뀐다. 옮겼으면 반드시 다시 확인할 것.
+
+### 어느 유닛이 어디에 달렸는지 확인하는 법
 
 ```bash
-ros2 launch multi_lidar_fusion multi_lidar_drivers.launch.py \
-    a1_port:=/dev/serial/by-id/usb-Silicon_Labs_CP2102_..._0001-if00-port0
+# 한 대만 띄워 RViz 로 본다. unit = yd0 | yd1 | rp0 | rp1
+ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=yd0
+```
+
+화면 정중앙이 그 라이다, 빨간 축(X)이 그 유닛의 0도 방향이다. 차량 앞쪽에서 손을 넣어 점이 반응하면 그게 앞 라이다다. 확인한 값을 `launch/multi_lidar_drivers.launch.py` 의 `DEFAULT_PORTS` 에 적는다.
+
+포트 목록만 보려면 `ros2 run multi_lidar_fusion identify_lidars.sh`.
+
+손 가림으로 자동 판정하는 도구도 있다(좌/우가 31cm 밖에 안 떨어져 있어 실패할 수 있음):
+
+```bash
+ros2 launch multi_lidar_fusion identify_positions.launch.py
 ```
 
 ---
 
 ## 7. 설정
 
-### 7.1 장착 위치와 보는 범위 — `config/lidar_extrinsics.yaml`
+### 7.1 장착값의 단일 원천 — `stack_parking/config/lidar_mounts.yaml`
 
-가장 자주 만지는 파일. 코드는 건드리지 않는다.
+**장착 좌표와 시야각을 고칠 곳은 여기 한 곳뿐이다.** `multi_lidar_fusion.launch.py` 가 이 파일을 읽어 노드 파라미터로 주입하고, `config/lidar_extrinsics.yaml` 의 사본과 다르면 경고를 찍는다.
 
-```yaml
-extrinsics:
-  a1: {x: 0.30, y: 0.00, z: 0.20, roll: 0.0, pitch: 0.0, yaw: 0.0}
+```
+[multi_lidar_fusion] 장착값 원천: …/stack_parking/config/lidar_mounts.yaml (fov_status=geometric_upper_bound)
+[multi_lidar_fusion] ! lidar_extrinsics.yaml 이 원천과 다르다 — 원천 값으로 덮어쓴다: a1.x: 0.76 -> 0.9
 ```
 
-**보는 범위·방향**은 센서 좌표계 기준으로 자른다:
+현재 값 (2026-08-11 실측):
+
+| 슬롯 | mounts 키 | x | y | z | 시야 중심 | 시야 폭 |
+|---|---|---|---|---|---|---|
+| `a1` | `front` | 0.760 | 0 | 0.065 | 0° | 180° |
+| `a2` | `rear` | −0.055 | 0 | 0.065 | 180° | 160° |
+| `b1` | `left` | 0.310 | +0.155 | 0.065 | +90° | 110° |
+| `b2` | `right` | 0.310 | −0.155 | 0.065 | −90° | 110° |
+
+슬롯↔키 대응은 `multi_lidar_fusion.launch.py` 의 `MOUNT_OF_SLOT` 한 곳에만 있다. `stack_parking` 이 없는 환경이면 조용히 `lidar_extrinsics.yaml` 사본만 쓴다. 원천을 무시하려면 `use_mounts:=false`.
+
+> ⚠ **yaw 는 아직 실측이 아니다.** `lidar_mounts.yaml` 에 유닛별 장착 yaw 가 없어서 유효 시야의 중심 방향(`fov_center_deg`)을 잠정 yaw 로 쓰고 있다. §8 RViz 벽 겹침 검증에서 확정할 것.
+>
+> ⚠ 시야각은 `fov_status: geometric_upper_bound` — 바퀴만 하드 오클루더로 본 **기하 상한**이다. 라이다 몸체·케이블·범퍼는 미반영이라 실측하면 **줄어들 일만 남았다.** 특히 후방(차체 뒷단보다 35mm 안쪽)이 자기가림이 가장 크다.
+
+### 7.2 센서 정의 — `config/lidar_extrinsics.yaml`
+
+토픽·메시지 타입·frame·신뢰 거리는 여기가 원천이다. 코드는 건드리지 않는다.
+
+**보는 범위·방향**은 센서 좌표계 기준으로 자른다 (원천을 쓰면 launch 가 덮어쓴다):
 
 ```yaml
 sensors:
@@ -208,7 +248,7 @@ sensors:
 
 > **`blind_sectors_deg: []` 로 두지 말 것.** ROS 2 에서 빈 리스트는 타입이 없어, 그 YAML을 읽는 **모든 노드가 생성자에서 즉시 죽는다** (`InvalidParameterValueException: No parameter value set`). 안 쓸 때는 키를 통째로 지우거나 주석 처리한다. rclcpp가 파라미터 override를 변환하는 시점이라 코드로 막을 수 없다.
 
-### 7.2 융합 동작 — `config/fusion_params.yaml`
+### 7.3 융합 동작 — `config/fusion_params.yaml`
 
 | 파라미터 | 기본 | 의미 |
 |---|---|---|
@@ -218,7 +258,7 @@ sensors:
 | `sync.strict` | false | true면 허용치 초과 센서를 버림. false면 쓰되 경고 |
 | `motion.enable_motion_compensation` | false | 이동 중 벽이 두 겹으로 보이면 true |
 | `filter.roi_*` | −5..10, −5..5 | 관심 상자 |
-| `filter.vehicle_length/width` | 0.6 / 0.4 | 자기반사 제거 상자 — **실측값으로 교체** |
+| `filter.vehicle_length/width` | 0.85 / 0.62 | 자기반사 제거 상자. 원본은 `stack_avoid/config/params.yaml` (차체 x = −0.090~0.760 → 중심 0.335) |
 | `filter.enable_voxel_filter` | false | 겹침이 심할 때 켬 |
 | `scan.angle_increment` | 0.0174533 (1.0°) | 아래 참조 |
 

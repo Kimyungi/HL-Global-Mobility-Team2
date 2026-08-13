@@ -66,10 +66,17 @@
       max_z: 2.0
 
       # 자기반사 제거 — 차체가 스스로 찍히는 점 (요구 §11 Self Filtering)
+      #
+      # 차량 제원의 원본은 stack_avoid/config/params.yaml 이다 (여기 값은 그로부터 유도).
+      #   length_m 0.85, width_m 0.62, wheelbase 0.595, front_overhang 0.165
+      #   → base_link(후축 중심) 기준 차체는 x = -0.090 ~ +0.760, y = -0.31 ~ +0.31
+      #   → 상자 중심 x = (0.760 - 0.090)/2 = 0.335
+      # 좌/우 라이다(y=±0.155)는 이 상자 **안**에 있다. 즉 차체 윤곽 안쪽에서 들어오는
+      # 반사는 전부 자기반사이므로 지우는 게 맞다.
       self_filter_enabled: true
-      vehicle_length: 0.60     # ▼ 실측값으로 교체
-      vehicle_width: 0.40      # ▼ 실측값으로 교체
-      vehicle_center_x: 0.0
+      vehicle_length: 0.85
+      vehicle_width: 0.62
+      vehicle_center_x: 0.335
       vehicle_center_y: 0.0
       self_margin: 0.02
 
