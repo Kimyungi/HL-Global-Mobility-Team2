@@ -12,12 +12,12 @@
 frame      : 사용 안 함 (거리값만 본다)
 
 파라미터:
-    keys        ["yd0","yd1","rp0","rp1"]  토픽 키 목록
-    ports       위 키와 같은 순서의 시리얼 포트 경로 (출력에 그대로 찍는다)
-    positions   ["front","rear","left","right"]  물어볼 순서
-    close_m     이 거리보다 가까우면 "가려짐 후보" [m]
-    rise        전체 빔 대비 근접 빔 비율이 기준선보다 이만큼 오르면 가려진 것으로 본다
-    margin      1등이 2등보다 이 배수 이상 커야 확정 (옆 유닛이 같이 보는 것 방지)
+    keys          ["yd0","yd1","rp0","rp1"]  토픽 키 목록
+    port_<key>    각 키의 시리얼 포트 경로 (출력에 그대로 찍는다)
+    positions     ["front","rear","left","right"]  물어볼 순서
+    near_m        이 거리 안의 반사만 "손"으로 본다 [m]
+    min_arc_deg   근접 반사가 연속으로 이 각도 이상이면 가려진 것으로 판정 [deg]
+    margin        1등이 2등보다 이 배수 이상 커야 확정 (옆 유닛이 같이 보는 것 방지)
 
 관계: 여기서 나온 매핑을 config/lidar_extrinsics.yaml 의 sensors.<id>.* 와
       launch/multi_lidar_drivers.launch.py 의 DEFAULT_PORTS 에 반영한다.
@@ -46,8 +46,11 @@ class Identifier(Node):
             'keys', ['yd0', 'yd1', 'rp0', 'rp1']).value
         self.positions = self.declare_parameter(
             'positions', ['front', 'rear', 'left', 'right']).value
-        self.close_m = self.declare_parameter('close_m', 0.30).value
-        self.rise = self.declare_parameter('rise', 0.04).value
+        # 손 판정: 이 거리보다 가까운 반사가 [연속된 각도]로 이만큼 나타나면 가려진 것.
+        #   거리 기준이 핵심이다 — 좌/우 유닛은 31cm 떨어져 있어, 같은 손을 봐도
+        #   가린 쪽만 near_m 안에 들어온다. 이것이 두 유닛을 갈라준다.
+        self.near_m = self.declare_parameter('near_m', 0.25).value
+        self.min_arc_deg = self.declare_parameter('min_arc_deg', 12.0).value
         self.margin = self.declare_parameter('margin', 1.5).value
         self.baseline_s = self.declare_parameter('baseline_s', 3.0).value
         self.hold_s = self.declare_parameter('hold_s', 0.6).value
@@ -60,10 +63,12 @@ class Identifier(Node):
         }
 
         # 키별 상태
-        self.frac = {k: 0.0 for k in self.keys}      # 최근 근접 빔 비율
-        self.seen = {k: 0 for k in self.keys}        # 수신 스캔 수
-        self.base = {k: None for k in self.keys}     # 기준선
-        self.base_acc = {k: [] for k in self.keys}
+        #   base[k]  : 빔별 "평상시 가까움" 이진 지도 — 기준선 단계에서 만든다
+        #   frac[k]  : 새로 나타난 근접 반사의 최대 연속 각도 [deg]
+        self.frac = {k: 0.0 for k in self.keys}
+        self.seen = {k: 0 for k in self.keys}
+        self.base = {k: None for k in self.keys}
+        self.base_acc = {k: [] for k in self.keys}   # 기준선 단계의 원본 스캔들
 
         for k in self.keys:
             topic = f'/probe/{k}/scan'
@@ -80,6 +85,8 @@ class Identifier(Node):
         self.hold_since = None
         self.hold_key = None
         self.t_phase = self.get_clock().now()
+        self.t_live = self.get_clock().now()
+        self.live_period = self.declare_parameter('live_period_s', 0.5).value
 
         self.create_timer(0.1, self.tick)
 
@@ -97,18 +104,72 @@ class Identifier(Node):
         n = len(msg.ranges)
         if n == 0:
             return
-        rmin = max(msg.range_min, 1e-3)
-        close = 0
-        for r in msg.ranges:
-            if math.isfinite(r) and rmin < r < self.close_m:
-                close += 1
-        # 전체 빔 대비 비율 — 가려서 무효가 된 빔이 있어도 분모가 흔들리지 않는다.
-        f = close / float(n)
-        # 가벼운 저역통과 (한 프레임 튐 방지)
-        self.frac[key] = 0.6 * self.frac[key] + 0.4 * f
         self.seen[key] += 1
+
+        rmin = max(msg.range_min, 1e-3)
+        # 유효하지 않거나 최소거리 미만이면 None — "반사 없음"으로 통일해서 다룬다.
+        # (손을 바짝 대면 최소거리 밑으로 들어가 무효가 되는데, 그것도 '변화'다.
+        #  근접 반사만 세던 이전 방식은 바로 이 경우를 놓쳤다.)
+        cur = [r if (math.isfinite(r) and r > rmin) else None for r in msg.ranges]
+
         if self.phase == 'baseline':
-            self.base_acc[key].append(f)
+            self.base_acc[key].append(cur)
+            return
+
+        near_base = self.base.get(key)
+        if near_base is None:
+            return
+        n = len(cur)
+        inc = abs(msg.angle_increment) if msg.angle_increment else 0.0
+        if inc <= 0.0:
+            return
+
+        # "원래부터 가까웠던" 빔은 제외한다(차체 자기반사). 인덱스 지터를 감안해
+        # 앞뒤 ±3 빔까지 봐서, 그 근처가 원래 가까웠으면 새로운 것으로 치지 않는다.
+        m = len(near_base)
+        newly = [False] * n
+        for i in range(n):
+            r = cur[i]
+            if r is None or r >= self.near_m:
+                continue
+            was_near = False
+            for j in range(i - 3, i + 4):
+                if 0 <= j < m and near_base[j]:
+                    was_near = True
+                    break
+            newly[i] = not was_near
+
+        # 가장 긴 연속 구간 (원형 스캔이므로 배열을 두 번 이어 붙여 경계를 넘긴다)
+        best = 0
+        run = 0
+        for i in range(2 * n):
+            if newly[i % n]:
+                run += 1
+                best = max(best, run)
+            else:
+                run = 0
+        best = min(best, n)
+        arc_deg = math.degrees(best * inc)
+
+        # 가벼운 저역통과 (한 프레임 튐 방지)
+        self.frac[key] = 0.6 * self.frac[key] + 0.4 * arc_deg
+
+    def build_baseline(self, key):
+        """기준선 단계의 스캔들에서 '평상시 가까운 빔' 지도를 만든다.
+
+        절대 거리 프로파일이 아니라 near/far 이진 지도다. T-mini Plus 는 프레임마다
+        빔 각도가 미세하게 흔들려서 빔별 거리를 1:1 비교하면 정지 상태에서도 15%가
+        '변했다'로 나온다(실측). 이진 지도는 그 지터에 훨씬 둔감하다.
+        """
+        acc = self.base_acc[key]
+        if not acc:
+            return None
+        n = min(len(s) for s in acc)
+        near_map = []
+        for i in range(n):
+            hits = sum(1 for s in acc if s[i] is not None and s[i] < self.near_m * 1.2)
+            near_map.append(hits * 3 > len(acc))    # 1/3 이상 가까웠으면 상시 근접
+        return near_map
 
     # ── 진행 ────────────────────────────────────────────────────────────
     def elapsed(self):
@@ -121,11 +182,10 @@ class Identifier(Node):
     def live_line(self):
         parts = []
         for k in self.keys:
-            b = self.base[k] if self.base[k] is not None else 0.0
-            d = max(self.frac[k] - b, 0.0)
-            bar = '#' * min(int(d * 60), 20)
+            d = self.frac[k]                      # 근접 연속 각도 [deg]
+            bar = '#' * min(int(d / 4.0), 20)
             mark = '*' if k in self.used else ' '
-            parts.append(f'{k}{mark}{d * 100:5.1f}%|{bar:<20}|')
+            parts.append(f'{k}{mark}{d:5.1f}d|{bar:<20}|')
         return '  ' + ' '.join(parts)
 
     def tick(self):
@@ -145,24 +205,44 @@ class Identifier(Node):
 
         if self.phase == 'baseline':
             if self.elapsed() >= self.baseline_s:
+                bad = []
                 for k in self.keys:
-                    acc = self.base_acc[k]
-                    self.base[k] = sum(acc) / len(acc) if acc else 0.0
-                out('   기준선: ' + '  '.join(
-                    f'{k}={self.base[k] * 100:.1f}%' for k in self.keys))
+                    self.base[k] = self.build_baseline(k)
+                    if not self.base[k]:
+                        bad.append(k)
+                    self.base_acc[k] = []
+                if bad:
+                    out(f'   ! 기준선을 못 만든 유닛: {", ".join(bad)} — 종료합니다.')
+                    rclpy.shutdown()
+                    return
+                out('   기준선(상시 근접 빔): ' + '  '.join(
+                    f'{k}={sum(self.base[k])}/{len(self.base[k])}' for k in self.keys))
                 self.ask()
             return
 
         if self.phase == 'ask':
-            print('\r' + self.live_line(), end='', flush=True)
-            cand = [(self.frac[k] - (self.base[k] or 0.0), k)
-                    for k in self.keys if k not in self.used]
+            # launch 가 stdout 을 파이프로 잡으면 '\r' 만으로 갱신하는 진행바는
+            # 개행이 올 때까지 버퍼에 갇혀 화면에 안 나온다. 개행으로 찍되 throttle 한다.
+            if (self.get_clock().now() - self.t_live).nanoseconds / 1e9 >= self.live_period:
+                out(self.live_line())
+                self.t_live = self.get_clock().now()
+            cand = [(self.frac[k], k) for k in self.keys if k not in self.used]
             cand.sort(reverse=True)
             if not cand:
                 return
             top_d, top_k = cand[0]
             second = cand[1][0] if len(cand) > 1 else 0.0
-            ok = top_d >= self.rise and top_d >= self.margin * max(second, 1e-6)
+            ok = (top_d >= self.min_arc_deg and
+                  top_d >= self.margin * max(second, 1e-6))
+            # 오래 헤매면 무엇이 걸림돌인지 알려준다 (좌/우처럼 가까이 붙은 쌍에서 흔함)
+            if not ok and self.elapsed() > 15.0 and self.elapsed() % 8 < 0.11:
+                if top_d < self.min_arc_deg:
+                    out(f'   (근접 반사가 약합니다: 1등 {top_k} {top_d:.1f}deg '
+                        f'< 문턱 {self.min_arc_deg:.0f}deg — 손을 {self.near_m * 100:.0f}cm '
+                        f'안으로, 스캔 평면에 손바닥을 세워 막아보세요)')
+                else:
+                    out(f'   (두 유닛이 같이 반응: {cand[0][1]} {top_d:.1f}deg vs '
+                        f'{cand[1][1]} {second:.1f}deg — 한쪽에 바짝 붙여주세요)')
             if ok:
                 if self.hold_key != top_k:
                     self.hold_key = top_k
@@ -172,8 +252,7 @@ class Identifier(Node):
                     pos = self.positions[self.idx]
                     self.assigned[pos] = top_k
                     self.used.add(top_k)
-                    print('\r' + ' ' * 100, end='')
-                    out(f'\r   -> {pos} = {top_k}  ({self.port_of.get(top_k, "?")})')
+                    out(f'   -> {pos} = {top_k}  ({self.port_of.get(top_k, "?")})')
                     self.hold_key = None
                     self.goto('release')
             else:
@@ -183,8 +262,8 @@ class Identifier(Node):
         if self.phase == 'release':
             # 손을 뗄 때까지 기다린다 (다음 질문에 잔상이 섞이지 않게)
             last = self.assigned[self.positions[self.idx]]
-            d = self.frac[last] - (self.base[last] or 0.0)
-            if d < self.rise * 0.5:
+            d = self.frac[last]
+            if d < self.min_arc_deg * 0.5:
                 self.idx += 1
                 if self.idx >= len(self.positions) or len(self.used) >= len(self.keys):
                     self.finish()
