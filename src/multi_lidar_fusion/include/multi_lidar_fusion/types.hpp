@@ -85,6 +85,13 @@ struct FusionPoint
 struct CloudFrame
 {
   rclcpp::Time stamp{0, 0, RCL_ROS_TIME};   ///< header.stamp (첫 ray 시각)
+  /// 이 프레임을 획득하는 데 걸린 시간 [s] — 마지막 ray 는 stamp + duration 에 찍혔다.
+  ///
+  /// LaserScan 의 header.stamp 는 관례상 **첫 ray** 시각이다. 10Hz 라이다는 한 바퀴에
+  /// 100ms 가 걸리므로, 스캔이 완성돼 도착하는 순간 stamp 는 이미 구조적으로 100ms
+  /// 과거다. 신선도(age)를 stamp 로 재면 멀쩡한 센서가 전부 too_old 가 된다
+  /// (2026-08-13 실차에서 active=0/4 로 드러남). 반드시 stamp + duration 으로 잰다.
+  double duration{0.0};
   std::string frame_id;                     ///< 현재 좌표계
   std::uint8_t sensor_id{0};
   std::size_t seq{0};                       ///< 이 센서에서 몇 번째로 받은 프레임인가
@@ -96,6 +103,7 @@ struct CloudFrame
     points.clear();
     frame_id.clear();
     seq = 0;
+    duration = 0.0;
   }
 };
 
@@ -112,6 +120,14 @@ struct SensorConfig
   std::string frame_id_override;
   double min_range{0.05};          ///< 이보다 가까운 측정은 신뢰하지 않음 [m]
   double max_range{12.0};          ///< 이보다 먼 측정은 버림 [m]
+  /// 이 센서가 **길게 읽는 양** [m]. 보정은 `참값 = 측정 - range_offset_m`.
+  ///
+  /// 모델마다 거리의 기준점(광학 중심 위치·디코딩)이 달라, 같은 벽을 보고도 서로 다른
+  /// 숫자를 말한다. 그대로 병합하면 같은 벽이 여러 겹으로 보인다.
+  /// 값은 겹침 영역 역산(`tools/pair_calibrate.py`)으로 정한다 — 두 센서가 같은 평면을
+  /// 보는 구속에서 나오므로 줄자 오차가 개입하지 않는다.
+  /// ★ min/max_range 판정은 **보정 후** 거리로 한다 (신뢰구간의 의미가 참값이므로).
+  double range_offset_m{0.0};
   /// PointCloud2 입력에서 점별 시각을 담고 있는 필드 이름 ("" = 없음).
   std::string time_field;
   bool enabled{true};

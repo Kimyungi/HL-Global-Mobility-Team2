@@ -87,6 +87,54 @@ TEST(LidarConverter, DropsInvalidAndOutOfRange)
   EXPECT_EQ(st.dropped_range, 2U);          // 0.05m(근접), 50m(초과)
 }
 
+// 2026-08-14: 모델별 거리 기준점이 달라 같은 벽을 다른 숫자로 말한다. 겹침 역산으로
+// YD 가 RP 보다 8.44cm 길게 읽는 것을 확인했고, 그 보정을 정규화 단계에서 뺀다.
+TEST(LidarConverter, RangeOffsetIsSubtracted)
+{
+  SensorConfig c = baseConfig();
+  c.range_offset_m = 0.069;              // 이 센서가 6.9cm 길게 읽는다
+  LidarConverter conv(c);
+  auto scan = makeScan(0.0, 0.1, {1.0F, 2.0F});
+  CloudFrame f;
+  ConvertStats st;
+  ASSERT_TRUE(conv.convert(scan, f, st));
+  ASSERT_EQ(f.points.size(), 2U);
+  // 각도 0 / 0.1 rad 이므로 x 가 사실상 보정된 거리다.
+  EXPECT_NEAR(std::hypot(f.points[0].x, f.points[0].y), 1.0 - 0.069, 1e-5);
+  EXPECT_NEAR(std::hypot(f.points[1].x, f.points[1].y), 2.0 - 0.069, 1e-5);
+}
+
+// 신뢰구간은 **보정 후** 거리로 판정해야 한다. min/max_range 의 의미가 "참값"이기 때문.
+TEST(LidarConverter, RangeGateUsesCorrectedDistance)
+{
+  SensorConfig c = baseConfig();
+  c.min_range = 1.0;
+  c.max_range = 2.0;
+  c.range_offset_m = 0.10;
+  LidarConverter conv(c);
+  //  0.95 -> 보정 0.85 (하한 밖),  1.05 -> 0.95 (하한 밖),  1.15 -> 1.05 (통과),
+  //  2.05 -> 1.95 (통과),  2.15 -> 2.05 (상한 밖)
+  auto scan = makeScan(0.0, 0.1, {0.95F, 1.05F, 1.15F, 2.05F, 2.15F});
+  CloudFrame f;
+  ConvertStats st;
+  ASSERT_TRUE(conv.convert(scan, f, st));
+  EXPECT_EQ(f.points.size(), 2U);
+  EXPECT_EQ(st.dropped_range, 3U);
+}
+
+// 보정이 0 이면 종전 동작 그대로여야 한다 (기본값 회귀).
+TEST(LidarConverter, ZeroOffsetKeepsRangesUnchanged)
+{
+  LidarConverter conv(baseConfig());
+  auto scan = makeScan(0.0, 0.1, {1.0F, 3.0F});
+  CloudFrame f;
+  ConvertStats st;
+  ASSERT_TRUE(conv.convert(scan, f, st));
+  ASSERT_EQ(f.points.size(), 2U);
+  EXPECT_NEAR(std::hypot(f.points[0].x, f.points[0].y), 1.0, 1e-6);
+  EXPECT_NEAR(std::hypot(f.points[1].x, f.points[1].y), 3.0, 1e-6);
+}
+
 TEST(LidarConverter, FovMaskKeepsOnlyRequestedSector)
 {
   SensorConfig c = baseConfig();
@@ -236,6 +284,69 @@ TEST(CloudSynchronizer, StrictModeDropsOutOfSync)
   const SyncResult r = sync.collect(at(10.11));
   EXPECT_EQ(r.sensors[0].status, FrameStatus::kOutOfSync);
   EXPECT_EQ(r.contributing, 1U);
+}
+
+// 2026-08-13 실차 회귀: LaserScan 의 stamp 는 첫 ray 시각이라 10Hz 라이다는 도착
+// 시점에 이미 한 주기(100ms) 과거다. 나이를 stamp 로 재면 4대 전부 too_old 가 되어
+// active=0/4 로 아무것도 안 나왔다. 나이는 스캔 종료(stamp + duration) 기준이어야 한다.
+TEST(CloudSynchronizer, AgeIsMeasuredFromScanEndNotScanStart)
+{
+  SyncParams p;
+  p.max_cloud_age_s = 0.15;
+  p.sync_tolerance_s = 1.0;
+  CloudSynchronizer sync(p);
+  sync.registerSensor(0, "a1", true);
+
+  // 10.00 에 시작해 10.10 에 끝난 스캔이 10.10 에 도착했다 — 신선한 프레임이다.
+  CloudFrame f = frameAt(0, 10.00);
+  f.duration = 0.10;
+  sync.push(std::move(f));
+
+  const SyncResult r = sync.collect(at(10.10));
+  EXPECT_EQ(r.sensors[0].status, FrameStatus::kUsed);
+  EXPECT_NEAR(r.sensors[0].age_s, 0.0, 1e-6);   // stamp 기준이면 0.10 이 나온다
+  EXPECT_EQ(r.contributing, 1U);
+}
+
+TEST(CloudSynchronizer, StaleFrameStillRejectedWithDuration)
+{
+  SyncParams p;
+  p.max_cloud_age_s = 0.15;
+  p.sync_tolerance_s = 10.0;
+  CloudSynchronizer sync(p);
+  sync.registerSensor(0, "a1", true);
+
+  CloudFrame f = frameAt(0, 10.00);
+  f.duration = 0.10;
+  sync.push(std::move(f));
+
+  // 스캔 종료(10.10) 로부터 0.2s 지났다 → 배제되어야 한다.
+  const SyncResult r = sync.collect(at(10.30));
+  EXPECT_EQ(r.sensors[0].status, FrameStatus::kTooOld);
+  EXPECT_NEAR(r.sensors[0].age_s, 0.20, 1e-6);
+}
+
+TEST(LidarConverter, ScanDurationFromTimeIncrement)
+{
+  LidarConverter conv(baseConfig());
+  auto scan = makeScan(0.0, 0.1, {1.0F, 1.0F, 1.0F, 1.0F, 1.0F});
+  scan.time_increment = 0.025F;      // 5빔 -> 마지막 ray 는 4*0.025 = 0.1s 뒤
+  CloudFrame f;
+  ConvertStats st;
+  ASSERT_TRUE(conv.convert(scan, f, st));
+  EXPECT_NEAR(f.duration, 0.10, 1e-6);
+}
+
+TEST(LidarConverter, ScanDurationFallsBackToScanTime)
+{
+  LidarConverter conv(baseConfig());
+  auto scan = makeScan(0.0, 0.1, {1.0F, 1.0F});
+  scan.time_increment = 0.0F;        // 드라이버가 안 줄 때
+  scan.scan_time = 0.1F;
+  CloudFrame f;
+  ConvertStats st;
+  ASSERT_TRUE(conv.convert(scan, f, st));
+  EXPECT_NEAR(f.duration, 0.10, 1e-6);
 }
 
 TEST(CloudSynchronizer, NoSensorEverReceived)

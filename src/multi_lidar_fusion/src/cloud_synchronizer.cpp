@@ -141,7 +141,10 @@ SyncResult CloudSynchronizer::collect(const rclcpp::Time & now)
     }
 
     r.frame = best;
-    r.age_s = (now - best->stamp).seconds();
+    // ★ stamp 가 아니라 **스캔이 끝난 시각**(stamp + duration) 기준으로 잰다.
+    //   LaserScan 의 stamp 는 첫 ray 시각이라, 10Hz 라이다는 도착하는 순간 이미
+    //   100ms 과거다. stamp 로 재면 멀쩡한 센서가 전부 too_old 가 된다.
+    r.age_s = (now - best->stamp).seconds() - best->duration;
 
     if (r.age_s > params_.max_cloud_age_s) {
       // 센서가 끊겼거나 심하게 느리다 — 이 주기에서만 뺀다. 노드는 계속 돈다.

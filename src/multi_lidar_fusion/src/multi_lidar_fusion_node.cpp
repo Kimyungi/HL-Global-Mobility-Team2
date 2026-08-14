@@ -270,6 +270,8 @@ private:
       cfg.frame_id_override = param<std::string>(ns + ".frame_id", "lidar_" + id + "_link");
       cfg.min_range = param<double>(ns + ".min_range", 0.05);
       cfg.max_range = param<double>(ns + ".max_range", 12.0);
+      // 이 센서가 길게 읽는 양 [m]. 보정은 참값 = 측정 - 이 값.
+      cfg.range_offset_m = param<double>(ns + ".range_offset_m", 0.0);
       cfg.time_field = param<std::string>(ns + ".time_field", "");
       loadAngleMask(ns, cfg);
 
