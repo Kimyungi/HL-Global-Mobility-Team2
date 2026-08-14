@@ -50,6 +50,9 @@ DEFAULT_PORTS = {
     'a1': BY_PATH + 'pci-0000:00:14.0-usb-0:1.2.4:1.0-port0',   # 전방 (unit yd0)
     'a2': BY_PATH + 'pci-0000:00:14.0-usb-0:1.2.3:1.0-port0',   # 후방 (unit yd1)
     # SLAMTEC RPLiDAR C1M1 — 각분해능 0.499deg, range 16m
+    # 2026-08-13 현장 식별값(view_one_lidar 로 한 대씩 확인). 8/14 에 한 번 맞바꿨다가
+    # 되돌렸다 — "좌우가 서로의 자리"로 보이던 증상의 원인은 포트가 아니라 **각도 반전**
+    # (아래 inverted 주석 참조)이었다.
     'b1': BY_ID + ('usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
                    'f2ee467bfb1df111a7b6c4e40f0f12f8-if00-port0'),   # 좌측 (unit rp1)
     'b2': BY_ID + ('usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
@@ -58,7 +61,20 @@ DEFAULT_PORTS = {
 
 
 def _ydlidar(sensor_id):
-    """YDLiDAR T-mini Plus 1대. 파라미터는 params/Tmini-Plus-SH.yaml 기준."""
+    """YDLiDAR T-mini Plus 1대. 파라미터는 params/Tmini-Plus-SH.yaml 기준.
+
+    ★ reversion / inverted 는 **각도 규약 그 자체**다 (reversion = 180도 회전,
+      inverted = 각도 부호 반전). 이 두 값이 다르면 같은 물체가 다른 각도로 찍힌다.
+
+      ⚠ 2026-08-14: 이 두 값을 false 로 바꿔 봤다가 되돌렸다. 근거는 "회피 스택이
+        쓰는 ydlidar.yaml 이 false/false 이고 전방=raw 270 이 거기서 측정됐다" 였는데,
+        **그 파일은 lidar_type=1 / sample_rate=9 이고 여기는 0 / 4 다** — 각도 관련
+        두 개만 가져오고 나머지 절반은 다른 상태로 둔 셈이라 전제가 성립하지 않았다.
+        실제로 판을 앞에 두고 재니 **설정된 정면(raw 270)에서 179도 어긋나** 보였다
+        (reversion 이 정확히 180도 회전이라는 것과 일치).
+        따라서 실차에서 실제로 돌던 값(true/true)으로 되돌린다. 이 값을 다시 건드릴
+        때는 반드시 **판을 앞에 두고 raw 각도를 확인한 뒤**에 할 것.
+    """
     return Node(
         package='ydlidar_ros2_driver',
         executable='ydlidar_ros2_driver_node',
@@ -70,13 +86,18 @@ def _ydlidar(sensor_id):
             'port': LaunchConfiguration(sensor_id + '_port'),
             'frame_id': 'lidar_' + sensor_id + '_link',
             'baudrate': 230400,
-            'lidar_type': 0,
+            'lidar_type': 1,
             'device_type': 0,
-            'sample_rate': 4,
+            'sample_rate': 9,
             'abnormal_check_count': 4,
             'fixed_resolution': True,
+            # ★ inverted = 각도 **부호 반전(거울상)**. reversion = 180도 회전.
+            #   2026-08-14: inverted=True 때문에 병합 화면 전체가 좌우 거울상이었다.
+            #   정면에 판을 두고 yaw 를 맞췄던 탓에 정면에서는 상쇄되고 좌우로만 드러났다:
+            #       a_rep = Y - b,  yaw_cfg = -Y  ->  b_pipe = -b  (좌우만 반전)
+            #   반전을 끄고 yaw_deg 를 부호 반전시켜 함께 정정했다.
             'reversion': True,
-            'inverted': True,
+            'inverted': False,
             'auto_reconnect': True,
             'isSingleChannel': False,
             'intensity': True,
@@ -111,7 +132,8 @@ def _rplidar(sensor_id):
             'serial_port': LaunchConfiguration(sensor_id + '_port'),
             'serial_baudrate': 460800,      # C1 은 460800 (A1 의 115200 아님)
             'frame_id': 'lidar_' + sensor_id + '_link',
-            'inverted': False,
+            # ★ YD 와 같은 이유 (위 _ydlidar 주석). 네 대가 같은 방향 규약을 써야 한다.
+            'inverted': True,
             'angle_compensate': True,
             'scan_mode': 'Standard',
         }],

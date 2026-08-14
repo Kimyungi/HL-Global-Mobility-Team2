@@ -29,6 +29,26 @@ RViz 화면에서 이 유닛이 어디에 달렸는지 판별하는 법:
     화면 가운데(원점)가 그 라이다다. 손을 라이다 앞에 대면 그 방향의 점이 원점 쪽으로
     확 붙는다 — 손을 차량 앞쪽/뒤쪽에서 넣어보면 어느 유닛인지 바로 갈린다.
     빨간 축(X)이 그 라이다의 0도 방향이다.
+
+★ 장착 yaw 측정 (RPLiDAR 2대용, 2026-08-13)
+    화면에 **0~360도 눈금**이 함께 뜬다 (0도=빨강 화살표, 90도=초록 화살표).
+    눈금은 이 라이다의 **스캔 원(raw) 각도**다 — 차량 좌표가 아니다.
+
+    차량 기준 방향을 아는 물체(예: 차량 정면에 사람이 서기)를 이 라이다로 보고,
+    그 물체가 몇 도에 찍히는지 눈금에서 읽는다. 그러면:
+
+        yaw_deg = (그 물체의 차량 기준 방위) − (읽은 센서 각도)
+
+    예) 차량 정면(0도)에 선 사람이 눈금 90도에 찍혔다  ->  yaw = 0 − 90 = −90도
+
+    읽은 값은 `stack_parking/config/lidar_mounts.yaml` 의 해당 항목에
+    `yaw_deg:` 로 적는다. 그러면 multi_lidar_fusion launch 가 TF yaw 와 FOV 변환에
+    함께 쓰고 "장착 yaw 미실측" 경고가 사라진다.
+
+    눈금 간격/크기 조정:
+        ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=rp0 \
+            label_step_deg:=15 label_r:=3.0
+    눈금이 필요 없으면 labels:=false
 """
 
 import os
@@ -41,6 +61,16 @@ from launch.conditions import IfCondition, LaunchConfigurationEquals
 from launch.substitutions import LaunchConfiguration
 
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+
+# 각도 눈금 노드는 stack_avoid 것을 재사용한다 (0~360도 방사선 + 숫자 + 0/90도 축).
+# 없는 환경(그 패키지를 안 받은 사람)에서도 드라이버 확인은 되어야 하므로,
+# 하드 의존으로 걸지 않고 있으면 쓰고 없으면 안내만 남긴다.
+try:
+    get_package_share_directory('stack_avoid')
+    HAVE_ANGLE_LABELS = True
+except Exception:      # PackageNotFoundError
+    HAVE_ANGLE_LABELS = False
 
 BY_PATH = '/dev/serial/by-path/'
 BY_ID = '/dev/serial/by-id/'
@@ -68,6 +98,16 @@ def generate_launch_description():
             choices=['yd0', 'yd1', 'rp0', 'rp1'],
             description='띄울 라이다 (yd0/yd1 = YDLiDAR T-mini Plus, rp0/rp1 = RPLiDAR C1M1)'),
         DeclareLaunchArgument('rviz', default_value='true'),
+        # ── 각도 눈금 (장착 yaw 측정용) ──
+        DeclareLaunchArgument(
+            'labels', default_value='true',
+            description='0~360도 각도 눈금 표시 (장착 yaw 를 눈으로 읽을 때 필요)'),
+        DeclareLaunchArgument(
+            'label_step_deg', default_value='30',
+            description='눈금 간격 [deg]. 촘촘히 보려면 15'),
+        DeclareLaunchArgument(
+            'label_r', default_value='2.0',
+            description='눈금 반지름 [m]. 숫자가 화면 밖이면 줄일 것'),
     ]
 
     actions = []
@@ -92,11 +132,15 @@ def generate_launch_description():
                     'port': chosen,
                     'frame_id': FRAME,
                     'baudrate': 230400,
-                    'lidar_type': 0,
+                    'lidar_type': 1,
                     'device_type': 0,
-                    'sample_rate': 4,
+                    'sample_rate': 9,
                     'abnormal_check_count': 4,
                     'fixed_resolution': True,
+                    # ★ multi_lidar_drivers.launch.py 와 **반드시 같아야** 한다.
+                    #   reversion/inverted 는 각도 규약 그 자체라, 다르면 이 화면에서
+                    #   읽은 각도가 융합 파이프라인이 보는 각도와 거울상이 된다 —
+                    #   측정 화면이 거짓말을 하게 된다.
                     'reversion': True,
                     'inverted': True,
                     'auto_reconnect': True,
@@ -148,6 +192,37 @@ def generate_launch_description():
         output='log',
         arguments=['0', '0', '0', '0', '0', '0', 'map', FRAME],
     ))
+
+    # 0~360도 각도 눈금 — 이 라이다의 스캔 raw 각도를 화면에서 바로 읽기 위한 것.
+    # 장착 yaw 는 이 눈금으로만 확정된다 (아래 안내 참조).
+    if HAVE_ANGLE_LABELS:
+        actions.append(Node(
+            package='stack_avoid',
+            executable='angle_labels',
+            name='angle_labels',
+            output='log',
+            condition=IfCondition(LaunchConfiguration('labels')),
+            parameters=[{
+                'frame_id': FRAME,
+                'radius_m': ParameterValue(
+                    LaunchConfiguration('label_r'), value_type=float),
+                'step_deg': ParameterValue(
+                    LaunchConfiguration('label_step_deg'), value_type=int),
+            }],
+        ))
+        actions.append(LogInfo(
+            condition=IfCondition(LaunchConfiguration('labels')),
+            msg=('[view_one_lidar] 각도 눈금 = 이 라이다의 스캔 raw 각도 '
+                 '(0도=빨강 화살표, 90도=초록).\n'
+                 '                 장착 yaw 측정: 차량 기준 방향을 아는 물체가 눈금 몇 도에'
+                 ' 찍히는지 읽고\n'
+                 '                     yaw_deg = (그 물체의 차량 기준 방위) - (읽은 센서 각도)\n'
+                 '                 결과는 stack_parking/config/lidar_mounts.yaml 의'
+                 ' 해당 항목에 yaw_deg 로 기록.')))
+    else:
+        actions.append(LogInfo(
+            msg=('[view_one_lidar] ! stack_avoid 패키지가 없어 각도 눈금을 띄우지 못한다 '
+                 '— 장착 yaw 를 읽으려면 그 패키지를 빌드할 것')))
 
     actions.append(Node(
         package='rviz2',
