@@ -52,11 +52,28 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /probe/scan
       Use Fixed Frame: true
       Use rainbow: false
+      Value: true
+    # 0~360도 각도 눈금 (stack_avoid 의 angle_labels 노드).
+    # 이 라이다의 스캔 raw 각도를 그대로 보여준다 — 장착 yaw 는 이걸로 읽는다.
+    # 노드가 기본 QoS(Reliable) 로 발행하므로 여기도 Reliable 이어야 보인다.
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: angle labels (0~360deg)
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /angle_labels
       Value: true
   Enabled: true
   Global Options:
