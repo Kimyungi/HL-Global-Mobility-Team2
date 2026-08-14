@@ -1,9 +1,18 @@
 mgm_node:
   ros__parameters:
     # lane ↔ waypoint 히스테리시스 (CLAUDE.md §4)
-    lane_conf_exit: 0.4
-    lane_conf_return: 0.6
-    n_cycles: 20            # 10ms × 20 = 200ms 연속
+    # 2026-08-14 run_0814_184624 실측으로 상향: 차선 confidence가 평균 0.47,
+    # 중앙 0.48로 구 임계(0.4/0.6) 밴드 안에서 진동 → 110초에 전이 22회,
+    # 횡오차 8m 발산. 밴드를 벌리고 연속 조건을 500ms로 늘린다.
+    # 되돌릴 땐 이 run의 덤프로 core_replay 파라미터 오버라이드 재생해 비교할 것.
+    lane_conf_exit: 0.35
+    lane_conf_return: 0.70
+    n_cycles: 50            # 10ms × 50 = 500ms 연속
+
+    # avoid→waypoint 복귀 후 lane 전이 보류 [틱] (§4 복귀 정책 실효화)
+    # 회피 직후 차는 트랙을 벗어나 있다 — GPS 재합류에 필요한 시간을 확보한다.
+    # 0이면 카운터 리셋만 적용(= n_cycles 만큼만 보류).
+    avoid_return_hold_cycles: 300   # 3.0s
 
     # 스테이트별 속도 [m/s]
     # 0.5 복원 (2026-08-06): 위빙 원인이 ref 첫 점 기하(lookahead 0)로
@@ -34,6 +43,10 @@ mgm_node:
     # (0.5m/s 기준 이동 0.5m).
     lane_stale_timeout_sec: 1.0
     gps_stale_timeout_sec: 0.5
+    # avoid 신선도 (§5.7 ⑤) — stale이면 진입 재료(obstacle_detected·avoidable)
+    # 무효화 + AVOID 스테이트 중이면 estop 보정. stack_avoid 발행 주기 = 스캔
+    # 10Hz이므로 0.5s = 5주기 결손.
+    avoid_stale_timeout_sec: 0.5
 
     # 조립/병합 (실행부 파라미터 — 판단 아님)
     blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)

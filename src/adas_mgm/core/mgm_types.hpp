@@ -98,6 +98,13 @@ struct CoreParams
   float a_down;            // [m/s^2] 일반 감속 rate limit (immediate_stop은 우회)
   float wrongway_yaw;      // [rad] 역방향 판정 |ref[0].yaw| 임계 (waypoint, §4)
   int32_t wrongway_cycles; // 역방향 N주기 연속 조건
+  // avoid→waypoint 복귀 후 이 틱수 동안 waypoint→lane 전이를 보류한다.
+  // 근거: 회피 직후엔 차가 트랙을 벗어나 있어 GPS 재합류 시간이 필요한데,
+  // 카운터 리셋만으로는 n_cycles(수백 ms)밖에 못 번다 (2026-08-14 run_0814_184624
+  // 실측: 복귀 4회 중 2회가 0.01s 만에 lane으로 튐 — §4 복귀 정책 무력화).
+  // 새 필드는 반드시 구조체 끝에 추가할 것 — core_replay가 옛 덤프의
+  // params_size로 앞부분만 읽고 나머지는 기본값으로 채우기 때문.
+  int32_t avoid_return_hold_cycles;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -106,10 +113,10 @@ struct CoreState
   CoreParams params;
   // 스테이트 머신
   uint8_t state;                          // MGM_STATE_*
-  uint8_t avoid_return;                   // 복귀처 변수 1개만 기억 (§4)
   int32_t lane_low_cnt;
   int32_t lane_high_cnt;
   int32_t wrongway_cnt;                   // 역방향 지속 카운터 (waypoint, §4)
+  int32_t return_hold_left;               // >0이면 waypoint→lane 전이 보류 (avoid 복귀 직후)
   bool at_end_latched;                    // 종점 도달 래치 — estop 인가 시 해제 (§4)
   // ref 조립 (전환 연속 처리)
   uint8_t last_src;                       // MGM_SRC_*
