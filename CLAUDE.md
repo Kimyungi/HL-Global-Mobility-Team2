@@ -61,7 +61,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 | 전이 | 조건 |
 |---|---|
 | lane → waypoint | 차선 신뢰도 < 임계, N주기 연속 |
-| waypoint → lane | 차선 신뢰도 > 복귀 임계, N주기 연속 (히스테리시스 — 이탈/복귀 임계 분리). **단 avoid 복귀 직후 `avoid_return_hold_cycles`(기본 300틱=3s) 동안은 보류** — 아래 개정 참조 |
+| waypoint → lane | 차선 신뢰도 > 복귀 임계, N주기 연속 (히스테리시스) **AND 트랙에 실제 재합류**(`GpsPath.cross_track_m` ≤ `lane_entry_max_cross_m`, 기본 0.5m) **AND** avoid 복귀 후 `avoid_return_hold_cycles`(기본 300틱=3s) 경과. 재합류 조건이 없으면 회피로 이탈한 채 카메라로 넘어가 **GPS 트랙 복귀를 영영 못 한다**(2026-08-14 실측: 복귀 시점 횡오차 0.90m·2.72m) |
 | lane·waypoint → avoid | 장애물 감지 AND 회피 가능 (TTC·측방 여유 충분) |
 | avoid → 복귀 | 기동 완료 → **waypoint로 복귀** (2026-08-12 개정, 팀장 — 회피 기동 직후 차는 차선을 벗어나 있어 차선 검출을 곧바로 신뢰할 수 없다. GPS 트랙으로 재합류 후 차선 신뢰도 회복 히스테리시스로 lane 자동 재전이. 구 "진입했던 스테이트로 복귀(복귀처 변수)"는 폐기. **§5.5 이중 트랙: Simulink 모델(김재민)도 동일 반영 필요**) |
 | lane → parking | GPS 주차구간 AND 주차공간 인식 |

@@ -93,8 +93,15 @@ ros2 run adas_mgm go
 [hh:mm:ss]   gps    (v_ref 0.00)      ← 트랙 종점
 ```
 
-복귀 후에는 **최소 3초간 gps에 머물러야** 한다 (`avoid_return_hold_cycles` 300틱,
-2026-08-14 추가). 한 틱 만에 lane으로 튀면 그 수정이 안 먹은 것이다 — 재빌드 확인.
+복귀 후 lane으로 넘어가려면 **3가지가 모두** 성립해야 한다 (2026-08-14):
+① 최소 3초 경과(`avoid_return_hold_cycles`) ② 차선 신뢰도 히스테리시스
+③ **트랙에 실제 재합류** — 횡오차 ≤ `lane_entry_max_cross_m`(0.5m).
+
+③ 때문에 **이탈이 안 잡히면 lane으로 안 넘어가고 gps에 계속 머문다** — 그게
+정상이다(이탈한 채 카메라로 넘어가면 트랙 복귀를 영영 못 한다). M 터미널에서
+`gps`가 오래 유지되면 실패가 아니라 재합류 중인 것이니, `lateral.csv`의
+`cross_track_m`이 0.5m 아래로 내려오는지를 보라. 안 내려오면 재합류 자체가
+안 되는 것이므로 §5의 "복귀 후 재합류 실패" 항목으로.
 
 **즉시 중단 기준 (V2 Ctrl-C 또는 물리 비상정지):**
 - 콘 옆을 지나기 **전에** `→ gps` 복귀 (조기 done — 콘을 향해 재수렴한다)
@@ -151,6 +158,7 @@ ros2 run adas_mgm go
 | AVOID 중 갑자기 정지 + "avoid 신선도 초과" 로그 | stack_avoid 사망 (watchdog 정상 동작) | V2 재시작 |
 | **RTK FIXED가 아예 안 잡힘 (DGPS/FLOAT 고착)** | 카메라 USB3 방사 잡음 — 위성 수·HDOP·RTCM은 정상값 그대로라 상태줄로는 안 보인다 (2026-08-14 규명) | `usb_speed:=high camera_fps:=10` 인자 확인. 그래도 안 되면 launch 끄고 `python3 ~/FMA_ws/src/stack_gps/tools/rtk_probe.py --seconds 120` 로 **C/N0** 측정 — 38dB 미만이면 안테나를 하늘 트인 쪽으로 |
 | **avoid 복귀가 한 틱 만에 lane으로** | 히스테리시스 카운터 미리셋 (2026-08-14 수정) | 재빌드 여부 확인. 체류를 더 원하면 `avoid_return_hold_cycles`↑ (MGM 파라미터, 300틱=3s) |
+| **복귀 후 재합류 실패 — cross가 안 줄고 lane으로도 안 넘어감** | 게이트는 정상 동작(이탈 중엔 lane 금지). 문제는 재합류 자체. 회피 대기 중 유지점 (1.5,0)이 **틀어진 헤딩을 유지**해 오래 기다릴수록 이탈이 커진다 (2026-08-14 run_195116: 7.25s 대기 동안 cross 0.13→0.90m) | ① `ros2 topic echo /adas/target_ref --once`로 `ref_points[0].x > 0` 확인 (음수면 목표가 차 뒤 — stack_gps 수정 반영 여부) ② `avoid.clear_gap_max_m`↓로 대기 단축(단 측면 충돌 위험과 교환) ③ 게이트를 임시로 풀려면 `lane_entry_max_cross_m` ↑ |
 | lane↔gps 전이가 잦음 | 차선 confidence가 임계 밴드 안에서 진동 (평균 0.47 실측) | `lane_conf_return`↑ / `n_cycles`↑. 확정 전 `core_replay`로 기존 run을 재생해 비교할 것 |
 
 ⚠ `param set`으로 바꾼 값은 **재시작하면 사라진다** — 확정값은 params.yaml에 반영해야 다음 세션에 살아남는다.

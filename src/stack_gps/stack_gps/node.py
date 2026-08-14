@@ -242,6 +242,7 @@ class StackGpsNode(Node):
         msg.parking_zone = snap['parking_zone']
         msg.at_end = snap['at_end']
         msg.fix_quality = quality
+        msg.cross_track_m = float(snap['cross_track_m'])
         self.pub.publish(msg)
         self._last_snap = snap
 

@@ -71,6 +71,7 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   s.gps_accel_zone = m.gps.accel_zone;
   s.gps_parking_zone = m.gps.parking_zone;
   s.gps_at_end = m.gps.at_end;
+  s.gps_cross_track = m.gps.cross_track_m;
   s.avoid_obstacle_detected = m.avoid.obstacle_detected;
   s.avoid_avoidable = m.avoid.avoidable;
   s.avoid_ttc = m.avoid.ttc;
@@ -162,6 +163,9 @@ public:
     // avoid→waypoint 복귀 후 lane 전이 보류 틱 (§4 복귀 정책 — 2026-08-14)
     p.avoid_return_hold_cycles =
       static_cast<int32_t>(declare_parameter<int>("avoid_return_hold_cycles", 300));
+    // waypoint→lane 전이 허용 최대 횡오차 [m] (0 이하 = 게이트 끔)
+    p.lane_entry_max_cross =
+      static_cast<float>(declare_parameter<double>("lane_entry_max_cross_m", 0.5));
     mgm_init(core_state_, p);
 
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기

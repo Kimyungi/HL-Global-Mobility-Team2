@@ -60,6 +60,7 @@ struct CoreSnapshot
   bool gps_accel_zone;
   bool gps_parking_zone;
   bool gps_at_end;
+  float gps_cross_track;                  // [m] 트랙 최근접점까지 거리 (재합류 판정)
   // stack_avoid
   bool avoid_obstacle_detected;
   bool avoid_avoidable;
@@ -105,6 +106,12 @@ struct CoreParams
   // 새 필드는 반드시 구조체 끝에 추가할 것 — core_replay가 옛 덤프의
   // params_size로 앞부분만 읽고 나머지는 기본값으로 채우기 때문.
   int32_t avoid_return_hold_cycles;
+  // waypoint→lane 전이를 허용하는 최대 횡오차 [m]. 트랙에 **실제로 재합류한 뒤에만**
+  // 카메라로 넘어가게 하는 게이트다 (2026-08-14). 시간 게이트
+  // (avoid_return_hold_cycles)만으로는 3초 뒤 이탈한 채로도 lane이 돼버린다 —
+  // run_0814_195116에서 복귀 시점 횡오차가 0.90m·2.72m였다.
+  // 0 이하면 이 게이트를 끈다(구동작).
+  float lane_entry_max_cross;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭

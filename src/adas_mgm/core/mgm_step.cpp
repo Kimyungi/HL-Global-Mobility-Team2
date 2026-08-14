@@ -71,6 +71,13 @@ void transition(const CoreSnapshot & s, CoreState & st)
     --st.return_hold_left;
   }
 
+  // 트랙 재합류 판정 (waypoint→lane 게이트). gps_path가 유효할 때만 의미가
+  // 있으므로 점이 없으면 미합류로 본다 — 신선도/유효성 보정은 wrapper가
+  // 이미 끝낸 뒤다(§5.7 ②). 임계 0 이하면 게이트 끔(구동작).
+  const bool rejoined =
+    (st.params.lane_entry_max_cross <= 0.0f) ||
+    (s.gps_path.n > 0 && s.gps_cross_track <= st.params.lane_entry_max_cross);
+
   const uint8_t prev_state = st.state;
 
   switch (st.state) {
@@ -87,8 +94,12 @@ void transition(const CoreSnapshot & s, CoreState & st)
     case MGM_STATE_WAYPOINT:
       if (s.avoid_obstacle_detected && s.avoid_avoidable) {
         st.state = MGM_STATE_AVOID;
-      } else if (st.return_hold_left == 0 && st.lane_high_cnt >= st.params.n_cycles) {
-        // return_hold_left>0 = 회피 복귀 직후 → GPS 재합류 전까지 lane 전이 금지 (§4)
+      } else if (st.return_hold_left == 0 &&
+        st.lane_high_cnt >= st.params.n_cycles && rejoined)
+      {
+        // 전이 조건 3개: ① 복귀 보류 시간 경과 ② 차선 신뢰도 히스테리시스
+        // ③ **트랙에 실제로 재합류** — ③이 없으면 회피로 이탈한 채 카메라로
+        //    넘어가, 트랙 복귀는 영영 못 하고 차선만 보고 간다 (§4).
         st.state = MGM_STATE_LANE;
       }
       break;
