@@ -105,6 +105,16 @@ class StackAvoidNode(Node):
         # maneuver_done 클리어런스 여유 [m] — 완료 판정 통과거리 = 마지막 감지거리
         # + 전장 + 이 값. 실차 튜닝: ros2 param set /stack_avoid_node avoid.clear_margin_m
         self.clear_margin = float(self.declare_parameter('avoid.clear_margin_m', 0.3).value)
+        # 클리어런스 계산에 쓰는 "마지막 감지거리"의 상한 [m].
+        # 2026-08-13에 1.0m 하드코딩으로 넣었다가 2026-08-14 실차에서 **측면 충돌**을
+        # 유발했다: 감지는 3.0m에서 시작해 1.1초 뒤(≈2.45m 지점) 소실됐는데, 상한
+        # 1.0m 때문에 통과거리를 2.15m로 잡아 4.3s 만에 done → GPS 복귀로 트랙에
+        # 되돌아가는 순간 콘이 0.8m 앞에 재출현(ttc 0.1)했다. 필요한 통과거리는
+        # 2.45+0.85+0.3 = 3.6m(7.2s)였으므로 1.45m 부족했다.
+        # 감지거리는 본래 detect_range로 유계이므로 기본값을 그에 맞춘다.
+        # 과대 대기로 인한 횡오차 누적은 아래 "통과 유지점"이 막는다.
+        self.clear_gap_max = float(
+            self.declare_parameter('avoid.clear_gap_max_m', 3.0).value)
         self._prev_center = None        # 직전 목표 y (rate limit 상태)
         self._prev_center_t = None
 
@@ -200,6 +210,8 @@ class StackAvoidNode(Node):
                 self.target_rate_mps = float(p.value)
             elif p.name == 'avoid.clear_margin_m':
                 self.clear_margin = float(p.value)
+            elif p.name == 'avoid.clear_gap_max_m':
+                self.clear_gap_max = float(p.value)
             elif p.name == 'vehicle.width_m':
                 self.vehicle_width = p.value
             elif p.name == 'lidar_mount.forward_angle_deg':
@@ -280,10 +292,11 @@ class StackAvoidNode(Node):
         elif self._maneuver_armed:
             if self._clear_since is None:
                 self._clear_since = now_mono
-            # 종방향 상한 1.0m: 감지 소실은 대부분 회피 조향으로 장애물이 통로를
-            # **측방** 이탈한 것이라, 마지막 감지거리(2m+)를 그대로 쓰면 대기가
-            # 과대해진다 (2026-08-13 run_003037: 7.4s 대기 동안 횡오차 1m 누적).
-            clear_dist = (min(self._last_gap or 1.0, 1.0)
+            # 감지 소실은 대부분 회피 조향으로 장애물이 통로를 **측방** 이탈한
+            # 것이지 통과한 것이 아니다 — 그 시점의 종방향 거리를 그대로 써야
+            # "차 뒤로 보낼" 거리가 나온다. 상한을 1.0m로 조이면 조기 복귀로
+            # 측면을 스친다 (2026-08-14 실차 2회, clear_gap_max_m 주석 참조).
+            clear_dist = (min(self._last_gap or self.clear_gap_max, self.clear_gap_max)
                           + self.vehicle_len + self.clear_margin)
             if speed > EPS_SPEED and \
                     now_mono - self._clear_since >= clear_dist / speed:
