@@ -83,6 +83,9 @@ install(PROGRAMS
   tools/identify_lidars.sh
   tools/identify_lidar_positions.py
   tools/layout_markers.py
+  tools/wall_calibrate.py
+  tools/pair_wall.py
+  tools/pair_calibrate.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
