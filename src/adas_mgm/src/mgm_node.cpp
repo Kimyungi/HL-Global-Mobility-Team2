@@ -412,6 +412,14 @@ private:
     }
     CoreSnapshot s = toSnapshot(m);
     s.estop_latch_release = estop_real;  // toSnapshot은 LatestMsgs만 알므로 여기서 주입
+    // 소스별 "이번 틱에 새 메시지 도착" — §5.8 이동 보정의 판정 근거.
+    // 값 동일성으로 판정하면 인지가 상수를 낼 때 무한 감쇠한다 (mgm_types.hpp 주석).
+    s.lane_updated = lane_rx_ns != last_lane_rx_used_;
+    s.gps_updated = gps_rx_ns != last_gps_rx_used_;
+    s.avoid_updated = avoid_rx_ns != last_avoid_rx_used_;
+    last_lane_rx_used_ = lane_rx_ns;
+    last_gps_rx_used_ = gps_rx_ns;
+    last_avoid_rx_used_ = avoid_rx_ns;
 
     if (dump_.is_open()) {
       dump_.write(reinterpret_cast<const char *>(&s), sizeof(s));
@@ -469,6 +477,10 @@ private:
   int64_t last_traffic_rx_ns_{-1};  // 마지막 TrafficStop 수신 시각 (미수신 = -1)
   int64_t traffic_stale_ns_{500'000'000};
   int64_t last_avoid_rx_ns_{-1};  // 마지막 AvoidStatus 수신 시각 (미수신 = -1)
+  // 직전 틱에 사용한 수신 시각 — 비교해서 "이번 틱에 새 메시지" 판정 (§5.8)
+  int64_t last_lane_rx_used_{-1};
+  int64_t last_gps_rx_used_{-1};
+  int64_t last_avoid_rx_used_{-1};
   int64_t avoid_stale_ns_{500'000'000};
   bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
   bool go_received_{false};         // /operator/go 마지막 수신값

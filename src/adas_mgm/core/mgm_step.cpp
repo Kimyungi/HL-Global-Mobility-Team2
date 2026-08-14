@@ -256,7 +256,16 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   // 확인됨(실카메라 로그에서 78.7%가 직전 틱과 동일값이었고 그 구간 str 무반응,
   // 명시적으로 매틱 값이 바뀌게 한 진단 스크립트는 45도 반응). stack_lane 추론이
   // ~21Hz로 CAN 주기(100Hz)보다 느려 구조적으로 발생.
-  const bool is_stale_repeat = st.has_raw_target && st.raw_n == n &&
+  // "새 추론 미도착" 판정은 **메시지 도착 여부**로 한다 (s.*_updated).
+  // 값 동일성으로 판정하던 것을 2026-08-14에 교체: 인지가 의도적으로 상수를 내는
+  // 경우(회피 통과 유지점 (1.5,0))를 영원히 낡은 값으로 오판해 x를 무한 감쇠시켰다.
+  // wrapper가 소스를 못 알려주는 경우(_updated 전부 false인 옛 스냅샷)를 대비해
+  // 값 동일성을 보조 조건으로 남긴다.
+  const bool src_updated =
+    (src == MGM_SRC_LANE) ? s.lane_updated :
+    (src == MGM_SRC_GPS) ? s.gps_updated :
+    (src == MGM_SRC_AVOID) ? s.avoid_updated : false;
+  const bool is_stale_repeat = !src_updated && st.has_raw_target && st.raw_n == n &&
     paths_equal(target, st.last_raw_target, n);
 
   st.n_out = n_wire;
@@ -288,7 +297,11 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     // 급커브 등은 어차피 다음 실제 인지값(21Hz)이 금방 덮어써서 누적되지 않음.
     const float dx = st.v * MGM_PERIOD_S;
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-      st.ref_out[i].x -= dx;
+      // 하한: 첫 점이 차 뒤로 가면 전진밖에 못 하는 차에게 도달 불가능한 목표가
+      // 된다. 감쇠는 "인지가 잠깐 늦은 동안의 보정"이지 목표를 뒤로 보내는
+      // 수단이 아니다 — 안전 불변식으로 고정한다 (2026-08-14).
+      st.ref_out[i].x = (st.ref_out[i].x - dx > MGM_MIN_REF_X)
+        ? st.ref_out[i].x - dx : MGM_MIN_REF_X;
     }
   } else {
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
