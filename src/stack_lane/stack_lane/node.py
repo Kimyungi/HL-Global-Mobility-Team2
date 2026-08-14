@@ -92,6 +92,14 @@ class StackLaneNode(Node):
         # (2026-08-11 확정, 팀장). 빈 문자열이면 첫 가용 장치 사용(단독 시험용).
         self.declare_parameter('camera_mxid', '14442C105157D3D200')
         self.declare_parameter('camera_fps', 30)
+        # USB 링크 속도 상한. 'super'(기본) = 제한 없음(SuperSpeed 5Gbps로 열거).
+        # 'high' = USB 2.0 강제 — SuperSpeed 신호 자체가 사라져 GNSS L1(1575MHz)
+        # 방사 잡음의 주 원인이 제거된다 (2026-08-14 실측: 카메라 부팅 시 GPS
+        # C/N0가 42→28dB, 근접 시 17dB까지 붕괴. camera_fps를 30→10으로 낮춰도
+        # 무효였는데, 그건 페이로드일 뿐 링크는 계속 5Gbps로 돌기 때문).
+        # ⚠ 'high'는 대역폭이 ~40MB/s라 1280x720 BGR 30fps(83MB/s)가 안 들어간다
+        # — 반드시 camera_fps를 10 이하로 함께 낮출 것 (추론은 5.8Hz라 무손실).
+        self.declare_parameter('usb_speed', 'super')
         self.declare_parameter('warmup_frames', 30)
         self.declare_parameter('poll_period_sec', 0.02)
         self.declare_parameter('publish_debug_image', False)
@@ -179,6 +187,18 @@ class StackLaneNode(Node):
         import depthai as dai
 
         mxid = str(self.get_parameter('camera_mxid').value).strip()
+        # USB 링크 속도 상한 (usb_speed 파라미터 주석 참조 — GPS 간섭 대책)
+        speed_name = str(self.get_parameter('usb_speed').value).strip().upper()
+        max_speed = None
+        if speed_name and speed_name != 'SUPER':
+            if hasattr(dai, 'UsbSpeed') and hasattr(dai.UsbSpeed, speed_name):
+                max_speed = getattr(dai.UsbSpeed, speed_name)
+                self.get_logger().warn(
+                    f'USB 링크 속도 제한: {speed_name} — GPS 간섭 대책. '
+                    'camera_fps가 10 이하인지 확인할 것 (대역폭 부족 시 프레임 유실)')
+            else:
+                self.get_logger().error(
+                    f'usb_speed={speed_name} 인식 불가 — 제한 없이 진행')
         if mxid:
             self.get_logger().info(f'OAK-D MxID 핀닝: {mxid}')
         else:
@@ -212,13 +232,20 @@ class StackLaneNode(Node):
             xout.setStreamName('rgb')
             cam.preview.link(xout.input)
             self._dai_device = open_device(
-                lambda: dai.Device(pipeline, dai.DeviceInfo(mxid)) if mxid
-                else dai.Device(pipeline))
+                lambda: dai.Device(pipeline, dai.DeviceInfo(mxid), max_speed)
+                if mxid and max_speed is not None else
+                dai.Device(pipeline, dai.DeviceInfo(mxid)) if mxid else
+                dai.Device(pipeline, max_speed) if max_speed is not None else
+                dai.Device(pipeline))
             self._queue = self._dai_device.getOutputQueue('rgb', maxSize=4, blocking=False)
             self._dai_pipeline = None
         else:  # v3
             self._dai_device = open_device(
-                lambda: dai.Device(dai.DeviceInfo(mxid)) if mxid else dai.Device())
+                lambda: dai.Device(dai.DeviceInfo(mxid), max_speed)
+                if mxid and max_speed is not None else
+                dai.Device(dai.DeviceInfo(mxid)) if mxid else
+                dai.Device(max_speed) if max_speed is not None else
+                dai.Device())
             pipeline = dai.Pipeline(self._dai_device)
             cam = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
             self._queue = cam.requestOutput(
