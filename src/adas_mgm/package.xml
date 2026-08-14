@@ -14,6 +14,8 @@
   <depend>std_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
+  <!-- 통합 launch가 stack_avoid 노드 + launch_parts(can_zero 가드)를 쓴다 (2026-08-12) -->
+  <exec_depend>stack_avoid</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
