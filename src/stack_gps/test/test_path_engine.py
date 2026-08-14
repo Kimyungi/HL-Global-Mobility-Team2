@@ -194,6 +194,30 @@ def test_lookahead_target_stays_ahead_when_far_off_track():
     assert abs(snap["cross_track_m"] - 2.7) < 0.05
 
 
+def test_rejoin_target_when_heading_away_from_track():
+    """트랙에서 멀어지는 방향을 보고 있을 때 — 트랙 점이 아니라 재합류 목표를 낸다.
+
+    dSPACE는 ref 첫 점만 목표로 쓴다(2026-08-14 손상민 확인). 차가 트랙에서
+    멀어지는 쪽을 보면 트랙은 전진하는 만큼 옆으로도 벌어져 **트랙 위 어떤
+    점도** 조준 가능한 방위에 없다 — run_0814_201650 실측: 20점 전부 방위
+    76~84°, 명령 2.3m인데 실제 24m 반경으로 사실상 직진, 횡오차 5m 발산.
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    # 실측 기하: 트랙 좌측 4.4m, 트랙(+동) 대비 18° 틀어져 멀어지는 중
+    snap = eng.snapshot(*en_to_latlon(20.0, 4.4), heading=math.radians(18.0))
+    x, y = snap["points"][0][0], snap["points"][0][1]
+    bearing = abs(math.atan2(y, x))
+    assert bearing <= PathEngine.MAX_TARGET_BEARING_RAD + 1e-6, \
+        f"방위 {math.degrees(bearing):.1f}° — 조준 불가"
+    assert x > 0, "목표가 전방이 아님"
+    # 트랙 쪽(y<0)으로 조준해야 재합류한다
+    assert y < 0, "트랙 반대쪽으로 조준"
+    # 도달 곡률이 최소 회전반경 안
+    L2 = x * x + y * y
+    assert L2 >= 2.0 * abs(y) * PathEngine.MIN_TURN_RADIUS_M
+
+
 def test_lookahead_target_when_track_is_behind():
     """차가 트랙을 완전히 등지면 전방 후보가 없다 — 폴백해도 예외 없이 동작.
 

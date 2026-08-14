@@ -68,6 +68,14 @@ class PathEngine:
     # DRIVE_GUIDE의 S자 코스 기록 근거). 이탈이 클수록 lookahead를 늘려
     # 도달 곡률 κ=2y/L² 이 1/R_min 을 넘지 않게 한다 — 넘으면 풀조향 포화.
     MIN_TURN_RADIUS_M = 1.5
+    # ref 첫 점의 최대 방위각 [rad]. dSPACE는 **첫 점만** 목표로 쓴다(2026-08-14
+    # 손상민 확인). 차가 트랙에서 멀어지는 쪽을 보고 있으면 트랙은 전진하는 만큼
+    # 옆으로도 벌어져 **트랙 위 어떤 점도** 조준 가능한 방위에 없다 —
+    # run_0814_201650 실측: 20점 전부 방위 76~84°(거의 정옆), 명령 선회반경
+    # 2.3m인데 실제 24m로 사실상 직진, 횡오차 5m까지 발산.
+    # 그래서 이 각을 넘으면 트랙 점 대신 **트랙 쪽으로 꺾인 중간 목표점**을 낸다.
+    # 차가 돌아 정렬될수록 방위가 줄어 자연히 원래 동작으로 수렴한다.
+    MAX_TARGET_BEARING_RAD = 0.436   # 25°
 
     def __init__(self, latlon_pts, n_points=30,
                  accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0,
@@ -197,6 +205,20 @@ class PathEngine:
                            -s * de + c * dn,         # y 좌측
                            wrap_angle(self.yaw[i] - psi),
                            self.curvature[i]))
+        # 첫 점의 방위가 너무 크면(= 트랙이 옆에 있고 차는 멀어지는 방향) 트랙 점
+        # 대신 재합류용 중간 목표점으로 대체한다 (MAX_TARGET_BEARING_RAD 주석 참조).
+        # 거리는 원래 목표점까지의 거리를 쓰되, 도달 곡률 R = d/(2·sinβ) 이 R_min
+        # 이상이 되도록 하한을 둔다. yaw/curvature는 트랙 값을 그대로 둔다 —
+        # MGM 역방향 가드가 ref[0].yaw를 "트랙 대비 차 방향"으로 해석하기 때문.
+        if points and self.lookahead_m > 0.0:   # lookahead 끔 = 구동작 완전 보존
+            px, py, pyaw, pcurv = points[0]
+            bearing = math.atan2(py, px)
+            if abs(bearing) > self.MAX_TARGET_BEARING_RAD:
+                b = math.copysign(self.MAX_TARGET_BEARING_RAD, bearing)
+                d = max(math.hypot(px, py),
+                        2.0 * self.MIN_TURN_RADIUS_M * math.sin(self.MAX_TARGET_BEARING_RAD))
+                points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
+
         return {
             "points": points,
             "accel_zone": self._in_ranges(idx, self.accel_ranges),
