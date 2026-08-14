@@ -162,10 +162,50 @@ def test_lookahead_shifts_first_ref_point():
     s1 = la.snapshot(from_lat, from_lon)
     assert s1["idx"] == s0["idx"]                        # 최근접·at_end 판정은 동일
     assert abs(s1["cross_track_m"] - s0["cross_track_m"]) < 1e-9
-    # 첫 점: 기본은 옆구리(x≈0), lookahead는 ~0.9m 전방
+    # 첫 점: 기본은 옆구리(x≈0), lookahead는 전방
     assert abs(s0["points"][0][0]) < 0.2
-    assert abs(s1["points"][0][0] - 0.9) < 0.2
-    assert abs(s1["points"][0][1] + 0.3) < 0.05  # 횡오차는 그대로 담김
+    x1, y1 = s1["points"][0][0], s1["points"][0][1]
+    assert x1 >= 0.8, f"lookahead 점이 전방이 아님: x={x1:.2f}"
+    assert math.hypot(x1, y1) >= 0.9 - 1e-6, "lookahead 거리 미달"
+    assert abs(y1 + 0.3) < 0.05                      # 횡오차는 그대로 담김
+    # 2026-08-14: 정확히 0.9m 지점을 요구하던 단언을 완화했다. 이제 도달 곡률
+    # κ=2y/L² 이 1/R_min(1.5m)을 넘지 않는 점을 고르는데, 이 기하에서 0.9m 점은
+    # 요구 반경이 정확히 1.5m라 한 점 더 나간다(요구 반경 2.55m). 의도된 변화 —
+    # 가까운 점을 주면 조향이 포화돼 재합류가 진동한다.
+    assert (x1 * x1 + y1 * y1) >= 2.0 * abs(y1) * PathEngine.MIN_TURN_RADIUS_M
+
+
+def test_lookahead_target_stays_ahead_when_far_off_track():
+    """회피 직후처럼 크게 이탈했을 때도 ref 첫 점은 **차량 앞**이어야 한다.
+
+    구현이 "트랙 호길이로 1m 앞"이던 시절엔 이 기하에서 첫 점이 차량 뒤로 나와
+    (x<0) 전진밖에 못 하는 차가 재합류할 수 없었다 — 2026-08-14 run_0814_195116
+    실측: cross 2.7m·헤딩 30° 이탈에서 ref[0]=(-3.15,-0.10), cross 4.5m까지 발산.
+    """
+    # 동쪽으로 뻗은 직선 트랙
+    track = make_track([(0.3 * i, 0.0) for i in range(60)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    # 차는 트랙 중간쯤에서 좌로 2.7m 이탈, 헤딩은 트랙(+동) 대비 30° 틀어짐
+    lat, lon = en_to_latlon(6.0, 2.7)
+    snap = eng.snapshot(lat, lon, heading=math.radians(30.0))
+    x0, y0 = snap["points"][0][0], snap["points"][0][1]
+    assert x0 >= PathEngine.MIN_FORWARD_M, f"첫 점이 전방이 아님: x={x0:.2f}"
+    assert math.hypot(x0, y0) >= 1.0 - 1e-6, "lookahead 거리 미달"
+    assert abs(snap["cross_track_m"] - 2.7) < 0.05
+
+
+def test_lookahead_target_when_track_is_behind():
+    """차가 트랙을 완전히 등지면 전방 후보가 없다 — 폴백해도 예외 없이 동작.
+
+    이 상황의 답은 재합류가 아니라 정지이고, MGM 역방향 가드가 담당한다.
+    여기서는 엔진이 죽지 않고 유효한 점을 내는 것만 보장한다.
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(30)])
+    eng = PathEngine(track, n_points=5, lookahead_m=1.0)
+    lat, lon = en_to_latlon(8.0, 0.0)
+    snap = eng.snapshot(lat, lon, heading=math.pi)   # 트랙 진행방향의 정반대
+    assert len(snap["points"]) >= 1
+    assert all(math.isfinite(v) for v in snap["points"][0])
 
 
 def test_wrap_angle():

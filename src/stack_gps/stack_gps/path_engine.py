@@ -61,6 +61,14 @@ class PathEngine:
     zone_ranges: [(start_idx, end_idx)] 포함 구간 목록 (웨이포인트 인덱스 기준).
     """
 
+    # ref 시작점이 "전방"으로 인정되는 최소 vehicle-frame x [m].
+    # 0으로 두면 옆구리(x≈0) 점이 뽑혀 도달 곡률이 폭주한다(2026-08-05 위빙).
+    MIN_FORWARD_M = 0.3
+    # 재합류 lookahead 계산에 쓰는 최소 회전반경 [m] (WHEELTEC 실측 1.5m,
+    # DRIVE_GUIDE의 S자 코스 기록 근거). 이탈이 클수록 lookahead를 늘려
+    # 도달 곡률 κ=2y/L² 이 1/R_min 을 넘지 않게 한다 — 넘으면 풀조향 포화.
+    MIN_TURN_RADIUS_M = 1.5
+
     def __init__(self, latlon_pts, n_points=30,
                  accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0,
                  lookahead_m=0.0):
@@ -72,6 +80,7 @@ class PathEngine:
         self.n_points = n_points
         self.accel_ranges = list(accel_ranges)
         self.parking_ranges = list(parking_ranges)
+        self.lookahead_m = float(lookahead_m)
 
         lat0, lon0 = latlon_pts[0]
         self._lat0, self._lon0 = lat0, lon0
@@ -123,6 +132,47 @@ class PathEngine:
     def _in_ranges(idx, ranges):
         return any(a <= idx <= b for a, b in ranges)
 
+    def _target_idx(self, idx, ev, nv, c, s, cross=0.0):
+        """ref 시작점 = **차량 앞쪽**에 있으면서 lookahead_m 이상 떨어진 첫 트랙 점.
+
+        구현은 "최근접점에서 트랙 호길이로 lookahead_m 앞"(idx + _la_pts)이었는데,
+        그건 차가 트랙 위에 있을 때만 전방을 뜻한다. 횡오차가 커지면 트랙 따라
+        1m 앞이 **차량 기준으로는 뒤**가 되어 ref[0].x가 음수로 나오고, 전진밖에
+        못 하는 차는 그 목표에 도달할 수 없다 — 복귀가 구조적으로 불가능해진다.
+        (2026-08-14 run_0814_195116: 회피 후 cross 2.7m·헤딩 30° 이탈 상태에서
+        ref[0]=(-3.15,-0.10) → 재합류 실패, cross가 4.5m까지 단조 발산)
+
+        그래서 기준을 **차량으로부터의 유클리드 거리 + 전방 조건**으로 바꾼다.
+        트랙 위에 정렬돼 있을 때는 기존과 사실상 같은 점을 고른다.
+        전방에 후보가 없으면(차가 트랙을 등짐) 구 동작으로 폴백한다 — 이 경우는
+        복귀가 아니라 정지가 답이고, MGM의 역방향 가드(|ref[0].yaw|>120°)가 잡는다.
+        """
+        last = len(self.e) - 1
+        if self.lookahead_m <= 0.0:
+            return idx          # lookahead 끔 = 최근접점 그대로 (구동작 보존)
+        la2 = self.lookahead_m * self.lookahead_m
+        fallback = None
+        for i in range(idx, last + 1):
+            de, dn = self.e[i] - ev, self.n[i] - nv
+            x = c * de + s * dn
+            if x < self.MIN_FORWARD_M:
+                continue
+            d2 = de * de + dn * dn
+            if d2 < la2:
+                continue
+            if fallback is None:
+                fallback = i        # 전방·거리 조건은 만족 (곡률만 과함)
+            # 도달 곡률 κ = 2y/L² 이 1/R_min 이하인 점을 고른다.
+            # |2y|/d2 ≤ 1/R_min  ⟺  |2y|·R_min ≤ d2.
+            # 이탈이 클수록 더 먼 점이 뽑혀 재합류가 완만해진다 — 가까운 점을
+            # 주면 조향이 포화돼 트랙을 가로질렀다 되돌아오는 진동이 된다.
+            y = -s * de + c * dn
+            if abs(2.0 * y) * self.MIN_TURN_RADIUS_M <= d2:
+                return i
+        if fallback is not None:
+            return fallback
+        return min(idx + self._la_pts, last)
+
     def snapshot(self, lat, lon, heading=None):
         """현재 fix → dict(points, accel_zone, parking_zone, idx, cross_track_m).
 
@@ -139,7 +189,7 @@ class PathEngine:
         psi = self.yaw[idx] if heading is None else heading
         c, s = math.cos(psi), math.sin(psi)
 
-        start = min(idx + self._la_pts, len(self.e) - 1)
+        start = self._target_idx(idx, ev, nv, c, s, dist)
         points = []
         for i in range(start, min(start + self.n_points, len(self.e))):
             de, dn = self.e[i] - ev, self.n[i] - nv
