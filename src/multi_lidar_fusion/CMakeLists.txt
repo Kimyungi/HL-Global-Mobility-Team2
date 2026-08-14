@@ -86,6 +86,7 @@ install(PROGRAMS
   tools/wall_calibrate.py
   tools/pair_wall.py
   tools/pair_calibrate.py
+  tools/run_4lidar.sh
   DESTINATION lib/${PROJECT_NAME}
 )
 

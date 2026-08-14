@@ -132,7 +132,28 @@ colcon test-result --all --verbose
 
 ## 5. 실행
 
-### 실 센서 없이 (권장 첫 단계)
+### 명령 하나로 (권장)
+
+```bash
+~/FMA_ws/src/multi_lidar_fusion/tools/run_4lidar.sh
+```
+
+터미널 하나면 되고 `source` 도 필요 없다. 드라이버 4대 → 스캔 수신 확인(4/4) → 융합 + RViz 순으로 띄우고, `Ctrl-C` 하나로 전부 내린다.
+
+이 스크립트가 대신 처리해 주는 것 두 가지:
+
+- **YD 포트 자동 탐지.** YD 2대는 by-id 가 겹쳐 by-path 를 쓰는데, 그 주소는 "허브의 그 구멍"이라 USB 를 옮기거나 허브 전원을 껐다 켜면 조용히 바뀐다(2026-08-14: `0:1.2.x` → `0:3.x` 로 바뀌어 YD 2대가 무발행이었다). 매번 CP2102 장치를 찾아 배정하고 무엇을 골랐는지 찍는다.
+- **안전한 종료.** `SIGINT` 를 먼저 보내고 4초 기다린 뒤에야 강제 종료한다. `SIGKILL` 로 죽이면 드라이버가 라이다에 정지 명령을 못 보내, RPLiDAR 가 다음 기동에서 `SL_RESULT_OPERATION_TIMEOUT` / `Can not start scan` 으로 실패한다(실측).
+
+```bash
+run_4lidar.sh --no-rviz            # RViz 없이 (rosbag 기록·원격 접속)
+run_4lidar.sh --build              # 빌드 후 실행
+run_4lidar.sh --a1 /dev/... --a2 /dev/...   # 자동 탐지가 틀렸을 때
+```
+
+> 앞/뒤가 바뀐 것 같으면 `ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=yd0` 로 한 대씩 확인한다.
+
+### 실 센서 없이 (시뮬)
 
 ```bash
 ros2 launch multi_lidar_fusion multi_lidar_fusion.launch.py sim:=true rviz:=true
