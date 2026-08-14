@@ -70,10 +70,16 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 ```bash
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv
+    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv \
+    usb_speed:=high camera_fps:=10
 ```
 
 - `waypoint_csv`는 **필수** — 코스에 맞는 CSV로 교체 (S자: `waypoints_straight_1_20260806_191643.csv`).
+- **`usb_speed:=high camera_fps:=10`도 사실상 필수 (2026-08-14).** 빼면 OAK-D가
+  USB3(SuperSpeed)로 열거되고 그 방사 잡음이 GNSS L1을 덮어 **RTK FIXED가 안 잡힌다**
+  (같은 안테나 위치에서 C/N0 39dB↔22dB). USB2 대역폭이 ~40MB/s라 `camera_fps:=10`을
+  반드시 동반한다. 적용되면 `stack_lane` 콘솔에 `USB 링크 속도 제한: HIGH`가 뜬다.
+  배경·수치는 CLAUDE.md §6.
 - 실제 CAN TX가 나가므로 확인 토큰 없이는 거부된다.
 - **`wait_go: true`로 떠서 인가 전까지 정지 대기** — launch가 떴다고 차가 바로 움직이지 않는다.
 - 로그는 run마다 `~/FMA_ws/drive_logs/run_<시각>/`에 자동 저장
@@ -83,6 +89,10 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 
 | 인자 | 기본값 | 언제 바꾸나 |
 |---|---|---|
+| `usb_speed` | `super` (제한 없음) | **실주행은 항상 `high`** — GPS 간섭 대책 (위 설명) |
+| `camera_fps` | `30` | `usb_speed:=high`면 **반드시 `10`** (USB2 대역폭) |
+| `lane_enabled` | `true` | `false`면 stack_lane 미기동 — 카메라 없이 GPS/회피만 시험할 때. 출발은 `ros2 run adas_mgm go --skip-lane` |
+| `gps_only` | `false` | `true`면 LANE **전이**만 차단(카메라는 그대로 뜸 — 사후 분석용 데이터 유지) |
 | `lane_device` | `xpu` (인텔 iGPU, 172ms/frame) | XPU 초기화 실패 시 `cpu`로 폴백 |
 | `ref_point0_lookahead_m` | `1.8` (오실레이션 잠정 최적) | 차선 추종 재튜닝 시 |
 | `rtcm_host` | `127.0.0.1` | V1을 다른 호스트에서 돌릴 때 |

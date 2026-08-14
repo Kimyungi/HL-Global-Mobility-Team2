@@ -67,21 +67,34 @@ avoidable이 안 서면 → 콘이 통로(±0.46m) 밖이거나 ttc<1.5 (§5 표
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
     waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv \
-    gps_only:=true
+    gps_only:=true usb_speed:=high camera_fps:=10
 # M (내내 켜 둠)
 ros2 run adas_mgm state
 # V3 — 점검 5종(avoid 포함) 통과 시 출발
 ros2 run adas_mgm go
 ```
 
+> **`usb_speed:=high camera_fps:=10`은 GPS를 위한 필수 인자다 (2026-08-14).**
+> 빼면 OAK-D가 USB3(SuperSpeed)로 열거되고 그 방사 잡음이 GNSS L1을 덮어
+> **RTK FIXED가 아예 안 잡힌다** (같은 위치에서 C/N0 39dB↔22dB). USB2는 대역폭이
+> ~40MB/s라 `camera_fps:=10`을 반드시 동반해야 한다 (CLAUDE.md §6).
+> 기동 후 `stack_lane` 콘솔에 `USB 링크 속도 제한: HIGH` 경고가 떠야 적용된 것이다.
+>
+> **카메라를 아예 빼려면** `gps_only:=true` 대신 `lane_enabled:=false`를 쓰고
+> 출발은 `ros2 run adas_mgm go --skip-lane`. `gps_only`는 LANE **전이**만 막을 뿐
+> stack_lane은 그대로 떠서 사후 분석용 데이터를 남긴다 — 진짜 변수 축소는 `lane_enabled`다.
+
 **기대 전이 로그 (M 터미널):**
 
 ```
 [hh:mm:ss]   gps    (v_ref 0.50)
-[hh:mm:ss] → 회피   (v_ref 0.4x)      ← 콘 앞 ~3m
+[hh:mm:ss] → 회피   (v_ref 0.50)      ← 콘 앞 ~3m (회피 중 감속 금지 — CLAUDE.md §3)
 [hh:mm:ss] → gps    (v_ref 0.50)      ← 통과 4~6초 뒤 (maneuver_done)
 [hh:mm:ss]   gps    (v_ref 0.00)      ← 트랙 종점
 ```
+
+복귀 후에는 **최소 3초간 gps에 머물러야** 한다 (`avoid_return_hold_cycles` 300틱,
+2026-08-14 추가). 한 틱 만에 lane으로 튀면 그 수정이 안 먹은 것이다 — 재빌드 확인.
 
 **즉시 중단 기준 (V2 Ctrl-C 또는 물리 비상정지):**
 - 콘 옆을 지나기 **전에** `→ gps` 복귀 (조기 done — 콘을 향해 재수렴한다)
@@ -90,8 +103,18 @@ ros2 run adas_mgm go
 
 ## 3. 단계 2 — 성공 시 변형 2가지
 
-1. **full 통합** (gps_only 빼고 재실행): 차선 주행 중 콘 → AVOID → **WAYPOINT 복귀** →
-   차선 신뢰도 회복 시 LANE 재전이까지. 2026-08-12 복귀 정책 개정(§CLAUDE.md §4)의 실차 확인.
+1. **full 통합** — `gps_only`만 빼고 재실행 (**`usb_speed`·`camera_fps`는 유지**):
+
+   ```bash
+   ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
+       REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv \
+       usb_speed:=high camera_fps:=10
+   ```
+
+   차선 주행 중 콘 → AVOID → **WAYPOINT 복귀(최소 3초 유지)** → 차선 신뢰도 회복 시
+   LANE 재전이까지. 2026-08-12 복귀 정책 개정(CLAUDE.md §4)과 2026-08-14 히스테리시스
+   수정의 실차 확인이다.
 2. **열림 없음(narrow)**: 콘 3개로 양옆을 막고 접근 → narrow_gap 감속(v_narrow 0.2) →
    estop 정지 확인. 회피 시도 없이 감속·정지해야 정상.
 
@@ -104,6 +127,8 @@ ros2 run adas_mgm go
 | 3 | 복귀 타이밍 | 콘을 **완전히 지난 뒤** 4~6초 — 조기 done 없음 |
 | 4 | 복귀 궤적 | GPS 트랙으로 부드럽게 재합류 (블렌드 — 급조향 없음) |
 | 5 | 종점 정지 | 회피와 무관하게 정상 작동 |
+| 6 | **복귀 후 gps 체류** | **3초 이상** — 한 틱 만에 lane으로 튀면 불합격 (2026-08-14 수정 확인) |
+| 7 | **RTK 유지** | run 내내 `fix_quality=4` — `lateral.csv`의 quality 열로 사후 확인 |
 
 5개 전부 합격 → 확정 파라미터를 `stack_avoid/config/params.yaml`에 반영 + 커밋/PR.
 
@@ -124,6 +149,9 @@ ros2 run adas_mgm go
 | 열림 있는데 narrow 정지 | 오프셋 상한 | `avoid.offset_max_m` 1.0→1.3 |
 | 목표점이 프레임마다 튐 | rate limit | `avoid.target_rate_limit_mps` 3.0→2.0 |
 | AVOID 중 갑자기 정지 + "avoid 신선도 초과" 로그 | stack_avoid 사망 (watchdog 정상 동작) | V2 재시작 |
+| **RTK FIXED가 아예 안 잡힘 (DGPS/FLOAT 고착)** | 카메라 USB3 방사 잡음 — 위성 수·HDOP·RTCM은 정상값 그대로라 상태줄로는 안 보인다 (2026-08-14 규명) | `usb_speed:=high camera_fps:=10` 인자 확인. 그래도 안 되면 launch 끄고 `python3 ~/FMA_ws/src/stack_gps/tools/rtk_probe.py --seconds 120` 로 **C/N0** 측정 — 38dB 미만이면 안테나를 하늘 트인 쪽으로 |
+| **avoid 복귀가 한 틱 만에 lane으로** | 히스테리시스 카운터 미리셋 (2026-08-14 수정) | 재빌드 여부 확인. 체류를 더 원하면 `avoid_return_hold_cycles`↑ (MGM 파라미터, 300틱=3s) |
+| lane↔gps 전이가 잦음 | 차선 confidence가 임계 밴드 안에서 진동 (평균 0.47 실측) | `lane_conf_return`↑ / `n_cycles`↑. 확정 전 `core_replay`로 기존 run을 재생해 비교할 것 |
 
 ⚠ `param set`으로 바꾼 값은 **재시작하면 사라진다** — 확정값은 params.yaml에 반영해야 다음 세션에 살아남는다.
 
