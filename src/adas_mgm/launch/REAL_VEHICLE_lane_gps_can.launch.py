@@ -206,6 +206,21 @@ def generate_launch_description():
         # 단 표본 51초라 미확정. 재튜닝 시 인자만 바꿔 재실행.
         DeclareLaunchArgument('ref_point0_lookahead_m', default_value='1.8'),
         DeclareLaunchArgument('ref_point0_extrap_mode', default_value='linear'),
+        # 0.5(stack_lane 기본) → 0.30 (2026-08-15). 이 게이트가 풀렸다 걸렸다 하면
+        # ref[0] 거리가 1.8m ↔ points_x_start 2.5m 로 **0.70m 계단 점프**하고,
+        # 조향 응답이 거리에 강하게 의존하므로(CLAUDE.md §3 ③) 루프 이득이 같이
+        # 튄다. run_0815_163614 실측: 신뢰도 분포가 임계 0.5 바로 양옆에 최대 밀집
+        # (0.4~0.5 1887틱 / 0.5~0.6 2186틱)이라 **120초에 82회, 평균 1.5초마다** 전환.
+        # 그 구간 LANE 헤딩 표준편차 9.22°(GPS 6.07°)·명령→조향 지연 0.60s(GPS 0.18s).
+        # 0.30이면 미적용이 33.1% → 1.1%로 떨어져 전환이 사실상 사라진다
+        # (0.45→19.8%, 0.40→10.5%, 0.35→4.1%, 0.25→1.0% — 0.30이 평탄부 시작).
+        # 안전성: 이 외삽은 **가시구간(2.5~6.0m) 폴리곤을 그대로 뒤로 평가**하는 것이라
+        # 별도 추정이 아니다 — 실측 8213프레임에서 |가시구간 2차피팅 예측 − 실제 ref[0].y|
+        # 중앙값 1.8mm·p90 7.6mm, 임계 바로 위(0.5~0.6) 구간도 2.5mm로 열화 없음.
+        # 게다가 미적용 프레임이 오히려 더 단순한 경로였다(2차피팅 잔차 0.00003 vs
+        # 0.00025m, |ly19| 0.34 vs 0.84m) — 신뢰도는 피팅 품질보다 차선 곡률·복잡도를
+        # 따라간다. stack_lane 패키지 기본값(0.5)은 단독 시험용으로 그대로 두었다.
+        DeclareLaunchArgument('ref_point0_min_confidence', default_value='0.30'),
         DeclareLaunchArgument('coeff_smoothing_alpha', default_value='0.3'),
 
         # ── stack_estop (REAL_VEHICLE_stack_estop_mgm_can과 동일)
@@ -315,6 +330,8 @@ def generate_launch_description():
                 'ref_point0_lookahead_m': ParameterValue(
                     LaunchConfiguration('ref_point0_lookahead_m'), value_type=float),
                 'ref_point0_extrap_mode': LaunchConfiguration('ref_point0_extrap_mode'),
+                'ref_point0_min_confidence': ParameterValue(
+                    LaunchConfiguration('ref_point0_min_confidence'), value_type=float),
                 'coeff_smoothing_alpha': ParameterValue(
                     LaunchConfiguration('coeff_smoothing_alpha'), value_type=float),
             }],
