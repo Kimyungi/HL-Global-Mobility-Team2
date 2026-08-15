@@ -156,9 +156,11 @@ ros2 run adas_mgm go
 | 열림 있는데 narrow 정지 | 오프셋 상한 | `avoid.offset_max_m` 1.0→1.3 |
 | 목표점이 프레임마다 튐 | rate limit | `avoid.target_rate_limit_mps` 3.0→2.0 |
 | AVOID 중 갑자기 정지 + "avoid 신선도 초과" 로그 | stack_avoid 사망 (watchdog 정상 동작) | V2 재시작 |
+| **RTK FIXED가 아예 안 잡힘 + `lateral.csv`가 아예 없음** | `stack_gps_node`가 기동 실패로 즉사 — waypoint_csv 경로 오타나 1~4점짜리 잔여 CSV. launch는 나머지 노드를 그대로 띄우고 계속 돌아 **카메라만 보고 주행**하게 된다 (2026-08-15 3연속 실사례) | **수정 완료** — launch가 CSV를 미리 읽어 검증하고 거부한다. 그래도 의심되면 `ros2 node list \| grep stack_gps` (안 나오면 죽은 것) |
 | **RTK FIXED가 아예 안 잡힘 (DGPS/FLOAT 고착)** | 카메라 USB3 방사 잡음 — 위성 수·HDOP·RTCM은 정상값 그대로라 상태줄로는 안 보인다 (2026-08-14 규명) | `usb_speed:=high camera_fps:=10` 인자 확인. 그래도 안 되면 launch 끄고 `python3 ~/FMA_ws/src/stack_gps/tools/rtk_probe.py --seconds 120` 로 **C/N0** 측정 — 38dB 미만이면 안테나를 하늘 트인 쪽으로 |
 | **avoid 복귀가 한 틱 만에 lane으로** | 히스테리시스 카운터 미리셋 (2026-08-14 수정) | 재빌드 여부 확인. 체류를 더 원하면 `avoid_return_hold_cycles`↑ (MGM 파라미터, 300틱=3s) |
-| **복귀 후 재합류 실패 — cross가 안 줄고 lane으로도 안 넘어감** | 게이트는 정상 동작(이탈 중엔 lane 금지). 문제는 재합류 자체. 회피 대기 중 유지점 (1.5,0)이 **틀어진 헤딩을 유지**해 오래 기다릴수록 이탈이 커진다 (2026-08-14 run_195116: 7.25s 대기 동안 cross 0.13→0.90m) | ① `ros2 topic echo /adas/target_ref --once`로 `ref_points[0].x > 0` 확인 (음수면 목표가 차 뒤 — stack_gps 수정 반영 여부) ② `avoid.clear_gap_max_m`↓로 대기 단축(단 측면 충돌 위험과 교환) ③ 게이트를 임시로 풀려면 `lane_entry_max_cross_m` ↑ |
+| **복귀 후 재합류 실패 — cross가 안 줄고 lane으로도 안 넘어감** | 게이트는 정상 동작(이탈 중엔 lane 금지). 문제는 재합류 자체. **원인 규명 완료 (2026-08-15, run_0815 4런)**: 재합류 목표점 거리가 이탈과 함께 커져(1.3m→5.4m) 조향 응답이 붕괴했다 — 목표 2.5m 초과 시 명령 곡률의 10%만 실현(CLAUDE.md §3 제약 ③). 이탈이 클수록 목표가 멀어지는 **양의 되먹임**이었다 | **수정 완료** — 재합류 목표를 1.27~1.8m로 클램프(`REJOIN_TARGET_MAX_M`) + avoid 20점 보간 첫 점을 1.2m로(`MGM_REF_FIRST_POINT_M`). 재발 시 AVOID·복귀 중 `ros2 topic echo /adas/target_ref --once`로 **`ref_points[0]`의 거리 `hypot(x,y)`가 0.8~1.8m인지** 확인(x>0은 기본). 밴드 밖이면 재빌드 여부 확인 |
+| **AVOID 중 헤딩이 한쪽으로 흐름 (복귀 시 cross 2m+)** | AVOID의 "전방 직진 유지"는 **헤딩 개루프**라 dSPACE 잔류 조향(`str`≈0.05)이 그대로 적분된다 — 실측 1~2°/s. run_0815_144142는 12초 AVOID에 헤딩 +26.7°·cross 0.08→1.88m, run_0815_142817은 14.8초에 −10.3°(방향이 반대 = 계통 오차 아닌 표류) | `avoid_max_cycles`↓ (기본 1200틱=12s → 500틱=5s 권장). 개루프 시간이 곧 이탈량이다. 단 조기 복귀는 측면 충돌 위험과 교환 — §4 표의 클리어런스와 함께 볼 것 |
 | lane↔gps 전이가 잦음 | 차선 confidence가 임계 밴드 안에서 진동 (평균 0.47 실측) | `lane_conf_return`↑ / `n_cycles`↑. 확정 전 `core_replay`로 기존 run을 재생해 비교할 것 |
 
 ⚠ `param set`으로 바꾼 값은 **재시작하면 사라진다** — 확정값은 params.yaml에 반영해야 다음 세션에 살아남는다.

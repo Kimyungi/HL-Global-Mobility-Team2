@@ -34,7 +34,8 @@ import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
+                            OpaqueFunction, Shutdown)
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
@@ -77,8 +78,25 @@ def validate(context):
         raise RuntimeError(
             'REAL VEHICLE launch refused. '
             'Set REAL_VEHICLE_CONFIRM:=' + CONFIRM_TOKEN)
-    if not LaunchConfiguration('waypoint_csv').perform(context):
+    waypoint_csv = LaunchConfiguration('waypoint_csv').perform(context)
+    if not waypoint_csv:
         raise RuntimeError('waypoint_csv:=<코스 CSV 경로> 를 지정하세요 (stack_gps 필수)')
+    # CSV를 여기서 실제로 읽어본다. 경로 오타나 1~4점짜리 잔여 파일(FIXED 확인용
+    # 기록)을 주면 stack_gps_node가 0.05초 만에 exit 1로 죽는데, launch는 나머지
+    # 노드를 그대로 띄우고 계속 돈다 — 화면에 트레이스백이 한 번 스치고 묻힌다.
+    # 그러면 gps_path가 아예 없어 FIXED가 잡힐 수 없고, 스테이트가 LANE이면
+    # MGM의 gps watchdog도 안 걸려 **카메라만 보고 주행**하게 된다
+    # (2026-08-15 run_0815_150224·150408·151100 3연속 실사례).
+    # 같은 판정을 쓰기 위해 stack_gps의 로더를 그대로 호출한다.
+    from stack_gps.path_engine import load_waypoints_csv
+    try:
+        _pts = load_waypoints_csv(waypoint_csv, log=lambda m: print(f'[launch] {m}'))
+    except (OSError, ValueError) as e:
+        raise RuntimeError(
+            f'waypoint_csv 사용 불가 — {e}\n'
+            '  실코스 예: waypoints_straight_1_20260811_193556.csv (288점)\n'
+            '  1~4점 파일은 FIXED 확인용 잔여물이라 트랙으로 못 쓴다.') from e
+    print(f'[launch] 웨이포인트 {len(_pts)}점 확인: {os.path.basename(waypoint_csv)}')
     # 카메라를 안 띄우는 run(lane_enabled:=false)에선 호모그래피 유무가 무의미
     if LaunchConfiguration('lane_enabled').perform(context) == 'true':
         homography = LaunchConfiguration('homography_path').perform(context)
@@ -248,6 +266,15 @@ def generate_launch_description():
                 'error_log_csv': LaunchConfiguration('gps_error_log_csv'),
             }],
             output='screen',
+            # 이 노드가 죽으면 launch 전체를 내린다 (2026-08-15). 예전에는 혼자
+            # 죽어도 나머지가 계속 돌아, gps_path 없이 **카메라만 보고 주행**하는
+            # 상태가 됐다 — 스테이트가 LANE이면 MGM의 gps watchdog도 안 걸린다.
+            # 종료 경로를 타야 can_zero가 dSPACE 목표값 0을 송신한다(§3 주의).
+            on_exit=[
+                LogInfo(msg='[launch] ✖ stack_gps_node 종료 — GPS 없이 주행 불가, '
+                            'launch 전체 종료 (waypoint_csv·RTK 확인)'),
+                Shutdown(reason='stack_gps_node died'),
+            ],
         ),
 
         Node(
@@ -295,6 +322,14 @@ def generate_launch_description():
                     value_type=float),
             }],
             output='screen',
+            # MGM이 죽으면 TargetRef 송신이 끊긴다. dSPACE watchdog이 아직
+            # 미구현이라(§3 ⚠) 마지막 v_ref를 무기한 유지하며 계속 굴러간다 —
+            # 반드시 종료 경로를 타서 can_zero가 목표값 0을 보내게 한다.
+            on_exit=[
+                LogInfo(msg='[launch] ✖ mgm_node 종료 — 목표값 송신 중단, '
+                            'launch 전체 종료 (can_zero가 0 송신)'),
+                Shutdown(reason='mgm_node died'),
+            ],
         ),
 
         # ── rosbag — 버그 사후 분석·재생용. 토픽 명시 목록(RECORD_TOPICS)만 기록
