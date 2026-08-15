@@ -33,7 +33,7 @@ avoid 스테이트의 **첫 실차 검증** 절차. 기본 주행 절차는 `RUN
 | 콘 양옆 열림 | **각 1.2m 이상** (벽·콘 없음) | 회피 오프셋 상한 1.0m + 여유 |
 | 예상 AVOID 진입 | 콘 앞 ~3.0m | avoid.detect_range_m |
 | 예상 통과 이격 | 콘 옆 ~0.55m | 콘반경0.1+차폭/2+lateral_margin 0.15 |
-| 예상 복귀(done) | 감지 소실 후 **7~8초** | (마지막 감지거리+전장 0.85+clear_margin 0.3)÷0.5m/s. 3m에서 감지→2.4m쯤 소실이면 3.55m÷0.5 ≈ 7.1s (2026-08-14 상한 1.0→3.0 상향 후) |
+| 예상 복귀(done) | 감지 소실 후 **6초 내외** | (마지막 감지거리+전장 0.85+clear_margin 0.3)÷v. 3m에서 감지→2.4m쯤 소실이면 3.55m÷0.6 ≈ 5.9s (2026-08-15 v 0.5→0.6). 실제 계산은 dSPACE 실측 속도를 쓰므로 자동 추종 |
 
 **안전 바닥 (회피가 실패해도):** stack_estop 정적 0.7m / 동적 1.2m 정지 + MGM TTC<0.8s
 즉시 정지. 운전자는 **물리 비상정지에 손 올리고** 대기 (field_session 관례).
@@ -51,23 +51,23 @@ ros2 topic echo /perception/avoid --once
 |---|---|
 | obstacle_detected | true |
 | avoidable | **true** ← 이게 false면 주행 시작 금지 |
-| ttc | 3.5~6 (거리÷0.5) |
+| ttc | 3~5 (거리÷0.6) |
 | points | 1개, y 부호 = 열린 쪽 |
-| v_suggest | **0.5** (= 목표속도. 회피 중 감속 금지 — 조향 하한 0.5 m/s, 이기돈 실측) |
+| v_suggest | **0.6** (= 목표속도 `target_speed_mps`. 회피 중 감속 금지 — 조향 하한 0.5 m/s, 이기돈 실측. 2026-08-15에 0.5→0.6: 0.5는 달성 속도가 중앙값 0.494로 하한 아래에 깔렸다) |
 
 콘을 좌/우로 옮기면 `points[0].y` 부호가 따라 바뀌는지, 치우면 detected=false로 돌아오는지 확인.
 avoidable이 안 서면 → 콘이 통로(±0.46m) 밖이거나 ttc<1.5 (§5 표).
 
-## 2. 단계 1 — 첫 회피 주행 (gps_only, 변수 축소)
+## 2. 회피 주행 (차선 포함 full 통합)
 
-첫 회피는 차선 전이를 빼고 **avoid↔waypoint만** 검증한다 (야간 차선 오검출 변수 제거):
+차선·GPS·회피를 모두 켜고 **lane ↔ waypoint ↔ avoid** 전이를 함께 본다:
 
 ```bash
 # V2
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
     waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv \
-    gps_only:=true usb_speed:=high camera_fps:=10
+    usb_speed:=high camera_fps:=10
 # M (내내 켜 둠)
 ros2 run adas_mgm state
 # V3 — 점검 5종(avoid 포함) 통과 시 출발
@@ -80,18 +80,29 @@ ros2 run adas_mgm go
 > ~40MB/s라 `camera_fps:=10`을 반드시 동반해야 한다 (CLAUDE.md §6).
 > 기동 후 `stack_lane` 콘솔에 `USB 링크 속도 제한: HIGH` 경고가 떠야 적용된 것이다.
 >
-> **카메라를 아예 빼려면** `gps_only:=true` 대신 `lane_enabled:=false`를 쓰고
-> 출발은 `ros2 run adas_mgm go --skip-lane`. `gps_only`는 LANE **전이**만 막을 뿐
-> stack_lane은 그대로 떠서 사후 분석용 데이터를 남긴다 — 진짜 변수 축소는 `lane_enabled`다.
+> **⚠ `gps_only:=true`를 붙이면 차선 스테이트가 절대 안 뜬다 (2026-08-15 실측).**
+> 이 인자는 `lane_conf_exit`·`lane_conf_return`을 **둘 다 2.0**으로 덮어쓰는데
+> 신뢰도는 최대 1.0이라 LANE 전이가 **구조적으로 불가능**해진다 (덤프 헤더의
+> `conf_exit=2 conf_ret=2`로 확인 가능). run_0815_162102에서 `lane_path` 1562개
+> 수신·신뢰도 최대 0.79로 **인지는 정상이었는데** 170초 내내 gps였다 —
+> 인지 고장으로 오진하기 쉬우니 주의. 변수를 줄이고 싶을 때만 §3-1로.
 
 **기대 전이 로그 (M 터미널):**
 
 ```
-[hh:mm:ss]   gps    (v_ref 0.50)
-[hh:mm:ss] → 회피   (v_ref 0.50)      ← 콘 앞 ~3m (회피 중 감속 금지 — CLAUDE.md §3)
-[hh:mm:ss] → gps    (v_ref 0.50)      ← 감지 소실 7~8초 뒤 (maneuver_done)
+[hh:mm:ss]   gps    (v_ref 0.60)      ← 출발 직후 (차선 신뢰도 히스테리시스 충족 전)
+[hh:mm:ss] → 차선   (v_ref 0.60)      ← lane_conf > 0.70 이 50틱 연속 AND 트랙 재합류
+[hh:mm:ss] → 회피   (v_ref 0.60)      ← 콘 앞 ~3m (회피 중 감속 금지 — CLAUDE.md §3)
+[hh:mm:ss] → gps    (v_ref 0.60)      ← 감지 소실 6초 내외 뒤 (maneuver_done) — 차선 아님
+[hh:mm:ss] → 차선   (v_ref 0.60)      ← 복귀 3초 이상 뒤 + 트랙 재합류 후
 [hh:mm:ss]   gps    (v_ref 0.00)      ← 트랙 종점
 ```
+
+> **종점 정지는 lane·waypoint 공통이다 (2026-08-15 수정).** 구현이 waypoint 전용이던
+> 시절 run_0815_163614에서 종점 인지 후 **7.41m를 더 달렸다**(13.3초 지연, 그 사이
+> 횡오차 0.41→6.37m + 트랙 밖 AVOID 진입). 지금은 스테이트와 무관하게 래치가 걸린다
+> — 같은 덤프 재생 시 지연 13.34s→**0.38s**, 초과주행 7.41m→**0.17m**.
+> 재발하면(종점을 지나쳐도 안 섬) **재빌드 여부부터** 확인할 것.
 
 복귀 후 lane으로 넘어가려면 **3가지가 모두** 성립해야 한다 (2026-08-14):
 ① 최소 3초 경과(`avoid_return_hold_cycles`) ② 차선 신뢰도 히스테리시스
@@ -108,20 +119,24 @@ ros2 run adas_mgm go
 - AVOID에서 콘 반대쪽이 아닌 **콘 쪽으로 조향**
 - 이격이 눈짐작 0.3m 미만으로 스침
 
-## 3. 단계 2 — 성공 시 변형 2가지
+## 3. 변형 2가지
 
-1. **full 통합** — `gps_only`만 빼고 재실행 (**`usb_speed`·`camera_fps`는 유지**):
+1. **변수 축소 (gps_only)** — 차선 전이를 빼고 **avoid↔waypoint만** 보고 싶을 때
+   (야간 차선 오검출 등으로 §2가 재현이 안 될 때). **`usb_speed`·`camera_fps`는 유지**:
 
    ```bash
    ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
        REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
        waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv \
-       usb_speed:=high camera_fps:=10
+       gps_only:=true usb_speed:=high camera_fps:=10
    ```
 
-   차선 주행 중 콘 → AVOID → **WAYPOINT 복귀(최소 3초 유지)** → 차선 신뢰도 회복 시
-   LANE 재전이까지. 2026-08-12 복귀 정책 개정(CLAUDE.md §4)과 2026-08-14 히스테리시스
-   수정의 실차 확인이다.
+   이 모드에서는 **차선 스테이트가 절대 안 뜬다**(§2의 ⚠ 참조) — 정상이다.
+   `stack_lane`은 그대로 떠서 사후 분석용 데이터를 남긴다.
+   **카메라를 아예 빼려면** `gps_only` 대신 `lane_enabled:=false` + `ros2 run adas_mgm go --skip-lane`.
+   ⚠ 사후 비교 시 **모드가 다른 run끼리 오실레이션을 비교하지 말 것** — 차선 스테이트가
+   GPS보다 헤딩 진동이 크다(실측: LANE 헤딩 표준편차 9.2~9.7° ↔ GPS 3.4~3.8°).
+   속도·파라미터 효과를 보려면 **같은 모드·같은 스테이트 구간**끼리 비교한다 (2026-08-15).
 2. **열림 없음(narrow)**: 콘 3개로 양옆을 막고 접근 → narrow_gap 감속(v_narrow 0.2) →
    estop 정지 확인. 회피 시도 없이 감속·정지해야 정상.
 
