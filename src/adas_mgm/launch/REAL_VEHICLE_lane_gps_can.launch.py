@@ -30,7 +30,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -91,6 +91,12 @@ def generate_launch_description():
         DeclareLaunchArgument('waypoint_csv', default_value='',
                               description='코스 웨이포인트 CSV (필수)'),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
+
+        # ── GPS 전용 모드: LANE 전이 차단 (히스테리시스 임계를 2.0으로 — confidence는
+        # 최대 1.0이라 절대 도달 불가 → 항상 WAYPOINT). 야간 등 차선 오검출이 위험한
+        # 조건에서 사용 (2026-08-12: 야간 오검출 conf 0.71로 LANE 전이 → 벽 방향 조향).
+        # stack_lane은 그대로 떠서 데이터는 기록됨 — 오검출 사후 분석용.
+        DeclareLaunchArgument('gps_only', default_value='false'),
 
         # ── 로깅 (record:=false 는 rosbag만 끔 — CSV·스냅샷 덤프는 가벼워서 항상)
         DeclareLaunchArgument('record', default_value='true'),
@@ -213,6 +219,13 @@ def generate_launch_description():
                 # 출발 인가 게이트 — launch 직후 정지 대기, `ros2 run adas_mgm go`
                 # (RTK FIXED 등 점검 통과 시)로 출발 (2026-08-11)
                 'wait_go': True,
+                # gps_only 시 LANE 전이 불가 임계로 상향 (위 gps_only 인자 참조)
+                'lane_conf_exit': ParameterValue(PythonExpression(
+                    ["2.0 if '", LaunchConfiguration('gps_only'), "' == 'true' else 0.4"]),
+                    value_type=float),
+                'lane_conf_return': ParameterValue(PythonExpression(
+                    ["2.0 if '", LaunchConfiguration('gps_only'), "' == 'true' else 0.6"]),
+                    value_type=float),
             }],
             output='screen',
         ),
