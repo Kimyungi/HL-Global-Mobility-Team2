@@ -179,6 +179,19 @@ def generate_launch_description():
 
         # ── 로깅 (record:=false 는 rosbag만 끔 — CSV·스냅샷 덤프는 가벼워서 항상)
         DeclareLaunchArgument('record', default_value='true'),
+        # 차선 검출 **진단 run 전용** (2026-08-15). 켜면 두 가지가 추가된다:
+        #   ① /perception/lane_debug_image 발행 + rosbag 기록 (720p 10Hz ≈ 28MB/s
+        #      — 200초에 약 5.5GB. 분석 끝나면 지울 것)
+        #   ② stack_lane 프레임 CSV (width_m·mode·좌우 후보 수·피팅 잔차·계수)
+        # 근거: 두 바퀴를 트랙 인덱스로 겹치니 헤딩오차 상관 +0.79, 차선 ly0 상관
+        # +0.80, 부호 일치 14/17 — 위빙이 제어 진동이 아니라 **코스 위치에 고정된
+        # 인지 바이어스**로 확정됐다(2026-08-15 run_0815_175044·175602). 원인이
+        # 호모그래피인지·검출인지·웨이포인트 기준선 차이인지 가르려면 검출 내부가
+        # 필요한데, 지금은 최종 20점만 남아 판별이 불가능하다.
+        # ⚠ 상시로 켜지 말 것 — 디스크와 CPU를 크게 먹는다. 켠 run에서는 반드시
+        #   mgm_jitter.csv(주기 지터)와 stack_lane의 파이프라인 지연 로그를 확인해
+        #   기록 부하가 제어 루프를 건드리지 않았는지 확인할 것.
+        DeclareLaunchArgument('lane_debug', default_value='false'),
         DeclareLaunchArgument('gps_error_log_csv',
                               default_value=os.path.join(LOG_DIR, 'lateral.csv')),
 
@@ -344,6 +357,12 @@ def generate_launch_description():
                 'ref_point0_extrap_mode': LaunchConfiguration('ref_point0_extrap_mode'),
                 'ref_point0_min_confidence': ParameterValue(
                     LaunchConfiguration('ref_point0_min_confidence'), value_type=float),
+                # 진단 run 전용 (lane_debug 인자 주석 참조)
+                'publish_debug_image': ParameterValue(
+                    LaunchConfiguration('lane_debug'), value_type=bool),
+                'log_csv': PythonExpression(
+                    ["'", os.path.join(LOG_DIR, 'lane_frames.csv'),
+                     "' if '", LaunchConfiguration('lane_debug'), "' == 'true' else ''"]),
                 'coeff_smoothing_alpha': ParameterValue(
                     LaunchConfiguration('coeff_smoothing_alpha'), value_type=float),
             }],
@@ -381,10 +400,24 @@ def generate_launch_description():
         ),
 
         # ── rosbag — 버그 사후 분석·재생용. 토픽 명시 목록(RECORD_TOPICS)만 기록
+        # 평상시 — 명시 토픽 목록만
         ExecuteProcess(
-            condition=IfCondition(LaunchConfiguration('record')),
+            condition=IfCondition(PythonExpression(
+                ["'", LaunchConfiguration('record'), "' == 'true' and '",
+                 LaunchConfiguration('lane_debug'), "' != 'true'"])),
             cmd=['ros2', 'bag', 'record', '-o', os.path.join(LOG_DIR, 'rosbag')]
                 + RECORD_TOPICS,
+            output='screen',
+        ),
+        # 차선 진단 run — 디버그 영상 추가 (lane_debug 인자 주석 참조).
+        # 720p 10Hz raw = 약 28MB/s. 압축은 일부러 쓰지 않는다 — 기록 중 CPU를
+        # 더 먹으면 MGM 10ms 루프 지터에 영향이 갈 수 있고, 어차피 분석 뒤 지운다.
+        ExecuteProcess(
+            condition=IfCondition(PythonExpression(
+                ["'", LaunchConfiguration('record'), "' == 'true' and '",
+                 LaunchConfiguration('lane_debug'), "' == 'true'"])),
+            cmd=['ros2', 'bag', 'record', '-o', os.path.join(LOG_DIR, 'rosbag')]
+                + RECORD_TOPICS + ['/perception/lane_debug_image'],
             output='screen',
         ),
 
