@@ -166,6 +166,9 @@ public:
     // waypoint→lane 전이 허용 최대 횡오차 [m] (0 이하 = 게이트 끔)
     p.lane_entry_max_cross =
       static_cast<float>(declare_parameter<double>("lane_entry_max_cross_m", 0.5));
+    // AVOID 최대 지속 틱 (0 이하 = 상한 없음)
+    p.avoid_max_cycles =
+      static_cast<int32_t>(declare_parameter<int>("avoid_max_cycles", 1200));
     mgm_init(core_state_, p);
 
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기

@@ -108,7 +108,11 @@ void transition(const CoreSnapshot & s, CoreState & st)
       // 기동 완료 → waypoint로 복귀 (§4, 2026-08-12 개정 — 회피 직후 차선 검출은
       // 신뢰 불가(차로 이탈 상태). GPS 트랙 재합류 후 lane은 신뢰도 히스테리시스로
       // 자연 재전이. 구 복귀처 변수(진입 스테이트 기억)는 폐기.
-      if (s.avoid_maneuver_done) {
+      // 상한(avoid_max_cycles) 초과 시에도 복귀 — AVOID는 직진 유지라 무한히
+      // 지속되면 트랙에서 무한히 멀어진다 (mgm_types.hpp 주석의 실측 근거).
+      if (s.avoid_maneuver_done ||
+        (st.params.avoid_max_cycles > 0 && st.avoid_ticks >= st.params.avoid_max_cycles))
+      {
         st.state = MGM_STATE_WAYPOINT;
         st.return_hold_left = st.params.avoid_return_hold_cycles;
       }
@@ -136,6 +140,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
     st.lane_high_cnt = 0;
     st.wrongway_cnt = 0;
   }
+  // AVOID 지속 틱 — 상한 판정용. AVOID를 벗어나면 0으로 (재진입 시 다시 셈).
+  st.avoid_ticks = (st.state == MGM_STATE_AVOID) ? st.avoid_ticks + 1 : 0;
 }
 
 // ── 판단: 스테이트 내부 우선권 (§4 우선권 표 — 전역 min/max 금지)

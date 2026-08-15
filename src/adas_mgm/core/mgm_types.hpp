@@ -126,6 +126,15 @@ struct CoreParams
   // run_0814_195116에서 복귀 시점 횡오차가 0.90m·2.72m였다.
   // 0 이하면 이 게이트를 끈다(구동작).
   float lane_entry_max_cross;
+  // AVOID 최대 지속 틱. 초과하면 maneuver_done과 무관하게 waypoint로 복귀한다.
+  // AVOID 중 경로는 "전방 직진 유지"라 틀어진 헤딩을 그대로 유지한다 —
+  // 상한이 없으면 무한히 트랙에서 멀어진다. 2026-08-15 run_0815_143039:
+  // 감지 경계에 걸친 벽이 20초에 28회 깜빡여 클리어런스 타이머가 매번
+  // 리셋되고, AVOID가 15초+ 지속되며 횡오차 5.3m까지 발산했다.
+  // 안전은 유지된다 — 복귀 후에도 장애물이 실제로 있으면 즉시 재진입하고,
+  // TTC 안전 바닥(ttc_stop)은 스테이트와 무관하게 계속 작동한다.
+  // 0 이하면 상한 없음(구동작).
+  int32_t avoid_max_cycles;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -138,6 +147,7 @@ struct CoreState
   int32_t lane_high_cnt;
   int32_t wrongway_cnt;                   // 역방향 지속 카운터 (waypoint, §4)
   int32_t return_hold_left;               // >0이면 waypoint→lane 전이 보류 (avoid 복귀 직후)
+  int32_t avoid_ticks;                    // AVOID 지속 틱 (avoid_max_cycles 상한 판정)
   bool at_end_latched;                    // 종점 도달 래치 — estop 인가 시 해제 (§4)
   // ref 조립 (전환 연속 처리)
   uint8_t last_src;                       // MGM_SRC_*

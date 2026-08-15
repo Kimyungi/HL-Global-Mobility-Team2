@@ -115,6 +115,14 @@ class StackAvoidNode(Node):
         # 과대 대기로 인한 횡오차 누적은 아래 "통과 유지점"이 막는다.
         self.clear_gap_max = float(
             self.declare_parameter('avoid.clear_gap_max_m', 3.0).value)
+        # obstacle_detected 해제 히스테리시스 [m] — 진입은 detect_range, 해제는
+        # detect_range + 이 값. 경계에 걸친 물체(벽·연석)가 깜빡이면 그때마다
+        # 클리어런스 타이머가 리셋돼 maneuver_done이 영원히 안 선다
+        # (2026-08-15 run_0815_143039: 20초에 28회 토글, AVOID 15초+ 지속,
+        #  그동안 직진 유지점만 나가 횡오차 5.3m까지 발산).
+        self.detect_hysteresis = float(
+            self.declare_parameter('avoid.detect_hysteresis_m', 0.4).value)
+        self._detected_prev = False     # 히스테리시스 상태
         self._prev_center = None        # 직전 목표 y (rate limit 상태)
         self._prev_center_t = None
 
@@ -249,7 +257,15 @@ class StackAvoidNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'          # points[]는 vehicle frame(후축 원점)
 
-        msg.obstacle_detected = gap is not None and gap < self.detect_range
+        # 히스테리시스: 진입 detect_range, 해제 detect_range + detect_hysteresis.
+        # 경계에 걸친 물체가 깜빡이면 클리어런스 타이머가 매번 리셋된다(위 주석).
+        if gap is None:
+            self._detected_prev = False
+        else:
+            thr = (self.detect_range + self.detect_hysteresis
+                   if self._detected_prev else self.detect_range)
+            self._detected_prev = gap < thr
+        msg.obstacle_detected = self._detected_prev
 
         # TTC = 거리 ÷ 자차속도 (정적 장애물 가정, REQUIREMENTS). 정지 중이면 INF.
         # 자차속도는 dSPACE VehicleVector.v(신선) 우선, 미수신/오래되면 target_speed 폴백.
