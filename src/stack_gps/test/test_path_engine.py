@@ -218,6 +218,34 @@ def test_rejoin_target_when_heading_away_from_track():
     assert L2 >= 2.0 * abs(y) * PathEngine.MIN_TURN_RADIUS_M
 
 
+def test_rejoin_target_distance_does_not_grow_with_deviation():
+    """이탈이 커져도 재합류 목표는 조향 응답 밴드 안에 머문다 (2026-08-15).
+
+    dSPACE 조향 응답은 방위뿐 아니라 **목표 거리**에 강하게 의존한다 —
+    0.8~1.6m에서 명령 곡률의 ~55%가 실현되는데 2.5m를 넘으면 10% 아래로
+    붕괴한다. 거리 상한이 없던 구현은 이탈이 클수록 트랙 점이 멀어져
+    목표도 멀어지는 양의 되먹임이었다: run_0815_144142에서 cross 1.88m→5.04m
+    동안 명령 선회반경이 3.4m→6.3m로 되레 완만해지며 복귀에 실패했다.
+    (같은 방위·같은 속도인데 d=1.28~1.62m였던 run_0815_142817은 복귀 성공)
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    prev_r = None
+    for cross in (1.0, 1.88, 2.7, 4.0, 5.04):
+        snap = eng.snapshot(*en_to_latlon(20.0, cross), heading=math.radians(25.0))
+        x, y = snap["points"][0][0], snap["points"][0][1]
+        d = math.hypot(x, y)
+        assert d <= PathEngine.REJOIN_TARGET_MAX_M + 1e-6, \
+            f"cross {cross}m → 목표 {d:.2f}m — 응답 밴드 밖"
+        # 도달 곡률 R = d/(2·sinβ) 이 R_min 이상 (풀조향 포화 방지)
+        r = d / (2.0 * abs(math.sin(math.atan2(y, x))))
+        assert r >= PathEngine.MIN_TURN_RADIUS_M - 1e-6
+        # 이탈이 커진다고 선회가 완만해지면 안 된다 (양의 되먹임 차단)
+        if prev_r is not None:
+            assert r <= prev_r + 1e-6, f"cross {cross}m에서 R이 {prev_r:.2f}→{r:.2f}로 완만해짐"
+        prev_r = r
+
+
 def test_lookahead_target_when_track_is_behind():
     """차가 트랙을 완전히 등지면 전방 후보가 없다 — 폴백해도 예외 없이 동작.
 

@@ -76,6 +76,16 @@ class PathEngine:
     # 그래서 이 각을 넘으면 트랙 점 대신 **트랙 쪽으로 꺾인 중간 목표점**을 낸다.
     # 차가 돌아 정렬될수록 방위가 줄어 자연히 원래 동작으로 수렴한다.
     MAX_TARGET_BEARING_RAD = 0.436   # 25°
+    # 재합류 목표점의 **거리 상한** [m]. dSPACE의 조향 응답은 방위뿐 아니라
+    # 목표까지의 거리에 강하게 의존한다 (2026-08-15 실측, 4런 통합):
+    #   목표 0.8~1.6m → 명령 곡률의 ~55% 실현 | 2.5m 초과 → 10% 아래로 붕괴
+    # 같은 방위 25°·같은 속도 0.5m/s인데 목표 거리만 달랐던 두 복귀가 갈렸다:
+    #   run_0815_142817 d=1.28~1.62m → str −0.21, 2초에 24° 선회, cross 0.43→0.10 ✅
+    #   run_0815_144142 d=2.9~5.4m   → str −0.014, 선회 없음, cross 1.88→5.04 ❌
+    # 상한이 없으면 **이탈이 클수록 트랙 점이 멀어져 목표도 멀어지고 조향은
+    # 약해지는 양의 되먹임**이 된다 — 실측에서 명령 선회반경이 이탈과 함께
+    # 3.4m(cross 1.7m)에서 6.3m(cross 5.0m)로 되레 완만해졌다.
+    REJOIN_TARGET_MAX_M = 1.8
 
     def __init__(self, latlon_pts, n_points=30,
                  accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0,
@@ -207,16 +217,19 @@ class PathEngine:
                            self.curvature[i]))
         # 첫 점의 방위가 너무 크면(= 트랙이 옆에 있고 차는 멀어지는 방향) 트랙 점
         # 대신 재합류용 중간 목표점으로 대체한다 (MAX_TARGET_BEARING_RAD 주석 참조).
-        # 거리는 원래 목표점까지의 거리를 쓰되, 도달 곡률 R = d/(2·sinβ) 이 R_min
-        # 이상이 되도록 하한을 둔다. yaw/curvature는 트랙 값을 그대로 둔다 —
-        # MGM 역방향 가드가 ref[0].yaw를 "트랙 대비 차 방향"으로 해석하기 때문.
+        # 거리는 **응답이 살아 있는 밴드로 클램프**한다 (2026-08-15):
+        #   상한 REJOIN_TARGET_MAX_M — 멀면 dSPACE 조향이 죽는다(주석의 실측 근거)
+        #   하한 2·R_min·sin β    — 도달 곡률 R = d/(2·sinβ) 이 R_min 이상
+        # 하한을 뒤에 적용해 R_min 이 항상 이긴다. yaw/curvature는 트랙 값을 그대로
+        # 둔다 — MGM 역방향 가드가 ref[0].yaw를 "트랙 대비 차 방향"으로 해석하기 때문.
         if points and self.lookahead_m > 0.0:   # lookahead 끔 = 구동작 완전 보존
             px, py, pyaw, pcurv = points[0]
             bearing = math.atan2(py, px)
             if abs(bearing) > self.MAX_TARGET_BEARING_RAD:
                 b = math.copysign(self.MAX_TARGET_BEARING_RAD, bearing)
-                d = max(math.hypot(px, py),
-                        2.0 * self.MIN_TURN_RADIUS_M * math.sin(self.MAX_TARGET_BEARING_RAD))
+                d = min(math.hypot(px, py), self.REJOIN_TARGET_MAX_M)
+                d = max(d, 2.0 * self.MIN_TURN_RADIUS_M *
+                        math.sin(self.MAX_TARGET_BEARING_RAD))
                 points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
 
         return {
