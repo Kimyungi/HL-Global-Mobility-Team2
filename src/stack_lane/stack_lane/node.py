@@ -30,12 +30,14 @@ x,y의 절대 거리 정확도는 보장되지 않으니 실측 캘리브레이�
 """
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 
 import numpy as np
 import rclpy
 import torch
 from cv_bridge import CvBridge
+from rclpy.duration import Duration
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
@@ -129,6 +131,9 @@ class StackLaneNode(Node):
         self._held_estimate = None  # HELD/SEARCH 중 그대로 재발행할 마지막 정상 LaneEstimate
         self.warmup_frames = int(self.get_parameter('warmup_frames').value)
         self._frames_seen = 0
+        self._cap_ts_warned = False      # 캡처 시각 경고 1회만
+        self._pipeline_ms = []           # 캡처→발행 지연 표본 (주기 로깅용)
+        self._frames_dropped = 0         # 큐에서 버린 낡은 프레임 누계
 
         self.publish_debug_image = bool(self.get_parameter('publish_debug_image').value)
         self.debug_pub = None
@@ -254,14 +259,61 @@ class StackLaneNode(Node):
             pipeline.start()
             self._dai_pipeline = pipeline
 
+    def _capture_monotonic(self, pkt) -> float | None:
+        """프레임 캡처 시각 [s, CLOCK_MONOTONIC]. 못 얻으면 None.
+
+        이걸로 header.stamp를 캡처 시각까지 되돌린다 — 종전에는 발행 시각을 찍어
+        **카메라 파이프라인 지연(캡처→추론→발행)이 소비 측에서 보이지 않았다.**
+        2026-08-15 차선 위빙 분석에서 필요해진 값: 이득을 낮춰도(ref[0] 2.5m)
+        진폭이 15초 창마다 +1.12°씩 계속 자라 지연이 남은 용의자인데, 정작
+        지연을 측정할 수가 없었다(수신−발행 = 0.000s로만 보임).
+
+        주의: MGM의 신선도 watchdog(§5.7)은 **수신 시각**(monotonicNs)을 쓰므로
+        이 변경의 영향을 받지 않는다. 확인 완료 — lane_path의 header.stamp를
+        읽는 소비자는 현재 없다.
+        """
+        try:
+            return pkt.getTimestamp().total_seconds()
+        except Exception as exc:   # depthai 버전차·타임스탬프 미지원 대비
+            if not self._cap_ts_warned:
+                self._cap_ts_warned = True
+                self.get_logger().warn(
+                    f'프레임 캡처 시각을 못 읽음({exc}) — header.stamp를 발행 시각으로 '
+                    '폴백한다. 파이프라인 지연 측정 불가.')
+            return None
+
     def tick(self) -> None:
         pkt = self._queue.tryGet()
         if pkt is None:
             return  # 아직 새 프레임 없음
 
+        # 큐에 쌓인 프레임은 버리고 **최신 것만** 쓴다 — 방어책 (2026-08-15).
+        # createOutputQueue(maxSize=4)는 FIFO라 tryGet()이 **가장 오래된** 프레임을
+        # 준다. 소비가 밀리면 그 뒤로 계속 낡은 프레임을 처리하고 최대 4프레임
+        # (10fps에서 400ms)까지 지연이 눌어붙을 수 있다.
+        # ★ 실측상 현재는 백로그가 없다 — 폐기 누계가 기동 시 3개뿐이고 지연도
+        #   150~160ms로 변화 없었다. 즉 이 변경은 **지연을 줄이지 못했다.**
+        #   주행 부하로 소비가 밀릴 때를 대비한 안전장치로만 남긴다.
+        #   실제 지연의 정체는 전송이다: 추론 30ms + USB2 전송 69ms
+        #   (720p BGR888i 2.76MB ÷ ~40MB/s) + 노출·ISP. 해상도나 전송 포맷을
+        #   바꾸지 않으면 못 줄인다 (해상도 하향·USB3는 검출 품질·GPS 간섭 때문에
+        #   선택지가 아니다 — 팀장 확정).
+        while True:
+            newer = self._queue.tryGet()
+            if newer is None:
+                break
+            pkt = newer
+            self._frames_dropped += 1
+
         self._frames_seen += 1
         if self._frames_seen <= self.warmup_frames:
             return  # 노출 적응 대기 중 — 오검출 위험 있는 콜드스타트 프레임 스킵
+
+        # 프레임 **캡처 시각**을 붙잡아 둔다 (아래 header.stamp 용).
+        # depthai의 getTimestamp()는 호스트 steady_clock(=CLOCK_MONOTONIC) 기준이라
+        # time.monotonic()과 기준선이 같다 — 두 값의 **차이**만 쓰므로 ROS 시각과의
+        # 에폭 오프셋을 알 필요가 없다.
+        cap_mono = self._capture_monotonic(pkt)
 
         frame = pkt.getCvFrame()
         canvas, tensor = preprocess(frame, self.img_size, self.device, self.half)
@@ -332,8 +384,21 @@ class StackLaneNode(Node):
             img_msg.header.stamp = self.get_clock().now().to_msg()
             self.debug_pub.publish(img_msg)
 
+        # header.stamp = **프레임 캡처 시각** (발행 시각이 아니다).
+        # 지금(now) − 캡처(cap_mono) 를 같은 monotonic 기준에서 뺀 뒤 ROS now에서
+        # 되돌린다. 추론이 끝난 뒤 계산하므로 캡처→추론→발행 전 구간이 들어간다.
+        now = self.get_clock().now()
+        pipeline_s = 0.0
+        if cap_mono is not None:
+            age = time.monotonic() - cap_mono
+            if 0.0 <= age < 1.0:          # 이상치(시계 점프·재연결)는 무시하고 발행 시각 사용
+                pipeline_s = age
+            elif not self._cap_ts_warned:
+                self._cap_ts_warned = True
+                self.get_logger().warn(
+                    f'프레임 지연이 비정상({age:.3f}s) — header.stamp를 발행 시각으로 폴백')
         msg = LanePath()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = (now - Duration(seconds=pipeline_s)).to_msg()
         msg.header.frame_id = 'base_link'
         msg.confidence = float(final_estimate.confidence)
         points = []
@@ -346,6 +411,20 @@ class StackLaneNode(Node):
             points.append(rp)
         msg.points = points
         self.pub.publish(msg)
+
+        # 캡처→발행 지연 주기 로깅 (5초). 차선 추종 루프의 위상 여유를 좌우하는
+        # 값이라 현장에서 바로 보여야 한다 — 2026-08-15 위빙 분석에서 이 값이
+        # 없어 지연 가설을 확정 못 했다.
+        if pipeline_s > 0.0:
+            self._pipeline_ms.append(pipeline_s * 1e3)
+            if len(self._pipeline_ms) >= 50:
+                v = sorted(self._pipeline_ms)
+                self.get_logger().info(
+                    '카메라 파이프라인 지연[ms] 중앙값 %.0f  p90 %.0f  최대 %.0f '
+                    ' (추론 %.0f, 큐 폐기 누계 %d)'
+                    % (v[len(v) // 2], v[int(0.9 * len(v))], v[-1],
+                       infer_ms, self._frames_dropped))
+                self._pipeline_ms.clear()
 
     def destroy_node(self) -> None:
         if self.logger_csv is not None:
