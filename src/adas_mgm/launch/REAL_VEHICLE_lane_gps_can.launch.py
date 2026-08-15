@@ -202,9 +202,21 @@ def generate_launch_description():
         # XPU 초기화 실패 시(드라이버 문제 등) lane_device:=cpu 로 폴백.
         DeclareLaunchArgument('lane_device', default_value='xpu',
                               description="YOLOPv2 추론 장치: 'xpu'(인텔 GPU)/'cpu'/cuda 인덱스"),
-        # TESTING_LOG §7.3 잠정 최적값 — 1.8m가 오실레이션 최저(잔차 std 1.92°),
-        # 단 표본 51초라 미확정. 재튜닝 시 인자만 바꿔 재실행.
-        DeclareLaunchArgument('ref_point0_lookahead_m', default_value='1.8'),
+        # 1.8 → 0.0(외삽 끔, ref[0] = points_x_start 2.5m 균일) — 2026-08-15.
+        # 구 값 1.8은 TESTING_LOG §7.3의 v_base 0.5 시절 잠정 최적값이다(표본 51초).
+        # **차선 추종 루프는 이득 과다다** — 목표를 당길수록(=이득↑) 위빙이 커진다:
+        #   ref[0] 2.08m (run_0815_163614)  |str| 0.0566  헤딩 표준편차  9.22°
+        #   ref[0] 1.88m (run_0815_170539)  |str| 0.0875  헤딩 표준편차 10.83°
+        # 목표를 0.2m 당겼더니 조향량 +55%, 위빙 +17%로 되레 나빠졌다. 지연은
+        # 0.44→0.27s로 줄었는데도 그렇다 — 지연이 아니라 이득이 지배한다.
+        # v_base를 0.5→0.6으로 올리면서 실현율이 14%→24%로 올라간 것(§3 ①)도
+        # 같은 방향으로 이득을 밀어올렸다. 미리보기 시간 = L/v 로 보면 1.8m@0.5는
+        # 3.6s인데 0.6에서 같은 3.6s를 쓰려면 2.16m가 필요하다 — 즉 속도를 올린
+        # 만큼 lookahead도 나갔어야 했다.
+        # 0.0으로 두면 외삽 자체가 꺼져 ref[0]이 카메라 최소 가시거리 2.5m로
+        # **균일**해진다(이득 최저 + 변조 없음). 이득 가설의 깨끗한 검증이다.
+        # ⚠ 이 값을 다시 당길 땐 v_base와 함께 볼 것 — 짝지어 움직여야 한다.
+        DeclareLaunchArgument('ref_point0_lookahead_m', default_value='0.0'),
         DeclareLaunchArgument('ref_point0_extrap_mode', default_value='linear'),
         # 0.5(stack_lane 기본) → 0.30 (2026-08-15). 이 게이트가 풀렸다 걸렸다 하면
         # ref[0] 거리가 1.8m ↔ points_x_start 2.5m 로 **0.70m 계단 점프**하고,
