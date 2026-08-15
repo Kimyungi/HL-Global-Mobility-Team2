@@ -7,7 +7,13 @@
 
     # ── 전역 변수 (런타임 변경 가능) ────────────────────────────
     #   ros2 param set /stack_avoid_node target_speed_mps <값>
-    target_speed_mps:   0.5      # 주행 목표속도 [m/s] — TTC 계산 기준 (자차속도)
+    # ⚠ adas_mgm/config/params.yaml 의 v_base 와 **항상 같은 값**으로 유지할 것.
+    #   이 값이 AvoidStatus.v_suggest 로 나가 AVOID 스테이트의 v_ref가 된다
+    #   (MGM은 AVOID에서 v_base를 안 쓴다) + TTC 자차속도 폴백.
+    #   0.5 → 0.6 (2026-08-15): 조향 곡률 실현율이 0.45~0.50 m/s 14.0% →
+    #   0.50~0.55 m/s 23.9%인데, 0.5로 두면 달성 속도가 중앙값 0.494로 임계
+    #   아래에 깔린다 (run_0815_155344, 주행 시간의 69%). v_base 주석 참조.
+    target_speed_mps:   0.6      # 주행 목표속도 [m/s] — TTC 계산 기준 (자차속도)
     scan_topic:         /scan    # 앞 LiDAR 스캔 토픽 (변경 시 재시작 필요)
 
     # ── 차량 좌표 원점 (변경 가능) ──────────────────────────────

@@ -252,8 +252,9 @@ def generate_launch_description():
         # 발행하면 어느 쪽이 이길지 RViz 기동 타이밍에 따라 달라진다 (2026-08-09 규명).
 
         # ── stack_avoid (2026-08-12 통합) — 장애물 감지·회피 목표점 → MGM avoid 스테이트.
-        # 파라미터 단일 소스 = stack_avoid/config/params.yaml (target_speed_mps 0.5 =
-        # MGM v_base와 일치 유지할 것). 현장 튜닝: ros2 param set /stack_avoid_node ...
+        # 파라미터 단일 소스 = stack_avoid/config/params.yaml (target_speed_mps 0.6 =
+        # MGM v_base와 일치 유지할 것 — 2026-08-15에 둘 다 0.5→0.6).
+        # 현장 튜닝: ros2 param set /stack_avoid_node ...
         Node(
             package='stack_avoid',
             executable='stack_avoid_node',
