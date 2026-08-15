@@ -47,6 +47,22 @@ from launch_ros.parameter_descriptions import ParameterValue
 from stack_avoid.launch_parts import can_bridge_with_zero_guard
 
 
+def die_hard(what, why):
+    """비정상 종료일 때만 launch 전체를 내리는 on_exit 핸들러.
+
+    무조건 Shutdown을 걸면 Ctrl-C 정상 종료 때도 다시 Shutdown이 발행돼
+    `Cannot shutdown a ROS adapter that is not running` 에러가 뜬다 —
+    실패처럼 보여 현장에서 혼란스럽다 (2026-08-15). returncode 0(정상)과
+    -2/-15(SIGINT/SIGTERM = 우리가 내린 종료)은 그냥 통과시킨다.
+    """
+    def _on_exit(event, context):
+        if event.returncode in (0, -2, -15):
+            return []
+        return [LogInfo(msg=f'[launch] ✖ {what} 비정상 종료(코드 {event.returncode}) — {why}'),
+                Shutdown(reason=f'{what} died')]
+    return _on_exit
+
+
 CONFIRM_TOKEN = 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX'
 
 # run 단위 로그 디렉터리 — launch 파일은 실행마다 새로 파싱되므로 매 run 고유
@@ -278,11 +294,8 @@ def generate_launch_description():
             # 죽어도 나머지가 계속 돌아, gps_path 없이 **카메라만 보고 주행**하는
             # 상태가 됐다 — 스테이트가 LANE이면 MGM의 gps watchdog도 안 걸린다.
             # 종료 경로를 타야 can_zero가 dSPACE 목표값 0을 송신한다(§3 주의).
-            on_exit=[
-                LogInfo(msg='[launch] ✖ stack_gps_node 종료 — GPS 없이 주행 불가, '
-                            'launch 전체 종료 (waypoint_csv·RTK 확인)'),
-                Shutdown(reason='stack_gps_node died'),
-            ],
+            on_exit=die_hard('stack_gps_node',
+                             'GPS 없이 주행 불가 — waypoint_csv·RTK·빌드 확인'),
         ),
 
         Node(
@@ -333,11 +346,8 @@ def generate_launch_description():
             # MGM이 죽으면 TargetRef 송신이 끊긴다. dSPACE watchdog이 아직
             # 미구현이라(§3 ⚠) 마지막 v_ref를 무기한 유지하며 계속 굴러간다 —
             # 반드시 종료 경로를 타서 can_zero가 목표값 0을 보내게 한다.
-            on_exit=[
-                LogInfo(msg='[launch] ✖ mgm_node 종료 — 목표값 송신 중단, '
-                            'launch 전체 종료 (can_zero가 0 송신)'),
-                Shutdown(reason='mgm_node died'),
-            ],
+            on_exit=die_hard('mgm_node',
+                             '목표값 송신 중단 — can_zero로 0 복귀 후 전체 종료'),
         ),
 
         # ── rosbag — 버그 사후 분석·재생용. 토픽 명시 목록(RECORD_TOPICS)만 기록
