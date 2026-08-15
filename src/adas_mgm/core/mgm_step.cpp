@@ -60,9 +60,19 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // EstopRequest 인가**(= run 종료/새 run 준비)로만 — s.estop은 wrapper의
   // staleness 보정이 섞여 있어, gps 단절→복구 같은 일시 장애로 래치가 풀려
   // 재출발하는 구멍이 있었다 (2026-08-11, CLAUDE.md §4 래치).
+  //
+  // 2026-08-15: 래치 조건에서 "waypoint 스테이트" 제약을 뺐다. GPS 트랙의 종점은
+  // 코스의 끝이지 특정 스테이트의 사정이 아닌데, lane에서 종점을 지나면 아무도
+  // 세우지 않았다 — run_0815_163614에서 at_end 후 **7.41m 초과 주행**(13.3초),
+  // 그 사이 횡오차 0.41→6.37m + 트랙 밖 AVOID 진입.
+  //   · `s.gps_path.n > 0` 게이트: lane 스테이트에서는 §5.7 ②의 gps 신선도
+  //     watchdog이 동작하지 않는다(사용 중인 소스만 감시). 낡거나 무효인 gps의
+  //     at_end로 래치가 걸리는 것을 막는다 — fix 상실 시 stack_gps는 빈 경로를
+  //     계속 발행하므로 n==0으로 걸러진다.
+  //   · parking 제외: 주차 구간에서 트랙 종점은 의미가 없다.
   if (s.estop_latch_release) {
     st.at_end_latched = false;
-  } else if (st.state == MGM_STATE_WAYPOINT && s.gps_at_end) {
+  } else if (st.state != MGM_STATE_PARKING && s.gps_at_end && s.gps_path.n > 0) {
     st.at_end_latched = true;
   }
 
@@ -160,10 +170,12 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.immediate_stop = true;
       } else if (s.traffic_stop_required) {
         out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
-      } else if (st.state == MGM_STATE_WAYPOINT &&
-        (s.gps_at_end || st.at_end_latched))
-      {
-        out.v_ref = 0.0f;  // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03)
+      } else if (st.at_end_latched) {
+        // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03).
+        // **lane·waypoint 공통** (2026-08-15). 래치는 transition()이 이 틱에서
+        // 이미 갱신했으므로 여기서 s.gps_at_end를 또 볼 필요가 없다 — 유효성
+        // 게이트(gps_path.n>0)·parking 제외도 거기 한 곳에만 둔다.
+        out.v_ref = 0.0f;
       } else if (st.state == MGM_STATE_WAYPOINT &&
         st.wrongway_cnt >= st.params.wrongway_cycles)
       {
@@ -246,6 +258,17 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   if (n == 1) {
     const CorePoint tgt = path->pts[0];
     const float yaw = atan2f(tgt.y, tgt.x);
+    // ★ 등간격(첫 점 = 목표/20 ≈ 7.5cm)은 **의도적으로 유지한다.** 첫 점이
+    //   원점에 가까우면 dSPACE가 보는 도달 곡률 κ=2y/L² 이 실제 경로 곡률의
+    //   10~20배로 부풀려지는데, 이 부풀림이 **회피 기동을 성립시키는 일을 하고
+    //   있다** — dSPACE가 명령 곡률의 10~55%만 실현하기 때문이다(CLAUDE.md §3 ③).
+    //   2026-08-15에 이걸 "수치 결함"으로 보고 첫 점을 1.2m로 옮겼다가 같은
+    //   크기의 회피 목표(|y|≈0.29m)에서 조향이 반토막 났다:
+    //     첫 점 0.075m (run_0815_144142) 헤딩 +13.0° · |str| 0.089 · 횡변위 0.26m → 통과
+    //     첫 점 1.2m   (run_0815_153633) 헤딩  +4.3° · |str| 0.047 · 횡변위 0.08m → estop
+    //   방위는 어느 쪽이든 보존되므로 차이는 순수하게 곡률 크기다.
+    //   **근본 해결은 dSPACE MPC 쪽**(지평 200ms×0.5m/s=0.1m)이며, 그게 잡히기
+    //   전에는 여기를 "정직한 기하"로 되돌리지 말 것.
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       const float t = static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
       target[i].x = tgt.x * t;
