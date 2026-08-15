@@ -14,9 +14,8 @@ x,y의 절대 거리 정확도는 보장되지 않으니 실측 캘리브레이�
 
 주의:
 - 이 노드는 MGM 10ms 루프와 별도 프로세스다 (CLAUDE.md §5.2). 카메라 fps는
-  기본 30(=~33ms)으로 REQUIREMENTS.md가 가정한 "카메라 100ms"보다 빠르지만,
-  MGM은 항상 최신 스냅샷만 pull하므로 더 빠른 갱신은 문제 되지 않는다(자유도일 뿐).
-  필요하면 `camera_fps` 파라미터로 100ms(=10fps)에 맞출 수 있음.
+  차량 기본 10(=100ms)이다. USB 링크는 `usb_speed=high`로 USB2를 강제하며,
+  요청/실제 링크가 HIGH인지와 지정 MxID가 일치하는지 확인한 뒤에만 시작한다.
 - 카메라 기동 직후 노출 적응 전 프레임은 오검출 위험이 있어 `warmup_frames`만큼
   버린다 (2026-08-07 실차 테스트에서 발견).
 - v_ref·정지 판단·모드 판단은 하지 않는다 (REQUIREMENTS.md 금지사항).
@@ -45,6 +44,13 @@ from stack_lane.bev import BevGrid, DEFAULT_HOMOGRAPHY_PATH, load_homography
 from stack_lane.debug_draw import build_debug_frame
 from stack_lane.lane_path import estimate_lane_path
 from stack_lane.logging_utils import CsvFrameLogger
+from stack_lane.oak_camera import (
+    LANE_CAMERA_HEIGHT,
+    LANE_CAMERA_WIDTH,
+    OakRgbCamera,
+    normalize_usb_speed,
+    validate_camera_profile,
+)
 from stack_lane.yolopv2_infer import DEFAULT_WEIGHTS, infer, load_model, preprocess, resolve_device
 
 
@@ -91,7 +97,10 @@ class StackLaneNode(Node):
         # 잡을지 비결정적이므로 필수). 기본값 = 차선용 OAK-D Pro 실측 MxID
         # (2026-08-11 확정, 팀장). 빈 문자열이면 첫 가용 장치 사용(단독 시험용).
         self.declare_parameter('camera_mxid', '14442C105157D3D200')
-        self.declare_parameter('camera_fps', 30)
+        self.declare_parameter('camera_fps', 10)
+        # 차량 기본은 USB2(HIGH)다. high/super 이외 값이나 실제 HIGH 불일치는
+        # 카메라를 열어 둔 채 계속하지 않고 즉시 실패한다.
+        self.declare_parameter('usb_speed', 'high')
         self.declare_parameter('warmup_frames', 30)
         self.declare_parameter('poll_period_sec', 0.02)
         self.declare_parameter('publish_debug_image', False)
@@ -121,6 +130,19 @@ class StackLaneNode(Node):
         self._held_estimate = None  # HELD/SEARCH 중 그대로 재발행할 마지막 정상 LaneEstimate
         self.warmup_frames = int(self.get_parameter('warmup_frames').value)
         self._frames_seen = 0
+        self.camera_mxid = str(
+            self.get_parameter('camera_mxid').value
+        ).strip()
+        self.camera_fps = int(self.get_parameter('camera_fps').value)
+        self.camera_usb_speed = normalize_usb_speed(
+            self.get_parameter('usb_speed').value
+        )
+        validate_camera_profile(
+            width=LANE_CAMERA_WIDTH,
+            height=LANE_CAMERA_HEIGHT,
+            fps=self.camera_fps,
+            usb_speed=self.camera_usb_speed,
+        )
 
         self.publish_debug_image = bool(self.get_parameter('publish_debug_image').value)
         self.debug_pub = None
@@ -151,7 +173,7 @@ class StackLaneNode(Node):
             self.logger_csv = CsvFrameLogger(log_csv_path, is_placeholder_homography=self.is_placeholder)
             self.get_logger().info(f'CSV 로깅: {log_csv_path}')
 
-        self._setup_camera(int(self.get_parameter('camera_fps').value))
+        self._setup_camera()
 
         self.pub = self.create_publisher(LanePath, '/perception/lane_path', 1)
         period = float(self.get_parameter('poll_period_sec').value)
@@ -172,60 +194,34 @@ class StackLaneNode(Node):
         elif self.device.type == 'xpu':
             torch.xpu.synchronize()
 
-    def _setup_camera(self, fps: int) -> None:
-        # depthai v2/v3 겸용 (2026-08-11): 산업용 PC는 depthai 3.x라 v2 API
-        # (createColorCamera/XLinkOut)가 없어 기동이 즉사했다 — 첫 통합 run에서
-        # 차선 주행이 통째로 빠진 원인. 해상도·소켓은 양쪽 동일(1280x720/CAM_A).
-        import depthai as dai
-
-        mxid = str(self.get_parameter('camera_mxid').value).strip()
-        if mxid:
-            self.get_logger().info(f'OAK-D MxID 핀닝: {mxid}')
+    def _setup_camera(self) -> None:
+        if self.camera_mxid:
+            self.get_logger().info(
+                f'OAK-D MxID 핀닝: {self.camera_mxid}'
+            )
         else:
             self.get_logger().warn(
-                'camera_mxid 미지정 — 첫 가용 OAK-D 사용. 카메라 2대 연결 상태에선 '
-                '부팅 순서에 따라 신호등용 카메라를 잡을 수 있음 (CLAUDE.md §6)')
+                'camera_mxid 미지정 — OAK가 정확히 한 대일 때만 허용합니다.'
+            )
 
-        def open_device(factory):
-            # 직전 프로세스 강제 종료 직후엔 카메라가 USB 리셋 중이라 첫 오픈이
-            # 실패할 수 있다 (2026-08-11 실측: Couldn't open stream /
-            # X_LINK_DEVICE_NOT_FOUND 후 15s 뒤 정상). 재시도로 흡수.
-            import time
-            for attempt in range(4):
-                try:
-                    return factory()
-                except RuntimeError as e:
-                    if attempt == 3:
-                        raise
-                    self.get_logger().warn(
-                        f'카메라 오픈 실패({attempt + 1}/4): {e} — 8s 후 재시도')
-                    time.sleep(8.0)
-
-        if hasattr(dai.Pipeline(), 'createColorCamera'):  # v2
-            pipeline = dai.Pipeline()
-            cam = pipeline.createColorCamera()
-            cam.setPreviewSize(1280, 720)
-            cam.setInterleaved(False)
-            cam.setBoardSocket(dai.CameraBoardSocket.CAM_A)
-            cam.setFps(fps)
-            xout = pipeline.createXLinkOut()
-            xout.setStreamName('rgb')
-            cam.preview.link(xout.input)
-            self._dai_device = open_device(
-                lambda: dai.Device(pipeline, dai.DeviceInfo(mxid)) if mxid
-                else dai.Device(pipeline))
-            self._queue = self._dai_device.getOutputQueue('rgb', maxSize=4, blocking=False)
-            self._dai_pipeline = None
-        else:  # v3
-            self._dai_device = open_device(
-                lambda: dai.Device(dai.DeviceInfo(mxid)) if mxid else dai.Device())
-            pipeline = dai.Pipeline(self._dai_device)
-            cam = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
-            self._queue = cam.requestOutput(
-                (1280, 720), dai.ImgFrame.Type.BGR888i, fps=float(fps)
-            ).createOutputQueue(maxSize=4, blocking=False)
-            pipeline.start()
-            self._dai_pipeline = pipeline
+        self._oak_camera = OakRgbCamera(
+            width=LANE_CAMERA_WIDTH,
+            height=LANE_CAMERA_HEIGHT,
+            fps=self.camera_fps,
+            mxid=self.camera_mxid,
+            usb_speed=self.camera_usb_speed,
+            warn=self.get_logger().warn,
+        )
+        self._queue = self._oak_camera.queue
+        self.get_logger().info(
+            'OAK-D lane camera ready: '
+            f'api=v{self._oak_camera.api_major} '
+            f'mxid={self._oak_camera.mxid} '
+            f'{LANE_CAMERA_WIDTH}x{LANE_CAMERA_HEIGHT}@'
+            f'{self.camera_fps} '
+            f'usb_requested={self.camera_usb_speed.upper()} '
+            f'usb_actual={self._oak_camera.usb_speed}'
+        )
 
     def tick(self) -> None:
         pkt = self._queue.tryGet()
@@ -323,10 +319,9 @@ class StackLaneNode(Node):
     def destroy_node(self) -> None:
         if self.logger_csv is not None:
             self.logger_csv.close()
-        if getattr(self, '_dai_pipeline', None) is not None:  # v3
-            self._dai_pipeline.stop()
-        if hasattr(self, '_dai_device'):
-            self._dai_device.close()
+        oak_camera = getattr(self, '_oak_camera', None)
+        if oak_camera is not None:
+            oak_camera.release()
         super().destroy_node()
 
 

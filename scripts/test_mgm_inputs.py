@@ -18,7 +18,8 @@ class TestMgmInputs(Node):
         self.timer = self.create_timer(1.0 / publish_hz, self.publish_lane)
         self.get_logger().warning(
             'TEST INPUT ONLY: publishing a synthetic straight LanePath. '
-            'No UDP, CAN, dSPACE, motor, or vehicle command is used.'
+            'This node does not send CAN directly, but MGM and a running '
+            'bridge can convert this path into a vehicle command.'
         )
 
     def publish_lane(self):
@@ -28,7 +29,8 @@ class TestMgmInputs(Node):
         msg.confidence = 1.0
         for index in range(20):
             point = RefPoint()
-            point.x = 0.5 * index
+            # x=0인 첫 점은 lookahead가 없어 저속에서도 위빙을 유발했다.
+            point.x = 0.5 * (index + 1)
             point.y = 0.0
             point.yaw = 0.0
             point.curvature = 0.0

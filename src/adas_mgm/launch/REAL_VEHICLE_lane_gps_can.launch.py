@@ -36,6 +36,8 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 CONFIRM_TOKEN = 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX'
+DEFAULT_LANE_CAMERA_FPS = '10'
+DEFAULT_LANE_USB_SPEED = 'high'
 
 # run 단위 로그 디렉터리 — launch 파일은 실행마다 새로 파싱되므로 매 run 고유
 LOG_DIR = os.path.expanduser(
@@ -60,6 +62,18 @@ DEFAULT_HOMOGRAPHY = os.path.expanduser(
 DEFAULT_YDLIDAR_PARAMS = os.path.join(
     os.path.expanduser('~'), 'ydlidar_ws', 'src', 'ydlidar_ros2_driver',
     'params', 'Tmini-Plus-SH.yaml')
+
+
+def build_lane_camera_parameters():
+    """REAL_VEHICLE에서 사용하는 lane OAK 안전 프로필."""
+    return {
+        'camera_mxid': LaunchConfiguration('camera_mxid'),
+        'camera_fps': ParameterValue(
+            LaunchConfiguration('camera_fps'),
+            value_type=int,
+        ),
+        'usb_speed': LaunchConfiguration('usb_speed'),
+    }
 
 
 def validate(context):
@@ -111,6 +125,16 @@ def generate_launch_description():
             '~/FMA_ws/src/stack_lane/models/yolopv2.pt')),
         DeclareLaunchArgument('camera_mxid', default_value='14442C105157D3D200',
                               description='차선용 OAK-D MxID (2026-08-11 실측)'),
+        DeclareLaunchArgument(
+            'camera_fps',
+            default_value=DEFAULT_LANE_CAMERA_FPS,
+            description='차량 lane OAK 입력 FPS; USB2 기본은 10',
+        ),
+        DeclareLaunchArgument(
+            'usb_speed',
+            default_value=DEFAULT_LANE_USB_SPEED,
+            description='lane OAK USB 상한: high=USB2, super=USB3',
+        ),
         # 이 PC(산업용)는 NVIDIA 없음 — 인텔 Arc iGPU를 XPU 백엔드로 사용
         # (fp16 172ms/frame ≈ 5.8Hz, CPU 390ms 대비 2.3배 — 2026-08-11 실측).
         # XPU 초기화 실패 시(드라이버 문제 등) lane_device:=cpu 로 폴백.
@@ -197,7 +221,7 @@ def generate_launch_description():
             parameters=[{
                 'homography_path': LaunchConfiguration('homography_path'),
                 'weights': LaunchConfiguration('lane_weights'),
-                'camera_mxid': LaunchConfiguration('camera_mxid'),
+                **build_lane_camera_parameters(),
                 'device': LaunchConfiguration('lane_device'),
                 'ref_point0_lookahead_m': ParameterValue(
                     LaunchConfiguration('ref_point0_lookahead_m'), value_type=float),
