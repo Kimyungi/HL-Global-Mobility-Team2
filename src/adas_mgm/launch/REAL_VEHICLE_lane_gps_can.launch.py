@@ -27,6 +27,7 @@
       REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv
 """
+import csv
 import os
 from datetime import datetime
 
@@ -87,16 +88,23 @@ def validate(context):
     # 그러면 gps_path가 아예 없어 FIXED가 잡힐 수 없고, 스테이트가 LANE이면
     # MGM의 gps watchdog도 안 걸려 **카메라만 보고 주행**하게 된다
     # (2026-08-15 run_0815_150224·150408·151100 3연속 실사례).
-    # 같은 판정을 쓰기 위해 stack_gps의 로더를 그대로 호출한다.
-    from stack_gps.path_engine import load_waypoints_csv
+    # 검사는 launch 파일 안에서 자립적으로 한다. stack_gps.path_engine을 import해
+    # 같은 로더를 쓰려 했으나, launch 파싱은 `ros2 launch` 프로세스의 PYTHONPATH에
+    # 의존해 셸 환경에 따라 `No module named 'stack_gps'`로 launch 자체가 죽는다
+    # (2026-08-15 실측). 검증 하나 때문에 패키지 간 파이썬 의존을 만들지 않는다.
+    _MIN_POINTS = 10
     try:
-        _pts = load_waypoints_csv(waypoint_csv, log=lambda m: print(f'[launch] {m}'))
-    except (OSError, ValueError) as e:
+        with open(waypoint_csv, newline='') as f:
+            rows = [r for r in csv.DictReader(f) if r.get('lat') and r.get('lon')]
+    except OSError as e:
+        raise RuntimeError(f'waypoint_csv 를 열 수 없음 — {e}') from e
+    if len(rows) < _MIN_POINTS:
         raise RuntimeError(
-            f'waypoint_csv 사용 불가 — {e}\n'
+            f'waypoint_csv 점이 {len(rows)}개뿐 (최소 {_MIN_POINTS}) — 트랙이 아니다: '
+            f'{waypoint_csv}\n'
             '  실코스 예: waypoints_straight_1_20260811_193556.csv (288점)\n'
-            '  1~4점 파일은 FIXED 확인용 잔여물이라 트랙으로 못 쓴다.') from e
-    print(f'[launch] 웨이포인트 {len(_pts)}점 확인: {os.path.basename(waypoint_csv)}')
+            '  1~4점 파일은 FIXED 확인용 잔여물이다.')
+    print(f'[launch] 웨이포인트 {len(rows)}점 확인: {os.path.basename(waypoint_csv)}')
     # 카메라를 안 띄우는 run(lane_enabled:=false)에선 호모그래피 유무가 무의미
     if LaunchConfiguration('lane_enabled').perform(context) == 'true':
         homography = LaunchConfiguration('homography_path').perform(context)
