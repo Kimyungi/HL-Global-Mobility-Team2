@@ -47,6 +47,11 @@ class TestLaunchDefaults(unittest.TestCase):
             parameters["oak_mxid"],
             module.DEFAULT_TRAFFIC_OAK_MXID,
         )
+        self.assertEqual(parameters["oak_usb_speed"], "high")
+        self.assertEqual(parameters["oak_fps"], 10.0)
+        self.assertEqual(parameters["oak_width"], 1280)
+        self.assertEqual(parameters["oak_height"], 720)
+        self.assertFalse(parameters["oak_depth_enabled"])
         self.assertTrue(parameters["resume_on_green"])
         self.assertFalse(parameters["show_debug"])
         self.assertEqual(parameters["stopline_stop_y_ratio"], 0.0)

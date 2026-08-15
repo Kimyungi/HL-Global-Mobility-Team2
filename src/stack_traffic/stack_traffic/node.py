@@ -53,7 +53,10 @@ from stack_traffic.logic import (
     should_record_color_vote,
     update_stop_latch,
 )
-from stack_traffic.oak_camera import OakRgbdCamera
+from stack_traffic.oak_camera import (
+    OakRgbdCamera,
+    normalize_oak_usb_speed,
+)
 from stack_traffic.stopline_detector import (
     StopLineDetection,
     detect_stop_line,
@@ -66,10 +69,12 @@ from stack_traffic.visual_tracker import (
     smooth_bbox,
 )
 
+YOLO_IMPORT_ERROR = None
 try:
     from ultralytics import YOLO
-except ImportError:
+except Exception as error:
     YOLO = None
+    YOLO_IMPORT_ERROR = error
 
 
 CameraSource = Union[int, str]
@@ -377,9 +382,12 @@ class StackTrafficNode(Node):
 
         if YOLO is None:
             raise RuntimeError(
-                "ultralytics가 설치되어 있지 않습니다: "
-                "python3 -m pip install ultralytics"
-            )
+                "YOLO 런타임을 불러오지 못했습니다. "
+                "`ros2 run stack_traffic stack_traffic_ml_preflight`로 "
+                "torch/torchvision/ultralytics 조합을 확인하세요. "
+                f"원본 오류: {type(YOLO_IMPORT_ERROR).__name__}: "
+                f"{YOLO_IMPORT_ERROR}"
+            ) from YOLO_IMPORT_ERROR
 
         model_path = self._resolve_model_path()
         if not model_path.exists():
@@ -526,6 +534,7 @@ class StackTrafficNode(Node):
                 height=self.oak_height,
                 fps=self.oak_fps,
                 mxid=self.oak_mxid,
+                usb_speed=self.oak_usb_speed,
                 depth_enabled=self.oak_depth_enabled,
                 depth_confidence_threshold=(
                     self.oak_depth_confidence_threshold
@@ -573,7 +582,8 @@ class StackTrafficNode(Node):
             return (
                 f"oak:{self.oak_width}x{self.oak_height}@"
                 f"{self.oak_fps:g}/{depth_mode}/mxid={connected_mxid}/"
-                f"usb={usb_speed}"
+                f"usb_requested={self.oak_usb_speed.upper()}/"
+                f"usb_actual={usb_speed}"
             )
         return f"opencv:{self.camera_source}"
 
@@ -593,6 +603,7 @@ class StackTrafficNode(Node):
         self.declare_parameter("oak_height", 360)
         self.declare_parameter("oak_fps", 30.0)
         self.declare_parameter("oak_mxid", "")
+        self.declare_parameter("oak_usb_speed", "super")
         self.declare_parameter("oak_depth_enabled", True)
         # 작은 물체를 후처리가 지우는지 확인하는 raw 진단 기본값.
         self.declare_parameter("oak_depth_confidence_threshold", 245)
@@ -731,6 +742,9 @@ class StackTrafficNode(Node):
         self.oak_height = int(self.get_parameter("oak_height").value)
         self.oak_fps = float(self.get_parameter("oak_fps").value)
         self.oak_mxid = str(self.get_parameter("oak_mxid").value)
+        self.oak_usb_speed = normalize_oak_usb_speed(
+            self.get_parameter("oak_usb_speed").value
+        )
         self.oak_depth_enabled = bool(
             self.get_parameter("oak_depth_enabled").value
         )

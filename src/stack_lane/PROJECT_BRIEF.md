@@ -249,7 +249,7 @@ float32 distance   # [m] vehicle frame 전방 x
 
 `stack_lane/node.py`를 스켈레톤에서 실제 파이프라인으로 교체. OAK-D 카메라 부팅(depthai) → YOLOPv2 추론 → BEV/슬라이딩 윈도우(`estimate_lane_path`) → `/perception/lane_path` 발행까지 전 과정 배선.
 
-- **파라미터화**: `weights`, `device`, `img_size`, `lookahead_m`, `homography_path`(기본값 `config/homography.json` — 실측 파일 있으면 자동 사용, 없으면 placeholder), `camera_fps`(기본 30 — REQUIREMENTS.md가 가정한 100ms보다 빠르지만 MGM이 항상 최신 스냅샷만 pull하므로 문제 없음), `warmup_frames`(기본 30, 노출 적응 대기).
+- **파라미터화**: `weights`, `device`, `img_size`, `lookahead_m`, `homography_path`(기본값 `config/homography.json` — 실측 파일 있으면 자동 사용, 없으면 placeholder), `camera_fps`(차량 기본 10 = 100ms), `usb_speed`(차량 기본 `high` = USB2 강제), `warmup_frames`(기본 30, 노출 적응 대기). 지정 MxID와 실제 장치 ID, 요청 HIGH와 실제 USB 속도가 일치하지 않으면 fail-closed한다.
 - **모델 워밍업**: `__init__`에서 더미 텐서로 1회 추론해 최초 콜드스타트 지연(~680ms)을 노드 준비 단계에서 흡수 — 실제 발행 프레임이 느려지지 않게 함.
 - **카메라는 `tryGet()`(non-blocking)으로 폴링** — 새 프레임 없으면 그 틱은 스킵, 있으면 처리+발행. `/perception/stopline`은 발행하지 않음(§6 — 정지선은 팀 내 다른 담당자에게 재배정됨).
 

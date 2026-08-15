@@ -9,8 +9,8 @@
 1. RGB 상단 ROI에서 YOLOv8n으로 주행 대상 신호등 bbox 검출
 2. bbox 내부 HSV 비율로 적색·초록색 판정
 3. RGB 하단 ROI에서 긴 흰색 횡방향 정지선 검출
-4. 정렬 depth에서 정지선 인접 노면의 optical-Z 측정
-5. 적색과 정지선 근접 조건을 결합해 `/perception/traffic_stop` 발행
+4. 선택적 저해상도 depth 진단에서 정지선 인접 노면의 optical-Z 측정
+5. 적색과 RGB y gate(선택적으로 depth)를 결합해 `/perception/traffic_stop` 발행
 
 외부 `/perception/stopline`은 구독하지 않는다. CAN과 `v_ref`도 직접 만들지
 않는다. MGM이 `TrafficStop.stop_required`를 `v_ref=0`으로 병합하고
@@ -75,16 +75,34 @@ AND enabled_stopline_gates
 - OAK-D가 두 대 이상 연결되는 통합 환경에서는 `oak_mxid`에 교통용 카메라의
   MxID를 반드시 지정한다. 빈 값은 OAK-D가 한 대뿐인 단독 시험에서만 자동
   선택하며, 여러 대가 보이면 노드는 잘못된 장치 사용을 막기 위해 종료한다.
-  0대 열거 또는 단일 장치 open 실패는 2초 간격으로 최대 3회 재시도하고,
+  0대 열거 또는 단일 장치 open 실패는 5초 간격으로 최대 4회(약 15초 창)
+  재시도하고,
   끝까지 실패하면 무핀 자동 선택 없이 종료한다. 현재 차량의 교통용 MxID는
   현장 launch 기본값을 단일 기준으로 사용하며, 다른 장치에서 시험할 때만
   launch 인자로 재정의한다.
-- Python 의존성은 `python3 -m pip install -r
-  src/stack_traffic/requirements.txt`로 설치한다. DepthAI 3.x는 현재 파이프라인과
-  호환하지 않으므로 `depthai>=2.30,<3.0` 범위를 유지한다.
-- 기본 실험 입력: 1280x720, 30 FPS, RGB 정렬 depth.
+- 신규 산업용 PC 배포 의존성은 검증한 `ultralytics==8.4.61`,
+  `depthai==3.6.1`로 고정한다. 카메라 코드는 기존 개발 장비의 DepthAI 2.30+
+  호환도 유지하며, API를 장치를 열지 않는 feature check로 구분한다. 3.6보다
+  이른 3.x runtime은 fail-closed한다. v2는
+  `Device(pipeline, DeviceInfo, UsbSpeed)`, v3는
+  `Device(DeviceInfo, UsbSpeed) -> Pipeline(device)` 순서로 열며, 두 경로 모두
+  동일한 MxID·bounded retry·실제 USB 속도 검증 계약을 지킨다.
+- 범용 노드 기본값은 기존 개발 호환을 위해 30 FPS/SUPER지만, 차량 launch의
+  표준 프로필은 1280x720, 10 FPS, `oak_usb_speed=high`, RGB-only다. HIGH 요청 후
+  실제 `getUsbSpeed()`가 HIGH가 아니면 노드는 fail-closed한다.
+- USB2 안전 payload 상한은 36 MB/s로 둔다. 비압축 BGR은 3 B/px, depth는
+  2 B/px로 계산하며 1280x720@10 RGB-only는 27.65 MB/s라 허용한다.
+  같은 해상도의 RGBD는 46.08 MB/s라 거부하고, depth 진단은
+  640x360@10 RGBD(11.52 MB/s)를 사용한다.
 - y-only 실차 모드에서는 stereo depth를 장치 단계에서 꺼 RGB 처리량을
-  우선한다. depth gate를 사용할 때만 다시 켠다.
+  우선한다. depth gate를 사용할 때만 저해상도 프로필로 다시 켜고 y/z 임계값을
+  그 프로필에서 다시 보정한다.
+- 산업용 PC 기동 전
+  `ros2 run stack_traffic stack_traffic_ml_preflight`로 torch/torchvision native
+  op와 실제 NMS, Ultralytics, DepthAI API 세대를 확인한다. 같은 호스트에서
+  `stack_lane`까지 기동할 때만 `--require-xpu`를 추가해 lane용 Intel XPU를
+  검사한다. traffic YOLO가 XPU를 쓴다는 의미는 아니다. 사전점검은 패키지를
+  설치·삭제·업데이트하지 않는다.
 - YOLO의 논리 검색 범위는 넓은 상단 ROI다. 추적 전에는 이 범위를
   중앙·좌·우의 좁은 가로 타일로 한 장씩 훑고, 검출 뒤에는 bbox 중심을
   따라가는 타일만 사용해 먼 신호의 입력 픽셀 크기를 보존한다.

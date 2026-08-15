@@ -122,14 +122,24 @@ adas_ws/src/
   `resume_on_green`이 실차 표준, `resume_on_red_clear`는 불필요.
   **OAK-D 배분 확정 (2026-08-09, 팀장):** OAK-D Pro **2대** — stack_lane(이현준) 1대(차선용
   하향 pitch), stack_traffic(김재민) 1대(신호등·정지선용 상단 시야). 각자 독점 오픈은 유지하되
-  **양쪽 노드에 MxID 핀닝 필수**(`dai.Device(pipeline, device_info)`) — 핀닝 없으면 어느 노드가
-  어느 카메라를 잡을지 비결정적이라 부팅 순서에 따라 뒤바뀐다.
+  **양쪽 노드에 MxID 핀닝 필수**(DepthAI v2/v3 모두 `DeviceInfo`로 명시 선택) —
+  핀닝 없으면 어느 노드가 어느 카메라를 잡을지 비결정적이라 부팅 순서에 따라
+  뒤바뀐다.
   **MxID 확정 (2026-08-12, 팀장 — 2대 동시 연결 상태에서 실물 열거로 확인):**
   | 용도 | MxID | 핀닝 위치 |
   |---|---|---|
   | 차선 (stack_lane) | `14442C105157D3D200` | `stack_lane/node.py` `camera_mxid` 기본값 (main 반영 완료) |
   | 신호등·정지선 (stack_traffic) | `14442C10B167CFD200` | `stack_traffic` launch `oak_mxid` 기본값 (PR #29, draft) |
   MxID는 18자리이며 이 표가 정본이다. 두 노드 모두 각 파라미터로 지정된 카메라만 연다.
+  **GNSS 간섭 완화 운용(2026-08-15):** 이 차량 구성에서 OAK SuperSpeed 링크 활성과
+  GNSS C/N0 저하가 반복 관측됐으므로 차량용 lane/traffic 노드는 모두
+  `UsbSpeed.HIGH`(USB2)와 10 FPS를 fail-closed 기본값으로 사용한다. traffic은
+  RGB-only가 차량 기본이며 depth 진단은 640x360@10 RGBD로만 수행한다. 양쪽 시작
+  로그의 requested/actual USB가 모두 HIGH인지와 `lsusb -t`의 480M을 확인한다.
+  원인이 카메라 본체인지 케이블·포트·접지인지는
+  확정하지 않았으며, 두 production 노드 동시 기동 상태의 장시간 RTK/FPS 검증은
+  별도 실물 gate로 남는다. 30→10 FPS 변경 뒤에는 0.28m/s에서 실제 정지 위치와
+  fresh 초록 3/5 재출발 지연도 다시 측정해 기존 y 임계값을 재검증한다.
 - 부트스트랩 순서: ① bridge_dspace로 PC↔dSPACE 왕복 검증 (더미 ref로 바퀴 반응 + vehicle vector 회신 확인) → ② adas_mgm 10ms 루프 골격 + 지터 로깅 → ③ 각 스택 배포·병렬 개발.
 
 ## 7. 실시간성 검증 기준 (v1 유지 vs v3 이관)

@@ -3,8 +3,8 @@
 현재 실험 경로는 아래 하나다.
 
 ```text
-OAK-D RGB/depth
-  -> stack_traffic (신호등 + 정지선 + 거리)
+OAK-D RGB (+ 선택적 진단 depth)
+  -> stack_traffic (신호등 + 정지선 + y gate/선택적 거리)
   -> /perception/traffic_stop
   -> adas_mgm (/adas/target_ref의 v_ref 결정)
   -> bridge_dspace
@@ -12,33 +12,89 @@ OAK-D RGB/depth
   -> dSPACE
 ```
 
-`stack_traffic`은 별도의 `/perception/stopline`을 받지 않는다. 정지선과 그 주변
-노면 depth를 직접 측정한다. 색상 판정은 HSV만 사용하며 ONNX 분류 경로는 제거했다.
+`stack_traffic`은 별도의 `/perception/stopline`을 받지 않는다. RGB에서 정지선을
+직접 측정하고, 별도 저해상도 진단 프로필에서만 주변 노면 depth를 함께 쓴다.
+색상 판정은 HSV만 사용하며 ONNX 분류 경로는 제거했다.
 
-## 0. 최초 한 번 빌드
+## 0. 산업용 PC 런타임 확인 후 빌드
+
+산업용 PC에서는 **어떤 pip 설치보다 먼저** 기존 환경을 변경하지 않는 사전점검을
+실행한다. 소스 트리에서 직접 실행하므로 아직 colcon build 전이어도 된다.
 
 ```bash
 cd ~/FMA_ws
 source /opt/ros/humble/setup.bash
+PYTHONPATH=~/FMA_ws/src/stack_traffic \
+  python3 -m stack_traffic.ml_preflight
+# 같은 PC에서 stack_lane도 실행할 때만 추가 확인
+PYTHONPATH=~/FMA_ws/src/stack_traffic \
+  python3 -m stack_traffic.ml_preflight --require-xpu
+```
+
+`torchvision::nms does not exist`가 나오면 `.pt` 모델 문제가 아니다. 출력된
+Python·torch·torchvision 경로와 버전을 기준으로 두 패키지를 같은 공식 XPU
+채널의 호환 쌍으로 맞춘 뒤 다시 검사한다. traffic만 살리려고 일반 PyPI의
+torch를 덮어쓰면 `stack_lane` XPU 환경을 깨뜨릴 수 있으므로 자동 복구는 하지 않는다.
+신규 산업용 PC 배포는 검증한 DepthAI 3.6.1을 사용한다. 기존 개발 장비의 2.30+
+호환은 유지하지만, 중간 3.x 버전은 사전점검과 노드가 기동을 거부한다.
+
+산업용 PC에서는 진단 결과에 맞춰 검증된 constraints와 동일한 공식 XPU 채널을
+사용하기 전까지 일반 `pip install -r`를 실행하지 않는다. 아래 requirements 설치는
+개발 노트북 또는 분리된 전용 환경에서만 수행한다.
+
+```bash
 python3 -m pip install -r ~/FMA_ws/src/stack_traffic/requirements.txt
+```
+
+기존 산업용 PC 환경이 사전점검을 통과했거나 승인된 설치를 마쳤으면 빌드한다.
+
+```bash
+cd ~/FMA_ws
+source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-select \
   fma_interfaces stack_traffic adas_mgm bridge_dspace stack_estop
 source ~/FMA_ws/install/setup.bash
+ros2 run stack_traffic stack_traffic_ml_preflight
 ```
 
 OAK-D를 연결한 뒤 각 장치의 MxID를 확인하고 교통용 카메라의 값을 기록한다.
 
 ```bash
-python3 -c 'import depthai as dai; [print(x.getMxId(), x.name, x.state) for x in dai.Device.getAllConnectedDevices()]'
+python3 - <<'PY'
+import depthai as dai
+
+get_all = getattr(dai.Device, "getAllConnectedDevices", None)
+if get_all is None:
+    get_all = dai.Device.getAllAvailableDevices
+for info in get_all():
+    get_id = getattr(info, "getMxId", None)
+    if get_id is None:
+        get_id = info.getDeviceId
+    print(get_id(), getattr(info, "name", "?"), getattr(info, "state", "?"))
+PY
 ```
 
 OAK-D가 두 대인 차량에서는 `stack_lane`과 `stack_traffic`에 서로 다른 MxID를
 반드시 지정한다. `stack_traffic`은 장치가 한 대일 때만 빈 MxID 자동 선택을 허용하고,
 두 대 이상인데 `oak_mxid`가 비어 있으면 잘못된 카메라 사용을 막기 위해 종료한다.
-장치가 일시적으로 보이지 않거나 재부팅 중이면 2초 간격으로 최대 3회 다시 열고,
-그 뒤에도 0대이거나 열 수 없으면 무핀 자동 선택 없이 종료한다. 현재 차량의 교통용
+장치가 일시적으로 보이지 않거나 재부팅 중이면 5초 간격으로 최대 4회(약 15초
+재열거 창) 다시 열고, 그 뒤에도 0대이거나 열 수 없으면 무핀 자동 선택 없이
+종료한다. 현재 차량의 교통용
 MxID는 launch 기본값을 단일 기준으로 사용한다. 다른 장치로 시험할 때만 launch
 명령에 `oak_mxid:=확인한_MxID`를 추가한다.
+
+차량 traffic launch는 `oak_usb_speed=high`, `oak_fps=10`, RGB-only가 기본이고,
+REAL_VEHICLE launch의 lane도 `usb_speed=high`, `camera_fps=10`이 기본이다. 실행 후
+아래 명령에서 각 OAK가 `480M`인지 확인하고, 두 장치가 **서로 다른 USB root
+bus/컨트롤러**에 달렸는지 확인한다. 같은 USB2 hub uplink에 두 RGB 스트림이
+합쳐지면 약 55.3 MB/s라 각 노드의 개별 대역폭 검사를 통과해도 과부하될 수 있다.
+
+```bash
+lsusb -t
+```
+
+traffic 시작 로그에는 반드시
+`usb_requested=HIGH/usb_actual=HIGH`가 표시돼야 한다. 다르면 주행하지 않는다.
 
 빌드 후에는 각 새 터미널에서 아래 세 줄을 먼저 실행한다.
 
@@ -50,8 +106,9 @@ source ~/FMA_ws/install/setup.bash
 
 ## 1. 노트북 단독 측정 — CAN 없음
 
-이 단계에서는 차량, CAN, MGM, E-stop 노드를 실행하지 않는다. 아래 launch의 기본
-두 정지 임계값의 기본값이 `0`이므로 측정만 하고 `stop_required`를 만들지 않는다.
+이 단계에서는 차량, CAN, MGM, E-stop 노드를 실행하지 않는다. 기본 차량 프로필은
+1280x720@10 RGB-only이며 두 정지 임계값이 `0`이라 측정만 하고
+`stop_required`를 만들지 않는다.
 
 ```bash
 cd ~/FMA_ws
@@ -65,21 +122,39 @@ ros2 launch stack_traffic stopline_distance_test.launch.py \
 정상 표본은 로그가 다음 조건을 모두 만족해야 한다.
 
 ```text
-stopline=1  stable=1  y_med=유효값  line_z=유효값  z_med=유효값
+stopline=1  stable=1  y_med=유효값  line_z=invalid  z_med=pending
 ```
 
-`line_near=0`, `FINAL_STOP=0`인 것이 정상이다. `line_z`와 `z_med`는 카메라
-optical-Z이며 앞 범퍼 기준 절대거리가 아니다.
+`line_near=0`, `FINAL_STOP=0`인 것이 정상이다. depth까지 별도 진단할 때는 USB2
+대역폭에 맞는 아래 프로필을 사용한다. 해상도가 바뀌므로 y/z 임계값도 이 프로필에서
+다시 측정해야 한다.
 
-### 기록할 값
+```bash
+ros2 launch stack_traffic stopline_distance_test.launch.py \
+  oak_width:=640 oak_height:=360 oak_fps:=10 \
+  oak_usb_speed:=high oak_depth_enabled:=true \
+  show_debug:=true
+```
+
+이때의 `line_z`와 `z_med`는 카메라 optical-Z이며 앞 범퍼 기준 절대거리가 아니다.
+
+### RGB-only 차량 프로필에서 기록할 값
 
 카메라를 실제 장착 각도로 고정하고 아래 두 위치에서 각각 10개 이상의 정상 표본을
 기록한다.
 
-| 위치 | `y_raw` [px] | `y_med` [0~1.10] | `line_z` [m] | `z_med` [m] |
-|---|---:|---:|---:|---:|
-| 원하는 최종 정지 위치 |  |  |  |  |
-| 그 위치보다 약 1m 뒤 |  |  |  |  |
+| 위치 | `y_raw` [px] | `y_med` [0~1.10] |
+|---|---:|---:|
+| 원하는 최종 정지 위치 |  |  |
+| 그 위치보다 약 1m 뒤 |  |  |
+
+선택적 640x360 RGBD run에서는 아래 표를 별도로 기록한다. 이 run의 y/z 임계값은
+1280x720 RGB-only run과 섞지 않는다.
+
+| 위치 | `y_med` [0~1.10] | `line_z` [m] | `z_med` [m] |
+|---|---:|---:|---:|
+| 원하는 최종 정지 위치 |  |  |  |
+| 그 위치보다 약 1m 뒤 |  |  |  |
 
 - 가까워질수록 일반적으로 `y_med`는 커지고 `z_med`는 작아져야 한다.
 - 현재 기본 정지 기준은 고정 카메라에서 더 잘 구분되는 `y_med`다. `z_med`는 두 위치가
@@ -147,6 +222,8 @@ source ~/FMA_ws/install/setup.bash
 
 read -rp "검증한 정지선 y_med 임계값(0~1.10): " FMA_STOPLINE_TRIGGER_Y
 ros2 launch stack_traffic stopline_distance_test.launch.py \
+  oak_usb_speed:=high \
+  oak_fps:=10 \
   oak_depth_enabled:=false \
   stopline_stop_y_ratio:="${FMA_STOPLINE_TRIGGER_Y}" \
   stopline_stop_distance_m:=0.0 \
@@ -167,7 +244,8 @@ AND 안정화된 정지선 y 비율 >= 입력한 임계값
 ```
 
 이 모드는 실제 정지에 쓰지 않는 stereo depth를 장치 단계에서 꺼서 FPS를 확보한다.
-시작 로그의 `camera=.../rgb-only`와 로그의 `z=invalid`는 정상이며,
+시작 로그의 `camera=.../rgb-only`와 로그의
+`line_z=invalid z_med=pending`은 정상이며,
 `y_med`, `y_ok`, `line_near`를 확인하면 된다.
 
 depth도 위치를 안정적으로 구분한다는 것이 확인됐을 때만 이중 gate를 쓴다.
@@ -177,11 +255,19 @@ depth도 위치를 안정적으로 구분한다는 것이 확인됐을 때만 �
 read -rp "검증한 정지선 y_med 임계값(0~1.10): " FMA_STOPLINE_TRIGGER_Y
 read -rp "검증한 정지선 z_med 임계값(m): " FMA_STOPLINE_TRIGGER_Z
 ros2 launch stack_traffic stopline_distance_test.launch.py \
+  oak_width:=640 \
+  oak_height:=360 \
+  oak_fps:=10 \
+  oak_usb_speed:=high \
   oak_depth_enabled:=true \
   stopline_stop_y_ratio:="${FMA_STOPLINE_TRIGGER_Y}" \
   stopline_stop_distance_m:="${FMA_STOPLINE_TRIGGER_Z}" \
   show_debug:=false
 ```
+
+이중 gate는 640x360 프로필에서 `y_med`와 `z_med`를 모두 다시 보정한 경우에만
+사용한다. 1280x720@10 RGBD는 명목 payload가 약 46.1 MB/s라 USB2 안전 상한을
+넘으며 노드가 장치를 열기 전에 거부한다.
 
 기동 직후에는 5회의 실제 YOLO 판단이 쌓일 때까지 `startup_hold=1`로
 정지를 발행한다. 정지 후에는 신호등을 놓쳤다는 이유만으로 해제하지 않는다.

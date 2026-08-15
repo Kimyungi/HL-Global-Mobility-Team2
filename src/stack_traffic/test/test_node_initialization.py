@@ -25,7 +25,7 @@ class FakeOakCamera:
     def __init__(self, **_kwargs):
         type(self).last_kwargs = _kwargs
         self.mxid = _kwargs.get("mxid") or "fake-auto-mxid"
-        self.usb_speed = "SUPER"
+        self.usb_speed = str(_kwargs.get("usb_speed", "super")).upper()
         self.last_read_status = "starting"
         self.depth_resized = False
         self.depth_native_shape = None
@@ -42,6 +42,29 @@ class FakeOakCamera:
 
 
 class TestNodeInitialization(unittest.TestCase):
+    def test_yolo_import_failure_preserves_original_error(self):
+        os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
+        original_error = RuntimeError(
+            "operator torchvision::nms does not exist"
+        )
+        rclpy.init()
+        try:
+            with (
+                patch("stack_traffic.node.YOLO", None),
+                patch(
+                    "stack_traffic.node.YOLO_IMPORT_ERROR",
+                    original_error,
+                ),
+                self.assertRaisesRegex(
+                    RuntimeError,
+                    "stack_traffic_ml_preflight.*torchvision::nms",
+                ) as raised,
+            ):
+                StackTrafficNode()
+            self.assertIs(raised.exception.__cause__, original_error)
+        finally:
+            rclpy.shutdown()
+
     def test_oak_y_only_node_initializes_without_optional_models(self):
         os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
         rclpy.init(
@@ -53,6 +76,8 @@ class TestNodeInitialization(unittest.TestCase):
                 "oak_depth_enabled:=false",
                 "-p",
                 "oak_mxid:=traffic-oak-mxid",
+                "-p",
+                "oak_usb_speed:=high",
                 "-p",
                 "stopline_detection_enabled:=true",
                 "-p",
@@ -68,14 +93,17 @@ class TestNodeInitialization(unittest.TestCase):
                 node = StackTrafficNode()
             self.assertFalse(node.oak_depth_enabled)
             self.assertEqual(node.oak_mxid, "traffic-oak-mxid")
+            self.assertEqual(node.oak_usb_speed, "high")
             self.assertEqual(
                 FakeOakCamera.last_kwargs["mxid"],
                 "traffic-oak-mxid",
             )
+            self.assertEqual(FakeOakCamera.last_kwargs["usb_speed"], "high")
             self.assertIn(
                 "mxid=traffic-oak-mxid",
                 node._camera_description(),
             )
+            self.assertIn("usb_actual=HIGH", node._camera_description())
             self.assertAlmostEqual(node.stopline_stop_y_ratio, 0.90)
             self.assertEqual(node.traffic_light_class_ids, [9])
             self.assertFalse(node.camera_fault_latched)

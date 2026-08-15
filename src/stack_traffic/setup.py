@@ -18,6 +18,7 @@ setup(
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='김재민',
     maintainer_email='kyg100800@gmail.com',
@@ -26,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'stack_traffic_node = stack_traffic.node:main',
+            'stack_traffic_ml_preflight = stack_traffic.ml_preflight:main',
         ],
     },
 )
