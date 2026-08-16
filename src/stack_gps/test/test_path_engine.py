@@ -167,7 +167,14 @@ def test_lookahead_shifts_first_ref_point():
     x1, y1 = s1["points"][0][0], s1["points"][0][1]
     assert x1 >= 0.8, f"lookahead 점이 전방이 아님: x={x1:.2f}"
     assert math.hypot(x1, y1) >= 0.9 - 1e-6, "lookahead 거리 미달"
-    assert abs(y1 + 0.3) < 0.05                      # 횡오차는 그대로 담김
+    # 횡오차는 **방위**에 담긴다 (2026-08-16 접근각 법칙 이후). 종전 단언은
+    # y ≈ −0.3(= 횡오차 그대로)이었는데, 그건 거리 하한이 1.267m 이던 시절
+    # 우연히 맞았을 뿐이다 — y = d·sin(b) 라 하한이 바뀌면 y도 따라 바뀐다.
+    # 계약은 "b = ψₑ + sign(e)·α, α = 25°·min(1,|e|/full_cross)" 쪽이다.
+    alpha = (math.degrees(PathEngine.MAX_TARGET_BEARING_RAD)
+             * (0.3 / PathEngine.REJOIN_FULL_CROSS_M))
+    assert abs(math.degrees(math.atan2(y1, x1)) + alpha) < 0.5, "접근각 법칙 불일치"
+    assert y1 < 0, "트랙 반대쪽으로 조준"
     # 2026-08-14: 정확히 0.9m 지점을 요구하던 단언을 완화했다. 이제 도달 곡률
     # κ=2y/L² 이 1/R_min(1.5m)을 넘지 않는 점을 고르는데, 이 기하에서 0.9m 점은
     # 요구 반경이 정확히 1.5m라 한 점 더 나간다(요구 반경 2.55m). 의도된 변화 —
@@ -229,7 +236,9 @@ def test_rejoin_target_distance_does_not_grow_with_deviation():
     (같은 방위·같은 속도인데 d=1.28~1.62m였던 run_0815_142817은 복귀 성공)
     """
     track = make_track([(0.3 * i, 0.0) for i in range(200)])
-    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    # e_lpf 끔 — 한 엔진으로 여러 위치를 훑는 **기하** 시험이라 e 저역통과가
+    # 걸리면 앞 위치의 값이 남아 시험이 무력화된다 (LPF 자체는 별도 시험).
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0, e_lpf_s=0.0)
     prev_r = None
     for cross in (1.0, 1.88, 2.7, 4.0, 5.04):
         snap = eng.snapshot(*en_to_latlon(20.0, cross), heading=math.radians(25.0))
@@ -301,7 +310,7 @@ def test_rejoin_approach_angle_stops_overturning():
 def test_rejoin_approach_angle_scales_down_near_track():
     """트랙에 가까워지면 접근각이 줄어 **접선으로** 붙어야 한다 (직각 통과 방지)."""
     track = make_track([(0.3 * i, 0.0) for i in range(200)])
-    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0, e_lpf_s=0.0)  # 기하만 본다
     prev = None
     for cross in (2.0, 1.0, 0.5, 0.2):
         snap = eng.snapshot(*en_to_latlon(20.0, cross), heading=math.radians(0.0))
@@ -310,3 +319,110 @@ def test_rejoin_approach_angle_scales_down_near_track():
         if prev is not None:
             assert b <= prev + 1e-6, f"cross {cross}m 에서 접근각이 되레 커짐"
         prev = b
+
+
+def test_cross_track_is_perpendicular_not_point_distance():
+    """cross_track_m 은 트랙 **선**까지 수직거리여야 한다 (2026-08-17).
+
+    종전엔 최근접 **꼭짓점**까지의 점-대-점 거리를 내보냈다. 트랙이 이산
+    웨이포인트라 그 값은 차가 트랙과 완벽히 나란히 가도 웨이포인트 간격에
+    맞춰 톱니로 진동한다 — 수선의 발이 두 점 중간이면 √(h²+(L/2)²), 꼭짓점
+    옆이면 h. run_0817_020112 실측(간격 0.342m, 0.6m/s): 주기 0.583s·진폭
+    0.081m 로 이론 0.083m 과 2mm 이내 일치. 실제 수직오차가 0.104m 로 일정한
+    구간에서 0.104~0.17m 를 오갔고, 이 값이 MGM 의 waypoint→lane 전이 게이트
+    (§4 lane_entry_max_cross_m, 기본 0.5m)에 그대로 들어간다.
+    """
+    L, h = 0.342, 0.104                       # 실측과 같은 간격·수직오차
+    track = make_track([(L * i, 0.0) for i in range(60)])
+    eng = PathEngine(track, n_points=5)
+    seen = []
+    for j in range(40):                       # 한 간격을 촘촘히 통과
+        e = 10.0 * L + j * (L / 40.0)
+        seen.append(eng.snapshot(*en_to_latlon(e, h))["cross_track_m"])
+    assert max(seen) - min(seen) < 1e-6, \
+        f"수직거리가 흔들림: {min(seen):.4f}~{max(seen):.4f} (톱니 잔존)"
+    assert abs(seen[0] - h) < 1e-6, f"수직거리 값이 틀림: {seen[0]:.4f} != {h}"
+    # 종전 구현(꼭짓점 거리)이었다면 중간에서 이만큼 부풀었다 — 회귀 감시용
+    assert math.hypot(h, L / 2.0) - h > 0.07
+
+
+def test_approach_angle_has_no_waypoint_ripple():
+    """접근각 α 가 웨이포인트 위상에 따라 흔들리면 안 된다 (2026-08-17).
+
+    α 는 cross_track_m 이 아니라 **부호 있는** 횡오차 e 를 쓴다. 종전 e 는
+    최근접 꼭짓점의 vehicle-frame y 라, 헤딩오차가 있으면 종방향 성분이
+    y 로 새어 들어왔다(누설 ≈ 종방향 offset × sin ψₑ). run_0817_020112 실측:
+    위상에 따라 e 가 0.016m 흔들려 α 에 0.82° 의 가짜 진폭을 만들었다.
+    수선의 발은 정의상 종방향 성분이 0이라 누설이 없다.
+    """
+    L, h = 0.342, 0.104
+    track = make_track([(L * i, 0.0) for i in range(60)])
+    eng = PathEngine(track, n_points=5, lookahead_m=1.0, e_lpf_s=0.0)
+    psi = math.radians(5.0)                   # 누설을 최대로 드러내는 헤딩오차
+    bear = []
+    for j in range(40):
+        e = 10.0 * L + j * (L / 40.0)
+        p = eng.snapshot(*en_to_latlon(e, h), heading=psi)["points"][0]
+        bear.append(math.degrees(math.atan2(p[1], p[0])))
+    assert max(bear) - min(bear) < 0.05, \
+        f"방위가 웨이포인트 위상 따라 {max(bear)-min(bear):.2f}° 흔들림"
+
+
+def test_rejoin_target_min_distance_floor():
+    """목표점 거리는 하한 아래로 내려가지 않는다 (2026-08-17).
+
+    실측상 ref[0] 거리의 81.7% 가 하한에 붙으므로 **실효 이득을 정하는 건
+    상한이 아니라 이 하한**이다. κ=2·sin(b)/d 라 하한이 곧 잡음 증폭률이다.
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0, e_lpf_s=0.0)
+    for cross in (0.0, 0.05, 0.2, 0.5, 2.0):
+        p = eng.snapshot(*en_to_latlon(20.0, cross))["points"][0]
+        d = math.hypot(p[0], p[1])
+        assert d >= min(eng.target_min_m, eng.target_max_m) - 1e-6, \
+            f"cross {cross}m → 목표 {d:.3f}m, 하한 미달"
+    # 하한은 상한을 넘지 않는다 (밴드 밖으로 새지 않게)
+    eng2 = PathEngine(track, n_points=20, lookahead_m=1.0, e_lpf_s=0.0,
+                      target_min_m=5.0, target_max_m=1.8)
+    p2 = eng2.snapshot(*en_to_latlon(20.0, 0.3))["points"][0]
+    assert math.hypot(p2[0], p2[1]) <= 1.8 + 1e-6, "하한이 상한을 넘어 밴드 이탈"
+
+
+def test_e_lpf_attenuates_noise_but_converges():
+    """e 저역통과: 잡음은 줄이되 정상값으로 수렴해야 한다 (2026-08-17).
+
+    ψₑ 에는 걸지 않는다 — run_0817_020112 갱신열에서 Δψₑ 의 lag-1 자기상관은
+    +0.002 로 백색 성분이 없다(진짜 요운동). 백색은 Δα 쪽(−0.142, 54%)이다.
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    tau = 0.15
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0, e_lpf_s=tau)
+
+    def bearing_at(cross, now):
+        p = eng.snapshot(*en_to_latlon(20.0, cross), now=now)["points"][0]
+        return math.degrees(math.atan2(p[1], p[0]))
+
+    # α 포화(|e| ≥ full_cross)를 피해 선형 구간에서만 본다 — 0.1 → 0.4m
+    b0 = bearing_at(0.1, 0.0)                 # 첫 호출 = 리셋 (필터 지연 없음)
+    b_spike = bearing_at(0.4, 0.1)            # 한 틱(0.1s)짜리 튐
+    b_ref = PathEngine(track, n_points=20, lookahead_m=1.0, e_lpf_s=0.0).snapshot(
+        *en_to_latlon(20.0, 0.4))["points"][0]
+    b_raw = math.degrees(math.atan2(b_ref[1], b_ref[0]))
+    # 1차 EMA 이론: k = dt/(τ+dt) = 0.1/0.25 = 0.4 만큼만 따라간다
+    frac = abs(b_spike - b0) / abs(b_raw - b0)
+    assert abs(frac - 0.4) < 0.03, f"한 틱 추종률 {frac:.3f} — EMA 이득이 이론과 다름"
+    # 계속 유지되면 정상값으로 수렴 (정상편차 없음)
+    for k in range(2, 60):
+        b_last = bearing_at(0.4, 0.1 * k)
+    assert abs(b_last - b_raw) < 0.05, f"수렴 실패: {b_last:.3f} != {b_raw:.3f}"
+
+
+def test_e_lpf_off_is_bit_identical_to_no_filter():
+    """rejoin_e_lpf_s=0 이면 필터가 완전히 빠진다 (되돌릴 수 있어야 한다)."""
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    a = PathEngine(track, n_points=20, lookahead_m=1.0, e_lpf_s=0.0)
+    for cross, hd in ((0.3, 0.0), (2.5, -40.0), (4.4, 18.0)):
+        pa = a.snapshot(*en_to_latlon(20.0, cross), heading=math.radians(hd))
+        b = PathEngine(track, n_points=20, lookahead_m=1.0, e_lpf_s=0.0)
+        pb = b.snapshot(*en_to_latlon(20.0, cross), heading=math.radians(hd))
+        assert pa["points"][0] == pb["points"][0]

@@ -66,7 +66,7 @@ struct CoreSnapshot
   bool gps_accel_zone;
   bool gps_parking_zone;
   bool gps_at_end;
-  float gps_cross_track;                  // [m] 트랙 최근접점까지 거리 (재합류 판정)
+  float gps_cross_track;                  // [m] 트랙까지 수직거리 (재합류 판정, GpsPath.msg 참조)
   // 헤딩을 믿어도 되는가 (GpsPath.heading_source != HEADING_TANGENT). 2026-08-16 신설.
   // 접선 폴백은 "최근접 트랙 접선 = 차량 헤딩"을 가정하므로 **ref[0].yaw 가 항상
   // 0 부근으로 나온다** — 즉 차가 실제로 트랙을 등지고 있어도 "정렬됨"으로 보인다.

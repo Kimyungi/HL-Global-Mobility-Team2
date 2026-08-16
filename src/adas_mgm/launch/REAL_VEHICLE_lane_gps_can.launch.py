@@ -158,6 +158,20 @@ def generate_launch_description():
                               description='코스 웨이포인트 CSV (필수)'),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
 
+        # ── GPS 재합류 기하 (2026-08-17). 셋 다 "dSPACE 조향이 느리던 시절"의
+        # 보상값이라 조향 PI 도입 후 재조정 대상이다. 주행 중에도 바꿀 수 있다:
+        #   ros2 param set /stack_gps_node rejoin_full_cross_m 1.0
+        # 빈 값 = stack_gps 노드 기본값 사용(= path_engine.py 의 REJOIN_*).
+        DeclareLaunchArgument('ref_lookahead_m', default_value='1.0'),
+        DeclareLaunchArgument('rejoin_rate_damp_s', default_value='0.0'),
+        DeclareLaunchArgument('rejoin_full_cross_m', default_value='0.5'),
+        DeclareLaunchArgument('rejoin_target_max_m', default_value='1.8'),
+        # 하한 — 실측상 ref[0] 거리의 82%가 하한에 붙으므로 **실효 이득은 이 값이
+        # 정한다**. 1.267(기하 바닥) → 1.8 로 올린 것이 2026-08-17 잡음 대책의 핵심.
+        DeclareLaunchArgument('rejoin_target_min_m', default_value='1.8'),
+        # 접근각이 쓰는 횡오차의 저역통과 [s]. 0 = 끔. ψₑ 쪽엔 절대 걸지 말 것.
+        DeclareLaunchArgument('rejoin_e_lpf_s', default_value='0.15'),
+
         # ── GPS 전용 모드: LANE 전이 차단 (히스테리시스 임계를 2.0으로 — confidence는
         # 최대 1.0이라 절대 도달 불가 → 항상 WAYPOINT). 야간 등 차선 오검출이 위험한
         # 조건에서 사용 (2026-08-12: 야간 오검출 conf 0.71로 LANE 전이 → 벽 방향 조향).
@@ -348,6 +362,18 @@ def generate_launch_description():
                 'waypoint_csv': LaunchConfiguration('waypoint_csv'),
                 'rtcm_host': LaunchConfiguration('rtcm_host'),
                 'error_log_csv': LaunchConfiguration('gps_error_log_csv'),
+                'ref_lookahead_m': ParameterValue(
+                    LaunchConfiguration('ref_lookahead_m'), value_type=float),
+                'rejoin_rate_damp_s': ParameterValue(
+                    LaunchConfiguration('rejoin_rate_damp_s'), value_type=float),
+                'rejoin_full_cross_m': ParameterValue(
+                    LaunchConfiguration('rejoin_full_cross_m'), value_type=float),
+                'rejoin_target_max_m': ParameterValue(
+                    LaunchConfiguration('rejoin_target_max_m'), value_type=float),
+                'rejoin_target_min_m': ParameterValue(
+                    LaunchConfiguration('rejoin_target_min_m'), value_type=float),
+                'rejoin_e_lpf_s': ParameterValue(
+                    LaunchConfiguration('rejoin_e_lpf_s'), value_type=float),
             }],
             output='screen',
             # 이 노드가 죽으면 launch 전체를 내린다 (2026-08-15). 예전에는 혼자

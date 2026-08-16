@@ -28,6 +28,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 from fma_interfaces.msg import EstopRequest, GpsPath, RefPoint
+from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Path
 from rclpy.qos import DurabilityPolicy, QoSProfile
@@ -61,6 +62,28 @@ class StackGpsNode(Node):
         # 주면 도달 곡률 폭주로 풀조향 위빙. 전방 lookahead 점을 첫 점으로.
         # 짧을수록 강한 조향(이기돈 회피=0.4), 트랙 추종은 1.0 권장. 0 = 구동작.
         self.declare_parameter('ref_lookahead_m', 1.0)
+        # ── 재합류 기하 3종 (2026-08-17에 상수 → 파라미터). 셋 다 **dSPACE 조향이
+        # 느리던 시절의 보상값**이라, 조향 특성이 바뀌면 함께 재조정해야 한다.
+        # 주행 중 `ros2 param set /stack_gps_node <이름> <값>` 으로 즉시 반영된다
+        # (RUNBOOK_avoid_field_test.md §5 "GPS 구간만 오실레이션" 행 참조).
+        #   rejoin_rate_damp_s : ψₑ 변화율 선행 보상 [s]. 조향 PI 도입으로 기본 0.
+        #   rejoin_full_cross_m: 접근각 α 가 최대(25°)가 되는 횡오차 [m]. 작을수록
+        #                        고이득 (0.5 = 50°/m). 올리면 이득이 반비례로 감소.
+        #   rejoin_target_max_m: 목표점 거리 상한 [m]. 짧을수록 고이득(κ=2sinb/d).
+        #                        ⚠ 이것만 올려도 안 는다 — 실제 거리는
+        #                        min(트랙점거리, 상한) 이라 ref_lookahead_m 도 같이.
+        #   rejoin_target_min_m: 목표점 거리 **하한** [m] (2026-08-17 신설). 실측상
+        #                        거리는 82%가 하한에 붙어 있으므로 **실효 이득을
+        #                        정하는 건 사실상 이 값**이다. 올리면 잡음 증폭이
+        #                        반비례로 준다. 밴드 [1.27, 1.8] 밖은 미검증.
+        #   rejoin_e_lpf_s     : 접근각이 쓰는 횡오차 e 의 저역통과 [s]. 0 = 끔.
+        #                        ψₑ 에는 걸지 말 것 — 그쪽은 백색 성분이 0이라
+        #                        필터가 실동작만 죽인다(path_engine 클래스 주석).
+        self.declare_parameter('rejoin_rate_damp_s', PathEngine.REJOIN_RATE_DAMP_S)
+        self.declare_parameter('rejoin_full_cross_m', PathEngine.REJOIN_FULL_CROSS_M)
+        self.declare_parameter('rejoin_target_max_m', PathEngine.REJOIN_TARGET_MAX_M)
+        self.declare_parameter('rejoin_target_min_m', PathEngine.REJOIN_TARGET_MIN_M)
+        self.declare_parameter('rejoin_e_lpf_s', PathEngine.REJOIN_E_LPF_S)
         self.declare_parameter('publish_period', 0.1)
         self.declare_parameter('stale_timeout', 1.5)  # [s] 이보다 오래된 fix는 무효
         # v_base(MGM params.yaml)보다 낮아야 이동 중 COG가 잡힌다.
@@ -93,7 +116,20 @@ class StackGpsNode(Node):
         pts = load_waypoints_csv(csv_path, log=self.get_logger().warn)
         self.engine = PathEngine(pts, n_points=int(p('n_points').value),
                                  accel_ranges=accel, parking_ranges=parking,
-                                 lookahead_m=float(p('ref_lookahead_m').value))
+                                 lookahead_m=float(p('ref_lookahead_m').value),
+                                 rate_damp_s=float(p('rejoin_rate_damp_s').value),
+                                 full_cross_m=float(p('rejoin_full_cross_m').value),
+                                 target_max_m=float(p('rejoin_target_max_m').value),
+                                 target_min_m=float(p('rejoin_target_min_m').value),
+                                 e_lpf_s=float(p('rejoin_e_lpf_s').value))
+        self.add_on_set_parameters_callback(self._on_param)
+        self.get_logger().info(
+            f"재합류 기하: lookahead {self.engine.lookahead_m:.2f}m "
+            f"rate_damp {self.engine.rate_damp_s:.2f}s "
+            f"full_cross {self.engine.full_cross_m:.2f}m "
+            f"target_max {self.engine.target_max_m:.2f}m "
+            f"target_min {self.engine.target_min_m:.2f}m "
+            f"e_lpf {self.engine.e_lpf_s:.2f}s")
         self.get_logger().info(
             f"웨이포인트 {len(pts)}개 로드: {csv_path} "
             f"(accel {accel or '없음'}, parking {parking or '없음'})")
@@ -305,6 +341,51 @@ class StackGpsNode(Node):
     def _on_estop(self, msg):
         # estop=false 하트비트(manual_go/stack_estop)가 살아 있는 동안만 GO
         self._go_t = time.monotonic() if not msg.estop else None
+
+    def _on_param(self, params):
+        """재합류 기하 6종의 주행 중 조정 (2026-08-17).
+
+        런북 §5 표의 stack_avoid 노브들과 같은 용법 — 재시작 없이 한 번에 하나씩
+        바꿔 보고, 확정값은 launch 기본값에 반영해야 다음 세션에 살아남는다.
+        판단이 아니라 기하 이득이라 노드에서 직접 반영한다(경로 소스는 그대로).
+        """
+        for prm in params:
+            v = float(prm.value)
+            if prm.name == 'ref_lookahead_m':
+                if v < 0.0:
+                    return SetParametersResult(
+                        successful=False, reason='ref_lookahead_m 은 0 이상')
+                self.engine.set_lookahead(v)
+            elif prm.name == 'rejoin_rate_damp_s':
+                if v < 0.0:
+                    return SetParametersResult(
+                        successful=False, reason='rejoin_rate_damp_s 는 0 이상')
+                self.engine.rate_damp_s = v
+            elif prm.name == 'rejoin_full_cross_m':
+                if v <= 0.0:
+                    return SetParametersResult(
+                        successful=False, reason='rejoin_full_cross_m 은 양수')
+                self.engine.full_cross_m = v
+            elif prm.name == 'rejoin_target_max_m':
+                # 하한(2·R_min·sinβ ≈ 1.27m)보다 낮게 잡아도 하한이 이기므로 무의미
+                if v <= 0.0:
+                    return SetParametersResult(
+                        successful=False, reason='rejoin_target_max_m 은 양수')
+                self.engine.target_max_m = v
+            elif prm.name == 'rejoin_target_min_m':
+                if v <= 0.0:
+                    return SetParametersResult(
+                        successful=False, reason='rejoin_target_min_m 은 양수')
+                self.engine.target_min_m = v
+            elif prm.name == 'rejoin_e_lpf_s':
+                if v < 0.0:
+                    return SetParametersResult(
+                        successful=False, reason='rejoin_e_lpf_s 는 0 이상 (0=끔)')
+                self.engine.e_lpf_s = v
+            else:
+                continue
+            self.get_logger().warn(f"재합류 기하 변경: {prm.name} = {v:.3f}")
+        return SetParametersResult(successful=True)
 
     def report_status(self):
         fix = self.link.latest_fix()
