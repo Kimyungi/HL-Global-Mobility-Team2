@@ -61,11 +61,28 @@ class StackLaneNode(Node):
         self.declare_parameter('n_points', 20)
         self.declare_parameter('points_x_start', 2.5)
         self.declare_parameter('points_x_end', 6.0)
-        # REF_POINT_00 근거리 치환 실험 (2026-08-08, 조향 게인 진단 — lane_path.py
-        # estimate_lane_path() docstring 참조). 기본값(0.0)은 비활성 = 기존 동작 그대로.
-        self.declare_parameter('ref_point0_lookahead_m', 0.0)
+        # REF_POINT_00 근거리 치환 (2026-08-08 도입, 2026-08-16 동적화 — lane_path.py
+        # estimate_lane_path()/_dynamic_ref_point0_lookahead() docstring 참조).
+        # 기본값(0.0)은 비활성 = 기존 동작 그대로. 켜면 이 값은 "차가 차선 중심에
+        # 잘 있을 때(c0 작을 때) 쓰는 가장 공격적인 기준 거리"가 된다 — 실제 매
+        # 프레임 거리는 c0(드리프트)·c2(도로 곡률)에 따라 이 값~points_x_start
+        # 사이에서 동적으로 정해짐. 1.15m = stack_avoid/avoid_to_ref.py가 GPS
+        # candump 실측(run1_20260803/0806)으로 확인한 REF_POINT_00 규약 거리
+        # 중앙값(0.25~0.97m) 근처, 카메라 최소 가시거리(2.5m) 제약 하에서
+        # 시도해볼 첫 값 (2026-08-16 결정, 실차 미검증).
+        self.declare_parameter('ref_point0_lookahead_m', 1.15)
         self.declare_parameter('ref_point0_extrap_mode', 'quadratic')  # 'linear' | 'quadratic'
         self.declare_parameter('ref_point0_min_confidence', 0.5)
+        # c0(다항식 상수항 = x=0에서의 y) 기반 드리프트 판정 구간 — 이 이하면
+        # base_lookahead_m 그대로(공격적), 이 이상이면 points_x_start까지 물러섬
+        # (보수적), 사이는 선형보간. c2(도로 곡률)와 분리된 신호라 S자·급커브에서
+        # 곡률 때문에 y가 커지는 것과 실제 이탈을 구분하기 위함.
+        self.declare_parameter('ref_point0_c0_safe_m', 0.3)
+        self.declare_parameter('ref_point0_c0_unsafe_m', 1.0)
+        # 최소 회전반경 [m] — WHEELTEC 실측치, stack_gps PathEngine.MIN_TURN_RADIUS_M과
+        # 동일 물리 상수. 실제로 고른 거리의 요구 곡률이 이걸 넘으면(|2y|·R_min>d²)
+        # 이유 불문 더 먼 쪽으로 밀어낸다(하드 안전장치).
+        self.declare_parameter('ref_point0_min_turn_radius_m', 1.5)
         # 프레임 간 연속성 체크 (2026-08-08, 편측 오검출 진단 — lane_path.py
         # estimate_lane_path()의 prev_y/max_y_jump_m 참조).
         self.declare_parameter('max_y_jump_m', 1.0)
@@ -106,6 +123,9 @@ class StackLaneNode(Node):
         self.ref_point0_lookahead_m = ref_point0_lookahead_m if ref_point0_lookahead_m > 0.0 else None
         self.ref_point0_extrap_mode = str(self.get_parameter('ref_point0_extrap_mode').value)
         self.ref_point0_min_confidence = float(self.get_parameter('ref_point0_min_confidence').value)
+        self.ref_point0_c0_safe_m = float(self.get_parameter('ref_point0_c0_safe_m').value)
+        self.ref_point0_c0_unsafe_m = float(self.get_parameter('ref_point0_c0_unsafe_m').value)
+        self.ref_point0_min_turn_radius_m = float(self.get_parameter('ref_point0_min_turn_radius_m').value)
         self.max_y_jump_m = float(self.get_parameter('max_y_jump_m').value)
         self.hold_frames = int(self.get_parameter('hold_frames').value)
         self.hold_confidence_decay = float(self.get_parameter('hold_confidence_decay').value)
@@ -157,10 +177,13 @@ class StackLaneNode(Node):
         period = float(self.get_parameter('poll_period_sec').value)
         self.timer = self.create_timer(period, self.tick)
         self.get_logger().info(
-            f'stack_lane_node 준비됨 (ref_point0_lookahead_m={self.ref_point0_lookahead_m}, '
+            f'stack_lane_node 준비됨 (ref_point0_base_lookahead_m={self.ref_point0_lookahead_m}, '
+            f'c0_safe_m={self.ref_point0_c0_safe_m}, c0_unsafe_m={self.ref_point0_c0_unsafe_m}, '
+            f'min_turn_radius_m={self.ref_point0_min_turn_radius_m}, '
             f'extrap_mode={self.ref_point0_extrap_mode}, '
             f'min_confidence={self.ref_point0_min_confidence}) — CSV의 ref_point0_applied/'
-            f'ref_point0_x와 대조해 사후 분석할 것')
+            f'ref_point0_x와 대조해 사후 분석할 것(ref_point0_x가 매 프레임 달라지면'
+            f' 동적 로직이 작동 중인 것)')
 
     def _warmup_model(self) -> None:
         dummy = torch.zeros(1, 3, self.img_size, self.img_size, device=self.device)
@@ -258,6 +281,9 @@ class StackLaneNode(Node):
             ref_point0_lookahead_m=self.ref_point0_lookahead_m,
             ref_point0_extrap_mode=self.ref_point0_extrap_mode,
             ref_point0_min_confidence=self.ref_point0_min_confidence,
+            ref_point0_c0_safe_m=self.ref_point0_c0_safe_m,
+            ref_point0_c0_unsafe_m=self.ref_point0_c0_unsafe_m,
+            ref_point0_min_turn_radius_m=self.ref_point0_min_turn_radius_m,
             prev_y=prev_y, max_y_jump_m=effective_max_jump,
             prev_coeffs=prev_coeffs, coeff_smoothing_alpha=self.coeff_smoothing_alpha)
 

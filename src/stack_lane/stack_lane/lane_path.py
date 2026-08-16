@@ -180,6 +180,52 @@ def _compute_ref_point0(center_coeffs: np.ndarray, *, x_start: float, lookahead_
     return _point_from_fit(center_coeffs, lookahead_m)  # 'quadratic' (또는 그 외 값) 기본 동작
 
 
+def _dynamic_ref_point0_lookahead(coeffs: np.ndarray, *, x_start: float,
+                                   base_lookahead_m: float,
+                                   c0_safe_m: float, c0_unsafe_m: float,
+                                   min_turn_radius_m: float,
+                                   step_m: float = 0.05) -> float:
+    """REF_POINT_00을 얼마나 가깝게 당길지, 현재 프레임 상황에 맞춰 매번 다시 정한다
+    (2026-08-16, 곡선 대응 설계).
+
+    고정 거리 하나로는 두 상황을 동시에 만족 못 시킨다: 직선에서 실제로 이탈했을
+    때(c0 큼) 세게 당기면 조향이 포화돼 위험하고(stack_gps PathEngine의
+    run_0814_195116 사례와 같은 원리 — 이탈이 클수록 가까운 점을 조준하면 도달
+    불가능한 곡률을 요구하게 됨), 반대로 S자·급커브에서는 도로 곡률(c2) 때문에
+    y가 자연히 커지는 것뿐인데 이걸 "이탈"로 오인해서 게인을 낮추면 코너를 못 돈다.
+
+    그래서 두 신호를 분리한다:
+      - c0(다항식 상수항, x=0에서의 y) = "지금 차가 차선 중심에서 얼마나 벗어나
+        있는가"의 근사치. 곡률(c2)·기울기(c1)와 분리된 순수 오프셋이라 도로가
+        휘어도 잘 따라가고 있으면(=차가 그 곡선의 중심에 있으면) 작게 유지된다.
+        c0가 `c0_safe_m` 이하면 가장 공격적인 `base_lookahead_m`을 그대로 쓰고,
+        `c0_unsafe_m` 이상이면 당기지 않고 `x_start`(안전한 원래 값)까지 물러선다.
+        그 사이는 선형보간.
+      - 그렇게 고른 거리에서의 실제 y(곡률까지 반영된 값)로 최소회전반경
+        (`min_turn_radius_m`, WHEELTEC 실측 1.5m — stack_gps
+        PathEngine.MIN_TURN_RADIUS_M과 동일 물리 상수) 도달가능성
+        (|2y|·R_min ≤ d²)을 확인해서, 넘으면 이유 불문하고 x_start 쪽으로
+        밀어낸다 — 이건 이탈이든 진짜 곡선이든 항상 지켜야 하는 하드 안전장치.
+    """
+    c2, c1, c0 = coeffs
+    drift = abs(c0)
+    if drift <= c0_safe_m:
+        candidate = base_lookahead_m
+    elif drift >= c0_unsafe_m:
+        candidate = x_start
+    else:
+        frac = (drift - c0_safe_m) / (c0_unsafe_m - c0_safe_m)
+        candidate = base_lookahead_m + frac * (x_start - base_lookahead_m)
+
+    d = candidate
+    while d < x_start:
+        y_d = c2 * d * d + c1 * d + c0
+        if abs(2.0 * y_d) * min_turn_radius_m <= d * d:
+            break
+        d += step_m
+    return min(d, x_start)
+
+
 def _is_plausible(points: list[PathPoint]) -> bool:
     """다항식 외삽이 물리적으로 타당한 범위 안에 있는지. yaw는 검사 안 함(근거는
     모듈 상단 주석 — 급커브와 오검출을 각도만으론 구분 못 함)."""
@@ -192,6 +238,9 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
                         ref_point0_lookahead_m: float | None = None,
                         ref_point0_extrap_mode: str = "quadratic",
                         ref_point0_min_confidence: float = 0.5,
+                        ref_point0_c0_safe_m: float = 0.3,
+                        ref_point0_c0_unsafe_m: float = 1.0,
+                        ref_point0_min_turn_radius_m: float = 1.5,
                         prev_y: float | None = None, max_y_jump_m: float = 1.0,
                         prev_coeffs: np.ndarray | None = None, coeff_smoothing_alpha: float = 1.0,
                         fit_kwargs: dict | None = None,
@@ -200,11 +249,14 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
     그보다 가까운 구간은 실측 근거 없이 다항식을 외삽하는 것이라 신뢰도가 낮음.
     points_x_end 기본값은 grid.x_max(현재 6.0m, GPS 실측 범위와 유사).
 
-    ref_point0_* 세 파라미터는 2026-08-08 조향 게인 진단에서 나온 실험용 옵션
-    (모듈 docstring 최신 항목 참조) — dSPACE가 points[0](REF_POINT_00)만 실제
-    조향 계산에 쓰는 것으로 확인됨(avoid_to_ref.py 주석, GPS 실측). 기본값
-    (ref_point0_lookahead_m=None)은 기존 동작과 완전히 동일 — 셋 다 명시적으로
-    켜야 적용된다.
+    ref_point0_lookahead_m은 이제 **고정 거리가 아니라 "차가 차선 중심에
+    잘 있을 때(c0 작을 때) 쓰는 가장 공격적인 기준값"**이다(2026-08-16 개정 —
+    근거·수식은 `_dynamic_ref_point0_lookahead()` docstring 참조). 실제로 매
+    프레임 적용되는 거리는 c0(드리프트)·c2(도로 곡률)를 반영해 base_lookahead_m
+    ~ points_x_start 사이에서 매번 다시 계산된다. ref_point0_c0_safe_m/
+    ref_point0_c0_unsafe_m/ref_point0_min_turn_radius_m이 그 계산의 나머지
+    입력값. 기본값(ref_point0_lookahead_m=None)은 기존 동작과 완전히 동일 —
+    명시적으로 켜야 적용된다.
 
     prev_y/max_y_jump_m: 프레임 간 연속성 체크 (2026-08-08, 편측 오검출 진단) —
     fit_lane()은 매 프레임 후보를 처음부터 새로 찾기 때문에(직전 프레임 기억 없음),
@@ -274,8 +326,15 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
     x, y, yaw, curvature = lookahead_from_fit(smoothed_coeffs, lookahead_m)
     points = sample_path_points(smoothed_coeffs, points_x_start, x_end, n_points)
 
+    effective_lookahead_m = None
+    if ref_point0_lookahead_m is not None and ref_point0_lookahead_m > 0.0:
+        effective_lookahead_m = _dynamic_ref_point0_lookahead(
+            smoothed_coeffs, x_start=points_x_start, base_lookahead_m=ref_point0_lookahead_m,
+            c0_safe_m=ref_point0_c0_safe_m, c0_unsafe_m=ref_point0_c0_unsafe_m,
+            min_turn_radius_m=ref_point0_min_turn_radius_m)
+
     near_pt = _compute_ref_point0(
-        smoothed_coeffs, x_start=points_x_start, lookahead_m=ref_point0_lookahead_m,
+        smoothed_coeffs, x_start=points_x_start, lookahead_m=effective_lookahead_m,
         extrap_mode=ref_point0_extrap_mode, confidence=confidence,
         min_confidence=ref_point0_min_confidence)
     ref_point0_applied = near_pt is not None
