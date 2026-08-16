@@ -271,3 +271,42 @@ if __name__ == "__main__":
         fn()
         print(f"OK  {fn.__name__}")
     print(f"\n{len(fns)}개 테스트 전부 통과")
+
+
+def test_rejoin_approach_angle_stops_overturning():
+    """이미 접근각을 넘겨 돌았으면 재합류 방위가 **반대로** 나와야 한다 (2026-08-16).
+
+    종전엔 트랙 점 방위를 25°로 클램프만 해서, 차가 충분히 돌아섰는데도 횡오차가
+    남아 있으면 계속 "더 꺾어라"를 냈다 — 적분기에 브레이크가 없는 꼴이라 트랙을
+    직각으로 가로질렀다. run_0816_194948: 복귀는 성공(cross 2.87→0.15m)했으나
+    t=59~68 10초 내내 방위 −25.5° 포화로 헤딩이 67° 과회전, 도달 시점 헤딩오차가
+    +74.5° 라 그대로 통과해 반대편 1.7m 까지 이탈했다.
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    # 트랙(+동)에서 좌측 2.5m, 트랙 쪽(우측)으로 이미 40° 꺾어 접근 중 —
+    # 접근각 상한(25°)을 넘겼으므로 되돌려야 한다.
+    snap = eng.snapshot(*en_to_latlon(20.0, 2.5), heading=math.radians(-40.0))
+    x, y = snap["points"][0][0], snap["points"][0][1]
+    bearing = math.degrees(math.atan2(y, x))
+    assert bearing > 2.0, f"과회전인데 방위 {bearing:.1f}° — 되돌리지 않음"
+    assert bearing <= math.degrees(PathEngine.MAX_TARGET_BEARING_RAD) + 1e-6
+
+    # 아직 덜 돌았으면 계속 트랙 쪽으로 꺾어야 한다 (부호 반대)
+    snap2 = eng.snapshot(*en_to_latlon(20.0, 2.5), heading=math.radians(0.0))
+    x2, y2 = snap2["points"][0][0], snap2["points"][0][1]
+    assert math.degrees(math.atan2(y2, x2)) < -2.0, "덜 돌았는데 트랙 쪽으로 안 꺾음"
+
+
+def test_rejoin_approach_angle_scales_down_near_track():
+    """트랙에 가까워지면 접근각이 줄어 **접선으로** 붙어야 한다 (직각 통과 방지)."""
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    prev = None
+    for cross in (2.0, 1.0, 0.5, 0.2):
+        snap = eng.snapshot(*en_to_latlon(20.0, cross), heading=math.radians(0.0))
+        x, y = snap["points"][0][0], snap["points"][0][1]
+        b = abs(math.degrees(math.atan2(y, x)))
+        if prev is not None:
+            assert b <= prev + 1e-6, f"cross {cross}m 에서 접근각이 되레 커짐"
+        prev = b
