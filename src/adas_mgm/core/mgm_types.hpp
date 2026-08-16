@@ -67,6 +67,15 @@ struct CoreSnapshot
   bool gps_parking_zone;
   bool gps_at_end;
   float gps_cross_track;                  // [m] 트랙 최근접점까지 거리 (재합류 판정)
+  // 헤딩을 믿어도 되는가 (GpsPath.heading_source != HEADING_TANGENT). 2026-08-16 신설.
+  // 접선 폴백은 "최근접 트랙 접선 = 차량 헤딩"을 가정하므로 **ref[0].yaw 가 항상
+  // 0 부근으로 나온다** — 즉 차가 실제로 트랙을 등지고 있어도 "정렬됨"으로 보인다.
+  // run_0816_184505: 회피 중 130° 돌아버린 차가 역방향 가드에 걸려 정지 → 정지하니
+  // COG(속도 문턱 0.25m/s)가 무효 → 접선 폴백이 "오차 0°"를 내놓음 → 가드 해제 →
+  // 엉뚱한 방향으로 재출발 → 속도 붙자 COG 복귀 → 다시 130° → 정지. 이 왕복이
+  // 반복되며 횡오차가 2.7→5.1m 로 벌어졌다. (COG 자체는 정상이었다 — 값을 wrap 하면
+  // +85~+111° 로 일관됐고, 차가 진짜로 트랙 방향과 130° 틀어져 있었다.)
+  bool gps_heading_valid;
   // 이번 틱에 해당 소스의 **새 메시지**가 도착했는지 (wrapper가 수신 시각으로 판정).
   // §5.8 이동 보정의 "새 추론 미도착" 판정 근거. 값 동일성으로 판정하면 인지가
   // 의도적으로 상수를 낼 때(회피 통과 유지점 (1.5,0)) 영원히 낡은 것으로 오판해
@@ -145,7 +154,9 @@ struct CoreState
   uint8_t state;                          // MGM_STATE_*
   int32_t lane_low_cnt;
   int32_t lane_high_cnt;
-  int32_t wrongway_cnt;                   // 역방향 지속 카운터 (waypoint, §4)
+  int32_t wrongway_cnt;                   // 역방향 지속 카운터 (헤딩 신뢰 시에만 셈)
+  int32_t wrongway_ok_cnt;                // 정렬 지속 카운터 — 래치 해제용 (같은 조건)
+  bool wrongway_latched;                  // 역방향 래치 (§4) — 신뢰 가능한 정렬로만 해제
   int32_t return_hold_left;               // >0이면 waypoint→lane 전이 보류 (avoid 복귀 직후)
   int32_t avoid_ticks;                    // AVOID 지속 틱 (avoid_max_cycles 상한 판정)
   bool at_end_latched;                    // 종점 도달 래치 — estop 인가 시 해제 (§4)

@@ -17,6 +17,7 @@ stack_gps 노드의 로직 코어. CLAUDE.md §5.5의 정신에 따라 ROS 없�
 """
 import csv
 import math
+import time
 
 M_PER_DEG_LAT = 111_320.0
 
@@ -86,6 +87,26 @@ class PathEngine:
     # 약해지는 양의 되먹임**이 된다 — 실측에서 명령 선회반경이 이탈과 함께
     # 3.4m(cross 1.7m)에서 6.3m(cross 5.0m)로 되레 완만해졌다.
     REJOIN_TARGET_MAX_M = 1.8
+    # 재합류 접근각 α 가 최대(MAX_TARGET_BEARING_RAD)가 되는 횡오차 [m].
+    # 이보다 가까우면 비례해서 접근각을 줄여 트랙에 **접선으로** 붙는다 —
+    # 직각으로 꽂히면 그대로 통과해 반대편으로 나간다(run_0816_194948:
+    # 도달 시점 헤딩오차 +74.5°, 반대편 1.7m 까지 이탈).
+    # α 가 최대가 되는 횡오차 [m]. 근접 이득을 트랙 점과 비슷하게 유지하려면
+    # 작아야 한다 — 트랙 점의 실효 이득이 ~52°/m 인데 α_max/FULL 이 그보다 훨씬
+    # 작으면 온트랙 추종이 굼떠진다(3.0 이면 8.3°/m 로 6배 약함).
+    # 0.5 → α_max/FULL = 50°/m 로 트랙 점과 비슷하다.
+    REJOIN_FULL_CROSS_M = 0.5
+    # ψₑ 변화율 감쇠 시상수 [s]. **오버슈트의 원인은 이득이 아니라 지연이다** —
+    # run_0816_200226 실측: 명령이 t=76.0 에 이미 뒤집혔는데 차는 약 1초 뒤
+    # (t=77.25)에야 선회를 멈췄고 그 사이 ψₑ가 −19°→−49° 로 30° 더 넘어갔다
+    # (조향 응답 지연 0.18~0.44s + 선회 관성). 이득을 깎아 대응하면 근접 추종이
+    # 같이 죽으므로, 변화율 항으로 **미리 되돌린다**:
+    #     b = ψₑ + sign(e)·α + T_d · dψₑ/dt
+    # 같은 궤적 대입 — 되돌림 시작이 t=76.0 → t≈75.2 로 앞당겨진다.
+    # 0.6s 근거: 관측 지연(약 1s)보다 짧게 잡아 과감쇠·잡음 증폭을 피한다.
+    # 변화율은 EMA로 저역통과한다(GPS 헤딩 10Hz).
+    REJOIN_RATE_DAMP_S = 0.6
+    REJOIN_RATE_EMA = 0.5
 
     def __init__(self, latlon_pts, n_points=30,
                  accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0,
@@ -99,6 +120,9 @@ class PathEngine:
         self.accel_ranges = list(accel_ranges)
         self.parking_ranges = list(parking_ranges)
         self.lookahead_m = float(lookahead_m)
+        self._prev_psi_e = None      # 재합류 감쇠항용 — 직전 헤딩오차와 시각
+        self._prev_psi_t = None
+        self._psi_rate = 0.0         # [rad/s] EMA 저역통과된 dψₑ/dt
 
         lat0, lon0 = latlon_pts[0]
         self._lat0, self._lon0 = lat0, lon0
@@ -191,7 +215,7 @@ class PathEngine:
             return fallback
         return min(idx + self._la_pts, last)
 
-    def snapshot(self, lat, lon, heading=None):
+    def snapshot(self, lat, lon, heading=None, now=None):
         """현재 fix → dict(points, accel_zone, parking_zone, idx, cross_track_m).
 
         points: [(x, y, yaw, curvature)] vehicle frame, 최근접점부터 앞으로
@@ -224,13 +248,40 @@ class PathEngine:
         # 둔다 — MGM 역방향 가드가 ref[0].yaw를 "트랙 대비 차 방향"으로 해석하기 때문.
         if points and self.lookahead_m > 0.0:   # lookahead 끔 = 구동작 완전 보존
             px, py, pyaw, pcurv = points[0]
-            bearing = math.atan2(py, px)
-            if abs(bearing) > self.MAX_TARGET_BEARING_RAD:
-                b = math.copysign(self.MAX_TARGET_BEARING_RAD, bearing)
-                d = min(math.hypot(px, py), self.REJOIN_TARGET_MAX_M)
-                d = max(d, 2.0 * self.MIN_TURN_RADIUS_M *
-                        math.sin(self.MAX_TARGET_BEARING_RAD))
-                points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
+            # ★ 조건 없이 **항상** 접근각 법칙으로 첫 점을 만든다 (2026-08-16).
+            #   종전엔 "트랙 점 방위 > 25°" 일 때만 치환해서, 복귀 막바지에 두 제어법
+            #   사이를 10Hz로 오가며 명령이 튀었다 — run_0816_200949 t=59.7~62.0:
+            #     +12.7° → −24.3° → +12.6° → −18.2° → −3.3° → +17.5°
+            #   경계를 넘나들 때마다 30° 씩 뒤집히니 차가 어느 쪽도 못 따라간다.
+            #   ("복귀는 하는데 그 뒤로 이상해진다"의 정체)
+            #
+            #   접근각 법칙은 이탈량에 관계없이 정의되므로 분기가 필요 없다.
+            #   정상 온트랙 주행(cross 0.03~0.17m)에 대입해 확인했다 — 트랙 점을
+            #   그대로 쓸 때와 명령 차이가 **±1~2°**(최대 4.65°)로 무시할 수준이다.
+            #   e→0 이면 α→0 이라 b→ψₑ 로 수렴해 트랙 방향 정렬만 남는다.
+            de0, dn0 = self.e[idx] - ev, self.n[idx] - nv
+            e_signed = -s * de0 + c * dn0        # 최근접 트랙점의 차량 좌표 y (좌 +)
+            # ψₑ 변화율 (감쇠항) — dt 이상치는 무시하고 EMA 로 저역통과
+            if now is None:
+                now = time.monotonic()
+            if self._prev_psi_t is not None:
+                dt = now - self._prev_psi_t
+                if 0.0 < dt < 1.0:
+                    raw = wrap_angle(pyaw - self._prev_psi_e) / dt
+                    self._psi_rate = (self.REJOIN_RATE_EMA * raw +
+                                      (1.0 - self.REJOIN_RATE_EMA) * self._psi_rate)
+            self._prev_psi_e, self._prev_psi_t = pyaw, now
+
+            alpha = self.MAX_TARGET_BEARING_RAD * min(
+                1.0, abs(e_signed) / max(self.REJOIN_FULL_CROSS_M, 1e-6))
+            b = (pyaw + math.copysign(alpha, e_signed) +
+                 self.REJOIN_RATE_DAMP_S * self._psi_rate)
+            b = max(-self.MAX_TARGET_BEARING_RAD,
+                    min(self.MAX_TARGET_BEARING_RAD, b))
+            d = min(math.hypot(px, py), self.REJOIN_TARGET_MAX_M)
+            d = max(d, 2.0 * self.MIN_TURN_RADIUS_M *
+                    math.sin(self.MAX_TARGET_BEARING_RAD))
+            points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
 
         return {
             "points": points,

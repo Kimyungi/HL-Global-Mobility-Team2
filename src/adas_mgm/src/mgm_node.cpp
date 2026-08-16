@@ -72,6 +72,8 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   s.gps_parking_zone = m.gps.parking_zone;
   s.gps_at_end = m.gps.at_end;
   s.gps_cross_track = m.gps.cross_track_m;
+  // 접선 폴백(HEADING_TANGENT)은 헤딩을 모를 때의 가정이라 신뢰 불가 (§4 역방향 래치)
+  s.gps_heading_valid = (m.gps.heading_source != fma_interfaces::msg::GpsPath::HEADING_TANGENT);
   s.avoid_obstacle_detected = m.avoid.obstacle_detected;
   s.avoid_avoidable = m.avoid.avoidable;
   s.avoid_ttc = m.avoid.ttc;

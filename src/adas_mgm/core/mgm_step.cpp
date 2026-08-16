@@ -49,11 +49,33 @@ void transition(const CoreSnapshot & s, CoreState & st)
   st.lane_low_cnt = (s.lane_confidence < st.params.lane_conf_exit) ? st.lane_low_cnt + 1 : 0;
   st.lane_high_cnt = (s.lane_confidence > st.params.lane_conf_return) ? st.lane_high_cnt + 1 : 0;
 
-  // 역방향 카운터 (§4 waypoint) — GPS 경로 첫 점의 상대 yaw가 임계를 넘으면
-  // 차가 경로를 등진 것 (유턴 후 트랙 역추종, 2026-08-03 2회 재현)
+  // 역방향 판정 (§4 waypoint) — GPS 경로 첫 점의 상대 yaw가 임계를 넘으면
+  // 차가 경로를 등진 것 (유턴 후 트랙 역추종, 2026-08-03 2회 재현).
+  //
+  // ★ **헤딩을 믿을 수 있을 때만 센다** (2026-08-16). 접선 폴백은 "최근접 트랙
+  //   접선 = 차량 헤딩" 가정이라 ref[0].yaw 가 항상 0 부근으로 나온다 — 차가
+  //   트랙을 등지고 있어도 "정렬됨"으로 보인다. 그래서 종전 구현은 다음 왕복에
+  //   빠졌다(run_0816_184505): 역방향 감지 → 정지 → 정지하니 COG 무효(속도 문턱)
+  //   → 접선 폴백이 "오차 0°" → 가드 해제 → 엉뚱한 방향으로 재출발 → 속도 붙자
+  //   COG 복귀 → 다시 역방향 → 정지. 횡오차가 2.7→5.1m 로 벌어졌다.
+  //   신뢰 불가 구간에서는 두 카운터 모두 **정지**시켜 래치 상태를 보존한다.
+  const bool head_ok = s.gps_heading_valid && s.gps_path.n > 0;
   const float y0 = (s.gps_path.n > 0) ? s.gps_path.pts[0].yaw : 0.0f;
   const bool wrongway = (y0 > st.params.wrongway_yaw) || (y0 < -st.params.wrongway_yaw);
-  st.wrongway_cnt = wrongway ? st.wrongway_cnt + 1 : 0;
+  if (head_ok) {
+    st.wrongway_cnt = wrongway ? st.wrongway_cnt + 1 : 0;
+    st.wrongway_ok_cnt = wrongway ? 0 : st.wrongway_ok_cnt + 1;
+  }
+  // 역방향 **래치** — 한 번 걸리면 "신뢰 가능한 헤딩으로 정렬됐음"이 확인될 때까지
+  // 유지한다. 해제 조건을 신뢰 가능한 헤딩으로 못박는 것이 위 왕복을 끊는 핵심이다.
+  // at_end 래치와 마찬가지로 실제 EstopRequest 인가로도 해제된다(run 종료·재준비).
+  if (s.estop_latch_release) {
+    st.wrongway_latched = false;
+  } else if (st.wrongway_cnt >= st.params.wrongway_cycles) {
+    st.wrongway_latched = true;
+  } else if (head_ok && st.wrongway_ok_cnt >= st.params.wrongway_cycles) {
+    st.wrongway_latched = false;
+  }
 
   // 종점 래치 (§4) — 정지 후 미세하게 밀려 최근접점이 뒤로 바뀌면 at_end가
   // 풀려 재출발·유턴하던 것 방지 (2026-08-03 직선 run 실사례). 해제는 **실제
@@ -149,6 +171,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
     st.lane_low_cnt = 0;
     st.lane_high_cnt = 0;
     st.wrongway_cnt = 0;
+    st.wrongway_ok_cnt = 0;   // 래치(wrongway_latched)는 리셋하지 않는다 — 스테이트가
+                              // 바뀐다고 차가 트랙 방향으로 돌아선 것은 아니다.
   }
   // AVOID 지속 틱 — 상한 판정용. AVOID를 벗어나면 0으로 (재진입 시 다시 셈).
   st.avoid_ticks = (st.state == MGM_STATE_AVOID) ? st.avoid_ticks + 1 : 0;
@@ -176,9 +200,7 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         // 이미 갱신했으므로 여기서 s.gps_at_end를 또 볼 필요가 없다 — 유효성
         // 게이트(gps_path.n>0)·parking 제외도 거기 한 곳에만 둔다.
         out.v_ref = 0.0f;
-      } else if (st.state == MGM_STATE_WAYPOINT &&
-        st.wrongway_cnt >= st.params.wrongway_cycles)
-      {
+      } else if (st.state == MGM_STATE_WAYPOINT && st.wrongway_latched) {
         out.v_ref = 0.0f;  // 역방향 — 경로를 등진 채 주행 금지 (§4, 2026-08-03)
       } else if (s.gps_accel_zone) {
         out.v_ref = st.params.v_accel_zone;
@@ -325,12 +347,36 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     // y/yaw/curvature는 보정하지 않음(차로 진행방향 유지 가정) — 이 근사가 틀리는
     // 급커브 등은 어차피 다음 실제 인지값(21Hz)이 금방 덮어써서 누적되지 않음.
     const float dx = st.v * MGM_PERIOD_S;
-    for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-      // 하한: 첫 점이 차 뒤로 가면 전진밖에 못 하는 차에게 도달 불가능한 목표가
-      // 된다. 감쇠는 "인지가 잠깐 늦은 동안의 보정"이지 목표를 뒤로 보내는
-      // 수단이 아니다 — 안전 불변식으로 고정한다 (2026-08-14).
-      st.ref_out[i].x = (st.ref_out[i].x - dx > MGM_MIN_REF_X)
-        ? st.ref_out[i].x - dx : MGM_MIN_REF_X;
+    if (n == 1) {
+      // ── 단일점 소스(avoid)는 **원본 목표에 감쇠하고 다시 보간**한다 (2026-08-16).
+      // 보간된 20점을 각각 깎으면 방위가 쓸린다: 첫 점이 목표의 1/20(1.5m 목표 →
+      // 7.5cm)이라 틱당 dx(0.6cm @0.6m/s)가 상대적으로 8%씩 먹어, dSPACE가 보는
+      // κ=2y/L² 과 방위가 매 인지 주기마다 톱니로 요동친다.
+      //   실측 run_0816_175102 정상 회피 중(det=1, 목표 |y|>0.05m):
+      //     틱 간 방위 점프 중앙값 0.28° · p90 1.00° · **최대 9.0°**
+      //     (t=40.38~40.41: −20.6→−21.6→−22.6→−23.7° 로 쓸리다 새 인지에 −14.7° 로 리셋)
+      //   같은 결함이 y를 키우면 폭주한다 — 2026-08-16에 통과 대기 유지점을
+      //   트랙 헤딩만큼 회전시켰더니 y가 0이 아니게 되면서 방위 점프가 41~55°까지
+      //   갔고 회피가 성립하지 못해 TTC 바닥에 걸렸다(run_0816_180531, 즉시 복구).
+      // 물리적으로도 이쪽이 맞다 — 차가 전진하면 목표까지 **거리**가 줄지 방위가
+      // 휘지 않는다. 보간점은 실제 웨이포인트가 아니라 목표 방위를 싣는 대리점이다.
+      // 다점 소스(gps/lane 20점)는 실제 경로점이므로 종전대로 x만 깎는다.
+      CorePoint tgt = st.ref_out[MGM_NUM_POINTS - 1];   // 보간 규약상 마지막 점 = 원본 목표
+      constexpr float kMinTargetX = MGM_MIN_REF_X * static_cast<float>(MGM_NUM_POINTS);
+      tgt.x = (tgt.x - dx > kMinTargetX) ? tgt.x - dx : kMinTargetX;
+      for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
+        const float t = static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
+        st.ref_out[i].x = tgt.x * t;
+        st.ref_out[i].y = tgt.y * t;
+      }
+    } else {
+      for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
+        // 하한: 첫 점이 차 뒤로 가면 전진밖에 못 하는 차에게 도달 불가능한 목표가
+        // 된다. 감쇠는 "인지가 잠깐 늦은 동안의 보정"이지 목표를 뒤로 보내는
+        // 수단이 아니다 — 안전 불변식으로 고정한다 (2026-08-14).
+        st.ref_out[i].x = (st.ref_out[i].x - dx > MGM_MIN_REF_X)
+          ? st.ref_out[i].x - dx : MGM_MIN_REF_X;
+      }
     }
   } else {
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {

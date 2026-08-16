@@ -179,6 +179,7 @@ class StackGpsNode(Node):
         fix = self.link.latest_fix()
         if fix is None or fix[4] > self.stale_timeout or fix[3] == 0:
             msg.fix_quality = 0
+            msg.heading_source = GpsPath.HEADING_TANGENT   # fix 없음 → 헤딩도 신뢰 불가
             self.pub.publish(msg)
             return
 
@@ -243,6 +244,14 @@ class StackGpsNode(Node):
         msg.at_end = snap['at_end']
         msg.fix_quality = quality
         msg.cross_track_m = float(snap['cross_track_m'])
+        # 헤딩 신뢰도를 계약에 실는다 (2026-08-16 신설, GpsPath.msg 주석 참조).
+        # MGM이 "이 헤딩을 믿어도 되는가"를 알아야 역방향 가드·재합류를 안전하게
+        # 판단할 수 있다 — 접선 폴백은 이탈 상태에서 가정이 깨지고, COG는 저속에서
+        # 무작위가 된다.
+        msg.heading_source = (
+            GpsPath.HEADING_FUSED if self._heading_src == '융합'
+            else GpsPath.HEADING_COG if self._heading_src == 'COG'
+            else GpsPath.HEADING_TANGENT)
         self.pub.publish(msg)
         self._last_snap = snap
 

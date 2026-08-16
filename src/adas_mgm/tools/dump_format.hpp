@@ -20,7 +20,9 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v2 (2026-08-14): CoreSnapshot에 gps_cross_track 추가 — v1 덤프는 레이아웃이
 // 달라 재생 불가(헤더의 snapshot_size 검사가 잡는다). CoreParams는 뒤에만 추가하면
 // core_replay가 옛 크기를 읽어 기본값으로 채우므로 버전을 올리지 않아도 된다.
-constexpr uint32_t kDumpVersion = 2;
+// v3 (2026-08-16): CoreSnapshot에 gps_heading_valid 추가 — v2 덤프는 레이아웃이
+// 달라 재생 불가(snapshot_size 검사가 잡는다).
+constexpr uint32_t kDumpVersion = 3;
 
 struct DumpHeader
 {
