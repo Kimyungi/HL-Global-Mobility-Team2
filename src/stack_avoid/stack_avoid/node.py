@@ -459,10 +459,10 @@ class StackAvoidNode(Node):
             self._prev_center = None       # 목표 소실 → 이력 리셋
             return None
         center = min(reach, key=abs)   # 직진에서 가장 덜 벗어나는 열림 (이미 clamp 불필요)
-        center = self._rate_limit(scan, obs_x, center)
+        center = self._rate_limit(scan, obs_x, center, ys, clear)
         return self._rp(obs_x, center)
 
-    def _rate_limit(self, scan, obs_x, center):
+    def _rate_limit(self, scan, obs_x, center, ys=None, clear=None):
         """목표 y 의 프레임 간 변화를 제한한다 (급변 억제).
 
         ★ 왜 필요한가 (2026-08-10 실측). 열림이 바뀌면 목표 y 가 한 프레임에 1.5m 씩
@@ -492,7 +492,25 @@ class StackAvoidNode(Node):
             step = self.target_rate_mps * dt
             if abs(center - prev) > step:
                 limited = prev + math.copysign(step, center - prev)
-                if not self._behind_surface(scan, obs_x, limited):
+                # ★ 중간값이 blocker 를 **스치거나 관통**하면 쓰지 않고 그냥 점프한다
+                #   (2026-08-16 실차 규명). _behind_surface 만으로는 못 막는다 —
+                #   그건 표면 **뒤**로 들어간 목표를 거르는데, 목표가 표면 **위**에
+                #   있으면 tr ≈ nearest 라 `tr > nearest + TOL` 이 성립하지 않아
+                #   통과해버린다.
+                #
+                #   실측 run_0816_182715 두 번째 장애물: 후보는 −0.82 / +0.63 으로
+                #   안정적인데, 선택이 좌↔우로 바뀌자 rate limiter 가 목표를
+                #   0.30m/프레임(= target_rate_limit_mps 3.0 × 0.1s)으로 끌고 가며
+                #   −1.56 → −0.55 → **+0.04** → +1.18 로 걸어갔다. blocker y 범위가
+                #   [−0.36, +0.17] 이라 +0.04 는 콘 한복판을 조준한 것이고, 그 1초
+                #   동안 차가 계속 접근해 estop 거리에 들어갔다.
+                #
+                #   판정은 열림 후보와 **같은 기준**(편측 여유 clear)을 쓴다. 후보는
+                #   구성상 이미 이를 만족하므로(바깥 후보는 정확히 clear, 사이 후보는
+                #   pass_w/2 = clear 이상) 정상 목표를 막지 않는다.
+                near_ok = (not ys) or (clear is None) or all(
+                    abs(limited - y) >= clear - 1e-6 for y in ys)
+                if near_ok and not self._behind_surface(scan, obs_x, limited):
                     center = limited
         self._prev_center = center
         self._prev_center_t = self.get_clock().now().nanoseconds * 1e-9
