@@ -220,6 +220,12 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         // 종방향은 회피 기하가 결정, 여유 폭 좁으면 감속
         out.v_ref = s.avoid_narrow_gap ?
           min_f(s.avoid_v_suggest, st.params.v_narrow) : s.avoid_v_suggest;
+        // AVOID 전용 속도 상한 (§4 스테이트별 속도). 0 이하면 상한 없음 = 구동작.
+        // stack_avoid의 target_speed_mps를 내리지 않는 이유는 mgm_types.hpp의
+        // v_avoid 주석 참조 — 그 값은 TTC 자차속도도 겸해서 내리면 TTC가 부풀어 오른다.
+        if (st.params.v_avoid > 0.0f) {
+          out.v_ref = min_f(out.v_ref, st.params.v_avoid);
+        }
       }
       break;
 

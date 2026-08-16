@@ -171,6 +171,9 @@ public:
     // AVOID 최대 지속 틱 (0 이하 = 상한 없음)
     p.avoid_max_cycles =
       static_cast<int32_t>(declare_parameter<int>("avoid_max_cycles", 1200));
+    // 0 = 상한 없음(구동작). params.yaml 미적용 launch에서 조용히 감속되지 않도록
+    // 기본값은 끔으로 둔다 — 켜는 건 params.yaml의 명시적 선택이어야 한다.
+    p.v_avoid = static_cast<float>(declare_parameter<double>("v_avoid", 0.0));
     mgm_init(core_state_, p);
 
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기

@@ -601,6 +601,18 @@ def state_legend(ax, states):
               title="배경색 = 주행 스테이트", title_fontsize=9)
 
 
+def geom_split(geom, dist, near_m=0.5):
+    """ref 기하 δ 를 '믿을 구간 / 못 믿을 구간'으로 쪼갠다.
+
+    κ=2y/d² 는 거리의 제곱에 반비례한다 — 전환 블렌드(10틱)나 회피의 보상 기하처럼
+    ref[0]이 코앞이면 방향이 그대로여도 환산값이 폭발한다. 그 구간을 실선으로 그리면
+    "명령이 튀었다"로 오독된다 → 점선으로 끊어 표시하고, 포화(±27.3°)도 같이 묶는다."""
+    bad = (dist < near_m) | (np.abs(geom) >= MAX_STEER_DEG - 0.01)
+    bad = np.nan_to_num(bad, nan=0).astype(bool)
+    wide = bad | np.roll(bad, 1) | np.roll(bad, -1)      # 실선과 점선이 맞닿게 1샘플 확장
+    return np.where(~bad, geom, np.nan), np.where(wide, geom, np.nan)
+
+
 def pick_waypoints(lat, wp_dir="src/stack_gps/waypoints"):
     """이 run이 쓴 트랙 CSV 찾기 — 후보마다 궤적까지의 거리를 재서 stack_gps가 기록한
     `cross_track_m`과 맞는 것을 고른다 (추측이 아니라 검산으로 고른다)."""
@@ -643,7 +655,7 @@ def make_state_panels(m, out_dir, title):
     GAP = 1.0
     fig, axes = plt.subplots(len(states), 2, figsize=(13.5, 3.1 * len(states)),
                              squeeze=False, gridspec_kw=dict(hspace=0.45, wspace=0.16))
-    keys = ["str_geom_deg", "str_cmd_deg", "str_act_deg", "v_ref", "v_act"]
+    keys = ["str_geom_deg", "str_cmd_deg", "str_act_deg", "v_ref", "v_act", "ref0_dist_m"]
     for r, s in enumerate(states):
         segs = [(a, b) for a, b, ss in segments(st, t) if ss == s and b - a >= 20]
         xs, parts, bounds, off = [], {k: [] for k in keys}, [], 0.0
@@ -661,7 +673,10 @@ def make_state_panels(m, out_dir, title):
         p = {k: np.concatenate(v) for k, v in parts.items()}
 
         ax = axes[r][0]
-        ax.plot(x, p["str_geom_deg"], color=C_GEOM, lw=1.0, label="상위 목표 δ (ref 기하)")
+        g_ok, g_bad = geom_split(p["str_geom_deg"], p["ref0_dist_m"])
+        ax.plot(x, g_ok, color=C_GEOM, lw=1.0, label="상위 목표 δ (ref 기하)")
+        ax.plot(x, g_bad, color=C_GEOM, lw=1.0, ls=(0, (2, 2)), alpha=.75,
+                label="〃 블렌드·포화 (환산 과장)")
         if np.isfinite(p["str_cmd_deg"]).any():
             ax.plot(x, p["str_cmd_deg"], color=C_CMD, lw=1.5, label="MPC 명령 str")
         if np.isfinite(p["str_act_deg"]).any():
@@ -711,6 +726,76 @@ def make_state_panels(m, out_dir, title):
     plt.close(fig)
 
 
+def make_peak_zooms(m, out_dir, n_peaks=6, half_s=1.5, min_deg=3.0):
+    """조향 피크 확대 — 크게 꺾는 순간에 실제 조향이 명령을 따라오는지만 본다.
+
+    평탄한 구간이 섞인 전체 이득(최소자승)은 "큰 조향을 못 낸다"와 "작은 잡음을 못
+    따른다"를 구분하지 못한다. 피크별로 진폭비와 지연을 따로 재야 그게 갈린다."""
+    plt = setup_mpl()
+    t = m["t"] - m["t"][0]
+    st = m["state"]
+    cmd, act = m["str_cmd_deg"], m["str_act_deg"]
+    if not (np.isfinite(cmd).any() and np.isfinite(act).any()):
+        return
+    W = int(half_s / TICK)
+    sig = np.nan_to_num(np.abs(cmd))
+    picked = []
+    for i in np.argsort(-sig):
+        if sig[i] < min_deg or len(picked) >= n_peaks:
+            break
+        if all(abs(int(i) - j) > 2 * W for j in picked) and W < i < len(t) - W:
+            picked.append(int(i))
+    if not picked:
+        return
+    picked.sort()
+
+    rows = (len(picked) + 1) // 2
+    fig, axes = plt.subplots(rows, 2, figsize=(13, 2.9 * rows), squeeze=False,
+                             gridspec_kw=dict(hspace=0.55, wspace=0.14))
+    for k, i in enumerate(picked):
+        ax = axes[k // 2][k % 2]
+        w = slice(i - W, i + W + 1)
+        tw = t[w]
+        shade_states(ax, tw, st[w], label_min_s=0.4)
+        g_ok, g_bad = geom_split(m["str_geom_deg"][w], m["ref0_dist_m"][w])
+        ax.plot(tw, g_ok, color=C_GEOM, lw=1.0, label="상위 목표 δ")
+        ax.plot(tw, g_bad, color=C_GEOM, lw=1.0, ls=(0, (2, 2)), alpha=.75)
+        ax.plot(tw, cmd[w], color=C_CMD, lw=1.8, label="MPC 명령 str")
+        ax.plot(tw, act[w], color=C_ACT, lw=1.8, label="실제 str")
+        ax.axhline(0, color=INK3, lw=0.8)
+
+        # 진폭비·지연: 명령 피크와 같은 부호로 실제가 얼마나·언제 도달했나
+        sgn = np.sign(cmd[i])
+        aw = act[w] * sgn
+        ja = int(np.nanargmax(aw))
+        a_pk, c_pk = aw[ja] * sgn, cmd[i]
+        lag_ms = (tw[ja] - t[i]) * 1e3
+        ax.plot(t[i], c_pk, "o", ms=7, mfc="white", mec=C_CMD, mew=1.8, zorder=5)
+        ax.plot(tw[ja], a_pk, "o", ms=7, mfc="white", mec=C_ACT, mew=1.8, zorder=5)
+        ax.annotate(f"명령 {c_pk:+.1f}° → 실제 {a_pk:+.1f}°  ({a_pk / c_pk * 100:.0f}%)"
+                    f" · 지연 {lag_ms:+.0f}ms",
+                    (0.5, 0.02), xycoords="axes fraction", ha="center", va="bottom",
+                    fontsize=9, color=INK2,
+                    bbox=dict(boxstyle="round,pad=0.25", fc="#fcfcfb", ec="#e6e5e1"))
+        ax.set_title(f"t = {t[i]:.2f}s · {STATE_NAME.get(int(st[i]), '?')}",
+                     loc="left", fontsize=10.5, color=SCOL.get(int(st[i]), INK))
+        ax.set_ylabel("조향각 [deg]")
+        ax.grid(axis="y")
+        ax.set_axisbelow(True)
+        ax.margins(y=0.30)
+        ax.set_xlim(tw[0], tw[-1])
+        if k // 2 == rows - 1:
+            ax.set_xlabel("경과 시간 [s]")
+    for k in range(len(picked), rows * 2):
+        axes[k // 2][k % 2].axis("off")
+    h, lb = axes[0][0].get_legend_handles_labels()
+    fig.legend(h, lb, loc="upper center", bbox_to_anchor=(0.5, 0.045), ncol=3, frameon=False)
+    fig.suptitle("조향 피크 확대 — 명령 대비 실제 추종", x=0.006, y=1.004, ha="left",
+                 fontsize=12.5, color=INK)
+    fig.savefig(os.path.join(out_dir, "6_steer_peak_zoom.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def make_plots(m, lat, out_dir, title, has_ds):
     plt = setup_mpl()
     t = m["t"] - m["t"][0]
@@ -743,7 +828,10 @@ def make_plots(m, lat, out_dir, title, has_ds):
     # ── 2. 횡방향: 조향 명령(기하→MPC) vs 실제 ─────────────────────────────
     fig, ax = plt.subplots(figsize=(13, 5.6))
     shade_states(ax, t, st)
-    ax.plot(t, m["str_geom_deg"], color=C_GEOM, lw=1.1, label="ref 기하 δ (PC)", zorder=2)
+    g_ok, g_bad = geom_split(m["str_geom_deg"], m["ref0_dist_m"])
+    ax.plot(t, g_ok, color=C_GEOM, lw=1.1, label="ref 기하 δ (PC)", zorder=2)
+    ax.plot(t, g_bad, color=C_GEOM, lw=1.1, ls=(0, (2, 2)), alpha=.75, zorder=2,
+            label="〃 블렌드·포화 (환산 과장)")
     if np.isfinite(m["str_cmd_deg"]).any():
         ax.plot(t, m["str_cmd_deg"], color=C_CMD, lw=1.8, label="MPC 출력 str", zorder=3)
     if have_s:
@@ -979,6 +1067,7 @@ def main():
               f"추정 {align.get('drift_ppm', float('nan')):.0f} ppm")
     make_plots(m, lat, out_dir, os.path.basename(run), ds is not None)
     make_state_panels(m, out_dir, os.path.basename(run))
+    make_peak_zooms(m, out_dir)
     print(f"\n출력: {out_dir}/  (merged.csv, report.txt, *.png)")
 
 
