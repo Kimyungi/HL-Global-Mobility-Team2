@@ -254,9 +254,39 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   // 20점(gps)=조향 정상 / 1점(avoid)=str 무반응으로 콘에 직진 → estop. 2026-08-08
   // "1점=str 무반응" 실측의 재확인이며, "원인은 저속"이라는 2026-08-10 재해석을 반증.
   // dSPACE 수정 없이 PC 조립에서 해결 — 와이어에는 항상 다점이 실린다.
+  // ── AVOID 통과 대기 구간: 목표를 GPS 트랙 헤딩 기준으로 회전 (§4, 2026-08-16)
+  // AVOID의 "전방 직진 유지"는 **트랙 기준 헤딩이 개루프**라 dSPACE 잔류 조향이
+  // 그대로 적분된다. 실측(run_0816_174556·175102 AVOID 5회 전수): 회당 헤딩
+  // 24~42° 누적 · 횡오차 0.24~1.10m 증가. 그 오차를 안은 채 GPS로 복귀하니
+  // 복귀 구간이 ±50~93° 스윙하며 불안정해졌다.
+  //   · 적용 조건: 현재 장애물 미감지(=통과 대기). 실측상 이 조건과 유지점
+  //     (1.5,0) 발행 구간의 일치율이 100%라 계약 변경 없이 판별된다.
+  //   · gps_path 유효(n>0) 시에만 — 무효면 종전대로 직진 유지.
+  //   · ±kAvoidHeadingMaxRad 클램프: ψₑ가 크면 요구 선회반경이 R_min(1.5m)을
+  //     깬다(1.5m 목표·33°에서 R 1.38m). stack_gps 재합류와 같은 25° 상한.
+  //   · **횡방향으로 끌어당기지 않는다** — 트랙 헤딩에 평행하게만 맞춘다.
+  //     옆의 장애물로 파고드는 것을 막기 위함. 횡 복귀는 통과 후 GPS가 담당.
+  //   · ψₑ가 줄면 회전량도 0으로 수렴하는 자기 종결형.
+  CorePoint avoid_hold_rotated;
+  if (src == MGM_SRC_AVOID && !s.avoid_obstacle_detected && s.gps_path.n > 0 && n == 1) {
+    constexpr float kAvoidHeadingMaxRad = 0.436f;   // 25°
+    float psi = s.gps_path.pts[0].yaw;
+    if (psi > kAvoidHeadingMaxRad) {psi = kAvoidHeadingMaxRad;}
+    if (psi < -kAvoidHeadingMaxRad) {psi = -kAvoidHeadingMaxRad;}
+    const CorePoint & t0 = path->pts[0];
+    const float c = cosf(psi), sn = sinf(psi);
+    avoid_hold_rotated.x = t0.x * c - t0.y * sn;
+    avoid_hold_rotated.y = t0.x * sn + t0.y * c;
+    avoid_hold_rotated.yaw = t0.yaw;
+    avoid_hold_rotated.curvature = t0.curvature;
+    if (avoid_hold_rotated.x > MGM_MIN_REF_X) {   // 회전으로 목표가 뒤로 가면 폐기
+      for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {target[i] = avoid_hold_rotated;}
+    }
+  }
+
   int32_t n_wire = n;
   if (n == 1) {
-    const CorePoint tgt = path->pts[0];
+    const CorePoint tgt = target[0];
     const float yaw = atan2f(tgt.y, tgt.x);
     // ★ 등간격(첫 점 = 목표/20 ≈ 7.5cm)은 **의도적으로 유지한다.** 첫 점이
     //   원점에 가까우면 dSPACE가 보는 도달 곡률 κ=2y/L² 이 실제 경로 곡률의
