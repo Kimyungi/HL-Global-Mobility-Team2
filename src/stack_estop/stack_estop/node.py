@@ -240,22 +240,8 @@ class StackEstopNode(Node):
 
     def __init__(self):
         super().__init__('stack_estop_node')
-        # ── 정지거리 실측에서 역산한 값 (2026-08-17, run_0817_032728 × rec1_024).
-        # 실측 정지 프로파일: v0 0.591 m/s → **반응지연 0.13s** → 감속 0.94 m/s²
-        #   → 0.76s / 0.314m 에 정지. (0.59 0.57 0.54 0.51 0.45 0.36 0.26 0.13 0.01)
-        # 여기에 감지 지연이 더 붙는다 — /scan 9.9Hz × 확정 3프레임 = 0.30s.
-        #   필요 거리 = 0.303·v + 1.19·(0.13·v + v²/(2·0.94))
-        #   (1.19 = 위 모델이 0.6m/s 실측보다 19% 낮게 나온 만큼의 보정)
-        #     0.6 m/s → 0.49m   0.8 m/s → 0.77m   1.0 m/s → 1.09m
-        # 종전 0.70/0.80 은 0.6 m/s 전용이었다(여유 0.21m). v_base 1.0 상향
-        # (adas_mgm/config/params.yaml)에 맞춰 1.20/1.35 로 올린다 — 여유 0.11m.
-        # ⚠ 이 둘은 **생성자에서 1회만** 읽어 DistanceEstopController 에 들어간다.
-        #   `ros2 param set` 이 안 먹으므로 값을 바꾸려면 **재실행**해야 한다.
-        # ⚠ 정지 트리거가 멀어지면 AVOID 진입과 겹친다 — 회피로 피할 것을 estop이
-        #   먼저 세울 수 있다. TTC 임계와 함께 봐야 한다 (담당: 이기돈·박찬미).
-        # 속도를 되돌리면 이 값도 함께 되돌릴 것.
-        self.declare_parameter('estop_on_distance_m', 1.20)
-        self.declare_parameter('estop_off_distance_m', 1.35)
+        self.declare_parameter('estop_on_distance_m', 0.70)
+        self.declare_parameter('estop_off_distance_m', 0.80)
         self.declare_parameter('estop_clear_confirm_scans', 3)
         self.declare_parameter('scan_timeout_sec', 0.25)
         self.declare_parameter('publish_period_sec', 0.05)

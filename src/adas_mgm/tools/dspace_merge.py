@@ -197,13 +197,20 @@ def sniff_dspace(path):
                 pass
         return ok / len(c)
 
-    start = next((i for i, ln in enumerate(lines) if numeric_frac(ln) > 0.8), None)
+    # ControlDesk는 데이터 시작 줄이 `trace_values,...` 로 명시된다. 일반 CSV는
+    # "숫자 행 3줄 연속"으로 찾는다 — `trace_types,4,4,4,16,4,4` 같은 메타 줄이
+    # 혼자서는 숫자 행처럼 보이기 때문 (실제로 이걸 데이터 시작으로 오인했다).
+    start = next((i for i, ln in enumerate(lines) if ln.startswith("trace_values")), None)
+    if start is None:
+        start = next((i for i in range(len(lines) - 2)
+                      if all(numeric_frac(lines[j]) > 0.8 for j in (i, i + 1, i + 2))
+                      and len({len(flds(lines[j])) for j in (i, i + 1, i + 2)}) == 1), None)
     if start is None:
         sys.exit(f"[dspace] 숫자 데이터 행을 못 찾음: {path}")
     ncol = len(flds(lines[start]))
     # ControlDesk: 이름 줄이 `trace_names,,<신호>,...` (0열=행 라벨, 1열=시간, 빈 이름).
     # 데이터 바로 위 줄은 min/max 통계 줄이라 열 수만 보고 고르면 그걸 헤더로 잡는다.
-    tn = next((i for i, ln in enumerate(lines[:start]) if ln.startswith("trace_names")), None)
+    tn = next((i for i, ln in enumerate(lines) if ln.startswith("trace_names")), None)
     if tn is not None:
         header = flds(lines[tn])
         header[0] = "row_label"
@@ -214,15 +221,12 @@ def sniff_dspace(path):
         header = flds(lines[hdr_i]) if hdr_i is not None else [f"col{i}" for i in range(ncol)]
     header = [h if h else f"col{i}" for i, h in enumerate(header)]
 
-    data = []
-    for ln in lines[start:]:
-        c = flds(ln)
-        if len(c) != ncol:
-            continue
+    def as_float(v):
         try:
-            data.append([float(v) if v not in ("", "NaN", "nan") else np.nan for v in c])
+            return float(v)
         except ValueError:
-            continue
+            return np.nan      # 행 라벨(`trace_values`)·빈 칸은 NaN 열로 흘려보낸다
+    data = [[as_float(v) for v in flds(ln)] for ln in lines[start:] if len(flds(ln)) == ncol]
     return header, np.asarray(data, dtype=float)
 
 
@@ -287,6 +291,21 @@ def read_dspace(path, user_map=None, str_unit=None):
     return d
 
 
+def harmonize_speed(bag, ds, forced=None):
+    """dSPACE 속도 단위 판별 — dSPACE는 km/h로 찍는다 (CLAUDE.md §3). PC v_ref(m/s)와
+    최대값 비가 3.6 부근이면 km/h로 보고 나눈다. 값이 바뀌므로 지문 대조 **전에** 한다."""
+    if "v_cmd" not in ds:
+        return "?"
+    vb, vd = np.nanmax(np.abs(bag["v_ref"])), np.nanmax(np.abs(ds["v_cmd"]))
+    r = vd / vb if vb > 0.05 else 1.0
+    unit = forced or ("kmh" if 3.0 < r < 4.2 else "mps")
+    if unit == "kmh":
+        for k in ("v_cmd", "v_act"):
+            if k in ds:
+                ds[k] = ds[k] / 3.6
+    return unit
+
+
 # ─────────────────────────────────────────────────────────────────── 정렬 ──
 def _fingerprint(state, v_ref, x0, y0):
     """한 틱의 지문 — dSPACE가 수신한 값과 PC가 보낸 값이 **양자화 후 정확히 같다**."""
@@ -296,53 +315,73 @@ def _fingerprint(state, v_ref, x0, y0):
             + (np.round(y0 * 1000).astype(np.int64) & 0xFFFF))
 
 
-def align_by_counter(bag, ds):
-    """dSPACE가 counter를 로깅한 경우 — 틱 단위 정확 정렬."""
-    if "counter" not in ds:
+def align_by_counter(bag, ds, seed=None):
+    """dSPACE가 counter를 로깅한 경우 — 틱 단위 정확 정렬.
+
+    오프셋 후보를 두 갈래로 모아 **검산 점수가 높은 것**을 고른다:
+      ⓐ 지문 투표 — dSPACE가 state·ref0 까지 찍었을 때. 시드 없이 단독으로 잡힌다.
+      ⓑ 시드 — v_ref 상호상관으로 얻은 대략의 시각(±수 틱)을 counter 오프셋으로 환산.
+        dSPACE가 counter·v_ref만 찍었을 때(실제 rec1_024가 이 경우)의 경로.
+    어느 쪽이든 **PC가 보낸 v_ref와 dSPACE가 받은 v_ref가 틱마다 같은지**로 검산한다.
+    """
+    if "counter" not in ds or "v_cmd" not in ds:
         return None
-    c = ds["counter"]
-    ok = np.isfinite(c)
+    ok = np.isfinite(ds["counter"])
     if ok.sum() < 50:
         return None
-    c = np.round(c[ok]).astype(np.int64)
-    tds = ds["t"][ok]
-    # u16 wrap 풀기
+    c = np.round(ds["counter"][ok]).astype(np.int64)
+    tds, vds = ds["t"][ok], ds["v_cmd"][ok]
     c = c + np.cumsum(np.concatenate([[0], (np.diff(c) < -30000).astype(np.int64)])) * 65536
     # counter가 바뀌는 지점만 (dSPACE가 10ms보다 빠르게 찍으면 같은 값이 반복된다)
     keep = np.concatenate([[True], np.diff(c) != 0])
-    c, tds = c[keep], tds[keep]
+    dup = int(len(c) - keep.sum())
+    c, tds, vds = c[keep], tds[keep], vds[keep]
+    gaps = int(np.sum(np.diff(c) - 1))          # 건너뛴 틱 = PC 송신 누락/CAN 유실
+    n_bag = len(bag["t"])
 
-    votes = {}
-    have_fp = all(k in ds for k in ("state", "v_cmd", "x0", "y0"))
-    if have_fp:
-        fp_bag = _fingerprint(bag["state"], bag["v_ref"], bag["x0"], bag["y0"])
-        fp_ds = _fingerprint(np.round(ds["state"][ok][keep]).astype(int), ds["v_cmd"][ok][keep],
-                             ds["x0"][ok][keep], ds["y0"][ok][keep])
-    else:  # state·v_ref 만으로도 대략의 표는 모인다
-        fp_bag = _fingerprint(bag["state"], bag["v_ref"], np.zeros_like(bag["x0"]),
-                              np.zeros_like(bag["y0"]))
-        z = np.zeros(len(c))
-        fp_ds = _fingerprint(np.round(ds.get("state", z)[ok][keep]).astype(int),
-                             ds.get("v_cmd", z)[ok][keep], z, z)
-    table = {}
-    for i, f in enumerate(fp_bag):
-        table.setdefault(f, []).append(i)
-    for k in range(0, len(c), max(1, len(c) // 400)):
-        for i in table.get(fp_ds[k], [])[:8]:
-            votes[c[k] - i] = votes.get(c[k] - i, 0) + 1
-    if not votes:
+    cands = []
+    if seed is not None:
+        est = np.round((seed["a"] * tds + seed["b"] - bag["t"][0]) / TICK).astype(np.int64)
+        offs, cnts = np.unique(c - est, return_counts=True)
+        cands += [int(o) for o in offs[np.argsort(-cnts)[:5]]]
+    if "state" in ds or "x0" in ds:             # 지문 투표 (있는 열로만)
+        zb, zd = np.zeros(n_bag), np.zeros(len(c))
+        gs = (np.round(ds["state"][ok][keep]).astype(int) if "state" in ds
+              else np.zeros(len(c), int))
+        fp_bag = _fingerprint(bag["state"] if "state" in ds else np.zeros(n_bag, int),
+                              bag["v_ref"], bag["x0"] if "x0" in ds else zb,
+                              bag["y0"] if "y0" in ds else zb)
+        fp_ds = _fingerprint(gs, vds, ds["x0"][ok][keep] if "x0" in ds else zd,
+                             ds["y0"][ok][keep] if "y0" in ds else zd)
+        table = {}
+        for i, f in enumerate(fp_bag):
+            table.setdefault(f, []).append(i)
+        votes = {}
+        for k in range(0, len(c), max(1, len(c) // 400)):
+            for i in table.get(fp_ds[k], [])[:8]:
+                votes[int(c[k] - i)] = votes.get(int(c[k] - i), 0) + 1
+        cands += [o for o, _ in sorted(votes.items(), key=lambda kv: -kv[1])[:3]]
+
+    best = None
+    for off in dict.fromkeys(cands):
+        idx = c - off
+        inb = (idx >= 0) & (idx < n_bag)
+        if inb.sum() < 50:
+            continue
+        # 검산: PC가 보낸 v_ref == dSPACE가 받은 v_ref (와이어 양자화 1mm/s)
+        rate = float(np.mean(np.abs(bag["v_ref"][idx[inb]] - vds[inb]) <= 0.0015))
+        if best is None or (rate, inb.sum()) > (best[1], best[2]):
+            best = (off, rate, int(inb.sum()))
+    if best is None:
         return None
-    off, nvote = max(votes.items(), key=lambda kv: kv[1])
+    off, rate, n = best
     idx = c - off
-    inb = (idx >= 0) & (idx < len(bag["t"]))
-    if inb.sum() < 50:
-        return None
+    inb = (idx >= 0) & (idx < n_bag)
     a, b = np.polyfit(tds[inb], bag["t"][idx[inb]], 1)
     resid = bag["t"][idx[inb]] - (a * tds[inb] + b)
-    match = float(np.mean(fp_bag[idx[inb]] == fp_ds[inb]))
-    return dict(method="counter", a=a, b=b, n=int(inb.sum()), votes=int(nvote),
-                match_rate=match, match_keys="state·v_ref·ref0" if have_fp else "state·v_ref",
-                resid_ms=float(np.std(resid) * 1e3), drift_ppm=float((a - 1) * 1e6))
+    return dict(method="counter", a=a, b=b, n=n, offset=off, match_rate=rate,
+                match_keys="v_ref", resid_ms=float(np.std(resid) * 1e3),
+                drift_ppm=float((a - 1) * 1e6), dup=dup, gaps=gaps)
 
 
 def _xcorr_lag(x, y):
@@ -432,7 +471,7 @@ def align_by_vref(bag, ds):
 
 
 # ───────────────────────────────────────────────────────────────── 병합 ──
-def build_merged(bag, ds, align):
+def build_merged(bag, ds, align, str_sign=None):
     """bag 틱 격자(100Hz)에 dSPACE 신호를 얹은 딕셔너리."""
     out = dict(bag)
     out.pop("_counts", None)
@@ -461,6 +500,18 @@ def build_merged(bag, ds, align):
     put("str_cmd_deg", "str_cmd_deg")
     put("str_act_deg", "str_act_deg")
     put("counter_ds", "counter")
+
+    # 조향 부호 규약: dSPACE 조향은 PC ref y와 **반대 부호**다 (CLAUDE.md §3, 손상민).
+    # 규약을 외워 쓰지 않고 매번 상관으로 확인한다 — 모델이 바뀌면 조용히 틀리기 때문.
+    ref = out["str_cmd_deg"] if np.isfinite(out["str_cmd_deg"]).any() else out["str_act_deg"]
+    sel = np.isfinite(ref) & (np.abs(out["str_geom_deg"]) > 2.0)
+    corr = (float(np.corrcoef(out["str_geom_deg"][sel], ref[sel])[0, 1])
+            if sel.sum() > 100 else float("nan"))
+    sign = str_sign if str_sign else (-1 if corr < 0 else 1)
+    if sign < 0:
+        out["str_cmd_deg"] = -out["str_cmd_deg"]
+        out["str_act_deg"] = -out["str_act_deg"]
+    out["_str_sign"], out["_str_corr"] = sign, corr
     return out
 
 
@@ -550,6 +601,116 @@ def state_legend(ax, states):
               title="배경색 = 주행 스테이트", title_fontsize=9)
 
 
+def pick_waypoints(lat, wp_dir="src/stack_gps/waypoints"):
+    """이 run이 쓴 트랙 CSV 찾기 — 후보마다 궤적까지의 거리를 재서 stack_gps가 기록한
+    `cross_track_m`과 맞는 것을 고른다 (추측이 아니라 검산으로 고른다)."""
+    if lat is None or not os.path.isdir(wp_dir):
+        return None
+    R, lat0 = 6378137.0, math.radians(lat["lat"][0])
+    vE = np.radians(lat["lon"] - lat["lon"][0]) * R * math.cos(lat0)
+    vN = np.radians(lat["lat"] - lat["lat"][0]) * R
+    k = slice(None, None, max(1, len(vE) // 300))
+    best = None
+    for name in sorted(os.listdir(wp_dir)):
+        if not (name.startswith("waypoints_") and name.endswith(".csv")):
+            continue
+        rows = [r for r in csv.DictReader(open(os.path.join(wp_dir, name)))
+                if r.get("quality") is None or int(r["quality"]) == 4]
+        if len(rows) < 5:
+            continue
+        wlat = np.array([float(r["lat"]) for r in rows])
+        wlon = np.array([float(r["lon"]) for r in rows])
+        wE = np.radians(wlon - lat["lon"][0]) * R * math.cos(lat0)
+        wN = np.radians(wlat - lat["lat"][0]) * R
+        d = np.sqrt(np.min((vE[k][:, None] - wE) ** 2 + (vN[k][:, None] - wN) ** 2, axis=1))
+        err = float(np.median(np.abs(d - lat["cross"][k])))
+        if best is None or err < best[0]:
+            best = (err, name, wE, wN)
+    if best and best[0] < 0.15:
+        return dict(name=best[1], E=best[2], N=best[3], err=best[0])
+    return None
+
+
+def make_state_panels(m, out_dir, title):
+    """스테이트별 패널 — 그 스테이트 구간만 이어 붙여 "상위 목표 vs 하위 실제"를 본다."""
+    plt = setup_mpl()
+    t = m["t"] - m["t"][0]
+    st = m["state"]
+    states = [s for s in sorted(set(int(x) for x in st))
+              if sum(b - a for a, b, ss in segments(st, t) if ss == s) > 50]
+    if not states:
+        return
+    GAP = 1.0
+    fig, axes = plt.subplots(len(states), 2, figsize=(13.5, 3.1 * len(states)),
+                             squeeze=False, gridspec_kw=dict(hspace=0.45, wspace=0.16))
+    keys = ["str_geom_deg", "str_cmd_deg", "str_act_deg", "v_ref", "v_act"]
+    for r, s in enumerate(states):
+        segs = [(a, b) for a, b, ss in segments(st, t) if ss == s and b - a >= 20]
+        xs, parts, bounds, off = [], {k: [] for k in keys}, [], 0.0
+        for a, b in segs:
+            n = b - a + 1
+            xs.append(off + np.arange(n) * TICK)
+            for k in keys:
+                parts[k].append(m[k][a:b + 1])
+            off += n * TICK + GAP
+            xs.append(np.array([off - GAP / 2]))
+            for k in keys:
+                parts[k].append(np.array([np.nan]))
+            bounds.append(off - GAP / 2)
+        x = np.concatenate(xs)
+        p = {k: np.concatenate(v) for k, v in parts.items()}
+
+        ax = axes[r][0]
+        ax.plot(x, p["str_geom_deg"], color=C_GEOM, lw=1.0, label="상위 목표 δ (ref 기하)")
+        if np.isfinite(p["str_cmd_deg"]).any():
+            ax.plot(x, p["str_cmd_deg"], color=C_CMD, lw=1.5, label="MPC 명령 str")
+        if np.isfinite(p["str_act_deg"]).any():
+            ax.plot(x, p["str_act_deg"], color=C_ACT, lw=1.5, label="실제 str (dSPACE)")
+        ax.set_ylabel("조향각 [deg]")
+        ax2 = axes[r][1]
+        ax2.plot(x, p["v_ref"], color=C_CMD, lw=1.6, label="상위 목표 v_ref")
+        if np.isfinite(p["v_act"]).any():
+            ax2.plot(x, p["v_act"], color=C_ACT, lw=1.6, label="실제 v (dSPACE)")
+        ax2.axhline(0.5, color=C_WARN, lw=0.8, ls=":")
+        ax2.set_ylabel("속도 [m/s]")
+
+        # 정지 중(v_ref<0.1)은 이득 계산에서 뺀다 — 안 움직이는 차의 조향은 실현되지
+        # 않는데(0.5 m/s 하한, CLAUDE.md §3 ①) 그게 스테이트 이득을 통째로 끌어내린다
+        gsel = (np.isfinite(p["str_act_deg"]) & (np.abs(p["str_geom_deg"]) > 0.5)
+                & (p["v_ref"] >= 0.1))
+        gain = (100 * np.sum(p["str_act_deg"][gsel] * p["str_geom_deg"][gsel])
+                / np.sum(p["str_geom_deg"][gsel] ** 2)) if gsel.sum() > 20 else float("nan")
+        verr = np.nanmean(np.abs(p["v_act"] - p["v_ref"])) if np.isfinite(p["v_act"]).any() \
+            else float("nan")
+        for c, ax_ in enumerate((ax, ax2)):
+            for bx in bounds[:-1]:
+                ax_.axvline(bx, color=INK3, lw=0.7, ls=(0, (2, 3)), alpha=.6)
+            ax_.grid(axis="y")
+            ax_.set_axisbelow(True)
+            ax_.margins(y=0.18)
+            ax_.set_xlim(-GAP / 2, off - GAP / 2)
+            if r == len(states) - 1:
+                ax_.set_xlabel(f"{STATE_NAME.get(s,'?')} 구간만 이어 붙인 시간 [s]"
+                               if c == 0 else "〃 (점선 = 구간 경계)")
+            pass
+        ax.set_title(f"{STATE_NAME.get(s,'?')} — 구간 {len(segs)}개 · 총 {off - GAP:.1f}s"
+                     f" · 조향 실현 이득 {gain:.0f}% (주행 중)", loc="left", fontsize=11,
+                     color=SCOL.get(s, INK))
+        ax2.set_title(f"평균 속도오차 {verr:.3f} m/s", loc="left", fontsize=11, color=INK2)
+        ax.spines["left"].set_color(SCOL.get(s, INK3))
+        ax.spines["left"].set_linewidth(2.4)
+    # 계열 범례는 열마다 하나씩, 그림 아래에 (행마다 반복하면 제목을 덮는다)
+    for col, ax_ in enumerate(axes[0]):
+        h, lb = ax_.get_legend_handles_labels()
+        fig.legend(h, lb, loc="upper center", bbox_to_anchor=(0.29 + 0.44 * col, 0.045),
+                   ncol=len(h), frameon=False, fontsize=9)
+    fig.suptitle("스테이트별 상위 목표 vs 하위 실제", x=0.006, y=1.005,
+                 ha="left", fontsize=12.5, color=INK)
+    fig.savefig(os.path.join(out_dir, "5_per_state_cmd_vs_actual.png"), dpi=150,
+                bbox_inches="tight")
+    plt.close(fig)
+
+
 def make_plots(m, lat, out_dir, title, has_ds):
     plt = setup_mpl()
     t = m["t"] - m["t"][0]
@@ -559,9 +720,7 @@ def make_plots(m, lat, out_dir, title, has_ds):
     have_s = np.isfinite(m["str_act_deg"]).any()
 
     # ── 1. 종방향: 목표 속도 vs 실제 속도 ─────────────────────────────────
-    fig, axes = plt.subplots(2, 1, figsize=(13, 7), sharex=True,
-                             gridspec_kw=dict(height_ratios=[3, 1], hspace=0.12))
-    ax = axes[0]
+    fig, ax = plt.subplots(figsize=(13, 5.6))
     shade_states(ax, t, st)
     ax.plot(t, m["v_ref"], color=C_CMD, lw=1.8, label="목표 v_ref (PC)", zorder=3)
     if np.isfinite(m["v_cmd_ds"]).any():
@@ -569,25 +728,15 @@ def make_plots(m, lat, out_dir, title, has_ds):
     if have_v:
         ax.plot(t, m["v_act"], color=C_ACT, lw=1.8, label="실제 v", zorder=4)
     ax.set_ylabel("속도 [m/s]")
+    ax.set_xlabel("경과 시간 [s]")
     ax.axhline(0.5, color=C_WARN, lw=0.9, ls=":", zorder=2)
     ax.annotate("조향 응답 하한 0.5", (t[0], 0.5), xytext=(4, 3), textcoords="offset points",
                 ha="left", fontsize=8, color=C_WARN)
     ax.grid(axis="y")
     ax.margins(y=0.16)
-    ax.set_title(f"{title} — 종방향: 목표 대비 실제 속도", loc="left", fontsize=12, pad=12)
+    ax.set_title("종방향: 목표 대비 실제 속도", loc="left", fontsize=12, pad=12)
     series_legend(ax, ncol=3)
-    ax2 = axes[1]
-    shade_states(ax2, t, st, label_min_s=1e9)
-    if have_v:
-        ax2.plot(t, m["v_act"] - m["v_ref"], color=C_CRIT, lw=1.2)
-        ax2.set_ylabel("실제−목표 [m/s]")
-    else:
-        ax2.plot(t, m["gps_cross_track_m"], color=C_GPS, lw=1.2)
-        ax2.set_ylabel("횡오차 [m]")
-    ax2.axhline(0, color=INK3, lw=0.8)
-    ax2.set_xlabel("경과 시간 [s]")
-    ax2.grid(axis="y")
-    state_legend(ax2, states)
+    state_legend(ax, states)
     fig.savefig(os.path.join(out_dir, "1_speed_cmd_vs_actual.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -604,7 +753,7 @@ def make_plots(m, lat, out_dir, title, has_ds):
     ax.set_xlabel("경과 시간 [s]")
     ax.grid(axis="y")
     ax.margins(y=0.14)
-    ax.set_title(f"{title} — 횡방향: 조향 명령 대비 실현", loc="left", fontsize=12, pad=12)
+    ax.set_title("횡방향: 조향 명령 대비 실현", loc="left", fontsize=12, pad=12)
     series_legend(ax, ncol=3)
     state_legend(ax, states)
     fig.savefig(os.path.join(out_dir, "2_steer_cmd_vs_actual.png"), dpi=150, bbox_inches="tight")
@@ -628,7 +777,8 @@ def make_plots(m, lat, out_dir, title, has_ds):
         폭주한다 — CLAUDE.md §3 ③ 의 "명령 곡률의 10~55%만 실현"이 이 값이다."""
         out = []
         for s in states:
-            sel = (st == s) & np.isfinite(num) & np.isfinite(den) & (np.abs(den) > 0.5)
+            sel = ((st == s) & np.isfinite(num) & np.isfinite(den)
+                   & (np.abs(den) > 0.5) & (m["v_ref"] >= 0.1))
             out.append(100 * np.sum(num[sel] * den[sel]) / np.sum(den[sel] ** 2)
                        if sel.sum() > 20 else np.nan)
         return np.asarray(out)
@@ -638,7 +788,7 @@ def make_plots(m, lat, out_dir, title, has_ds):
               ("평균 |조향| [deg]", per_state(np.abs(m["str_act_deg"] if have_s
                                                    else m["str_geom_deg"])))]
     if have_s:
-        panels.append(("조향 실현 이득 [%] — 실제 str / PC 기하 δ",
+        panels.append(("조향 실현 이득 [%] — 실제 str / PC 기하 δ (주행 중)",
                        gain(m["str_act_deg"], m["str_geom_deg"])))
     elif np.isfinite(m["str_cmd_deg"]).any():
         panels.append(("조향 실현 이득 [%] — MPC str / PC 기하 δ",
@@ -654,7 +804,7 @@ def make_plots(m, lat, out_dir, title, has_ds):
         ax.set_title(lab, loc="left", fontsize=9.5, color=INK2)
         ax.grid(axis="y")
         ax.set_axisbelow(True)
-    fig.suptitle(f"{title} — 스테이트별 요약", x=0.005, ha="left", fontsize=12, color=INK)
+    fig.suptitle("스테이트별 요약", x=0.005, ha="left", fontsize=12, color=INK)
     fig.savefig(os.path.join(out_dir, "3_per_state_summary.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -667,9 +817,14 @@ def make_plots(m, lat, out_dir, title, has_ds):
         sidx = np.clip(sidx, 0, len(st) - 1)
         s_at = st[sidx]
         fig, ax = plt.subplots(figsize=(9, 9))
+        wp = pick_waypoints(lat)
+        if wp:
+            ax.plot(wp["E"], wp["N"], "-", color=C_TRACK, lw=5.2, alpha=.42,
+                    solid_capstyle="round", zorder=1, label=f"트랙 ({wp['name']})")
+            ax.add_artist(ax.legend(loc="upper left", fontsize=8.5))
         for a, b, s in segments(s_at, lat["t"]):
             ax.plot(E[a:min(b + 2, len(E))], N[a:min(b + 2, len(N))], "-", lw=2.4,
-                    color=SCOL.get(s, INK3), solid_capstyle="round")
+                    color=SCOL.get(s, INK3), solid_capstyle="round", zorder=3)
         ax.plot(E[0], N[0], "o", ms=10, mfc="white", mec=C_TRACK, mew=2.2)
         ax.plot(E[-1], N[-1], "s", ms=10, mfc="white", mec=C_TRACK, mew=2.2)
         ax.set_aspect("equal")
@@ -677,7 +832,7 @@ def make_plots(m, lat, out_dir, title, has_ds):
         ax.set_ylabel("북 [m]")
         ax.grid(True)
         ax.set_axisbelow(True)
-        ax.set_title(f"{title} — 궤적 (색 = 주행 스테이트)", loc="left", fontsize=12)
+        ax.set_title("궤적 (색 = 주행 스테이트)", loc="left", fontsize=12)
         state_legend(ax, sorted(set(int(x) for x in s_at)))
         fig.savefig(os.path.join(out_dir, "4_trajectory_by_state.png"), dpi=150,
                     bbox_inches="tight")
@@ -697,6 +852,8 @@ def report(bag, m, align, ds, out_dir):
             L.append(f"  대응 틱 {align['n']}개 · 지문({align['match_keys']}) 일치율 "
                      f"{align['match_rate']*100:.1f}% · 잔차 {align['resid_ms']:.2f} ms"
                      f" · 드리프트 {align['drift_ppm']:.0f} ppm")
+            L.append(f"  counter 오프셋 {align['offset']} (bag_index = counter − off)"
+                     f" · 중복 샘플 {align['dup']}개 · 건너뛴 틱 {align['gaps']}개")
             if align["match_rate"] < 0.9:
                 L.append("  ⚠ 지문 일치율이 낮다 — dSPACE가 받은 값과 PC가 보낸 값이 다르다는 뜻."
                          " CAN 유실·스케일 불일치(PROTOCOL.md) 를 먼저 의심할 것")
@@ -765,6 +922,9 @@ def main():
     ap.add_argument("--dspace", help="dSPACE CSV")
     ap.add_argument("--map", default="", help='열 매핑 "t=Time,v_act=v_meas,..." (자동추정 보완)')
     ap.add_argument("--str-unit", choices=["deg", "rad"], help="dSPACE 조향 단위 (기본: 자동)")
+    ap.add_argument("--v-unit", choices=["kmh", "mps"], help="dSPACE 속도 단위 (기본: 자동)")
+    ap.add_argument("--str-sign", type=int, choices=[1, -1],
+                    help="dSPACE 조향 부호 (기본: 상관으로 자동)")
     ap.add_argument("--lag", type=float, help="수동 정렬: t_ros = t_ds + lag [s]")
     ap.add_argument("--out", help="출력 디렉터리 (기본 <run>/analysis_dspace)")
     ap.add_argument("--list-columns", metavar="CSV", help="dSPACE CSV 열 이름만 출력하고 종료")
@@ -798,14 +958,16 @@ def main():
     if dspace_csv:
         umap = dict(kv.split("=", 1) for kv in args.map.split(",") if "=" in kv)
         ds = read_dspace(dspace_csv, umap, args.str_unit)
+        ds["_v_unit"] = harmonize_speed(bag, ds, args.v_unit)
         if args.lag is not None:
             align = dict(method="수동(--lag)", a=1.0, b=args.lag, n=len(ds["t"]))
         else:
-            align = align_by_counter(bag, ds) or align_by_vref(bag, ds)
+            seed = align_by_vref(bag, ds)
+            align = align_by_counter(bag, ds, seed) or seed
         if align is None:
             sys.exit("[정렬] 실패 — counter·v_ref 어느 쪽으로도 못 맞췄다. --lag 로 수동 지정")
 
-    m = build_merged(bag, ds, align)
+    m = build_merged(bag, ds, align, args.str_sign)
     write_merged_csv(m, os.path.join(out_dir, "merged.csv"))
     txt = report(bag, m, align, ds, out_dir)
     print(txt)
@@ -816,6 +978,7 @@ def main():
               f"드리프트 진짜 {truth['drift_ppm']:.0f} → "
               f"추정 {align.get('drift_ppm', float('nan')):.0f} ppm")
     make_plots(m, lat, out_dir, os.path.basename(run), ds is not None)
+    make_state_panels(m, out_dir, os.path.basename(run))
     print(f"\n출력: {out_dir}/  (merged.csv, report.txt, *.png)")
 
 
