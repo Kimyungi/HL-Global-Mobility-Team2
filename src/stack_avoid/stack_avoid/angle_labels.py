@@ -10,6 +10,7 @@ import math
 
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -35,21 +36,37 @@ class AngleLabels(Node):
         super().__init__('angle_labels')
         self.frame = self.declare_parameter('frame_id', 'laser_frame').value
         self.R = float(self.declare_parameter('radius_m', 2.5).value)
+        # 눈금 간격 [deg]. 기본 45 = 기존 동작 유지. 90 이면 0/90/180/270 만.
+        self.step = int(self.declare_parameter('step_deg', 45).value)
+        # 전체 색조 [r,g,b] 0~1. 비우면 기존 배색(회색 선 + 흰 글씨 + 빨강/초록 축).
+        # 라이다 2대를 동시에 띄울 때 어느 눈금이 어느 라이다 것인지 구분하려고 쓴다.
+        # ★ 타입을 명시해야 한다 — 기본값 [] 만 주면 rclpy 가 BYTE_ARRAY 로 추론해
+        #   실제 [r,g,b] 를 넣을 때 InvalidParameterTypeException 으로 노드가 죽는다.
+        self.color = [float(v) for v in self.declare_parameter(
+            'color', [],
+            ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY)).value] or None
         self.pub = self.create_publisher(MarkerArray, 'angle_labels', 1)
         self.timer = self.create_timer(0.5, self.tick)
         self.get_logger().info(
             f'angle_labels → /angle_labels (frame={self.frame}, R={self.R}m) '
             f'| 0°=빨강 화살표, 90°=초록 화살표')
 
+    def _tint(self, marker, base_gray, alpha):
+        """color 파라미터가 있으면 그 색으로, 없으면 기존 회색조 그대로."""
+        if self.color:
+            marker.color.r, marker.color.g, marker.color.b = self.color[:3]
+        else:
+            marker.color.r = marker.color.g = marker.color.b = base_gray
+        marker.color.a = alpha
+
     def tick(self):
         arr = MarkerArray()
-        angles = [0, 45, 90, 135, 180, 225, 270, 315]
+        angles = list(range(0, 360, max(1, self.step)))
 
-        # 방사선 (각 각도로 뻗는 회색 선)
+        # 방사선 (각 각도로 뻗는 선)
         rays = _mk('rays', 0, Marker.LINE_LIST, self.frame)
         rays.scale.x = 0.01
-        rays.color.r = rays.color.g = rays.color.b = 0.5
-        rays.color.a = 0.6
+        self._tint(rays, 0.5, 0.6)
         for a in angles:
             rad = math.radians(a)
             rays.points.append(_pt(0, 0))
@@ -60,20 +77,25 @@ class AngleLabels(Node):
         for j, rr in enumerate((1.0, 2.0)):
             ring = _mk('ring', j, Marker.LINE_STRIP, self.frame)
             ring.scale.x = 0.008
-            ring.color.r = ring.color.g = ring.color.b = 0.4
-            ring.color.a = 0.5
+            self._tint(ring, 0.4, 0.5)
             for k in range(0, 361, 6):
                 rad = math.radians(k)
                 ring.points.append(_pt(rr * math.cos(rad), rr * math.sin(rad)))
             arr.markers.append(ring)
 
-        # 0°(빨강, 라이다 +x), 90°(초록, 라이다 +y) 축 화살표
+        # 0°(빨강, 라이다 +x), 90°(초록, 라이다 +y) 축 화살표.
+        # color 를 준 경우엔 그 색으로 통일한다 — 2대를 겹쳐 띄울 때 축 색이 라이다
+        # 구분색과 충돌하면 어느 쪽 눈금인지 알 수 없기 때문이다.
         for a, (r, g, b) in [(0, (1.0, 0.0, 0.0)), (90, (0.0, 1.0, 0.0))]:
             rad = math.radians(a)
             ax = _mk('axis', a, Marker.ARROW, self.frame)
             ax.scale.x, ax.scale.y, ax.scale.z = 0.03, 0.09, 0.14
             ax.points = [_pt(0, 0), _pt(self.R * math.cos(rad), self.R * math.sin(rad))]
-            ax.color.r, ax.color.g, ax.color.b, ax.color.a = r, g, b, 0.95
+            if self.color:
+                ax.color.r, ax.color.g, ax.color.b = self.color[:3]
+            else:
+                ax.color.r, ax.color.g, ax.color.b = r, g, b
+            ax.color.a = 0.95
             arr.markers.append(ax)
 
         # 각도 텍스트
@@ -82,8 +104,7 @@ class AngleLabels(Node):
             t = _mk('deg', i, Marker.TEXT_VIEW_FACING, self.frame)
             t.pose.position = _pt(self.R * 1.1 * math.cos(rad), self.R * 1.1 * math.sin(rad), 0.0)
             t.scale.z = 0.28
-            t.color.r = t.color.g = t.color.b = 1.0
-            t.color.a = 1.0
+            self._tint(t, 1.0, 1.0)
             t.text = '0 / 360°' if a == 0 else f'{a}°'
             arr.markers.append(t)
 

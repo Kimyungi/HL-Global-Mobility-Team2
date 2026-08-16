@@ -1,0 +1,149 @@
+# multi_lidar_fusion — 융합 알고리즘 파라미터
+#
+# 센서가 무엇인지는 lidar_extrinsics.yaml 이 정하고, 이 파일은 "합치는 방법"만 정한다.
+# 두 파일 모두 launch 가 함께 읽는다.
+
+/**:
+  ros__parameters:
+    # ── 융합 주기 ────────────────────────────────────────────────────────
+    # 가장 빠른 센서보다 같거나 빠르게 둔다. 20Hz = 50ms.
+    fusion_rate_hz: 20.0
+
+    # ── TF ───────────────────────────────────────────────────────────────
+    tf_timeout_s: 0.02
+    # stamp 시각 조회가 실패하면 최신/static 으로 재시도. static extrinsic 만 쓰는
+    # 지금 구성에서는 이게 정상 경로다. 동적 TF 를 쓰게 되면 false 로 볼 것.
+    tf_allow_static_fallback: true
+
+    # ── 시간 정렬 (요구 §7, §8) ──────────────────────────────────────────
+    sync:
+      # |t_i - t_ref| 허용치.
+      # 느린 센서는 원리적으로 최대 "자기 주기의 절반"만큼 t_ref 보다 뒤처진다.
+      # 10Hz 센서를 20Hz 로 융합하면 그 값이 정확히 50ms 다. 허용치를 50 으로 두면
+      # 매 두 번째 주기마다 경계에 딱 걸려 (strict 모드에서는 느린 센서가 통째로
+      # 버려진다) — 여유를 조금 준다. 실측 spread 는 진단의 spread= 항목에서 볼 것.
+      sync_tolerance_ms: 60.0
+      # 이보다 오래된 데이터는 그 주기에서 제외 (요구 §8 max_cloud_age).
+      # 나이는 **스캔이 끝난 시각**(header.stamp + 스캔 소요시간) 기준으로 잰다.
+      # LaserScan 의 stamp 는 첫 ray 시각이라, 10Hz 라이다는 도착하는 순간 이미
+      # 100ms 과거다 — stamp 기준으로 100ms 를 걸면 멀쩡한 센서가 전부 too_old 가 된다
+      # (2026-08-13 실차에서 active=0/4 로 겪음). 스캔 종료 기준이면 도착 시 나이 ~0 이고,
+      # 이 값은 "새 프레임이 몇 주기까지 안 와도 봐줄 것인가"가 된다. 10Hz 기준 1.5주기.
+      max_cloud_age_ms: 150.0
+      # true 면 허용치를 넘은 센서를 버린다. false 면 쓰되 경고 카운터만 올린다.
+      # 회피 관점에서는 "조금 어긋난 점"이 "점 없음"보다 안전해서 기본 false.
+      strict: false
+      buffer_size: 4
+      # "latest" = 전 센서 중 최신 stamp / "clock" = 노드 시계 / "a1" 등 = 기준 센서 고정
+      time_reference: "latest"
+
+    # ── 자차 운동 보상 (요구 §9) ─────────────────────────────────────────
+    motion:
+      # 초기엔 false. 이동 중 벽이 두 겹으로 보이면 true 로 올린다.
+      enable_motion_compensation: false
+      # "none" | "odom"(nav_msgs/Odometry) | "twist"(geometry_msgs/TwistStamped)
+      twist_source: "none"
+      odom_topic: "/odom"
+      twist_topic: "/vehicle/twist"
+      max_twist_age_ms: 200.0
+      # 이 속도(|v| + |yaw_rate|) 미만이면 보상 생략 — 정지 중 잡음 방지.
+      min_speed: 0.05
+      # 스캔 한 바퀴 안의 빔별 시각차까지 반영할지. 드라이버가 time_increment 를
+      # 0 으로 주면 어차피 프레임 단위 보상으로 축퇴한다.
+      use_point_dt: true
+
+    # ── 필터 (요구 §11, §12, §13) ────────────────────────────────────────
+    filter:
+      # 병합 후 base_link 원점 기준 수평거리
+      range_enabled: true
+      min_range: 0.05
+      max_range: 20.0
+
+      # ROI 상자 — 회피 판단에 쓸 영역만 남긴다
+      roi_enabled: true
+      min_x: -5.0
+      max_x: 10.0
+      min_y: -5.0
+      max_y: 5.0
+      # 2D 라이다는 장착 높이가 그대로 z 가 된다. 4대 높이(0.20/0.25)를 모두 덮도록
+      # 넉넉히 열어둔다. 좁히면 특정 라이다가 통째로 사라지니 주의.
+      min_z: -1.0
+      max_z: 2.0
+
+      # 자기반사 제거 — 차체가 스스로 찍히는 점 (요구 §11 Self Filtering)
+      #
+      # 차량 제원의 원본은 stack_avoid/config/params.yaml 이다 (여기 값은 그로부터 유도).
+      #   length_m 0.85, width_m 0.62, wheelbase 0.595, front_overhang 0.165
+      #   → base_link(후축 중심) 기준 차체는 x = -0.090 ~ +0.760, y = -0.31 ~ +0.31
+      #   → 상자 중심 x = (0.760 - 0.090)/2 = 0.335
+      # 좌/우 라이다(y=±0.155)는 이 상자 **안**에 있다. 즉 차체 윤곽 안쪽에서 들어오는
+      # 반사는 전부 자기반사이므로 지우는 게 맞다.
+      self_filter_enabled: true
+      vehicle_length: 0.85
+      vehicle_width: 0.62
+      vehicle_center_x: 0.335
+      vehicle_center_y: 0.0
+      self_margin: 0.02
+
+      # voxel — 시야가 겹치는 곳의 중복점 축약 (요구 §13)
+      # 2D 라이다는 점이 원래 적어서 기본은 끈다. 겹침이 심하면 켤 것.
+      enable_voxel_filter: false
+      voxel_leaf_size: 0.03
+      voxel_2d: true           # z 무시 (라이다마다 높이가 달라도 같은 칸으로 묶임)
+
+    # ── 가상 LaserScan (요구 §14, §15, §17) ──────────────────────────────
+    scan:
+      angle_min: -3.14159265
+      angle_max: 3.14159265
+      # ★ 원본 센서의 각분해능보다 촘촘하게 잡지 말 것.
+      #   실측 (2026-08-13, 드라이버 angle_increment): T-mini Plus 0.839deg,
+      #   RPLiDAR C1M1 0.499deg. **성긴 쪽(0.839)이 기준**이므로 1.0deg 가 하한이다.
+      #   T-mini Plus ~0.9deg, RPLiDAR C1 ~0.72deg 인데 0.5deg(720 bin)로 두면
+      #   점이 닿지 않는 bin 이 생겨 inf 로 남는다 — 회피 로직은 그걸 "비어 있음"으로
+      #   읽으므로 위험하다. (시뮬 실측 2026-08-13: 0.5deg → 720칸 중 23칸 미관측,
+      #   1.0deg → 360칸 전부 관측)
+      #   실제 라이다 각분해능을 확인한 뒤 조절할 것. 요구 §15 의 예시값은 0.00872665.
+      angle_increment: 0.0174533    # 1.0 deg -> 360 bin
+      # ★ 센서 신뢰구간과 **같은 값**이어야 한다 (2026-08-13 단위계 통일).
+      #   lidar_extrinsics.yaml 의 4대 공통 [0.15, 12.0] 과 어긋나면, merged_cloud 에는
+      #   있는데 merged_scan 에서는 사라지는(또는 그 반대) 점이 생겨 두 출력이 다른
+      #   세계를 말하게 된다. 이전 값(0.1 / 20.0)은 어느 센서도 낼 수 없는 범위였다.
+      range_min: 0.15
+      range_max: 12.0
+      # 스캔에 넣을 점의 높이 창. 기본은 열어둔다.
+      z_min: -10.0
+      z_max: 10.0
+      # 미관측 bin 을 +inf 로 (LaserScan 관례). false 면 no_return_value 사용.
+      use_inf_for_no_return: true
+      no_return_value: 0.0
+      publish_intensities: false
+
+    # ── 출력 ─────────────────────────────────────────────────────────────
+    merged_cloud_topic: "/lidar/merged_cloud"
+    merged_scan_topic: "/lidar/merged_scan"
+    debug_cloud_topic: "/lidar/merged_cloud_debug"
+    # 센서별 정규화 cloud 발행 (RViz 색 구분 검증용. 실주행에서는 false 로 꺼도 된다)
+    publish_sensor_clouds: true
+    # "base_link" = 변환 후 발행(캘리브레이션 확인에 편함) | "sensor" = 센서 원좌표계
+    sensor_cloud_frame: "base_link"
+    # sensor_id 필드가 붙은 debug cloud (요구 §18)
+    publish_debug_cloud: false
+    publish_intensity: false
+
+    # ── QoS (요구 §23) ───────────────────────────────────────────────────
+    # 드라이버가 SensorDataQoS(=best_effort) 로 내므로 입력도 best_effort 가 기본.
+    # 데이터가 안 들어오면 여기 mismatch 부터 의심할 것.
+    qos:
+      input_reliability: "best_effort"
+      input_depth: 5
+      output_reliability: "best_effort"
+      output_depth: 5
+
+    # ── 진단 (요구 §19) ──────────────────────────────────────────────────
+    diagnostics:
+      report_period_s: 2.0
+      # 활성 센서가 이 수 미만이면 WARN, 0이면 ERROR
+      min_active_sensors: 2
+      hardware_id: "multi_lidar_fusion"
+      # true 면 정상일 때 INFO 를 찍지 않는다 (실주행 로그 절약)
+      log_warn_only: false

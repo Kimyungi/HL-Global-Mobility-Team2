@@ -1,0 +1,225 @@
+# multi_lidar_fusion — 센서 정의 + 장착 위치(extrinsic) + 보는 범위(FOV)
+#
+# ★ 코드는 건드리지 않는다 (요구 §29 금지5).
+#
+# ★★ 장착값(x/y/z/rpy)과 시야각의 **단일 원천은 stack_parking/config/lidar_mounts.yaml** 이다.
+#     multi_lidar_fusion.launch.py 가 그 파일을 읽어 아래 값을 런타임에 덮어쓰고,
+#     서로 다르면 경고를 찍는다. 값을 고칠 곳은 lidar_mounts.yaml 한 곳뿐이다.
+#     여기 적힌 값은 그 원천의 사본이며, `use_mounts:=false` 로 띄울 때의 대비책이다.
+#
+# 구성 (2026-08-13 실차 확정 — view_one_lidar.launch.py 로 한 대씩 눈으로 확인):
+#   a1 = 전방  YDLiDAR T-mini Plus   (unit yd0, by-path …1.2.4…)
+#   a2 = 후방  YDLiDAR T-mini Plus   (unit yd1, by-path …1.2.3…)
+#   b1 = 좌측  SLAMTEC RPLiDAR C1M1  (unit rp1, by-id …f2ee467b…)
+#   b2 = 우측  SLAMTEC RPLiDAR C1M1  (unit rp0, by-id …76d341fd…)
+#
+# TF 는 전부 base_link 직속이다 (요구 §4 — 라이다끼리 연쇄 금지):
+#   base_link ├── lidar_a1_link
+#             ├── lidar_a2_link
+#             ├── lidar_b1_link
+#             └── lidar_b2_link
+#
+# 좌표 규약 (REP-103): x = 전방, y = 좌측, z = 위. yaw 는 반시계 양수.
+#
+# ★ yaw = "그 라이다의 스캔 0도가 차량 기준 어느 쪽을 보는가" [rad].
+#   라이다를 설치한 방향과 같지 않다 — 모델마다 스캔 0도의 위치가 다르고,
+#   드라이버의 각도 옵션에 따라 또 달라진다.
+#
+#   ★★ 2026-08-14 실차 확정 (판·박스로 검증, 이 값 그대로 고정):
+#       a1 앞  yaw -90 |  a2 뒤  yaw +90 |  b1 좌  yaw -90 |  b2 우  yaw +90
+#
+#   ★★ 전제 — 드라이버 각도 옵션 (multi_lidar_drivers.launch.py). **하나라도 바뀌면
+#      위 yaw 는 전부 무효다:**
+#        YD T-mini Plus : lidar_type=1, reversion=true,  inverted=false
+#        RPLiDAR C1M1   :               (rplidar)        inverted=true
+#
+#   겪은 함정 3가지 (같은 실수를 반복하지 않기 위해 남긴다):
+#    1) lidar_type=0(TOF)로 띄우면 **거리가 4배**로 나온다. T-mini Plus 는 1(삼각측량)이다.
+#    2) inverted 는 각도 **부호 반전(거울상)** 이다. 정면에 판을 두고 yaw 를 맞추면
+#       정면에서는 상쇄되고 **좌우만 뒤집혀** 보인다 — 원인 찾기가 매우 어렵다.
+#         a_rep = Y - b,  yaw_cfg = -Y  ->  b_pipe = -b
+#    3) 그 반전을 되돌릴 때 yaw 부호를 **네 대 모두** 뒤집으면 안 된다. 부호 반전의
+#       고정점이 raw 0 / raw 180 이므로:
+#         YD(정면 raw 270) -> 반전 시 90 으로 옮겨감  => yaw 부호 반전 필요
+#         RP(정면 raw 180) -> 반전해도 180 그대로     => yaw 그대로
+#       네 대에 일괄 적용했다가 좌·우 점이 2개/6개만 남았다.
+#
+#   검산: 같은 모델끼리 **센서기준 시야중심이 같아야 한다**
+#         YD 앞/뒤 = raw +90,  RP 좌/우 = raw ±175
+#
+# ★ 거리 단위계 (2026-08-13 통일) — 4대 공통 [0.15, 12.0] m.
+#   하드웨어 실측: T-mini Plus 0.03~12.0m / RPLiDAR C1M1 0.15~16.0m.
+#   하한 0.15 는 C1 의 물리적 하한이다. 이 값을 안 맞추면 설정에 0.08 이라 적어 놓고도
+#   실제로는 0.15 로 동작한다(변환 단계가 드라이버 range_min 과 교집합을 잡는다).
+# ★ 센서별 거리 보정 (range_offset_m, 2026-08-14 적용)
+#   YD 가 RP 보다 **8.44cm 길게** 읽는다. 이 상대차가 확정값이고, 절대 배분
+#   (YD +6.9 / RP -1.6)은 판 실측 평균에 맞춘 것이라 근거가 약하다.
+#   더 나은 절대 기준이 생기면 **두 값을 같은 양만큼 함께** 옮길 것 — 상대차만
+#   유지되면 4대 정합은 그대로다.
+#   근거: tools/pair_calibrate.py 로 앞↔우, 앞↔좌 두 쌍을 동시에 풀었다. 좌·우가 같은
+#   모델이라 바이어스가 같아야 한다는 구속이 절대 yaw 와 이 값을 함께 정한다.
+#   검증: 캡처 7개에서 거리 0.70cm / 각도 0.70도 이내 일치 (보정 전 7.66cm).
+
+/**:
+  ros__parameters:
+    sensor_ids: ["a1", "a2", "b1", "b2"]
+    target_frame: "base_link"
+
+    # 이 노드가 base_link -> lidar_*_link static TF 를 직접 낸다.
+    # URDF/robot_state_publisher 로 이미 내보내고 있으면 false 로 끌 것.
+    publish_static_tf: true
+
+    extrinsics:
+      # ↓ stack_parking/config/lidar_mounts.yaml 의 사본 (2026-08-11 실측 좌표).
+      #   launch 가 원천을 읽어 덮어쓰므로, 원천을 고치면 여기는 자동으로 무시된다.
+      a1:                # front
+        x: 0.760         # 앞범퍼. stack_avoid 와 같은 물리 유닛
+        y: 0.000
+        z: 0.065         # 4대 동일 높이 — 2D 병합의 전제
+        roll: 0.0
+        pitch: 0.0
+        yaw: -1.57079633   # 앞  (T-mini) — 2026-08-14 확정
+      a2:                # rear
+        x: -0.055        # 차체 뒷단(-0.090)보다 35mm 안쪽 — 자기가림이 가장 큼
+        y: 0.000
+        z: 0.065
+        roll: 0.0
+        pitch: 0.0
+        yaw: 1.57079633   # 뒤  (T-mini) — 앞과 같은 모델, 부호만 반대
+      b1:                # left
+        x: 0.310
+        y: 0.155
+        z: 0.065
+        roll: 0.0
+        pitch: 0.0
+        yaw: -1.57079633   # 좌  (C1M1)   — 2026-08-14 확정
+                          # (폴백 가정값 +90 과 180도 다르다. 2026-08-13 RViz 확인)
+      b2:                # right
+        x: 0.310
+        y: -0.155
+        z: 0.065
+        roll: 0.0
+        pitch: 0.0
+        yaw: 1.57079633   # 우  (C1M1)   — 좌와 같은 모델, 부호만 반대
+                          # (폴백 가정값 -90 과 180도 다르다. 2026-08-13 RViz 확인)
+
+    sensors:
+      # ─────────────────────────────────────────────────────────────────
+      # 각 센서 공통 항목
+      #   input_topic : 드라이버가 내는 토픽 (드라이버 launch 의 remap 과 일치시킬 것)
+      #   input_type  : "scan"(LaserScan) | "cloud"(PointCloud2)
+      #                 → 나중에 3D 라이다로 바꿔도 이 한 줄만 고치면 된다 (요구 §34-J)
+      #   frame_id    : 드라이버가 뭘 박아 넣든 이 값으로 덮어쓴다 (TF 조회 키)
+      #   min/max_range: 그 센서를 믿을 수 있는 거리. 모델별로 다르다 (요구 §12)
+      #   time_field  : PointCloud2 입력에서 점별 시각 필드 이름 ("" = 없음)
+      #
+      # 보는 범위·방향 (센서 좌표계 기준, 단위 deg):
+      #   fov_enabled       : false = 360도 전부 사용 (기본)
+      #   fov_min_deg/max_deg
+      #       min < max  → 보통 구간.        예) -100 ~ 100 = 전방 200도만
+      #       min > max  → ±180 을 가로지름. 예)  150 ~ -150 = 후방 60도만
+      #   blind_sectors_deg : [min1, max1, min2, max2, ...] 로 가릴 구간들
+      #                       (브래킷·차체에 가려 못 믿는 각도)
+      # ─────────────────────────────────────────────────────────────────
+      a1:
+        enabled: true
+        input_topic: "/lidar/a1/scan"
+        input_type: "scan"
+        cloud_topic: "/lidar/a1/cloud"
+        frame_id: "lidar_a1_link"
+        min_range: 0.15      # 4대 공통 하한 (아래 "거리 단위계" 주석 참조)
+        max_range: 12.0      # 4대 공통 상한
+        # 이 센서가 길게 읽는 양 [m]. 참값 = 측정 - 이 값.
+        #   YD — 겹침 역산 (2026-08-14). RP 와의 차 8.44cm 가 확정값이고
+        range_offset_m: 0.069
+        time_field: ""
+        # 회피 로직과 동일 규약: raw 270 이 정면(차량 전방), 전방 반원 raw 180~360 사용.
+        # 센서 기준 = -180 ~ 0. (yaw=+90 이므로 vehicle -90~+90 이 여기로 옮겨진다)
+        fov_enabled: true
+        fov_min_deg: 0.0
+        fov_max_deg: 180.0
+        # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
+      a2:
+        enabled: true
+        input_topic: "/lidar/a2/scan"
+        input_type: "scan"
+        cloud_topic: "/lidar/a2/cloud"
+        frame_id: "lidar_a2_link"
+        min_range: 0.15
+        max_range: 12.0
+        # 이 센서가 길게 읽는 양 [m]. 참값 = 측정 - 이 값.
+        #   YD — 앞과 같은 모델이므로 같은 값. 뒤 쌍 역산은 미실시
+        range_offset_m: 0.069
+        time_field: ""
+        # 후방 160deg — 범퍼 자기가림 (lidar_mounts.yaml: 기하 상한, 실측 mask 로 줄어들 수 있음)
+        # 2026-08-13 지정: raw 270도가 정면(차량 후방), raw 200~340 만 사용.
+        # 센서 기준 = -160 ~ -20 (200-360, 340-360). 원천(lidar_mounts.yaml)에서도
+        # fov_center_deg 180 / fov_width_deg 140 으로 같은 구간이 나온다.
+        fov_enabled: true
+        fov_min_deg: 20.0
+        fov_max_deg: 160.0
+        # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
+      b1:
+        enabled: true
+        input_topic: "/lidar/b1/scan"
+        input_type: "scan"
+        cloud_topic: "/lidar/b1/cloud"
+        frame_id: "lidar_b1_link"
+        min_range: 0.15      # C1 하드웨어 하한이 0.15 다 (드라이버 실측)
+        max_range: 12.0      # C1 은 16m 까지 되지만 공통 상한에 맞춘다
+        # 이 센서가 길게 읽는 양 [m]. 참값 = 측정 - 이 값.
+        #   RP — 절대 배분은 판 실측 평균 기준(근거 약함). 상대차만 확정
+        range_offset_m: -0.016
+        time_field: ""
+        # 2026-08-13 지정: raw 180 이 정면(차량 좌측), raw 120~250 만 사용.
+        # ±180 을 가로지르므로 min > max 로 적는다 (250 을 그대로 쓰면 안 된다 — b2 주석 참조).
+        fov_enabled: true
+        fov_min_deg: 120.0
+        fov_max_deg: -110.0
+        # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
+      b2:
+        enabled: true
+        input_topic: "/lidar/b2/scan"
+        input_type: "scan"
+        cloud_topic: "/lidar/b2/cloud"
+        frame_id: "lidar_b2_link"
+        min_range: 0.15
+        max_range: 12.0
+        # 이 센서가 길게 읽는 양 [m]. 참값 = 측정 - 이 값.
+        #   RP — 좌측과 같은 모델
+        range_offset_m: -0.016
+        time_field: ""
+        # 2026-08-13 지정: raw 180 이 정면(차량 우측), raw 110~230 만 사용.
+        # ★ max 를 230 으로 적으면 안 된다 — 노드는 각도를 (-180,180] 로 정규화해
+        #   비교하므로 180 을 넘는 상한은 절대 만족되지 않아 180~230 이 조용히 사라진다.
+        #   ±180 을 가로지르는 구간은 min > max 로 적는다 (AngularSector 가 감긴 구간으로 읽음).
+        fov_enabled: true
+        fov_min_deg: 110.0
+        fov_max_deg: -130.0
+        # blind_sectors_deg: [85.0, 95.0]   # ★ 빈 리스트 [] 로 두지 말 것 (아래 주의 참조)
+
+# ── FOV 설정 예시 (그대로 복사해서 위 값에 덮어쓰면 된다) ─────────────────
+#
+#  ① 전방 라이다가 차체 뒤쪽을 못 보게: 앞 200도만 남긴다
+#       fov_enabled: true
+#       fov_min_deg: -100.0
+#       fov_max_deg:  100.0
+#
+#  ② 후방 라이다를 뒤 120도로 제한 (yaw=pi 로 이미 돌아가 있으므로 센서 기준 -60~60)
+#       fov_enabled: true
+#       fov_min_deg: -60.0
+#       fov_max_deg:  60.0
+#
+#  ③ ±180 을 가로지르는 구간 (센서를 돌리지 않고 뒤쪽만 보고 싶을 때)
+#       fov_enabled: true
+#       fov_min_deg:  150.0
+#       fov_max_deg: -150.0
+#
+#  ④ 브래킷이 두 군데를 가릴 때
+#       blind_sectors_deg: [85.0, 95.0, -95.0, -85.0]
+#
+# ★★ 주의: blind_sectors_deg 를 쓰지 않을 때는 **키를 통째로 지우거나 주석 처리**할 것.
+#    `blind_sectors_deg: []` 는 ROS 2 의 알려진 함정이다 — 빈 리스트는 타입을 알 수
+#    없어서, 이 YAML 을 읽는 노드가 생성자에서 즉시 죽는다:
+#        InvalidParameterValueException: ... 'No parameter value set'
+#    (rclcpp 가 파라미터 override 를 변환하는 시점이라 코드로는 막을 수 없다.)
