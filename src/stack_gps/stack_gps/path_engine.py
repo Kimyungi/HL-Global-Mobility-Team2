@@ -61,6 +61,32 @@ class PathEngine:
     zone_ranges: [(start_idx, end_idx)] 포함 구간 목록 (웨이포인트 인덱스 기준).
     """
 
+    # ref 시작점이 "전방"으로 인정되는 최소 vehicle-frame x [m].
+    # 0으로 두면 옆구리(x≈0) 점이 뽑혀 도달 곡률이 폭주한다(2026-08-05 위빙).
+    MIN_FORWARD_M = 0.3
+    # 재합류 lookahead 계산에 쓰는 최소 회전반경 [m] (WHEELTEC 실측 1.5m,
+    # DRIVE_GUIDE의 S자 코스 기록 근거). 이탈이 클수록 lookahead를 늘려
+    # 도달 곡률 κ=2y/L² 이 1/R_min 을 넘지 않게 한다 — 넘으면 풀조향 포화.
+    MIN_TURN_RADIUS_M = 1.5
+    # ref 첫 점의 최대 방위각 [rad]. dSPACE는 **첫 점만** 목표로 쓴다(2026-08-14
+    # 손상민 확인). 차가 트랙에서 멀어지는 쪽을 보고 있으면 트랙은 전진하는 만큼
+    # 옆으로도 벌어져 **트랙 위 어떤 점도** 조준 가능한 방위에 없다 —
+    # run_0814_201650 실측: 20점 전부 방위 76~84°(거의 정옆), 명령 선회반경
+    # 2.3m인데 실제 24m로 사실상 직진, 횡오차 5m까지 발산.
+    # 그래서 이 각을 넘으면 트랙 점 대신 **트랙 쪽으로 꺾인 중간 목표점**을 낸다.
+    # 차가 돌아 정렬될수록 방위가 줄어 자연히 원래 동작으로 수렴한다.
+    MAX_TARGET_BEARING_RAD = 0.436   # 25°
+    # 재합류 목표점의 **거리 상한** [m]. dSPACE의 조향 응답은 방위뿐 아니라
+    # 목표까지의 거리에 강하게 의존한다 (2026-08-15 실측, 4런 통합):
+    #   목표 0.8~1.6m → 명령 곡률의 ~55% 실현 | 2.5m 초과 → 10% 아래로 붕괴
+    # 같은 방위 25°·같은 속도 0.5m/s인데 목표 거리만 달랐던 두 복귀가 갈렸다:
+    #   run_0815_142817 d=1.28~1.62m → str −0.21, 2초에 24° 선회, cross 0.43→0.10 ✅
+    #   run_0815_144142 d=2.9~5.4m   → str −0.014, 선회 없음, cross 1.88→5.04 ❌
+    # 상한이 없으면 **이탈이 클수록 트랙 점이 멀어져 목표도 멀어지고 조향은
+    # 약해지는 양의 되먹임**이 된다 — 실측에서 명령 선회반경이 이탈과 함께
+    # 3.4m(cross 1.7m)에서 6.3m(cross 5.0m)로 되레 완만해졌다.
+    REJOIN_TARGET_MAX_M = 1.8
+
     def __init__(self, latlon_pts, n_points=30,
                  accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0,
                  lookahead_m=0.0):
@@ -72,6 +98,7 @@ class PathEngine:
         self.n_points = n_points
         self.accel_ranges = list(accel_ranges)
         self.parking_ranges = list(parking_ranges)
+        self.lookahead_m = float(lookahead_m)
 
         lat0, lon0 = latlon_pts[0]
         self._lat0, self._lon0 = lat0, lon0
@@ -123,6 +150,47 @@ class PathEngine:
     def _in_ranges(idx, ranges):
         return any(a <= idx <= b for a, b in ranges)
 
+    def _target_idx(self, idx, ev, nv, c, s, cross=0.0):
+        """ref 시작점 = **차량 앞쪽**에 있으면서 lookahead_m 이상 떨어진 첫 트랙 점.
+
+        구현은 "최근접점에서 트랙 호길이로 lookahead_m 앞"(idx + _la_pts)이었는데,
+        그건 차가 트랙 위에 있을 때만 전방을 뜻한다. 횡오차가 커지면 트랙 따라
+        1m 앞이 **차량 기준으로는 뒤**가 되어 ref[0].x가 음수로 나오고, 전진밖에
+        못 하는 차는 그 목표에 도달할 수 없다 — 복귀가 구조적으로 불가능해진다.
+        (2026-08-14 run_0814_195116: 회피 후 cross 2.7m·헤딩 30° 이탈 상태에서
+        ref[0]=(-3.15,-0.10) → 재합류 실패, cross가 4.5m까지 단조 발산)
+
+        그래서 기준을 **차량으로부터의 유클리드 거리 + 전방 조건**으로 바꾼다.
+        트랙 위에 정렬돼 있을 때는 기존과 사실상 같은 점을 고른다.
+        전방에 후보가 없으면(차가 트랙을 등짐) 구 동작으로 폴백한다 — 이 경우는
+        복귀가 아니라 정지가 답이고, MGM의 역방향 가드(|ref[0].yaw|>120°)가 잡는다.
+        """
+        last = len(self.e) - 1
+        if self.lookahead_m <= 0.0:
+            return idx          # lookahead 끔 = 최근접점 그대로 (구동작 보존)
+        la2 = self.lookahead_m * self.lookahead_m
+        fallback = None
+        for i in range(idx, last + 1):
+            de, dn = self.e[i] - ev, self.n[i] - nv
+            x = c * de + s * dn
+            if x < self.MIN_FORWARD_M:
+                continue
+            d2 = de * de + dn * dn
+            if d2 < la2:
+                continue
+            if fallback is None:
+                fallback = i        # 전방·거리 조건은 만족 (곡률만 과함)
+            # 도달 곡률 κ = 2y/L² 이 1/R_min 이하인 점을 고른다.
+            # |2y|/d2 ≤ 1/R_min  ⟺  |2y|·R_min ≤ d2.
+            # 이탈이 클수록 더 먼 점이 뽑혀 재합류가 완만해진다 — 가까운 점을
+            # 주면 조향이 포화돼 트랙을 가로질렀다 되돌아오는 진동이 된다.
+            y = -s * de + c * dn
+            if abs(2.0 * y) * self.MIN_TURN_RADIUS_M <= d2:
+                return i
+        if fallback is not None:
+            return fallback
+        return min(idx + self._la_pts, last)
+
     def snapshot(self, lat, lon, heading=None):
         """현재 fix → dict(points, accel_zone, parking_zone, idx, cross_track_m).
 
@@ -139,7 +207,7 @@ class PathEngine:
         psi = self.yaw[idx] if heading is None else heading
         c, s = math.cos(psi), math.sin(psi)
 
-        start = min(idx + self._la_pts, len(self.e) - 1)
+        start = self._target_idx(idx, ev, nv, c, s, dist)
         points = []
         for i in range(start, min(start + self.n_points, len(self.e))):
             de, dn = self.e[i] - ev, self.n[i] - nv
@@ -147,6 +215,23 @@ class PathEngine:
                            -s * de + c * dn,         # y 좌측
                            wrap_angle(self.yaw[i] - psi),
                            self.curvature[i]))
+        # 첫 점의 방위가 너무 크면(= 트랙이 옆에 있고 차는 멀어지는 방향) 트랙 점
+        # 대신 재합류용 중간 목표점으로 대체한다 (MAX_TARGET_BEARING_RAD 주석 참조).
+        # 거리는 **응답이 살아 있는 밴드로 클램프**한다 (2026-08-15):
+        #   상한 REJOIN_TARGET_MAX_M — 멀면 dSPACE 조향이 죽는다(주석의 실측 근거)
+        #   하한 2·R_min·sin β    — 도달 곡률 R = d/(2·sinβ) 이 R_min 이상
+        # 하한을 뒤에 적용해 R_min 이 항상 이긴다. yaw/curvature는 트랙 값을 그대로
+        # 둔다 — MGM 역방향 가드가 ref[0].yaw를 "트랙 대비 차 방향"으로 해석하기 때문.
+        if points and self.lookahead_m > 0.0:   # lookahead 끔 = 구동작 완전 보존
+            px, py, pyaw, pcurv = points[0]
+            bearing = math.atan2(py, px)
+            if abs(bearing) > self.MAX_TARGET_BEARING_RAD:
+                b = math.copysign(self.MAX_TARGET_BEARING_RAD, bearing)
+                d = min(math.hypot(px, py), self.REJOIN_TARGET_MAX_M)
+                d = max(d, 2.0 * self.MIN_TURN_RADIUS_M *
+                        math.sin(self.MAX_TARGET_BEARING_RAD))
+                points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
+
         return {
             "points": points,
             "accel_zone": self._in_ranges(idx, self.accel_ranges),

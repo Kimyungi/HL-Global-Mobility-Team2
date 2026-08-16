@@ -6,6 +6,8 @@
 //   → 실행 2: 종방향 병합 (§5.6 — rate limit만, immediate_stop은 우회)
 #include "mgm_step.hpp"
 
+#include <cmath>
+
 namespace adas_mgm
 {
 
@@ -58,18 +60,41 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // EstopRequest 인가**(= run 종료/새 run 준비)로만 — s.estop은 wrapper의
   // staleness 보정이 섞여 있어, gps 단절→복구 같은 일시 장애로 래치가 풀려
   // 재출발하는 구멍이 있었다 (2026-08-11, CLAUDE.md §4 래치).
+  //
+  // 2026-08-15: 래치 조건에서 "waypoint 스테이트" 제약을 뺐다. GPS 트랙의 종점은
+  // 코스의 끝이지 특정 스테이트의 사정이 아닌데, lane에서 종점을 지나면 아무도
+  // 세우지 않았다 — run_0815_163614에서 at_end 후 **7.41m 초과 주행**(13.3초),
+  // 그 사이 횡오차 0.41→6.37m + 트랙 밖 AVOID 진입.
+  //   · `s.gps_path.n > 0` 게이트: lane 스테이트에서는 §5.7 ②의 gps 신선도
+  //     watchdog이 동작하지 않는다(사용 중인 소스만 감시). 낡거나 무효인 gps의
+  //     at_end로 래치가 걸리는 것을 막는다 — fix 상실 시 stack_gps는 빈 경로를
+  //     계속 발행하므로 n==0으로 걸러진다.
+  //   · parking 제외: 주차 구간에서 트랙 종점은 의미가 없다.
   if (s.estop_latch_release) {
     st.at_end_latched = false;
-  } else if (st.state == MGM_STATE_WAYPOINT && s.gps_at_end) {
+  } else if (st.state != MGM_STATE_PARKING && s.gps_at_end && s.gps_path.n > 0) {
     st.at_end_latched = true;
   }
+
+  // avoid 복귀 보류 카운터 — waypoint에서 GPS 트랙에 재합류할 시간을 벌어준다
+  if (st.return_hold_left > 0) {
+    --st.return_hold_left;
+  }
+
+  // 트랙 재합류 판정 (waypoint→lane 게이트). gps_path가 유효할 때만 의미가
+  // 있으므로 점이 없으면 미합류로 본다 — 신선도/유효성 보정은 wrapper가
+  // 이미 끝낸 뒤다(§5.7 ②). 임계 0 이하면 게이트 끔(구동작).
+  const bool rejoined =
+    (st.params.lane_entry_max_cross <= 0.0f) ||
+    (s.gps_path.n > 0 && s.gps_cross_track <= st.params.lane_entry_max_cross);
+
+  const uint8_t prev_state = st.state;
 
   switch (st.state) {
     case MGM_STATE_LANE:
       if (s.gps_parking_zone && s.parking_space_found) {
         st.state = MGM_STATE_PARKING;
       } else if (s.avoid_obstacle_detected && s.avoid_avoidable) {
-        st.avoid_return = MGM_STATE_LANE;
         st.state = MGM_STATE_AVOID;
       } else if (st.lane_low_cnt >= st.params.n_cycles) {
         st.state = MGM_STATE_WAYPOINT;
@@ -78,17 +103,28 @@ void transition(const CoreSnapshot & s, CoreState & st)
 
     case MGM_STATE_WAYPOINT:
       if (s.avoid_obstacle_detected && s.avoid_avoidable) {
-        st.avoid_return = MGM_STATE_WAYPOINT;
         st.state = MGM_STATE_AVOID;
-      } else if (st.lane_high_cnt >= st.params.n_cycles) {
+      } else if (st.return_hold_left == 0 &&
+        st.lane_high_cnt >= st.params.n_cycles && rejoined)
+      {
+        // 전이 조건 3개: ① 복귀 보류 시간 경과 ② 차선 신뢰도 히스테리시스
+        // ③ **트랙에 실제로 재합류** — ③이 없으면 회피로 이탈한 채 카메라로
+        //    넘어가, 트랙 복귀는 영영 못 하고 차선만 보고 간다 (§4).
         st.state = MGM_STATE_LANE;
       }
       break;
 
     case MGM_STATE_AVOID:
-      // 기동 완료 → 진입했던 스테이트로 복귀
-      if (s.avoid_maneuver_done) {
-        st.state = st.avoid_return;
+      // 기동 완료 → waypoint로 복귀 (§4, 2026-08-12 개정 — 회피 직후 차선 검출은
+      // 신뢰 불가(차로 이탈 상태). GPS 트랙 재합류 후 lane은 신뢰도 히스테리시스로
+      // 자연 재전이. 구 복귀처 변수(진입 스테이트 기억)는 폐기.
+      // 상한(avoid_max_cycles) 초과 시에도 복귀 — AVOID는 직진 유지라 무한히
+      // 지속되면 트랙에서 무한히 멀어진다 (mgm_types.hpp 주석의 실측 근거).
+      if (s.avoid_maneuver_done ||
+        (st.params.avoid_max_cycles > 0 && st.avoid_ticks >= st.params.avoid_max_cycles))
+      {
+        st.state = MGM_STATE_WAYPOINT;
+        st.return_hold_left = st.params.avoid_return_hold_cycles;
       }
       break;
 
@@ -103,6 +139,19 @@ void transition(const CoreSnapshot & s, CoreState & st)
       st.state = MGM_STATE_LANE;
       break;
   }
+
+  // 스테이트가 바뀌면 히스테리시스 카운터를 리셋한다 — "N주기 연속"은 **새
+  // 스테이트 안에서** 세어야 의미가 있다. 리셋이 없으면 이전 스테이트에 있는
+  // 동안 쌓인 값으로 진입 즉시 되튄다 (2026-08-14 run_0814_184624: AVOID 5~9초
+  // 기동 중 lane_high_cnt가 500~900까지 누적 → waypoint 복귀 한 틱 만에 lane 전이,
+  // 110초에 전이 22회·횡오차 8m 발산).
+  if (st.state != prev_state) {
+    st.lane_low_cnt = 0;
+    st.lane_high_cnt = 0;
+    st.wrongway_cnt = 0;
+  }
+  // AVOID 지속 틱 — 상한 판정용. AVOID를 벗어나면 0으로 (재진입 시 다시 셈).
+  st.avoid_ticks = (st.state == MGM_STATE_AVOID) ? st.avoid_ticks + 1 : 0;
 }
 
 // ── 판단: 스테이트 내부 우선권 (§4 우선권 표 — 전역 min/max 금지)
@@ -121,10 +170,12 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.immediate_stop = true;
       } else if (s.traffic_stop_required) {
         out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
-      } else if (st.state == MGM_STATE_WAYPOINT &&
-        (s.gps_at_end || st.at_end_latched))
-      {
-        out.v_ref = 0.0f;  // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03)
+      } else if (st.at_end_latched) {
+        // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03).
+        // **lane·waypoint 공통** (2026-08-15). 래치는 transition()이 이 틱에서
+        // 이미 갱신했으므로 여기서 s.gps_at_end를 또 볼 필요가 없다 — 유효성
+        // 게이트(gps_path.n>0)·parking 제외도 거기 한 곳에만 둔다.
+        out.v_ref = 0.0f;
       } else if (st.state == MGM_STATE_WAYPOINT &&
         st.wrongway_cnt >= st.params.wrongway_cycles)
       {
@@ -198,16 +249,55 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     target[i] = path->pts[i < last ? i : last];
   }
 
+  // 단일 목표점 소스(avoid)는 원점→목표 직선 보간으로 20점 경로화 (§5.1 포맷 변환).
+  // 근거 (2026-08-12 실차, run_0812_234253): 같은 run·같은 속도(v_ref 0.44)에서
+  // 20점(gps)=조향 정상 / 1점(avoid)=str 무반응으로 콘에 직진 → estop. 2026-08-08
+  // "1점=str 무반응" 실측의 재확인이며, "원인은 저속"이라는 2026-08-10 재해석을 반증.
+  // dSPACE 수정 없이 PC 조립에서 해결 — 와이어에는 항상 다점이 실린다.
+  int32_t n_wire = n;
+  if (n == 1) {
+    const CorePoint tgt = path->pts[0];
+    const float yaw = atan2f(tgt.y, tgt.x);
+    // ★ 등간격(첫 점 = 목표/20 ≈ 7.5cm)은 **의도적으로 유지한다.** 첫 점이
+    //   원점에 가까우면 dSPACE가 보는 도달 곡률 κ=2y/L² 이 실제 경로 곡률의
+    //   10~20배로 부풀려지는데, 이 부풀림이 **회피 기동을 성립시키는 일을 하고
+    //   있다** — dSPACE가 명령 곡률의 10~55%만 실현하기 때문이다(CLAUDE.md §3 ③).
+    //   2026-08-15에 이걸 "수치 결함"으로 보고 첫 점을 1.2m로 옮겼다가 같은
+    //   크기의 회피 목표(|y|≈0.29m)에서 조향이 반토막 났다:
+    //     첫 점 0.075m (run_0815_144142) 헤딩 +13.0° · |str| 0.089 · 횡변위 0.26m → 통과
+    //     첫 점 1.2m   (run_0815_153633) 헤딩  +4.3° · |str| 0.047 · 횡변위 0.08m → estop
+    //   방위는 어느 쪽이든 보존되므로 차이는 순수하게 곡률 크기다.
+    //   **근본 해결은 dSPACE MPC 쪽**(지평 200ms×0.5m/s=0.1m)이며, 그게 잡히기
+    //   전에는 여기를 "정직한 기하"로 되돌리지 말 것.
+    for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
+      const float t = static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
+      target[i].x = tgt.x * t;
+      target[i].y = tgt.y * t;
+      target[i].yaw = yaw;
+      target[i].curvature = 0.0f;
+    }
+    n_wire = MGM_NUM_POINTS;
+  }
+
   // 인지 소스가 이전 틱과 완전히 같은 값을 냈는지(= 아직 새 추론이 안 나와
   // wrapper가 같은 스냅샷을 또 읽어준 것) 판정. 2026-08-08 조향 미반영 진단:
   // dSPACE가 완전 동일한 CAN 페이로드 반복 수신 시 이를 무시하는 것으로 실측
   // 확인됨(실카메라 로그에서 78.7%가 직전 틱과 동일값이었고 그 구간 str 무반응,
   // 명시적으로 매틱 값이 바뀌게 한 진단 스크립트는 45도 반응). stack_lane 추론이
   // ~21Hz로 CAN 주기(100Hz)보다 느려 구조적으로 발생.
-  const bool is_stale_repeat = st.has_raw_target && st.raw_n == n &&
+  // "새 추론 미도착" 판정은 **메시지 도착 여부**로 한다 (s.*_updated).
+  // 값 동일성으로 판정하던 것을 2026-08-14에 교체: 인지가 의도적으로 상수를 내는
+  // 경우(회피 통과 유지점 (1.5,0))를 영원히 낡은 값으로 오판해 x를 무한 감쇠시켰다.
+  // wrapper가 소스를 못 알려주는 경우(_updated 전부 false인 옛 스냅샷)를 대비해
+  // 값 동일성을 보조 조건으로 남긴다.
+  const bool src_updated =
+    (src == MGM_SRC_LANE) ? s.lane_updated :
+    (src == MGM_SRC_GPS) ? s.gps_updated :
+    (src == MGM_SRC_AVOID) ? s.avoid_updated : false;
+  const bool is_stale_repeat = !src_updated && st.has_raw_target && st.raw_n == n &&
     paths_equal(target, st.last_raw_target, n);
 
-  st.n_out = n;
+  st.n_out = n_wire;
 
   if (src != st.last_src) {  // 스테이트 전환 → ref 불연속 방지 블렌드 시작
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
@@ -236,7 +326,11 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     // 급커브 등은 어차피 다음 실제 인지값(21Hz)이 금방 덮어써서 누적되지 않음.
     const float dx = st.v * MGM_PERIOD_S;
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-      st.ref_out[i].x -= dx;
+      // 하한: 첫 점이 차 뒤로 가면 전진밖에 못 하는 차에게 도달 불가능한 목표가
+      // 된다. 감쇠는 "인지가 잠깐 늦은 동안의 보정"이지 목표를 뒤로 보내는
+      // 수단이 아니다 — 안전 불변식으로 고정한다 (2026-08-14).
+      st.ref_out[i].x = (st.ref_out[i].x - dx > MGM_MIN_REF_X)
+        ? st.ref_out[i].x - dx : MGM_MIN_REF_X;
     }
   } else {
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
@@ -276,7 +370,6 @@ void mgm_init(CoreState & st, const CoreParams & params)
   st = CoreState{};
   st.params = params;
   st.state = MGM_STATE_LANE;
-  st.avoid_return = MGM_STATE_LANE;
   st.last_src = MGM_SRC_LANE;
   st.n_out = 1;
   // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)

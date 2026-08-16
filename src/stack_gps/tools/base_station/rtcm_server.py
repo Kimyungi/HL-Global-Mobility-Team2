@@ -28,9 +28,19 @@ def main():
                     help="텔레메트리 라디오 시리얼 포트 (예: /dev/ttyUSB0) — "
                          "지정 시 TCP와 동시에 무선으로도 RTCM 송출")
     ap.add_argument("--radio-baud", type=int, default=38400)
+    # 무음 감지 후 시리얼 재개방 — USB 엔드포인트 스톨 복구용 (2026-08-14 실측).
+    # ftdi_sio가 `urb stopped: -32`(EPIPE)로 수신 URB를 영구히 멈추는 사례가 있는데,
+    # 이때 fd·DTR/RTS·장치 노드는 전부 정상으로 보여서 진단이 어렵다. 커널이 자동
+    # 복구하지 않으므로 **포트를 닫았다 다시 여는 것만이** 복구 수단이다.
+    # (그날 세션에서 이것 때문에 RTCM이 끊겨 run이 통째로 날아갔다)
+    ap.add_argument("--reopen-after", type=float, default=5.0,
+                    help="이 시간[s] 동안 1바이트도 안 들어오면 포트 재개방 (0=끔)")
     args = ap.parse_args()
 
-    ser = serial.Serial(args.port, args.baud, timeout=0.2)
+    def open_serial():
+        return serial.Serial(args.port, args.baud, timeout=0.2)
+
+    ser = open_serial()
     radio = None
     if args.radio:
         radio = serial.Serial(args.radio, args.radio_baud, timeout=0.2)
@@ -57,9 +67,47 @@ def main():
 
     n_bytes = 0
     t_stats = time.time()
+    t_last_data = time.time()
+    n_reopen = 0
     while True:
-        data = ser.read(1024)
+        try:
+            data = ser.read(1024)
+        except (serial.SerialException, OSError) as e:
+            print(f"[server] ⚠ 시리얼 읽기 오류: {e} — 재개방 시도")
+            data = b""
+            try:
+                ser.close()
+            except OSError:
+                pass
+            time.sleep(0.5)
+            try:
+                ser = open_serial()
+                n_reopen += 1
+            except (serial.SerialException, OSError) as e2:
+                print(f"[server] ⚠ 재개방 실패: {e2} — 2초 후 재시도")
+                time.sleep(2.0)
+                continue
+            t_last_data = time.time()
+
+        # 무음 감지 → 포트 재개방 (USB 엔드포인트 스톨 복구, --reopen-after 참조)
+        if args.reopen_after > 0 and not data and \
+                time.time() - t_last_data >= args.reopen_after:
+            print(f"[server] ⚠ {args.reopen_after:.0f}s 무음 — 포트 재개방 "
+                  f"(USB 스톨 의심, 누적 {n_reopen + 1}회)")
+            try:
+                ser.close()
+            except OSError:
+                pass
+            try:
+                ser = open_serial()
+                n_reopen += 1
+            except (serial.SerialException, OSError) as e:
+                print(f"[server] ⚠ 재개방 실패: {e} — 2초 후 재시도")
+                time.sleep(2.0)
+            t_last_data = time.time()
+
         if data:
+            t_last_data = time.time()
             n_bytes += len(data)
             if radio is not None:
                 try:
@@ -92,7 +140,8 @@ def main():
             status = f"{rate:6.0f} B/s"
             if rate == 0:
                 status += "  ⚠ RTCM 없음 — setup_base.py 완료 여부/포트 확인"
-            print(f"[server] RTCM {status}, 클라이언트 {n_cli}")
+            print(f"[server] RTCM {status}, 클라이언트 {n_cli}"
+                  + (f", 포트 재개방 {n_reopen}회" if n_reopen else ""))
             n_bytes, t_stats = 0, now
 
 

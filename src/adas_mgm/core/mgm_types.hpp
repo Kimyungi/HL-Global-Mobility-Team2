@@ -14,6 +14,12 @@ namespace adas_mgm
 constexpr int32_t MGM_NUM_POINTS = 20;   // ref points 최대치 (CAN ID 예약 폭, PROTOCOL.md)
                                          // 실제 점 수는 현재 모든 소스 1 (n은 확장 대비 가변)
 constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
+// §5.8 이동 보정이 ref x를 깎을 수 있는 하한 [m]. 전진밖에 못 하는 차에게
+// 차 뒤(x<0) 목표는 도달 불가능하므로 감쇠로 여기를 넘지 않는다 (2026-08-14).
+// 값이 작은 이유: avoid 1점 계약을 20점으로 보간하면 첫 점이 목표의 1/20
+// (1.5m 목표 → 0.075m)이라 정상값이 원래 작다. 하한을 크게 잡으면 그 정상값을
+// 왜곡한다 — 여기서는 "뒤로 넘어가지 않는다"만 보장한다.
+constexpr float MGM_MIN_REF_X = 0.01f;
 
 // CLAUDE.md §4 스테이트 4개 — TargetRef.msg의 STATE_* 상수와 값 일치
 enum : uint8_t
@@ -60,6 +66,15 @@ struct CoreSnapshot
   bool gps_accel_zone;
   bool gps_parking_zone;
   bool gps_at_end;
+  float gps_cross_track;                  // [m] 트랙 최근접점까지 거리 (재합류 판정)
+  // 이번 틱에 해당 소스의 **새 메시지**가 도착했는지 (wrapper가 수신 시각으로 판정).
+  // §5.8 이동 보정의 "새 추론 미도착" 판정 근거. 값 동일성으로 판정하면 인지가
+  // 의도적으로 상수를 낼 때(회피 통과 유지점 (1.5,0)) 영원히 낡은 것으로 오판해
+  // x를 무한 감쇠시킨다 — 2026-08-14 run_0814_200516에서 7.25초 동안 1.5→-2.2m로
+  // 밀려 차에게 후진을 명령한 꼴이 됐다.
+  bool lane_updated;
+  bool gps_updated;
+  bool avoid_updated;
   // stack_avoid
   bool avoid_obstacle_detected;
   bool avoid_avoidable;
@@ -98,6 +113,28 @@ struct CoreParams
   float a_down;            // [m/s^2] 일반 감속 rate limit (immediate_stop은 우회)
   float wrongway_yaw;      // [rad] 역방향 판정 |ref[0].yaw| 임계 (waypoint, §4)
   int32_t wrongway_cycles; // 역방향 N주기 연속 조건
+  // avoid→waypoint 복귀 후 이 틱수 동안 waypoint→lane 전이를 보류한다.
+  // 근거: 회피 직후엔 차가 트랙을 벗어나 있어 GPS 재합류 시간이 필요한데,
+  // 카운터 리셋만으로는 n_cycles(수백 ms)밖에 못 번다 (2026-08-14 run_0814_184624
+  // 실측: 복귀 4회 중 2회가 0.01s 만에 lane으로 튐 — §4 복귀 정책 무력화).
+  // 새 필드는 반드시 구조체 끝에 추가할 것 — core_replay가 옛 덤프의
+  // params_size로 앞부분만 읽고 나머지는 기본값으로 채우기 때문.
+  int32_t avoid_return_hold_cycles;
+  // waypoint→lane 전이를 허용하는 최대 횡오차 [m]. 트랙에 **실제로 재합류한 뒤에만**
+  // 카메라로 넘어가게 하는 게이트다 (2026-08-14). 시간 게이트
+  // (avoid_return_hold_cycles)만으로는 3초 뒤 이탈한 채로도 lane이 돼버린다 —
+  // run_0814_195116에서 복귀 시점 횡오차가 0.90m·2.72m였다.
+  // 0 이하면 이 게이트를 끈다(구동작).
+  float lane_entry_max_cross;
+  // AVOID 최대 지속 틱. 초과하면 maneuver_done과 무관하게 waypoint로 복귀한다.
+  // AVOID 중 경로는 "전방 직진 유지"라 틀어진 헤딩을 그대로 유지한다 —
+  // 상한이 없으면 무한히 트랙에서 멀어진다. 2026-08-15 run_0815_143039:
+  // 감지 경계에 걸친 벽이 20초에 28회 깜빡여 클리어런스 타이머가 매번
+  // 리셋되고, AVOID가 15초+ 지속되며 횡오차 5.3m까지 발산했다.
+  // 안전은 유지된다 — 복귀 후에도 장애물이 실제로 있으면 즉시 재진입하고,
+  // TTC 안전 바닥(ttc_stop)은 스테이트와 무관하게 계속 작동한다.
+  // 0 이하면 상한 없음(구동작).
+  int32_t avoid_max_cycles;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -106,10 +143,11 @@ struct CoreState
   CoreParams params;
   // 스테이트 머신
   uint8_t state;                          // MGM_STATE_*
-  uint8_t avoid_return;                   // 복귀처 변수 1개만 기억 (§4)
   int32_t lane_low_cnt;
   int32_t lane_high_cnt;
   int32_t wrongway_cnt;                   // 역방향 지속 카운터 (waypoint, §4)
+  int32_t return_hold_left;               // >0이면 waypoint→lane 전이 보류 (avoid 복귀 직후)
+  int32_t avoid_ticks;                    // AVOID 지속 틱 (avoid_max_cycles 상한 판정)
   bool at_end_latched;                    // 종점 도달 래치 — estop 인가 시 해제 (§4)
   // ref 조립 (전환 연속 처리)
   uint8_t last_src;                       // MGM_SRC_*

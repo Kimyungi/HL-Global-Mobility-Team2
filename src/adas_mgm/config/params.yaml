@@ -1,16 +1,52 @@
 mgm_node:
   ros__parameters:
     # lane ↔ waypoint 히스테리시스 (CLAUDE.md §4)
-    lane_conf_exit: 0.4
-    lane_conf_return: 0.6
-    n_cycles: 20            # 10ms × 20 = 200ms 연속
+    # 2026-08-14 run_0814_184624 실측으로 상향: 차선 confidence가 평균 0.47,
+    # 중앙 0.48로 구 임계(0.4/0.6) 밴드 안에서 진동 → 110초에 전이 22회,
+    # 횡오차 8m 발산. 밴드를 벌리고 연속 조건을 500ms로 늘린다.
+    # 되돌릴 땐 이 run의 덤프로 core_replay 파라미터 오버라이드 재생해 비교할 것.
+    lane_conf_exit: 0.35
+    lane_conf_return: 0.70
+    n_cycles: 50            # 10ms × 50 = 500ms 연속
+
+    # avoid→waypoint 복귀 후 lane 전이 보류 [틱] (§4 복귀 정책 실효화)
+    # 회피 직후 차는 트랙을 벗어나 있다 — GPS 재합류에 필요한 시간을 확보한다.
+    # 0이면 카운터 리셋만 적용(= n_cycles 만큼만 보류).
+    avoid_return_hold_cycles: 300   # 3.0s
+
+    # waypoint→lane 전이 허용 최대 횡오차 [m] — "트랙에 실제로 재합류한 뒤에만
+    # 카메라로 넘어간다". 시간 게이트만으로는 이탈한 채 lane이 돼버리고, 그러면
+    # GPS 트랙 복귀는 영영 못 한다 (2026-08-14 run_0814_195116: 복귀 시점
+    # 횡오차 0.90m·2.72m). 0 이하면 게이트 끔.
+    # 0.5m 근거: 정상 GPS 주행 실측 횡오차가 평균 0.075m·최대 0.24m이므로
+    # 정상 주행은 항상 통과하고, 회피 이탈(0.9m+)만 걸린다.
+    lane_entry_max_cross_m: 0.5
+
+    # AVOID 최대 지속 [틱] — 초과 시 maneuver_done과 무관하게 waypoint 복귀.
+    # AVOID 중 경로는 "전방 직진 유지"라 틀어진 헤딩을 유지한다. 상한이 없으면
+    # 무한히 트랙에서 멀어진다 (2026-08-15 run_0815_143039: 감지 경계에 걸친 벽이
+    # 20초에 28회 깜빡여 클리어런스 타이머가 매번 리셋 → AVOID 15초+ → 횡오차 5.3m).
+    # 1200틱=12s 근거: 정상 통과 대기 최댓값이 (3.0+0.85+0.3)/0.5 = 8.3s이므로
+    # 정상 회피는 절대 안 걸리고, 비정상 고착만 끊는다. 0 이하면 상한 없음.
+    avoid_max_cycles: 1200
 
     # 스테이트별 속도 [m/s]
     # 0.5 복원 (2026-08-06): 위빙 원인이 ref 첫 점 기하(lookahead 0)로
     # 확정·해결됨 — 직선 실측 cross 평균 0.075m/최대 0.24m. 속도를 더
     # 올릴 땐 stack_gps ref_lookahead_m도 함께 검토 (미리보기 시간
     # = lookahead/v: 1m@0.5=2s, 1m/s부턴 1.2~1.5m 권장).
-    v_base: 0.5
+    #
+    # 0.5 → 0.6 (2026-08-15). "조향은 v ≥ 0.5 m/s에서만 제대로 반응"(§3 ①,
+    # 이기돈)이 run_0815_155344에서 정량 재현됐다 — 곡률 실현율:
+    #     0.30~0.45 m/s  9.7%  |  0.45~0.50 m/s 14.0%  |  0.50~0.55 m/s 23.9%
+    # 문제는 v_base를 임계값에 딱 맞춰 두면 추종 오차·마찰로 계속 미달 쪽에
+    # 떨어진다는 것: 같은 run에서 **달성 속도 중앙값 0.494, 주행 시간의 69%가
+    # 0.5 미만**이었다. 목표를 0.6으로 올려 임계 위에서 돌게 한다.
+    # 25초 주기 위빙(±11°)과 AVOID 헤딩 누적 양쪽의 공통 원인이 이 저이득이다.
+    # ⚠ stack_avoid/config/params.yaml 의 target_speed_mps 와 **반드시 같이** 바꿀 것
+    #   (그쪽이 AVOID 스테이트의 v_suggest 소스 — launch 주석에도 명시).
+    # ⚠ lookahead는 그대로 1.8m: 미리보기 3.6s → 3.0s 로 위 권장(2s)보다 여유.
+    v_base: 0.6
     v_accel_zone: 1.0
     v_narrow: 0.2
 
@@ -34,6 +70,10 @@ mgm_node:
     # (0.5m/s 기준 이동 0.5m).
     lane_stale_timeout_sec: 1.0
     gps_stale_timeout_sec: 0.5
+    # avoid 신선도 (§5.7 ⑤) — stale이면 진입 재료(obstacle_detected·avoidable)
+    # 무효화 + AVOID 스테이트 중이면 estop 보정. stack_avoid 발행 주기 = 스캔
+    # 10Hz이므로 0.5s = 5주기 결손.
+    avoid_stale_timeout_sec: 0.5
 
     # 조립/병합 (실행부 파라미터 — 판단 아님)
     blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)

@@ -71,6 +71,7 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   s.gps_accel_zone = m.gps.accel_zone;
   s.gps_parking_zone = m.gps.parking_zone;
   s.gps_at_end = m.gps.at_end;
+  s.gps_cross_track = m.gps.cross_track_m;
   s.avoid_obstacle_detected = m.avoid.obstacle_detected;
   s.avoid_avoidable = m.avoid.avoidable;
   s.avoid_ttc = m.avoid.ttc;
@@ -159,6 +160,15 @@ public:
     p.a_down = static_cast<float>(declare_parameter<double>("a_down", 1.5));  // [m/s^2]
     p.wrongway_yaw = static_cast<float>(declare_parameter<double>("wrongway_yaw_rad", 2.1));
     p.wrongway_cycles = static_cast<int32_t>(declare_parameter<int>("wrongway_cycles", 50));
+    // avoid→waypoint 복귀 후 lane 전이 보류 틱 (§4 복귀 정책 — 2026-08-14)
+    p.avoid_return_hold_cycles =
+      static_cast<int32_t>(declare_parameter<int>("avoid_return_hold_cycles", 300));
+    // waypoint→lane 전이 허용 최대 횡오차 [m] (0 이하 = 게이트 끔)
+    p.lane_entry_max_cross =
+      static_cast<float>(declare_parameter<double>("lane_entry_max_cross_m", 0.5));
+    // AVOID 최대 지속 틱 (0 이하 = 상한 없음)
+    p.avoid_max_cycles =
+      static_cast<int32_t>(declare_parameter<int>("avoid_max_cycles", 1200));
     mgm_init(core_state_, p);
 
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기
@@ -179,6 +189,10 @@ public:
     // traffic_stop 신선도 watchdog — 수신 이력이 있은 뒤 끊긴 경우만 (§5.7 ③)
     traffic_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("traffic_stale_timeout_sec", 0.5) * 1e9);
+    // avoid 신선도 watchdog (§5.7 ⑤, 2026-08-12 회피 통합) — stale이면 진입 재료
+    // 무효화, AVOID 스테이트 중이면 estop 보정 (낡은 회피 경로 주행 차단)
+    avoid_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("avoid_stale_timeout_sec", 0.5) * 1e9);
 
     // 출발 인가 게이트 (2026-08-11, 실차 launch 전용) — true면 /operator/go 수신
     // 전까지 estop 보정 유지(v_ref 0 대기). launch 직후 바로 출발해 출발 전
@@ -235,7 +249,9 @@ public:
     sub_avoid_ = create_subscription<fma_interfaces::msg::AvoidStatus>(
       "/perception/avoid", qos,
       [this](fma_interfaces::msg::AvoidStatus::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); msgs_.avoid = *m;});
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.avoid = *m;
+        last_avoid_rx_ns_ = monotonicNs();});
     sub_parking_ = create_subscription<fma_interfaces::msg::ParkingStatus>(
       "/perception/parking", qos,
       [this](fma_interfaces::msg::ParkingStatus::ConstSharedPtr m) {
@@ -311,6 +327,7 @@ private:
     int64_t lane_rx_ns;
     int64_t gps_rx_ns;
     int64_t traffic_rx_ns;
+    int64_t avoid_rx_ns;
     bool go;
     {
       std::lock_guard<std::mutex> lk(mtx_);
@@ -319,6 +336,7 @@ private:
       lane_rx_ns = last_lane_rx_ns_;
       gps_rx_ns = last_gps_rx_ns_;
       traffic_rx_ns = last_traffic_rx_ns_;
+      avoid_rx_ns = last_avoid_rx_ns_;
       go = go_received_;
     }
     // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
@@ -379,8 +397,32 @@ private:
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "traffic_stop 신선도 초과 — 정지 요구 강제 (stack_traffic 확인 필요)");
     }
+    // avoid 신선도 watchdog (§5.7 ⑤, 2026-08-12 회피 통합) — 미수신/staleness 시
+    // 진입 재료를 무효화해 죽은 stack_avoid의 마지막 메시지로 AVOID에 진입하는
+    // 것을 막는다 (미수신 무효화는 단독 스택 시험과도 양립 — 원래 기본값이 false).
+    // 이미 AVOID 스테이트면 lane/gps와 동일하게 estop 보정 — 낡은 회피 경로로
+    // 계속 주행하던 구멍 차단. ttc는 미수신 초기값과 같은 1e9로 (즉시정지 바닥 오인 방지).
+    const bool avoid_stale = avoid_rx_ns < 0 || monotonicNs() - avoid_rx_ns > avoid_stale_ns_;
+    if (avoid_stale) {
+      m.avoid.obstacle_detected = false;
+      m.avoid.avoidable = false;
+      m.avoid.ttc = 1e9f;
+      if (core_state_.state == MGM_STATE_AVOID && !estop_stale) {
+        m.estop.estop = true;
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+          "avoid 신선도 초과(state=avoid) — estop 강제 (stack_avoid 확인 필요)");
+      }
+    }
     CoreSnapshot s = toSnapshot(m);
     s.estop_latch_release = estop_real;  // toSnapshot은 LatestMsgs만 알므로 여기서 주입
+    // 소스별 "이번 틱에 새 메시지 도착" — §5.8 이동 보정의 판정 근거.
+    // 값 동일성으로 판정하면 인지가 상수를 낼 때 무한 감쇠한다 (mgm_types.hpp 주석).
+    s.lane_updated = lane_rx_ns != last_lane_rx_used_;
+    s.gps_updated = gps_rx_ns != last_gps_rx_used_;
+    s.avoid_updated = avoid_rx_ns != last_avoid_rx_used_;
+    last_lane_rx_used_ = lane_rx_ns;
+    last_gps_rx_used_ = gps_rx_ns;
+    last_avoid_rx_used_ = avoid_rx_ns;
 
     if (dump_.is_open()) {
       dump_.write(reinterpret_cast<const char *>(&s), sizeof(s));
@@ -437,6 +479,12 @@ private:
   int64_t gps_stale_ns_{500'000'000};
   int64_t last_traffic_rx_ns_{-1};  // 마지막 TrafficStop 수신 시각 (미수신 = -1)
   int64_t traffic_stale_ns_{500'000'000};
+  int64_t last_avoid_rx_ns_{-1};  // 마지막 AvoidStatus 수신 시각 (미수신 = -1)
+  // 직전 틱에 사용한 수신 시각 — 비교해서 "이번 틱에 새 메시지" 판정 (§5.8)
+  int64_t last_lane_rx_used_{-1};
+  int64_t last_gps_rx_used_{-1};
+  int64_t last_avoid_rx_used_{-1};
+  int64_t avoid_stale_ns_{500'000'000};
   bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
   bool go_received_{false};         // /operator/go 마지막 수신값
 

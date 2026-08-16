@@ -162,10 +162,102 @@ def test_lookahead_shifts_first_ref_point():
     s1 = la.snapshot(from_lat, from_lon)
     assert s1["idx"] == s0["idx"]                        # 최근접·at_end 판정은 동일
     assert abs(s1["cross_track_m"] - s0["cross_track_m"]) < 1e-9
-    # 첫 점: 기본은 옆구리(x≈0), lookahead는 ~0.9m 전방
+    # 첫 점: 기본은 옆구리(x≈0), lookahead는 전방
     assert abs(s0["points"][0][0]) < 0.2
-    assert abs(s1["points"][0][0] - 0.9) < 0.2
-    assert abs(s1["points"][0][1] + 0.3) < 0.05  # 횡오차는 그대로 담김
+    x1, y1 = s1["points"][0][0], s1["points"][0][1]
+    assert x1 >= 0.8, f"lookahead 점이 전방이 아님: x={x1:.2f}"
+    assert math.hypot(x1, y1) >= 0.9 - 1e-6, "lookahead 거리 미달"
+    assert abs(y1 + 0.3) < 0.05                      # 횡오차는 그대로 담김
+    # 2026-08-14: 정확히 0.9m 지점을 요구하던 단언을 완화했다. 이제 도달 곡률
+    # κ=2y/L² 이 1/R_min(1.5m)을 넘지 않는 점을 고르는데, 이 기하에서 0.9m 점은
+    # 요구 반경이 정확히 1.5m라 한 점 더 나간다(요구 반경 2.55m). 의도된 변화 —
+    # 가까운 점을 주면 조향이 포화돼 재합류가 진동한다.
+    assert (x1 * x1 + y1 * y1) >= 2.0 * abs(y1) * PathEngine.MIN_TURN_RADIUS_M
+
+
+def test_lookahead_target_stays_ahead_when_far_off_track():
+    """회피 직후처럼 크게 이탈했을 때도 ref 첫 점은 **차량 앞**이어야 한다.
+
+    구현이 "트랙 호길이로 1m 앞"이던 시절엔 이 기하에서 첫 점이 차량 뒤로 나와
+    (x<0) 전진밖에 못 하는 차가 재합류할 수 없었다 — 2026-08-14 run_0814_195116
+    실측: cross 2.7m·헤딩 30° 이탈에서 ref[0]=(-3.15,-0.10), cross 4.5m까지 발산.
+    """
+    # 동쪽으로 뻗은 직선 트랙
+    track = make_track([(0.3 * i, 0.0) for i in range(60)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    # 차는 트랙 중간쯤에서 좌로 2.7m 이탈, 헤딩은 트랙(+동) 대비 30° 틀어짐
+    lat, lon = en_to_latlon(6.0, 2.7)
+    snap = eng.snapshot(lat, lon, heading=math.radians(30.0))
+    x0, y0 = snap["points"][0][0], snap["points"][0][1]
+    assert x0 >= PathEngine.MIN_FORWARD_M, f"첫 점이 전방이 아님: x={x0:.2f}"
+    assert math.hypot(x0, y0) >= 1.0 - 1e-6, "lookahead 거리 미달"
+    assert abs(snap["cross_track_m"] - 2.7) < 0.05
+
+
+def test_rejoin_target_when_heading_away_from_track():
+    """트랙에서 멀어지는 방향을 보고 있을 때 — 트랙 점이 아니라 재합류 목표를 낸다.
+
+    dSPACE는 ref 첫 점만 목표로 쓴다(2026-08-14 손상민 확인). 차가 트랙에서
+    멀어지는 쪽을 보면 트랙은 전진하는 만큼 옆으로도 벌어져 **트랙 위 어떤
+    점도** 조준 가능한 방위에 없다 — run_0814_201650 실측: 20점 전부 방위
+    76~84°, 명령 2.3m인데 실제 24m 반경으로 사실상 직진, 횡오차 5m 발산.
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    # 실측 기하: 트랙 좌측 4.4m, 트랙(+동) 대비 18° 틀어져 멀어지는 중
+    snap = eng.snapshot(*en_to_latlon(20.0, 4.4), heading=math.radians(18.0))
+    x, y = snap["points"][0][0], snap["points"][0][1]
+    bearing = abs(math.atan2(y, x))
+    assert bearing <= PathEngine.MAX_TARGET_BEARING_RAD + 1e-6, \
+        f"방위 {math.degrees(bearing):.1f}° — 조준 불가"
+    assert x > 0, "목표가 전방이 아님"
+    # 트랙 쪽(y<0)으로 조준해야 재합류한다
+    assert y < 0, "트랙 반대쪽으로 조준"
+    # 도달 곡률이 최소 회전반경 안
+    L2 = x * x + y * y
+    assert L2 >= 2.0 * abs(y) * PathEngine.MIN_TURN_RADIUS_M
+
+
+def test_rejoin_target_distance_does_not_grow_with_deviation():
+    """이탈이 커져도 재합류 목표는 조향 응답 밴드 안에 머문다 (2026-08-15).
+
+    dSPACE 조향 응답은 방위뿐 아니라 **목표 거리**에 강하게 의존한다 —
+    0.8~1.6m에서 명령 곡률의 ~55%가 실현되는데 2.5m를 넘으면 10% 아래로
+    붕괴한다. 거리 상한이 없던 구현은 이탈이 클수록 트랙 점이 멀어져
+    목표도 멀어지는 양의 되먹임이었다: run_0815_144142에서 cross 1.88m→5.04m
+    동안 명령 선회반경이 3.4m→6.3m로 되레 완만해지며 복귀에 실패했다.
+    (같은 방위·같은 속도인데 d=1.28~1.62m였던 run_0815_142817은 복귀 성공)
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(200)])
+    eng = PathEngine(track, n_points=20, lookahead_m=1.0)
+    prev_r = None
+    for cross in (1.0, 1.88, 2.7, 4.0, 5.04):
+        snap = eng.snapshot(*en_to_latlon(20.0, cross), heading=math.radians(25.0))
+        x, y = snap["points"][0][0], snap["points"][0][1]
+        d = math.hypot(x, y)
+        assert d <= PathEngine.REJOIN_TARGET_MAX_M + 1e-6, \
+            f"cross {cross}m → 목표 {d:.2f}m — 응답 밴드 밖"
+        # 도달 곡률 R = d/(2·sinβ) 이 R_min 이상 (풀조향 포화 방지)
+        r = d / (2.0 * abs(math.sin(math.atan2(y, x))))
+        assert r >= PathEngine.MIN_TURN_RADIUS_M - 1e-6
+        # 이탈이 커진다고 선회가 완만해지면 안 된다 (양의 되먹임 차단)
+        if prev_r is not None:
+            assert r <= prev_r + 1e-6, f"cross {cross}m에서 R이 {prev_r:.2f}→{r:.2f}로 완만해짐"
+        prev_r = r
+
+
+def test_lookahead_target_when_track_is_behind():
+    """차가 트랙을 완전히 등지면 전방 후보가 없다 — 폴백해도 예외 없이 동작.
+
+    이 상황의 답은 재합류가 아니라 정지이고, MGM 역방향 가드가 담당한다.
+    여기서는 엔진이 죽지 않고 유효한 점을 내는 것만 보장한다.
+    """
+    track = make_track([(0.3 * i, 0.0) for i in range(30)])
+    eng = PathEngine(track, n_points=5, lookahead_m=1.0)
+    lat, lon = en_to_latlon(8.0, 0.0)
+    snap = eng.snapshot(lat, lon, heading=math.pi)   # 트랙 진행방향의 정반대
+    assert len(snap["points"]) >= 1
+    assert all(math.isfinite(v) for v in snap["points"][0])
 
 
 def test_wrap_angle():

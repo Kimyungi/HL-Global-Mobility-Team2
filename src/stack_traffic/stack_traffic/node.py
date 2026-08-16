@@ -542,6 +542,12 @@ class StackTrafficNode(Node):
                 depth_temporal_filter=self.oak_depth_temporal_filter,
                 minimum_depth_m=self.minimum_depth_m,
                 maximum_depth_m=self.maximum_depth_m,
+                mxid=str(
+                    self.get_parameter("oak_mxid").value or ""
+                ).strip(),
+                max_usb_speed=str(
+                    self.get_parameter("oak_usb_speed").value or "super"
+                ).strip(),
             )
             return
 
@@ -585,6 +591,12 @@ class StackTrafficNode(Node):
         self.declare_parameter("oak_width", 640)
         self.declare_parameter("oak_height", 360)
         self.declare_parameter("oak_fps", 30.0)
+        # 신호등용 OAK-D MxID (CLAUDE.md §6, 2026-08-12 실측 확정) — 2대 운용 시
+        # 핀닝 없으면 차선용 카메라를 잡을 수 있다. 빈 문자열이면 첫 가용 장치.
+        self.declare_parameter("oak_mxid", "14442C10B167CFD200")
+        # USB 링크 속도 상한: 'super'(기본, 제한 없음) | 'high'(USB2 강제).
+        # 'high'는 GPS 간섭 대책 — oak_camera.py 주석 참조 (2026-08-14).
+        self.declare_parameter("oak_usb_speed", "super")
         self.declare_parameter("oak_depth_enabled", True)
         # 작은 물체를 후처리가 지우는지 확인하는 raw 진단 기본값.
         self.declare_parameter("oak_depth_confidence_threshold", 245)

@@ -9,7 +9,9 @@
 - LiDAR 장착 오프셋으로 vehicle frame(base_link=후축 중심) 보정 + static TF 발행.
 - narrow_gap: offset_max 안에 통과 가능한 열림이 없으면 True (감속 근거).
 - ttc 자차속도: dSPACE VehicleVector.v(신선) 우선, 미수신/오래되면 target_speed 폴백.
-- avoidable/maneuver_done/v_suggest 는 다음 단계(TODO).
+- avoidable/maneuver_done/v_suggest: 2026-08-12 MGM 통합 시 구현 (팀장).
+  ★ 이기돈 검증 필요 — 특히 maneuver_done 클리어런스 시간은 실차 회피 주행으로
+  확인할 것. v_suggest는 감속 금지(조향 하한 0.5 m/s, 이기돈 실측) — on_scan 주석 참조.
 
 설계 메모:
 - 앞 LiDAR로 반응형 회피 (맵 생성 없음, REQUIREMENTS §계약).
@@ -18,6 +20,7 @@
 - 이 노드는 MGM 10ms 루프와 별도 프로세스 (CLAUDE.md §5.2).
 """
 import math
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -61,8 +64,9 @@ class StackAvoidNode(Node):
         self.scan_topic = self.declare_parameter('scan_topic', '/scan').value
         self.target_speed = self.declare_parameter('target_speed_mps', 0.5).value
 
-        # 차량 제원 (통로 폭 계산에 차폭 사용)
+        # 차량 제원 (통로 폭 계산에 차폭, maneuver_done 클리어런스에 전장 사용)
         self.vehicle_width = self.declare_parameter('vehicle.width_m', 0.62).value
+        self.vehicle_len = self.declare_parameter('vehicle.length_m', 0.85).value
 
         # LiDAR 장착 (원점=후축 중심 기준)
         self.lidar_x = self.declare_parameter('lidar_mount.x_m', 0.76).value
@@ -98,8 +102,36 @@ class StackAvoidNode(Node):
             self.declare_parameter('avoid.target_rate_limit_mps', 3.0).value)
         # dt 이상치일 때 대체용 스캔 주기 [Hz] (T-mini Plus 실측 10Hz)
         self.scan_rate_hz = float(self.declare_parameter('avoid.scan_rate_hz', 10.0).value)
+        # maneuver_done 클리어런스 여유 [m] — 완료 판정 통과거리 = 마지막 감지거리
+        # + 전장 + 이 값. 실차 튜닝: ros2 param set /stack_avoid_node avoid.clear_margin_m
+        self.clear_margin = float(self.declare_parameter('avoid.clear_margin_m', 0.3).value)
+        # 클리어런스 계산에 쓰는 "마지막 감지거리"의 상한 [m].
+        # 2026-08-13에 1.0m 하드코딩으로 넣었다가 2026-08-14 실차에서 **측면 충돌**을
+        # 유발했다: 감지는 3.0m에서 시작해 1.1초 뒤(≈2.45m 지점) 소실됐는데, 상한
+        # 1.0m 때문에 통과거리를 2.15m로 잡아 4.3s 만에 done → GPS 복귀로 트랙에
+        # 되돌아가는 순간 콘이 0.8m 앞에 재출현(ttc 0.1)했다. 필요한 통과거리는
+        # 2.45+0.85+0.3 = 3.6m(7.2s)였으므로 1.45m 부족했다.
+        # 감지거리는 본래 detect_range로 유계이므로 기본값을 그에 맞춘다.
+        # 과대 대기로 인한 횡오차 누적은 아래 "통과 유지점"이 막는다.
+        self.clear_gap_max = float(
+            self.declare_parameter('avoid.clear_gap_max_m', 3.0).value)
+        # obstacle_detected 해제 히스테리시스 [m] — 진입은 detect_range, 해제는
+        # detect_range + 이 값. 경계에 걸친 물체(벽·연석)가 깜빡이면 그때마다
+        # 클리어런스 타이머가 리셋돼 maneuver_done이 영원히 안 선다
+        # (2026-08-15 run_0815_143039: 20초에 28회 토글, AVOID 15초+ 지속,
+        #  그동안 직진 유지점만 나가 횡오차 5.3m까지 발산).
+        self.detect_hysteresis = float(
+            self.declare_parameter('avoid.detect_hysteresis_m', 0.4).value)
+        self._detected_prev = False     # 히스테리시스 상태
         self._prev_center = None        # 직전 목표 y (rate limit 상태)
         self._prev_center_t = None
+
+        # maneuver_done 내부 상태 (REQUIREMENTS §계약 — "스캔에 안 보임 = 완료" 금지.
+        # 최근 장애물의 짧은 유지 같은 내부 상태는 허용된 정상 구현)
+        self._maneuver_armed = False    # detected+avoidable을 낸 적 있음 → 완료 판정 대상
+        self._clear_since = None        # 전방 통로 무감지가 시작된 시각 [monotonic]
+        self._last_gap = None           # 마지막 감지 거리 [m] — 클리어런스 시간 계산용
+        self._done_until = 0.0          # maneuver_done=True 펄스 만료 시각 [monotonic]
 
         self._recompute_derived()
 
@@ -184,6 +216,10 @@ class StackAvoidNode(Node):
                 self.depth_band = p.value
             elif p.name == 'avoid.target_rate_limit_mps':
                 self.target_rate_mps = float(p.value)
+            elif p.name == 'avoid.clear_margin_m':
+                self.clear_margin = float(p.value)
+            elif p.name == 'avoid.clear_gap_max_m':
+                self.clear_gap_max = float(p.value)
             elif p.name == 'vehicle.width_m':
                 self.vehicle_width = p.value
             elif p.name == 'lidar_mount.forward_angle_deg':
@@ -221,7 +257,15 @@ class StackAvoidNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'          # points[]는 vehicle frame(후축 원점)
 
-        msg.obstacle_detected = gap is not None and gap < self.detect_range
+        # 히스테리시스: 진입 detect_range, 해제 detect_range + detect_hysteresis.
+        # 경계에 걸친 물체가 깜빡이면 클리어런스 타이머가 매번 리셋된다(위 주석).
+        if gap is None:
+            self._detected_prev = False
+        else:
+            thr = (self.detect_range + self.detect_hysteresis
+                   if self._detected_prev else self.detect_range)
+            self._detected_prev = gap < thr
+        msg.obstacle_detected = self._detected_prev
 
         # TTC = 거리 ÷ 자차속도 (정적 장애물 가정, REQUIREMENTS). 정지 중이면 INF.
         # 자차속도는 dSPACE VehicleVector.v(신선) 우선, 미수신/오래되면 target_speed 폴백.
@@ -241,14 +285,54 @@ class StackAvoidNode(Node):
             self._prev_center = None        # 장애물 없음 → rate limit 이력 리셋
         msg.points = [tgt] if tgt is not None else []
 
-        # TODO(stage2): avoidable = (측방 여유 확보 AND ttc >= ttc_stop). 판정 재료만.
-        msg.avoidable = False
+        # avoidable (stage2, 2026-08-12 MGM 통합): 측방 여유 확보(목표점 성립) AND
+        # TTC 여유. 판정 "재료"만 — lane/waypoint→avoid 전이 결정은 MGM (§계약).
+        msg.avoidable = tgt is not None and msg.ttc >= self.ttc_stop
         # 감지했으나 offset_max 안에 통과 가능한 열림이 없음 = 통로 좁음 → 감속 근거.
         msg.narrow_gap = msg.obstacle_detected and tgt is None
-        # TODO(stage4): "스캔에 안 보임 = 완료" 금지. 측방 클리어런스/최근 위치 유지로 판정.
-        msg.maneuver_done = False
-        # TODO(stage3): 회피 기하 기반 권장 속도(v_suggest).
-        msg.v_suggest = 0.0
+
+        # maneuver_done (stage4, 2026-08-12 MGM 통합) — "스캔에 안 보임 = 완료" 금지
+        # (REQUIREMENTS: 지나치는 중엔 전방 시야에서 사라져도 아직 차 옆에 있다).
+        # 완료 = [마지막 감지 거리 + 전장 + 여유]를 현재 속도로 통과하는 시간 동안
+        # 전방 무감지가 유지된 시점. 속도는 _ego_speed()(VehicleVector 미연결 시
+        # target_speed 폴백)라 시간 기반이 곧 거리 기반이다. 정지 중(속도≈0)엔
+        # 지나가지 못하므로 완료가 서지 않는 것이 올바른 동작.
+        # ★ 이기돈 검증 필요: 여유 0.3m·펄스 0.5s는 초기값 — 실차 회피로 확인.
+        now_mono = time.monotonic()
+        if msg.obstacle_detected:
+            self._last_gap = gap
+            self._clear_since = None
+            self._done_until = 0.0          # 새 장애물 → 이전 완료 펄스 무효
+            if msg.avoidable:
+                self._maneuver_armed = True  # MGM이 AVOID로 들어갔을 수 있음
+        elif self._maneuver_armed:
+            if self._clear_since is None:
+                self._clear_since = now_mono
+            # 감지 소실은 대부분 회피 조향으로 장애물이 통로를 **측방** 이탈한
+            # 것이지 통과한 것이 아니다 — 그 시점의 종방향 거리를 그대로 써야
+            # "차 뒤로 보낼" 거리가 나온다. 상한을 1.0m로 조이면 조기 복귀로
+            # 측면을 스친다 (2026-08-14 실차 2회, clear_gap_max_m 주석 참조).
+            clear_dist = (min(self._last_gap or self.clear_gap_max, self.clear_gap_max)
+                          + self.vehicle_len + self.clear_margin)
+            if speed > EPS_SPEED and \
+                    now_mono - self._clear_since >= clear_dist / speed:
+                self._maneuver_armed = False
+                self._done_until = now_mono + 0.5   # MGM(10ms 루프)이 소비할 펄스
+            # 통과 유지점 — 대기 중 빈 경로를 내면 MGM 조립이 직전 목표를 감쇠
+            # hold하다 원점 부근의 퇴화 ref가 되어 조향이 표류한다 (2026-08-13
+            # run_003037 실측: ref가 (0.05,-0.2)까지 수축 → 복귀 전 이탈 1m).
+            # 전방 직진점(현 헤딩 유지)으로 통과 구간을 안정화한다.
+            if tgt is None:
+                msg.points = [self._rp(1.5, 0.0)]
+        msg.maneuver_done = (not msg.obstacle_detected) and now_mono < self._done_until
+
+        # v_suggest (stage3, 2026-08-12 MGM 통합): 목표속도 그대로 — **회피 중 감속 금지**.
+        # 근거 (이기돈 실측): dSPACE 조향은 v_ref ≥ 0.5 m/s 이상이어야 제대로 반응.
+        # 기하 비례 감속(초기 구현, 계수 0.4)은 v_ref를 0.44까지 내려 조향 하한을 깨서
+        # 회피 자체를 무너뜨렸다 (run_0812_234253 — 직진 후 estop). 감속하면 조향이
+        # 죽는 구조라 회피 중 종방향 안전은 TTC 즉시정지 바닥(MGM)·estop이 담당하고,
+        # narrow 시 v_narrow 상한도 MGM 우선권 표 몫.
+        msg.v_suggest = float(self.target_speed)
 
         self.pub.publish(msg)
 

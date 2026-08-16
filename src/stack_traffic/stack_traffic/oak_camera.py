@@ -33,6 +33,8 @@ class OakRgbdCamera:
         depth_temporal_filter: bool,
         minimum_depth_m: float,
         maximum_depth_m: float,
+        mxid: str = "",
+        max_usb_speed: str = "super",
     ) -> None:
         if dai is None:
             raise RuntimeError(
@@ -57,11 +59,31 @@ class OakRgbdCamera:
             maximum_depth_m=maximum_depth_m,
             depth_enabled=depth_enabled,
         )
+        # USB 링크 속도 상한 — 'high'면 USB 2.0으로 강제해 SuperSpeed(5Gbps) 신호
+        # 자체를 없앤다. OAK-D의 USB3 방사 잡음이 GNSS L1(1575MHz)을 덮어 RTK
+        # FIXED를 죽이는 것이 2026-08-14 실측으로 확인됐다(같은 안테나 위치에서
+        # C/N0 39dB↔22dB, 16.5dB 차). stack_lane도 동일 대책(usb_speed) 적용.
+        # ⚠ USB2 대역폭 ~40MB/s — oak_fps/해상도가 크면 프레임이 밀린다.
+        speed_name = str(max_usb_speed or "super").strip().upper()
+        max_speed = None
+        if speed_name and speed_name != "SUPER":
+            max_speed = getattr(dai.UsbSpeed, speed_name, None)
+        # MxID 핀닝 — 카메라 2대(차선/신호등) 운용 시 필수. 없으면 어느 노드가
+        # 어느 카메라를 잡을지 부팅 순서에 따라 뒤바뀐다 (CLAUDE.md §6).
+        device_info = dai.DeviceInfo(mxid) if mxid else None
         try:
-            self.device = dai.Device(self.pipeline)
+            if device_info is not None and max_speed is not None:
+                self.device = dai.Device(self.pipeline, device_info, max_speed)
+            elif device_info is not None:
+                self.device = dai.Device(self.pipeline, device_info)
+            elif max_speed is not None:
+                self.device = dai.Device(self.pipeline, max_speed)
+            else:
+                self.device = dai.Device(self.pipeline)
         except Exception as error:
             raise RuntimeError(
-                "OAK-D Pro를 열 수 없습니다. USB 연결과 권한을 확인하세요: "
+                "OAK-D Pro를 열 수 없습니다. USB 연결과 권한을 확인하세요"
+                f"(mxid={mxid or '미지정'}, max_usb_speed={speed_name}): "
                 f"{error}"
             ) from error
         self.usb_speed = str(self.device.getUsbSpeed()).split(".")[-1]
