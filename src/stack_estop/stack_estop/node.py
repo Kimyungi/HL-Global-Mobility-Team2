@@ -240,8 +240,23 @@ class StackEstopNode(Node):
 
     def __init__(self):
         super().__init__('stack_estop_node')
-        self.declare_parameter('estop_on_distance_m', 0.70)
-        self.declare_parameter('estop_off_distance_m', 0.80)
+        # ── 정지거리 실측에서 역산 (2026-08-17, run_0817_032728 × dSPACE rec1_024).
+        # 실측 정지 프로파일: v0 0.591 m/s → **반응지연 0.13s** → 감속 0.94 m/s²
+        #   → 0.76s / 0.314m 에 정지. (0.59 0.57 0.54 0.51 0.45 0.36 0.26 0.13 0.01)
+        # 감지 지연이 더 붙는다 — /scan 9.9Hz × 확정 3프레임 = 0.30s.
+        #   필요거리 = 0.303·v + 1.19·(0.13·v + v²/(2·0.94))
+        #   (1.19 = 위 모델이 0.6 m/s 실측보다 19% 낮게 나온 만큼의 보정)
+        #     0.6 m/s → 0.49m   0.8 m/s → 0.77m   1.0 m/s → 1.09m
+        # 종전 0.70/0.80 은 0.6 m/s 전용이었다(여유 0.21m). v_base 1.0 에 맞춰 상향.
+        # 헛정지 비용 없음을 실측 확인: 두 run 의 전 스캔을 analyze_corridor_scan 에
+        # 통과시키니 회랑 클러스터 점유가 0.0%/2.6%(=치운 콘)이고, 문턱을 0.70 →
+        # 1.35m 로 올려도 **새로 걸리는 프레임이 0%** 였다.
+        # ⚠ 생성자에서 1회만 읽어 DistanceEstopController 로 들어간다 —
+        #   `ros2 param set` 이 안 먹으니 값을 바꾸려면 **재실행**해야 한다.
+        # ⚠ 장애물을 다시 놓고 회피를 시험할 땐 이 문턱이 회피 가용거리를 줄인다는
+        #   점을 함께 볼 것 (detect_range 를 늘리는 건 오답 — RUNBOOK §5-1c).
+        self.declare_parameter('estop_on_distance_m', 1.20)
+        self.declare_parameter('estop_off_distance_m', 1.35)
         self.declare_parameter('estop_clear_confirm_scans', 3)
         self.declare_parameter('scan_timeout_sec', 0.25)
         self.declare_parameter('publish_period_sec', 0.05)
