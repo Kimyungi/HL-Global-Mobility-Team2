@@ -27,6 +27,38 @@ target_link_libraries(core_replay mgm_core)
 add_executable(make_sample_dump tools/make_sample_dump.cpp)
 target_link_libraries(make_sample_dump mgm_core)
 
+if(BUILD_TESTING)
+  # Simulink ERT output is a verification oracle, not the production ROS
+  # backend. It was generated for Intel x86-64 and contains SSE2 intrinsics,
+  # so compile it only for tests on the validated Linux GNU/Clang toolchain.
+  string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ADAS_MGM_PROCESSOR)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+    ADAS_MGM_PROCESSOR MATCHES "^(x86_64|amd64)$" AND
+    CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang)$")
+    set(ADAS_MGR2_GENERATED_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/generated/adas_mgr2)
+    add_library(adas_mgr2_generated STATIC
+      ${ADAS_MGR2_GENERATED_DIR}/ADAS_MGR2.c
+      ${ADAS_MGR2_GENERATED_DIR}/rtGetInf.c
+      ${ADAS_MGR2_GENERATED_DIR}/rtGetNaN.c
+      ${ADAS_MGR2_GENERATED_DIR}/rt_nonfinite.c)
+    target_include_directories(adas_mgr2_generated PUBLIC ${ADAS_MGR2_GENERATED_DIR})
+    target_compile_options(adas_mgr2_generated PRIVATE -msse2)
+    target_link_libraries(adas_mgr2_generated PUBLIC m)
+
+    add_library(mgm_generated_adapter STATIC src/generated_adapter.cpp)
+    target_include_directories(mgm_generated_adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(mgm_generated_adapter PUBLIC mgm_core adas_mgr2_generated)
+
+    add_executable(generated_parity_test test/generated_parity_test.cpp)
+    target_link_libraries(generated_parity_test mgm_generated_adapter)
+    add_test(NAME generated_parity_test COMMAND generated_parity_test)
+  else()
+    message(STATUS
+      "ADAS_MGR2 generated parity disabled: requires Linux x86-64 with GNU/Clang; "
+      "got ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}/${CMAKE_C_COMPILER_ID}")
+  endif()
+endif()
+
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS tools/go tools/state DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
