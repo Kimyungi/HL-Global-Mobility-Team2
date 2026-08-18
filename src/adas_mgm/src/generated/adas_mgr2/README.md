@@ -42,3 +42,22 @@ test host. The parity test must report zero mismatched ticks before the
 generated model or C++ core is accepted. The generated header reports
 `Validation result: Not run`; this back-to-back test does not replace a
 MathWorks code-generation validation report.
+
+## Replacement compatibility gate
+
+Matching `CoreSnapshotBus` and `CoreOutputBus` layouts is necessary but not
+sufficient for a generated model to replace this verification oracle. A
+replacement must also preserve all four states and path sources
+(`LANE`, `WAYPOINT`, `AVOID`, and `PARKING`), expose every tunable parameter
+consumed by `GeneratedMgmAdapter`, compile without adapter changes, and finish
+the 2,400-tick parity trace with zero mismatches.
+
+An `ADAS_MGR2` model version 1.68 bundle generated on 2026-08-18 was evaluated
+against this gate but is intentionally not included. Although its external bus
+layout matches, its generated state machine contains only `LANE` and
+`WAYPOINT`. It also removes the exported parameters for narrow-gap speed, TTC
+stop, wrong-way detection, avoid return hold, and avoid timeout. A direct
+replacement therefore fails to compile; ignoring the missing assignments for
+diagnosis produces 557 mismatched ticks, starting at the first `AVOID`
+transition. Restore those behaviors in the Simulink model and regenerate it
+instead of editing generated C by hand.
