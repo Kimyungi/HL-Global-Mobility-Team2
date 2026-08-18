@@ -52,12 +52,22 @@ sudo udevadm control --reload && sudo udevadm trigger
 cd ~/FMA_ws/src/stack_gps/tools/base_station
 
 # 터미널 A: NGII VRS 보정 주입 (이 측량 단계에서만 사용, 인터넷 필요)
-export NGII_USER=kyg100800 NGII_PASS=ngii
-python3 ntrip_inject.py
+export NGII_USER=<내 통합 ID> NGII_PASS=ngii
+python3 ntrip_inject.py --lat <현장 개략 위도> --lon <현장 개략 경도>
 
 # 터미널 B: RTK FIXED 샘플 10분 수집·평균
 python3 measure_base_position.py --duration 600
 ```
+
+> **NGII 계정 (2026-08-18 정리):**
+> - 비밀번호는 계정별 값이 아니라 **전 사용자 공통 고정값 `ngii`** (RTS1·RTS2 공통, NGII 공식 FAQ).
+>   재발급 대상이 아니므로 401이 떠도 비번을 의심하지 말 것.
+> - **계정당 동시접속 1개.** PC마다 통합 ID를 따로 발급받아 쓴다 —
+>   geodesy.ngii.go.kr 로그인 → 마이페이지 → 통합회원 연계 → 등록 (한 번에 RTS1·RTS2·데이터통합센터 3개 생성).
+> - **RTS2는 현재 정상 계정도 401로 거부한다.** 계정 문제가 아니라 캐스터 측 문제 —
+>   신규 발급 ID·기존 ID 둘 다 RTS2 401 / RTS1 200으로 확인했다. 그래서 기본값이 **RTS1**이다.
+> - 접속 확인만 하려면(F9P 불필요): `python3 ntrip_check.py <내 통합 ID>`
+> - VRS는 GGA로 보낸 좌표 기준으로 보정을 만든다 — **현장이 바뀌면 `--lat/--lon`을 반드시 갱신**할 것.
 
 - ⚠ **EVK가 베이스 모드였다면 먼저 `python3 setup_base.py --disable`** — 베이스 모드(fixType=5)에서는 측위를 안 해서 샘플이 절대 안 쌓인다 (스크립트가 감지 시 경고 후 종료).
 - ⚠ `ublox_gps` ROS 노드(start_rtk.sh)는 꺼둘 것 — UART1 포트가 겹친다.
