@@ -14,6 +14,14 @@ RTK FIXED를 만들어주는 도구. 베이스 운용이 시작되면 더 이상
   python3 ntrip_inject.py
   python3 ntrip_inject.py --lat 37.30 --lon 127.90 # VRS 기준 위치 변경 시
 
+캐스터: 기본 RTS1(rts1.ngii.go.kr / VRS-RTCM31).
+  RTS2는 2026-08-18 기준 정상 계정도 401로 거부한다 — 계정 문제가 아니라
+  RTS2 캐스터 측 문제다(신규 발급 ID·기존 ID 모두 RTS2 401 / RTS1 200).
+  RTS2 복구 후 되돌리려면: --host RTS2.ngii.go.kr --mount VRS-RTCM32
+비밀번호는 전 사용자 공통 고정값 "ngii" (RTS1·RTS2 공통, NGII 공식 FAQ).
+계정당 동시접속 1개 — PC마다 통합 ID를 따로 발급받을 것
+  (geodesy.ngii.go.kr 마이페이지 → 통합회원 연계 → 등록).
+
 계정은 팀 저장소에 커밋되지 않도록 환경변수로만 받는다.
 """
 import argparse
@@ -75,15 +83,22 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", default="/dev/ttyF9P_uart2", help="F9P UART2 포트")
     ap.add_argument("--baud", type=int, default=38400, help="UART2 baud")
-    ap.add_argument("--host", default="RTS2.ngii.go.kr")
+    # 2026-08-18: RTS2는 정상 계정도 401로 거부한다(캐스터 측 문제, 계정 무관 —
+    # 신·구 ID 모두 RTS2 401 / RTS1 200으로 확인). RTS1이 기본값.
+    ap.add_argument("--host", default="RTS1.ngii.go.kr",
+                    help="RTS1.ngii.go.kr(기본) 또는 RTS2.ngii.go.kr")
     ap.add_argument("--ntrip-port", type=int, default=2101)
-    ap.add_argument("--mount", default="VRS-RTCM32", help="F9P는 RTCM3.x 필요")
+    ap.add_argument("--mount", default="VRS-RTCM31",
+                    help="F9P는 RTCM3.x 필요. RTS1=VRS-RTCM31, RTS2=VRS-RTCM32")
     ap.add_argument("--user", default=os.environ.get("NGII_USER", ""),
                     help="NGII 계정 (기본: 환경변수 NGII_USER, 동시접속 1개 제한)")
     ap.add_argument("--password", default=os.environ.get("NGII_PASS", ""),
                     help="NGII 비밀번호 (기본: 환경변수 NGII_PASS)")
-    ap.add_argument("--lat", type=float, default=37.3035, help="VRS용 개략 위도 (수 km 정확도면 충분)")
-    ap.add_argument("--lon", type=float, default=127.9065)
+    # VRS는 여기 보낸 좌표 기준으로 보정을 생성한다 — 실제 현장에서 수 km 이내여야 한다.
+    ap.add_argument("--lat", type=float, default=37.3035,
+                    help="VRS용 개략 위도 (현장이 바뀌면 반드시 갱신)")
+    ap.add_argument("--lon", type=float, default=127.9065,
+                    help="VRS용 개략 경도 (현장이 바뀌면 반드시 갱신)")
     args = ap.parse_args()
 
     if not args.user or not args.password:
