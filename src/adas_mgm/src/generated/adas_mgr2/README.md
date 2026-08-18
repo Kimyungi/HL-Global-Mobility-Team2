@@ -18,12 +18,16 @@ Excluded because they are not runtime inputs:
 
 The generated files are **not MIT-licensed package code**. They retain the
 MathWorks Academic License notice that limits use to teaching, academic
-research, and course requirements at degree-granting institutions. The
-repository maintainer must confirm that publishing and using these files stays
-within the applicable MathWorks license before merging this change.
-See the current [MathWorks Program Offering Guide](https://www.mathworks.com/help/pdf_doc/offering/offering.pdf)
-and the institution's own agreement; this notice is not a grant of additional
-deployment or redistribution rights.
+research, and course requirements at degree-granting institutions. They were
+generated from the team's own model and are included for this noncommercial
+academic project. The MathWorks Program Offering Guide permits copying and
+deploying Coder-generated forms outside the Programs, subject to the applicable
+license offering. Keep all generated notices intact and do not reuse these
+files for commercial, government, or other organizational work without first
+confirming the applicable rights.
+
+See the current [MathWorks Program Offering Guide](https://www.mathworks.com/help/pdf_doc/offering/offering.pdf),
+Part Two, Section 3.2 (Coder Programs).
 
 They are used by `GeneratedMgmAdapter` only for back-to-back verification and
 are compiled only when `BUILD_TESTING` is enabled on Linux x86-64 with a
