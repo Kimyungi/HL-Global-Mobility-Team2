@@ -91,6 +91,15 @@ run은 버리고 다시.
 cd ~/FMA_ws/src/stack_gps/tools/base_station
 python3 rtcm_server.py --radio /dev/ttyRadio
 
+# 박찬미 노트북에서 실행 명령어
+cd ~/HL-Global-Mobility-Team2-1/src/stack_gps/tools/base_station
+
+python3 rtcm_server.py \
+  --port /dev/ttyF9P_uart2 \
+  --baud 38400 \
+  --radio /dev/ttyRadio \
+  --radio-baud 38400
+
 # V1 [차량 PC]
 python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
     --port /dev/ttyRadio --tcp-port 2101

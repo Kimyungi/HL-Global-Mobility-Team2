@@ -18,6 +18,25 @@ def combine_estop_levels(scan_timeout, static_estop, dynamic_estop):
     return bool(scan_timeout or static_estop or dynamic_estop)
 
 
+def validate_static_min_obstacle_extent(value):
+    value = float(value)
+    if not math.isfinite(value) or not 0.0 <= value <= 0.50:
+        raise ValueError(
+            'static_min_obstacle_extent_m must be finite and in [0.0, 0.50]')
+    return value
+
+
+def cluster_extent_m(cluster):
+    """Maximum Euclidean separation of base-frame points in a cluster."""
+    maximum = 0.0
+    for first_index, first in enumerate(cluster):
+        for second in cluster[first_index + 1:]:
+            maximum = max(
+                maximum,
+                math.hypot(first[2] - second[2], first[3] - second[3]))
+    return maximum
+
+
 class DistanceEstopController:
     """Scan-driven E-Stop hysteresis independent of perception tracking."""
 
@@ -88,6 +107,7 @@ def nearest_corridor_cluster_x(
     max_index_gap=1,
     max_neighbor_distance_m=0.12,
     laser_yaw_in_base_rad=1.57079632679,
+    static_min_obstacle_extent_m=0.0,
 ):
     """Return (valid_scan, nearest cluster min x) for compatibility."""
     result = analyze_corridor_scan(
@@ -105,6 +125,7 @@ def nearest_corridor_cluster_x(
         max_index_gap=max_index_gap,
         max_neighbor_distance_m=max_neighbor_distance_m,
         laser_yaw_in_base_rad=laser_yaw_in_base_rad,
+        static_min_obstacle_extent_m=static_min_obstacle_extent_m,
     )
     return result['valid_scan'], result['nearest_cluster_min_x']
 
@@ -125,6 +146,7 @@ def analyze_corridor_scan(
     max_index_gap=1,
     max_neighbor_distance_m=0.12,
     laser_yaw_in_base_rad=1.57079632679,
+    static_min_obstacle_extent_m=0.0,
 ):
     """Return filtering and clustering diagnostics for one LaserScan."""
     result = {
@@ -138,6 +160,11 @@ def analyze_corridor_scan(
         'nearest_cluster_mean_x': None,
         'nearest_cluster_centroid_distance': None,
         'largest_cluster_points': 0,
+        'cluster_extents_m': [],
+        'nearest_candidate_distance_m': None,
+        'nearest_candidate_extent_m': None,
+        'nearest_accepted_extent_m': None,
+        'small_cluster_rejected_count': 0,
         'reason': 'INVALID_SCAN',
         'base_points': [],
     }
@@ -149,6 +176,8 @@ def analyze_corridor_scan(
         or not math.isfinite(laser_yaw_in_base_rad)
     ):
         return result
+    minimum_extent = validate_static_min_obstacle_extent(
+        static_min_obstacle_extent_m)
     minimum = max(float(range_min), float(min_range_m))
     maximum = min(float(range_max), float(max_range_m))
     if (
@@ -213,10 +242,30 @@ def analyze_corridor_scan(
     result['cluster_count'] = len(clusters)
     result['largest_cluster_points'] = max(
         result['cluster_sizes'], default=0)
-    accepted = [
+    point_count_accepted = [
         cluster for cluster in clusters
         if len(cluster) >= cluster_min_points
     ]
+    cluster_extents = {
+        id(cluster): cluster_extent_m(cluster)
+        for cluster in point_count_accepted
+    }
+    result['cluster_extents_m'] = [
+        cluster_extents[id(cluster)] for cluster in point_count_accepted]
+    if point_count_accepted:
+        nearest_candidate = min(
+            point_count_accepted,
+            key=lambda cluster: min(point[2] for point in cluster))
+        result['nearest_candidate_distance_m'] = min(
+            point[2] for point in nearest_candidate)
+        result['nearest_candidate_extent_m'] = cluster_extents[
+            id(nearest_candidate)]
+    accepted = [
+        cluster for cluster in point_count_accepted
+        if cluster_extents[id(cluster)] + 1e-12 >= minimum_extent
+    ]
+    result['small_cluster_rejected_count'] = (
+        len(point_count_accepted) - len(accepted))
     if accepted:
         nearest_cluster = min(
             accepted, key=lambda cluster: min(point[2] for point in cluster))
@@ -226,11 +275,15 @@ def analyze_corridor_scan(
         mean_y = sum(point[3] for point in nearest_cluster) / len(nearest_cluster)
         result['nearest_cluster_mean_x'] = mean_x
         result['nearest_cluster_centroid_distance'] = math.hypot(mean_x, mean_y)
+        result['nearest_accepted_extent_m'] = cluster_extents[
+            id(nearest_cluster)]
         result['reason'] = 'CLUSTER_ACCEPTED'
     elif not valid_points:
         result['reason'] = 'NO_POINTS'
     elif not points:
         result['reason'] = 'OUTSIDE_CORRIDOR'
+    elif point_count_accepted:
+        result['reason'] = 'SMALL_CLUSTER_EXTENT'
     else:
         result['reason'] = 'TOO_FEW_CLUSTER_POINTS'
     return result
@@ -254,6 +307,7 @@ class StackEstopNode(Node):
         self.declare_parameter('max_index_gap', 1)
         self.declare_parameter('max_neighbor_distance_m', 0.12)
         self.declare_parameter('laser_yaw_in_base_rad', 1.57079632679)
+        self.declare_parameter('static_min_obstacle_extent_m', 0.0)
         # Must match stack_avoid's lidar_mount.forward_angle_deg=270.0;
         # update both when the shared LiDAR is remounted.
         self.declare_parameter('debug_log_period_sec', 0.20)
@@ -352,8 +406,12 @@ class StackEstopNode(Node):
                 'max_index_gap',
                 'max_neighbor_distance_m',
                 'laser_yaw_in_base_rad',
+                'static_min_obstacle_extent_m',
             )
         }
+        self.geometry['static_min_obstacle_extent_m'] = (
+            validate_static_min_obstacle_extent(
+                self.geometry['static_min_obstacle_extent_m']))
         self.dynamic_enabled = bool(
             self.get_parameter('dynamic_enabled').value)
         dynamic_values = {
@@ -379,6 +437,7 @@ class StackEstopNode(Node):
         self.last_debug_log_time = None
         self.last_status_publish_time = None
         self.last_static_nearest_x = None
+        self.last_static_diagnostics = {}
 
         self.get_logger().info(
             '[ESTOP CONFIG] '
@@ -392,6 +451,8 @@ class StackEstopNode(Node):
             f"max_index_gap={int(self.geometry['max_index_gap'])}, "
             f"cluster_gap="
             f"{float(self.geometry['max_neighbor_distance_m']):.3f} m, "
+            f"static_min_obstacle_extent_m="
+            f"{float(self.geometry['static_min_obstacle_extent_m']):.3f} m, "
             f'dynamic_enabled={str(self.dynamic_enabled).lower()}, '
             f"dynamic_stop_distance_m="
             f"{dynamic_values['dynamic_stop_distance_m']:.2f}, "
@@ -450,6 +511,9 @@ class StackEstopNode(Node):
             laser_yaw_in_base_rad=float(
                 self.geometry['laser_yaw_in_base_rad']
             ),
+            static_min_obstacle_extent_m=float(
+                self.geometry['static_min_obstacle_extent_m']
+            ),
         )
         if not diagnostics['valid_scan']:
             self.log_debug(diagnostics, 'INVALID_SCAN')
@@ -458,6 +522,7 @@ class StackEstopNode(Node):
         base_points = diagnostics.pop('base_points')
         nearest_x = diagnostics['nearest_cluster_min_x']
         self.last_static_nearest_x = nearest_x
+        self.last_static_diagnostics = dict(diagnostics)
         previous_final = self.current_final_estop
         self.controller.update_from_scan(nearest_x)
         self.last_valid_scan_time = self.get_clock().now()
@@ -529,6 +594,22 @@ class StackEstopNode(Node):
             'reason': reason,
             'static_estop': static_estop,
             'static_nearest_cluster_min_x': static_nearest_x,
+            'nearest_candidate_distance_m': self.last_static_diagnostics.get(
+                'nearest_candidate_distance_m'),
+            'nearest_candidate_extent_m': self.last_static_diagnostics.get(
+                'nearest_candidate_extent_m'),
+            'nearest_accepted_extent_m': self.last_static_diagnostics.get(
+                'nearest_accepted_extent_m'),
+            'static_min_obstacle_extent_m': float(
+                self.geometry['static_min_obstacle_extent_m']),
+            'small_cluster_rejected_count': self.last_static_diagnostics.get(
+                'small_cluster_rejected_count', 0),
+            'static_cluster_filter_reason': self.last_static_diagnostics.get(
+                'reason'),
+            'static_cluster_sizes': self.last_static_diagnostics.get(
+                'cluster_sizes', []),
+            'static_cluster_extents_m': self.last_static_diagnostics.get(
+                'cluster_extents_m', []),
             'dynamic_enabled': self.dynamic_enabled,
             **{
                 key: self.dynamic_status.get(key) for key in (
@@ -591,6 +672,12 @@ class StackEstopNode(Node):
             f"{self.format_debug_value(diagnostics.get('nearest_cluster_mean_x'))}, "
             f"centroid_distance="
             f"{self.format_debug_value(diagnostics.get('nearest_cluster_centroid_distance'))}, "
+            f"candidate_extent="
+            f"{self.format_debug_value(diagnostics.get('nearest_candidate_extent_m'))}, "
+            f"accepted_extent="
+            f"{self.format_debug_value(diagnostics.get('nearest_accepted_extent_m'))}, "
+            f"min_extent={float(self.geometry['static_min_obstacle_extent_m']):.3f}, "
+            f"small_rejected={diagnostics.get('small_cluster_rejected_count', 0)}, "
             f"required={int(self.geometry['cluster_min_points'])}, "
             f"estop={str(self.current_final_estop).lower()}, "
             f'reason={reason}'

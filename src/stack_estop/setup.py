@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'stack_estop_node = stack_estop.node:main',
+            'reverse_recovery_node = stack_estop.reverse_recovery:main',
         ],
     },
 )
