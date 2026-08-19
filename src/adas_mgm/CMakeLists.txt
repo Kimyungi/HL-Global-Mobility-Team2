@@ -28,9 +28,9 @@ add_executable(make_sample_dump tools/make_sample_dump.cpp)
 target_link_libraries(make_sample_dump mgm_core)
 
 if(BUILD_TESTING)
-  # Simulink ERT output is a verification oracle, not the production ROS
-  # backend. It was generated for Intel x86-64 and contains SSE2 intrinsics,
-  # so compile it only for tests on the validated Linux GNU/Clang toolchain.
+  # Simulink ERT output is a LANE/WAYPOINT shared-subset oracle, not the
+  # production ROS backend. It was generated for Intel x86-64 and contains
+  # SSE2 intrinsics, so compile it only for tests on the validated toolchain.
   string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ADAS_MGM_PROCESSOR)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
     ADAS_MGM_PROCESSOR MATCHES "^(x86_64|amd64)$" AND
@@ -49,12 +49,16 @@ if(BUILD_TESTING)
     target_include_directories(mgm_generated_adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(mgm_generated_adapter PUBLIC mgm_core adas_mgr2_generated)
 
-    add_executable(generated_parity_test test/generated_parity_test.cpp)
-    target_link_libraries(generated_parity_test mgm_generated_adapter)
-    add_test(NAME generated_parity_test COMMAND generated_parity_test)
+    add_executable(
+      generated_lane_waypoint_parity_test
+      test/generated_lane_waypoint_parity_test.cpp)
+    target_link_libraries(generated_lane_waypoint_parity_test mgm_generated_adapter)
+    add_test(
+      NAME generated_lane_waypoint_parity_test
+      COMMAND generated_lane_waypoint_parity_test)
   else()
     message(STATUS
-      "ADAS_MGR2 generated parity disabled: requires Linux x86-64 with GNU/Clang; "
+      "ADAS_MGR2 LANE/WAYPOINT parity disabled: requires Linux x86-64 with GNU/Clang; "
       "got ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}/${CMAKE_C_COMPILER_ID}")
   endif()
 endif()

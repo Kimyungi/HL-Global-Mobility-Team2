@@ -83,16 +83,10 @@ void GeneratedMgmAdapter::reset(const CoreParams & params)
   MGM_n_cycles = params.n_cycles;
   MGM_v_base = params.v_base;
   MGM_v_accel_zone = params.v_accel_zone;
-  MGM_v_narrow = params.v_narrow;
-  MGM_ttc_stop = params.ttc_stop;
   MGM_blend_cycles = params.blend_cycles;
   MGM_a_up = params.a_up;
   MGM_a_down = params.a_down;
-  MGM_wrongway_yaw = params.wrongway_yaw;
-  MGM_wrongway_cycles = params.wrongway_cycles;
-  MGM_avoid_return_hold_cycles = params.avoid_return_hold_cycles;
   MGM_lane_entry_max_cross = params.lane_entry_max_cross;
-  MGM_avoid_max_cycles = params.avoid_max_cycles;
 
   ADAS_MGR2_initialize();
 }

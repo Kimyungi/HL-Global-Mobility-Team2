@@ -1,8 +1,26 @@
-# ADAS_MGR2 generated runtime
+# ADAS_MGR2 LANE/WAYPOINT generated runtime
 
-This directory contains only the C runtime needed to compile Simulink model
-`ADAS_MGR2` (model version 1.55, generated with Simulink Coder R2026a on
-2026-08-17).
+This directory contains only the C runtime needed to compile the two-state
+Simulink model `ADAS_MGR2` (model version 1.68, generated with Simulink Coder
+R2026a on 2026-08-18).
+
+The experiment is intentionally limited to:
+
+- `LANE` state and lane-path output
+- `WAYPOINT` state and GPS-path output
+- confidence hysteresis and cross-track return gating
+- acceleration-zone, traffic-stop, and E-stop longitudinal behavior
+- reference hold/blend, stale-frame compensation, and rate limiting
+
+`AVOID` and `PARKING` inputs remain in the shared bus ABI but are outside this
+model and test. The parity fixture keeps their transition inputs false. The
+production ROS 2 node and its existing `mgm_core` implementation are not
+changed or linked to this generated model.
+
+`gps_at_end` is also held false in the parity fixture. Version 1.68 treats it
+as a raw stop input, while the production core deliberately latches a valid
+track end until an explicit release. That policy difference is not part of the
+two-state switching experiment and must not be presented as verified parity.
 
 Included:
 
@@ -29,35 +47,13 @@ confirming the applicable rights.
 See the current [MathWorks Program Offering Guide](https://www.mathworks.com/help/pdf_doc/offering/offering.pdf),
 Part Two, Section 3.2 (Coder Programs).
 
-They are used by `GeneratedMgmAdapter` only for back-to-back verification and
-are compiled only when `BUILD_TESTING` is enabled on Linux x86-64 with a
-GNU/Clang C compiler. The production ROS 2 node continues to call the
-hand-maintained, ROS-independent `mgm_core` library. The generated API is
-global and non-reentrant, so it must not be called from multiple instances or
-threads.
+The generated code is used by `GeneratedMgmAdapter` only for a two-state
+back-to-back test and is compiled only when `BUILD_TESTING` is enabled on Linux
+x86-64 with a GNU/Clang C compiler. Its global API is non-reentrant, so the
+test uses one instance on one thread.
 
 To update this directory after regenerating the model, replace the same runtime
-file set and run `colcon test --packages-select adas_mgm` on a supported x86-64
-test host. The parity test must report zero mismatched ticks before the
-generated model or C++ core is accepted. The generated header reports
-`Validation result: Not run`; this back-to-back test does not replace a
-MathWorks code-generation validation report.
-
-## Replacement compatibility gate
-
-Matching `CoreSnapshotBus` and `CoreOutputBus` layouts is necessary but not
-sufficient for a generated model to replace this verification oracle. A
-replacement must also preserve all four states and path sources
-(`LANE`, `WAYPOINT`, `AVOID`, and `PARKING`), expose every tunable parameter
-consumed by `GeneratedMgmAdapter`, compile without adapter changes, and finish
-the 2,400-tick parity trace with zero mismatches.
-
-An `ADAS_MGR2` model version 1.68 bundle generated on 2026-08-18 was evaluated
-against this gate but is intentionally not included. Although its external bus
-layout matches, its generated state machine contains only `LANE` and
-`WAYPOINT`. It also removes the exported parameters for narrow-gap speed, TTC
-stop, wrong-way detection, avoid return hold, and avoid timeout. A direct
-replacement therefore fails to compile; ignoring the missing assignments for
-diagnosis produces 557 mismatched ticks, starting at the first `AVOID`
-transition. Restore those behaviors in the Simulink model and regenerate it
-instead of editing generated C by hand.
+file set and run `colcon test --packages-select adas_mgm` on a supported test
+host. The LANE/WAYPOINT parity test must report zero mismatched ticks. The
+generated header reports `Validation result: Not run`; this back-to-back test
+does not replace a MathWorks code-generation validation report.

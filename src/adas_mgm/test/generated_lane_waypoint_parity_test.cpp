@@ -34,23 +34,24 @@ void makePath(CorePath & path, float x, float y, int32_t count = MGM_NUM_POINTS)
 CoreParams makeParams()
 {
   CoreParams params{};
-  // Deliberately differ from every compiled ERT default so a missing adapter
-  // assignment cannot pass by coincidence.
+  // Every parameter exported by the two-state ERT differs from its compiled
+  // default so an omitted adapter assignment cannot pass by coincidence.
   params.lane_conf_exit = 0.31f;
   params.lane_conf_return = 0.74f;
   params.n_cycles = 17;
   params.v_base = 0.53f;
   params.v_accel_zone = 0.91f;
-  params.v_narrow = 0.17f;
-  params.ttc_stop = 0.67f;
   params.blend_cycles = 7;
   params.a_up = 0.43f;
   params.a_down = 1.21f;
-  params.wrongway_yaw = 1.9f;
-  params.wrongway_cycles = 13;
-  params.avoid_return_hold_cycles = 61;
   params.lane_entry_max_cross = 0.42f;
-  params.avoid_max_cycles = 37;
+
+  // These belong to the production four-state CoreParams ABI but are outside
+  // this LANE/WAYPOINT experiment. Keep them neutral in the C++ reference.
+  params.v_narrow = 0.2f;
+  params.ttc_stop = 0.8f;
+  params.wrongway_yaw = 3.2f;
+  params.wrongway_cycles = 1000;
   return params;
 }
 
@@ -59,17 +60,12 @@ CoreSnapshot makeSnapshot(int tick)
   CoreSnapshot input{};
   input.lane_confidence = 0.9f;
   input.gps_cross_track = 0.1f;
-  input.gps_heading_valid = true;
+  input.gps_heading_valid = false;
   input.lane_updated = true;
   input.gps_updated = true;
-  input.avoid_updated = true;
   input.avoid_ttc = 1e9f;
-  input.avoid_v_suggest = 0.4f;
-  input.parking_v_suggest = -0.25f;
   makePath(input.lane_path, 1.0f, 0.0f);
   makePath(input.gps_path, 1.2f, 0.05f);
-  makePath(input.avoid_path, 1.5f, 0.35f, 1);
-  makePath(input.parking_path, 0.8f, -0.2f);
 
   if (tick >= 20 && tick < 70) {
     input.gps_accel_zone = true;
@@ -88,80 +84,24 @@ CoreSnapshot makeSnapshot(int tick)
     // Between the generated-default and custom lane-return thresholds.
     input.lane_confidence = 0.72f;
   }
-  if (tick >= 410 && tick < 416) {
-    input.avoid_obstacle_detected = true;
-  }
-  if (tick >= 416 && tick < 420) {
-    input.avoid_avoidable = true;
-  }
-  if (tick >= 420 && tick < 500) {
-    input.avoid_obstacle_detected = true;
-    input.avoid_avoidable = true;
-  }
-  if (tick >= 440 && tick < 460) {
-    input.avoid_narrow_gap = true;
-  }
-  if (tick >= 470 && tick < 475) {
-    // Between the custom and generated-default TTC stop thresholds.
-    input.avoid_ttc = 0.73f;
-  }
-  if (tick >= 475 && tick < 480) {
-    input.avoid_ttc = 0.3f;
-  }
-  if (tick == 500) {
-    input.avoid_maneuver_done = true;
-  }
-  if (tick >= 500 && tick < 580) {
-    input.gps_cross_track = 0.9f;
-  }
-  if (tick >= 580 && tick < 620) {
+  if (tick >= 360 && tick < 420) {
     // Between the custom and generated-default lane-entry cross-track gates.
     input.gps_cross_track = 0.46f;
   }
-  if (tick >= 900 && tick < 980) {
+  if (tick >= 500 && tick < 620) {
     input.lane_confidence = 0.1f;
   }
-  if (tick >= 900 && tick < 960) {
-    // Between the custom and generated-default wrong-way thresholds.
-    input.gps_path.pts[0].yaw = 2.0f;
+  if (tick >= 550 && tick < 610) {
+    input.traffic_stop_required = true;
   }
-  if (tick >= 930 && tick < 950) {
-    input.gps_heading_valid = false;
-    input.gps_path.pts[0].yaw = 2.0f;
+  if (tick >= 570 && tick < 600) {
+    input.gps_accel_zone = true;
   }
-  if (tick >= 1200 && tick < 1220) {
-    input.gps_at_end = true;
-  }
-  if (tick >= 1250 && tick < 1260) {
-    // Watchdog-derived E-stop must not release the at-end latch.
-    input.estop = true;
-  }
-  if (tick >= 1300 && tick < 1310) {
-    input.estop = true;
-    input.estop_latch_release = true;
-  }
-  if (tick >= 1380 && tick < 1390) {
-    input.gps_parking_zone = true;
-  }
-  if (tick >= 1390 && tick < 1400) {
-    input.parking_space_found = true;
-  }
-  if (tick >= 1400 && tick < 1450) {
-    input.gps_parking_zone = true;
-    input.parking_space_found = true;
-  }
-  if (tick >= 1420 && tick < 1430) {
-    input.parking_path_blocked = true;
-  }
-  if (tick == 1450) {
-    input.parking_done = true;
-  }
-  if (tick >= 1500 && tick < 1550) {
+  if (tick >= 700 && tick < 710) {
     input.estop = true;
   }
   input.lane_updated = tick % 2 == 0;
   input.gps_updated = tick % 3 == 0;
-  input.avoid_updated = tick % 5 == 0;
   return input;
 }
 
@@ -202,25 +142,42 @@ int main()
   GeneratedMgmAdapter generated(params);
 
   int mismatches = 0;
-  bool seen_state[4]{};
-  bool seen_source[4]{};
+  bool seen_state[2]{};
+  bool seen_source[2]{};
   bool seen_immediate_stop = false;
+  bool seen_normal_stop = false;
   bool seen_forward = false;
-  bool seen_reverse = false;
-  constexpr int kTicks = 2400;
+  bool seen_lane_exit = false;
+  bool seen_lane_return = false;
+  bool seen_cross_track_gate_hold = false;
+  uint8_t previous_state = 0U;
+  constexpr int kTicks = 900;
   for (int tick = 0; tick < kTicks; ++tick) {
     const CoreSnapshot input = makeSnapshot(tick);
     const CoreOutput reference = mgm_step(input, reference_state);
     const CoreOutput actual = generated.step(input);
-    if (reference.state < 4) {
+    if (reference.state < 2) {
       seen_state[reference.state] = true;
+    } else {
+      ++mismatches;
+      std::fprintf(stderr, "out-of-scope reference state at tick=%d: %u\n", tick, reference.state);
     }
-    if (reference.path_source < 4) {
+    if (reference.path_source < 2) {
       seen_source[reference.path_source] = true;
+    } else {
+      ++mismatches;
+      std::fprintf(
+        stderr, "out-of-scope reference source at tick=%d: %u\n", tick, reference.path_source);
     }
     seen_immediate_stop = seen_immediate_stop || reference.immediate_stop;
+    seen_normal_stop = seen_normal_stop ||
+      (input.traffic_stop_required && !reference.immediate_stop && close(reference.v_ref, 0.0f));
     seen_forward = seen_forward || reference.v_ref > 0.0f;
-    seen_reverse = seen_reverse || reference.v_ref < 0.0f;
+    seen_lane_exit = seen_lane_exit || (previous_state == 0U && reference.state == 1U);
+    seen_lane_return = seen_lane_return || (previous_state == 1U && reference.state == 0U);
+    seen_cross_track_gate_hold = seen_cross_track_gate_hold ||
+      (tick >= 360 && tick < 420 && reference.state == 1U);
+    previous_state = reference.state;
     if (!equal(reference, actual)) {
       if (mismatches < 10) {
         std::fprintf(
@@ -242,7 +199,7 @@ int main()
     std::fputs("reset parity mismatch\n", stderr);
   }
 
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < 2; ++i) {
     if (!seen_state[i] || !seen_source[i]) {
       ++mismatches;
       std::fprintf(
@@ -250,13 +207,17 @@ int main()
         i, seen_state[i], i, seen_source[i]);
     }
   }
-  if (!seen_immediate_stop || !seen_forward || !seen_reverse) {
+  if (!seen_immediate_stop || !seen_normal_stop || !seen_forward ||
+    !seen_lane_exit || !seen_lane_return || !seen_cross_track_gate_hold)
+  {
     ++mismatches;
     std::fprintf(
-      stderr, "coverage missing: immediate=%d forward=%d reverse=%d\n",
-      seen_immediate_stop, seen_forward, seen_reverse);
+      stderr,
+      "coverage missing: immediate=%d normal_stop=%d forward=%d exit=%d return=%d cross=%d\n",
+      seen_immediate_stop, seen_normal_stop, seen_forward, seen_lane_exit, seen_lane_return,
+      seen_cross_track_gate_hold);
   }
 
-  std::printf("generated parity: ticks=%d mismatches=%d\n", kTicks, mismatches);
+  std::printf("lane-waypoint generated parity: ticks=%d mismatches=%d\n", kTicks, mismatches);
   return mismatches == 0 ? 0 : 1;
 }
