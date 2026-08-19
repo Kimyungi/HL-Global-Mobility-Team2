@@ -4,8 +4,9 @@
 
 김재민이 Simulink 로 만든 `ADAS_MGR2` v1.68 생성 C 를 `mgm_step()` 자리에 끼워
 (CLAUDE.md §5.5 이중 트랙) 레퍼런스 C++ 코어와 **같은 차·같은 코스**에서 굴려 보는
-절차. 베이스 설치·RTCM 중계·출발 인가 같은 공통 절차는 `RUNBOOK_lane_gps.md` 를
-그대로 따르고, 이 문서는 **MBD 시험에만 추가되는 것**을 담는다.
+절차. **이 문서 하나로 시험이 돌아간다** — 터미널 명령은 전부 복붙 가능하게 §3 에
+모아 두었다. 베이스 좌표 측량·지점 이동처럼 시험 이전의 준비는
+`stack_gps/tools/base_station/` 문서로 갈라 두었다 (§2).
 
 > **운영 런치(`REAL_VEHICLE_lane_gps_can.launch.py`)는 건드리지 않는다.** 그쪽은
 > 지정 구간 3종까지 물려 있는 4상태 운영 구성이고, 이 파일은 별개다. 두 launch 를
@@ -60,236 +61,73 @@ colcon test --packages-select adas_mgm --event-handlers console_direct+   # 4/4 
 
 ---
 
-## 2. 현장 준비 — 베이스 측량부터 코스 기록까지
+## 2. 현장 준비 — 베이스와 코스
 
 **시험 장소: 한라대학교.** 직전 회피 시험(`RUNBOOK_avoid_field_test.md`)은 **원주
 운전면허시험장**이었으므로 베이스를 옮겨 온다. 이번엔 한라대 좌표를 **새로 측량**한다.
 
-### 먼저 알아 둘 것 — 좌표는 지워지지 않는다
+베이스 절차는 `stack_gps/tools/base_station/` 에 있다 — 이 런북에 옮겨 적지 않는다.
 
-| | 어디에 |
+| 하려는 것 | 문서 |
 |---|---|
-| **좌표 숫자** | `stack_gps/tools/base_station/BASE_LOCATIONS.md` — **지워지지 않는다.** 지점을 늘려 가며 쌓는 표 |
-| **지금 로드된 좌표** | F9P 플래시 — **한 벌만.** 다른 지점 값을 쓰면 덮인다 |
+| **한라대 좌표를 새로 측량** (이번에 할 일) | [`BASE_SURVEY.md`](../stack_gps/tools/base_station/BASE_SURVEY.md) |
+| 이미 등록된 지점끼리 옮기기 (원주 복귀 등) | [`BASE_MOVE.md`](../stack_gps/tools/base_station/BASE_MOVE.md) |
+| 어느 좌표·어느 코스가 등록돼 있나 | [`BASE_LOCATIONS.md`](../stack_gps/tools/base_station/BASE_LOCATIONS.md) |
 
-표가 **서가**고 플래시가 **지금 펴 놓은 책 한 권**이다. 원주에서 한라대로 옮긴다고
-원주 좌표가 사라지는 게 아니라, 나중에 원주로 돌아가면 표의 그 줄을 `setup_base.py` 에
-다시 넣으면 그대로 복원된다.
+시험 시작 전 갖춰져야 할 것:
 
-> ⚠ **단, 표에 없는 값이 플래시에 들어 있으면 그건 진짜로 사라진다.**
-> 그래서 덮기 전에 항상 §2-0 을 먼저 한다.
+- [ ] 한라대 좌표 측량 완료 + `BASE_LOCATIONS.md` 에 등록
+- [ ] 그 좌표로 `setup_base.py` 실행 (`fixType=5` 확인)
+- [ ] **새 코스 CSV** — 새로 측량했으므로 옛 한라대 코스는 못 쓴다
+- [ ] 로버 RTK **FIXED** 확인 (`rtk_probe.py`, C/N0 39dB 이상)
+- [ ] `-DADAS_MGM_ENABLE_GENERATED_BACKEND=ON` 빌드 (§1)
 
-### 2-0. 덮기 전 백업 — 지금 들어 있는 좌표 확인 (베이스 PC)
+> ⚠ 구간 파일(`zones_*.yaml`)은 **찍어도 이 시험에선 무시된다** (v1.68 미구현).
+> 운영 런치용으로 같이 찍어 두는 건 상관없다 — launch 가 개수를 세어 경고를 찍는다.
 
-```bash
-cd ~/FMA_ws/src/stack_gps/tools/base_station
-python3 read_base_position.py
+---
+
+## 3. 터미널 구성
+
+```
+터미널 5개: B1(베이스) + V1(RTCM 중계) + V2(launch) + M(state 모니터) + V3(go)
 ```
 
-출력된 좌표를 `BASE_LOCATIONS.md` 표와 대조한다. 원주 값
-(`37.300314764 / 127.979451327 / 224.2647`)이면 이미 표에 있으니 그냥 진행.
-**표에 없는 값이 나오면 출력 그대로 표에 행을 추가한 뒤** 진행할 것.
+| 이름 | 어디서 | 역할 | 언제 |
+|---|---|---|---|
+| **B1** | 베이스 PC | RTCM 보정 송출 (라디오) | 현장 도착 직후 ~ 철수 |
+| **V1** | 차량 PC | 라디오 → 로컬 TCP 중계 | 현장 도착 직후 ~ 철수 |
+| **V2** | 차량 PC | MBD launch (인지 + MGM [+ CAN]) | 시험 시작 ~ 종료 |
+| **M** | 차량 PC | 스테이트 모니터 | **시험 내내** — 전이 이력이 곧 시험 기록 |
+| **V3** | 차량 PC | 출발 인가 | 매 출발마다 |
 
-### 2-1. 안테나 고정
-
-베이스 안테나를 세울 자리에 **최종 위치로 고정**한다. 측량 후 옮기면 좌표가 무효다.
-
-- 하늘 시야가 트인 곳. 벽·처마 밑 금지
-- **삼각대 높이까지 이번 자리 그대로 유지** — 다음에 재현해야 하므로 어디에 어떻게
-  세웠는지 사진을 찍어 두고 §2-5 에 적는다
-
-### 2-2. 베이스 모드 해제 ← 이걸 빼먹으면 측량이 영원히 안 된다
-
-```bash
-python3 setup_base.py --disable
-```
-
-EVK 가 베이스 모드(`fixType=5`)면 **측위를 안 해서 샘플이 한 개도 안 쌓인다.**
-직전 현장(원주)에서 베이스로 쓰던 그 수신기이므로 반드시 먼저 푼다.
-
-- `ublox_gps` ROS 노드(`start_rtk.sh`)가 떠 있으면 끌 것 — UART1 포트가 겹친다
-
-### 2-3. [터미널 A] NGII VRS 보정 주입 (인터넷 필요)
-
-```bash
-cd ~/FMA_ws/src/stack_gps/tools/base_station
-export NGII_USER=kyg100800 NGII_PASS=ngii
-python3 ntrip_inject.py --lat 37.3038 --lon 127.9073
-```
-
-- `--lat/--lon` 은 **현장 개략 좌표**다 (VRS 가 이 위치 기준으로 보정을 만든다).
-  위 값이 한라대다 — 원주로 갈 땐 `--lat 37.3003 --lon 127.9795` 로 바꿀 것.
-- 비밀번호 `ngii` 는 계정별 값이 아니라 **전 사용자 공통 고정값**이다(NGII 공식 FAQ).
-  401 이 떠도 비번을 의심하지 말 것.
-- **계정당 동시접속 1개.** 다른 PC 에서 같은 ID 로 붙어 있으면 실패한다.
-- 접속만 먼저 확인하려면(F9P 불필요): `python3 ntrip_check.py kyg100800`
-- 캐스터는 **RTS1** 이 기본이다 — RTS2 는 정상 계정도 401 로 거부한다(캐스터 측 문제).
-
-### 2-4. [터미널 B] 10분 측량
-
-```bash
-cd ~/FMA_ws/src/stack_gps/tools/base_station
-python3 measure_base_position.py --duration 600
-```
-
-- `carrSoln=FIXED` 가 떠야 샘플이 쌓인다. FLOAT 에 머물면 하늘 시야·NGII 접속 확인
-- 끝나면 **위도 / 경도 / 타원체고**와 각 표준편차가 출력된다.
-  표준편차가 몇 cm 를 넘으면 다시 (경고가 뜬다)
-- 출력 맨 아래에 `setup_base.py` 실행 커맨드가 그대로 찍힌다 — 그걸 쓰면 된다
-
-### 2-5. 좌표 등록 ← 여기서 안 적으면 다음에 못 쓴다
-
-`BASE_LOCATIONS.md` 표에 행을 추가한다. **측량 직후 바로.**
-
-| 채울 칸 | 예 |
-|---|---|
-| 위치 ID | `halla_20260819` |
-| 장소 | 한라대학교 |
-| 안테나 설치 | (어디에 어떻게 세웠는지 — 다음에 재현할 사람이 읽는다) |
-| 위도/경도/타원체고 | §2-4 출력 그대로 |
-| 측량일 / 상태 | 2026-08-19 / 현재 사용 |
-
-### 2-6. 베이스 모드 설정 (플래시 저장)
-
-```bash
-python3 setup_base.py --lat <2-4 위도> --lon <2-4 경도> --height <2-4 타원체고>
-```
-
-`TMODE3=FIXED` + 항법 1Hz + UART2 를 RTCM3 전용 출력으로 전환하고 **플래시에 저장**한다.
-이후엔 전원만 넣으면 베이스로 동작한다.
-
-- 검증: 스크립트가 `fixType=5 (TIME — 베이스 정상)` 을 확인해 준다
-
-### 2-7. [B1, 베이스 PC] RTCM 송출 — 운용 내내 켜 둠
+### B1 [베이스 PC]
 
 ```bash
 cd ~/FMA_ws/src/stack_gps/tools/base_station
 python3 rtcm_server.py --radio /dev/ttyRadio
 ```
 
-정상 판정: 10초마다 `RTCM ~500 B/s`. `0 B/s ⚠` 가 계속되면 거의 항상 케이블·포트 문제.
+정상: 10초마다 `RTCM ~500 B/s`. `0 B/s ⚠` 는 거의 항상 케이블·포트 문제.
 
-### 2-8. [V1, 차량 PC] 라디오 → 로컬 TCP 중계 — 운용 내내 켜 둠
+### V1 [차량 PC]
 
 ```bash
 python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
     --port /dev/ttyRadio --tcp-port 2101
 ```
 
-### 2-9. 로버 RTK FIXED 확인
+### V2 [차량 PC] — 두 단계
+
+**① 정지 상태 전이 확인 (CAN 없음)** — 바퀴가 안 움직인다.
 
 ```bash
-python3 ~/FMA_ws/src/stack_gps/tools/rtk_probe.py --seconds 120
-```
-
-**C/N0 를 볼 것.** 위성 수·HDOP 는 정상인데 RTK 만 무너지는 게 OAK-D USB3 간섭의
-증상이다(39dB → 22dB). 그래서 이 시험의 launch 는 항상 `usb_speed:=high camera_fps:=10`
-을 붙인다 (CLAUDE.md §6).
-
-### 2-10. 코스 기록
-
-베이스를 새로 측량했으므로 **코스도 새로 기록해야 한다** — 옛 한라대 코스
-(`straight_1_20260811` 등)는 그때 베이스 좌표 기준이라 그대로는 못 쓴다.
-
-```bash
-# stack_gps 노드(V2)는 꺼둘 것 — FST 포트를 한 프로세스만 쓸 수 있다
-cd ~/FMA_ws/src/stack_gps/tools/waypoints
-python3 record_waypoints.py --host 127.0.0.1 --name mbd_1 --spacing 0.3
-```
-
-요령: FIXED 확인 후 출발 / 시작점 3초 정지 / 주행보다 느리게, 조향 부드럽게 /
-**급커브는 조향 70~80%만** (풀조향으로 기록하면 추종 보정 여유가 0 이 되어 커브
-바깥으로 이탈한다) / 폐곡선이면 시작·끝 3cm 이내면 합격 / "FIX 아님" 경고가 떴던
-run 은 버리고 다시.
-
-```bash
-python3 live_view.py --csv ../../waypoints/waypoints_mbd_1_*.csv   # 품질 눈검사
-```
-
-- ⚠ 구간 파일(`zones_*.yaml`)은 **찍어도 이 시험에선 무시된다** (v1.68 미구현).
-  운영 런치용으로 같이 찍어 두는 건 상관없다 — launch 가 개수를 세어 경고를 찍는다.
-- `BASE_LOCATIONS.md` 의 "위치 ↔ 코스 대응" 표에 새 코스를 추가할 것.
-
----
-
-## 2.5 위치를 옮길 때마다 할 일 (이미 측량한 지점끼리)
-
-한 번 등록된 지점끼리 오갈 때는 **재측량하지 않는다.** 표의 숫자를 그대로 다시 넣는
-것이 정답이다 — 같은 자리에서 재측량해도 값이 cm 단위로 달라져 그만큼 코스가 밀린다.
-
-| # | 할 일 |
-|---|---|
-| 1 | 안테나·삼각대를 그 지점의 **등록된 자리·높이**로 설치 (표의 "안테나 설치" 칸) |
-| 2 | `python3 read_base_position.py` — 지금 들어 있는 값이 표에 있는지 확인 |
-| 3 | `python3 setup_base.py --lat <그 지점 위도> --lon <경도> --height <타원체고>` |
-| 4 | `python3 rtcm_server.py --radio /dev/ttyRadio` (B1) · `--port /dev/ttyRadio --tcp-port 2101` (V1) |
-| 5 | launch 의 `waypoint_csv:=` 를 **그 지점에서 기록한 코스**로 지정 |
-
-**안 해도 되는 것**: 재측량 · NGII 접속(인터넷 불필요) · 로버 설정 변경 ·
-dSPACE/CAN 쪽 아무것도.
-
-```bash
-# 원주 운전면허시험장으로 돌아갈 때
-python3 setup_base.py --lat 37.300314764 --lon 127.979451327 --height 224.2647
-#   코스: waypoints_straight_1_20260818_160511.csv (지정 구간 3종 포함)
-
-# 한라대 8/1 지점 (삼각대 자리를 재현할 수 있을 때)
-python3 setup_base.py --lat 37.303841799 --lon 127.907284433 --height 183.9014
-#   코스: waypoints_straight_1_20260811_193556.csv 등
-```
-
-⚠ **틀린 짝을 쓰면 조용히 실패한다** — RTK FIXED 는 멀쩡히 뜨는데 위치만 통째로
-밀린다. 코스 CSV 첫 줄의 lat/lon 으로 장소를 구분할 수 있다
-(한라대 `37.3041/127.9075`, 원주 `37.3006/127.9791`).
-
----
-
-## 3. ① 정지 상태 전이 확인 — CAN 없음 (필수 게이트, 5분)
-
-**바퀴가 안 움직인다.** `bridge_dspace` 가 아예 안 뜨므로 `/adas/target_ref` 를 아무도
-읽지 않는다. 여기서 스테이트가 안 변하면 주행으로 넘어가지 말 것.
-
-```bash
-# V2 [차량 PC]
 ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
     waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<새 코스>.csv \
     usb_speed:=high camera_fps:=10
 ```
 
-기동 직후 콘솔에서 **이 두 줄**을 확인한다:
-
-```
-[launch] backend = generated (ADAS_MGR2 v1.68) — LANE/WAYPOINT 2상태만
-[launch] bench 모드 — bridge_dspace 미기동, 바퀴 안 움직입니다
-[INFO] [mgm_node]: decision backend=generated (ADAS_MGR2 v1.68 LANE/WAYPOINT bench only)
-```
-
-세 번째 줄이 `decision backend=core` 면 **빌드 opt-in 이 안 된 것이 아니라** 파라미터가
-안 먹은 것이다 (opt-in 이 없으면 노드가 기동 실패한다).
-
-```bash
-# M [차량 PC] — 시험 내내 켜 둔다. 전이 이력이 곧 시험 기록
-ros2 run adas_mgm state
-
-# V3 — 출발 인가. ★ --skip-avoid 필수 (stack_avoid 를 안 띄운다)
-ros2 run adas_mgm go --skip-avoid
-```
-
-| 확인 | 기대 |
-|---|---|
-| `ros2 topic hz /adas/target_ref` | 100 Hz |
-| 카메라를 손으로 가림 | 차선 신뢰도 ↓ → 0.5s 뒤 `→ gps` 전이 |
-| 다시 열어 줌 | 신뢰도 ↑ → 0.5s 뒤 `→ 차선` 복귀 |
-| `[ERROR] decision backend fault latched` | **안 떠야 한다.** 뜨면 §5 |
-
-> 차를 손으로 밀어 트랙 밖으로 빼면 재합류 게이트(cross ≤ 0.5m)가 걸려 차선으로
-> 안 돌아오는 것도 여기서 확인할 수 있다.
-
----
-
-## 4. ② 실주행
-
-①을 통과한 뒤에만. 확인 토큰을 주면 `bridge_dspace` + 종료 시 `can_zero` 가드가 붙는다.
+**② 실주행** — ①을 통과한 뒤에만. 토큰을 주면 `bridge_dspace` + `can_zero` 가드가 붙는다.
 
 ```bash
 ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
@@ -298,22 +136,81 @@ ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
     usb_speed:=high camera_fps:=10
 ```
 
+`usb_speed:=high camera_fps:=10` 은 **항상 붙인다** — OAK-D 를 USB2 에 묶어 GPS 간섭을
+막는다 (CLAUDE.md §6, USB3 면 C/N0 가 39 → 22dB 로 무너진다).
+
+### M [차량 PC]
+
+```bash
+ros2 run adas_mgm state
+```
+
+### V3 [차량 PC]
+
+```bash
+ros2 run adas_mgm go --skip-avoid
+```
+
+★ **`--skip-avoid` 필수** — 이 시험은 `stack_avoid` 를 안 띄우므로 회피 점검을
+건너뛰어야 인가가 난다.
+
+### 종료
+
+**V2 에서 Ctrl-C.** 종료 경로를 타야 `can_zero` 가 dSPACE 목표값 0 을 송신한다
+(dSPACE watchdog 미구현, CLAUDE.md §3 ⚠).
+
+---
+
+## 4. ① 정지 상태 전이 확인 — 필수 게이트 (5분)
+
+V2 를 **CAN 없이**(토큰 없이) 띄운 상태. `bridge_dspace` 가 아예 안 뜨므로
+`/adas/target_ref` 를 아무도 읽지 않는다. **여기서 스테이트가 안 변하면 주행으로
+넘어가지 말 것.**
+
+기동 직후 콘솔에서 이 세 줄을 확인한다:
+
+```
+[launch] backend = generated (ADAS_MGR2 v1.68) — LANE/WAYPOINT 2상태만
+[launch] bench 모드 — bridge_dspace 미기동, 바퀴 안 움직입니다
+[INFO] [mgm_node]: decision backend=generated (ADAS_MGR2 v1.68 LANE/WAYPOINT bench only)
+```
+
+세 번째 줄이 `decision backend=core` 면 빌드 opt-in 문제가 아니라 **파라미터가 안 먹은
+것**이다 (opt-in 이 없으면 노드가 아예 기동 실패한다).
+
+M 과 V3 를 띄운 뒤:
+
+| 확인 | 기대 |
+|---|---|
+| `ros2 topic hz /adas/target_ref` | 100 Hz |
+| 카메라를 손으로 가림 | 차선 신뢰도 ↓ → 0.5s 뒤 `→ gps` 전이 |
+| 다시 열어 줌 | 신뢰도 ↑ → 0.5s 뒤 `→ 차선` 복귀 |
+| `[ERROR] decision backend fault latched` | **안 떠야 한다.** 뜨면 §6 |
+
+> 차를 손으로 밀어 트랙 밖으로 빼면 재합류 게이트(cross ≤ 0.5m)가 걸려 차선으로
+> 안 돌아오는 것도 여기서 확인할 수 있다.
+
+---
+
+## 5. ② 실주행
+
+V2 를 토큰과 함께 다시 띄운다 (§3). 콘솔에 이 줄이 떠야 한다:
+
 ```
 [launch] ⚠ 실주행 모드 — CAN TX 나갑니다. 물리 비상정지에 손 올릴 것
 ```
 
-- 운전자는 **물리 비상정지에 손 올리고** 대기 (field_session 관례).
-- 소프트웨어 정지 = **V2 Ctrl-C** — 종료 시 `can_zero` 가 dSPACE 목표값 0 을 송신한다
-  (dSPACE watchdog 미구현, CLAUDE.md §3 ⚠).
-- 속도는 운영과 같은 `v_base` 1.0 m/s 다 (params.yaml). 첫 run 은 낮춰서 보고 싶으면
-  `--ros-args` 가 아니라 params.yaml 을 고칠 것 — **운영 런치와 값이 갈리면 back-to-back
-  비교가 무의미해진다.**
+- 운전자는 **물리 비상정지에 손 올리고** 대기 (field_session 관례)
+- 소프트웨어 정지 = **V2 Ctrl-C**
+- 속도는 운영과 같은 `v_base` 1.0 m/s 다 (params.yaml). 첫 run 을 낮춰 보고 싶으면
+  `--ros-args` 가 아니라 params.yaml 을 고칠 것 — **운영 런치와 값이 갈리면
+  back-to-back 비교가 무의미해진다**
 - **트랙 종점에 닿으면 서고 안 움직인다** (fail-stop 래치). 정상이다. 다음 바퀴를
-  돌리려면 launch 를 재시작한다. 이게 이 시험의 가장 큰 운용상 불편이다.
+  돌리려면 V2 를 재시작한다 — 이 시험의 가장 큰 운용상 불편이다
 
 ---
 
-## 5. `fault latched` 가 떴을 때
+## 6. `fault latched` 가 떴을 때
 
 로그에 이유가 그대로 찍힌다. 원인을 없애고 **launch 재시작** (파라미터로는 못 푼다).
 
@@ -330,7 +227,7 @@ ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
 
 ---
 
-## 6. 시험 후 — 레퍼런스 코어와 back-to-back (§5.5)
+## 7. 시험 후 — 레퍼런스 코어와 back-to-back (§5.5)
 
 이 시험의 진짜 산출물은 주행 성공/실패가 아니라 **두 구현이 같은 입력에 같은 판단을
 했는가**다. `parity_replay` 가 run 폴더의 `mgm_snapshots.bin` 을 **두 구현에 동시에**
@@ -373,7 +270,7 @@ ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
 
 ---
 
-## 7. 사전 검증 기록 (2026-08-19, 실차 전)
+## 8. 사전 검증 기록 (2026-08-19, 실차 전)
 
 실차에 나가기 전 벤치에서 확인한 것:
 
@@ -393,7 +290,10 @@ ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
 
 ## 참조
 
-- `RUNBOOK_lane_gps.md` — 베이스·RTCM·출발 인가 등 공통 절차
+- [`base_station/BASE_SURVEY.md`](../stack_gps/tools/base_station/BASE_SURVEY.md) — 베이스 좌표 측량
+- [`base_station/BASE_MOVE.md`](../stack_gps/tools/base_station/BASE_MOVE.md) — 지점 이동
+- [`base_station/BASE_LOCATIONS.md`](../stack_gps/tools/base_station/BASE_LOCATIONS.md) — 좌표·코스 레지스트리
+- `stack_gps/DRIVE_GUIDE.md` §A2 — 코스 기록 상세
 - `README.md` §"실험용 generated backend" — 빌드 옵션 상세 (김재민)
 - `src/generated/adas_mgr2/README.md` — 생성본 출처·라이선스 고지
 - CLAUDE.md §5.5 — 이중 트랙 개발 전략
