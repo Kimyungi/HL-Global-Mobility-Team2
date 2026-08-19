@@ -15,7 +15,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <exception>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <numeric>
 #include <string>
@@ -23,6 +25,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rcl_interfaces/msg/parameter_descriptor.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "fma_interfaces/msg/lane_path.hpp"
 #include "fma_interfaces/msg/gps_path.hpp"
@@ -33,6 +36,7 @@
 #include "fma_interfaces/msg/target_ref.hpp"
 
 #include "core/mgm_step.hpp"
+#include "src/decision_backend.hpp"
 #include "tools/dump_format.hpp"
 
 using fma_interfaces::msg::TargetRef;
@@ -184,7 +188,22 @@ public:
     // 회피 허용 구간 밖에서는 AVOID 전이 금지 (stack_gps 의 avoid_zone_latlon 과 짝).
     // 기본 false = 구동작(어디서나 회피) — 켜는 것은 launch/params의 명시적 선택.
     p.avoid_zone_only = declare_parameter<bool>("avoid_zone_only", false) ? 1 : 0;
-    mgm_init(core_state_, p);
+    rcl_interfaces::msg::ParameterDescriptor backend_descriptor;
+    backend_descriptor.read_only = true;
+    backend_descriptor.description = "startup-only decision backend: core or generated";
+    const auto backend_name = declare_parameter<std::string>(
+      "backend", "core", backend_descriptor);
+    rcl_interfaces::msg::ParameterDescriptor acknowledgement_descriptor;
+    acknowledgement_descriptor.read_only = true;
+    acknowledgement_descriptor.description =
+      "startup-only acknowledgement for the limited generated backend";
+    const bool generated_scope_acknowledged = declare_parameter<bool>(
+      "generated_backend_acknowledge_limited_scope", false, acknowledgement_descriptor);
+    backend_ = std::make_unique<DecisionBackend>(
+      backend_name, generated_scope_acknowledged, p);
+    RCLCPP_INFO(
+      get_logger(), "decision backend=%s%s", backend_->name().c_str(),
+      backend_->name() == "generated" ? " (ADAS_MGR2 v1.68 LANE/WAYPOINT bench only)" : "");
 
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기
     estop_stale_ns_ = static_cast<int64_t>(
@@ -377,7 +396,7 @@ private:
     // estop 경로를 그대로 재사용 — 새 판단 로직을 추가하는 게 아니라 기존
     // "estop=true → 전 스테이트 정지" 판단에 태우는 것 (§5.1 준수).
     const bool lane_stale = lane_rx_ns < 0 || monotonicNs() - lane_rx_ns > lane_stale_ns_;
-    if (core_state_.state == MGM_STATE_LANE && lane_stale && !estop_stale) {
+    if (backend_->activeState() == MGM_STATE_LANE && lane_stale && !estop_stale) {
       m.estop.estop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "lane_path 신선도 초과(state=lane) — estop 강제 (stack_lane 확인 필요)");
@@ -392,7 +411,9 @@ private:
     // 태운다 — 새 판단이 아니라 입력 컨디셔닝(§5.7 ②의 확장).
     const bool gps_stale = gps_rx_ns < 0 || monotonicNs() - gps_rx_ns > gps_stale_ns_;
     const bool gps_no_fix = m.gps.fix_quality == 0 || m.gps.points.empty();
-    if (core_state_.state == MGM_STATE_WAYPOINT && (gps_stale || gps_no_fix) && !estop_stale) {
+    if (backend_->activeState() == MGM_STATE_WAYPOINT &&
+      (gps_stale || gps_no_fix) && !estop_stale)
+    {
       m.estop.estop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         gps_stale ? "gps_path 신선도 초과(state=waypoint) — estop 강제 (stack_gps 확인 필요)"
@@ -422,7 +443,7 @@ private:
       m.avoid.obstacle_detected = false;
       m.avoid.avoidable = false;
       m.avoid.ttc = 1e9f;
-      if (core_state_.state == MGM_STATE_AVOID && !estop_stale) {
+      if (backend_->activeState() == MGM_STATE_AVOID && !estop_stale) {
         m.estop.estop = true;
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
           "avoid 신선도 초과(state=avoid) — estop 강제 (stack_avoid 확인 필요)");
@@ -443,24 +464,30 @@ private:
       dump_.write(reinterpret_cast<const char *>(&s), sizeof(s));
     }
 
-    const CoreOutput out = mgm_step(s, core_state_);  // 판단+실행 전부 코어에서
+    const bool was_faulted = backend_->faulted();
+    const CoreOutput out = backend_->step(s);  // 판단+실행은 선택된 backend 한 곳에서만
+    if (!was_faulted && backend_->faulted()) {
+      RCLCPP_ERROR(
+        get_logger(), "decision backend fault latched; publishing fail-stop: %s",
+        backend_->faultReason().c_str());
+    }
 
     // 지정 지점 정차 로그 — 현장에서 "왜 섰나"가 즉시 보이게 (판단 아님, 코어
     // 상태 관찰). 정차 중에는 남은 시간을 1초마다 흘린다.
-    if (core_state_.stop_zone_holding != stop_holding_prev_) {
-      stop_holding_prev_ = core_state_.stop_zone_holding;
+    if (backend_->stopZoneHolding() != stop_holding_prev_) {
+      stop_holding_prev_ = backend_->stopZoneHolding();
       if (stop_holding_prev_) {
         RCLCPP_INFO(get_logger(), "지정 정지 지점 %u 진입 — 정지 후 %.1fs 정차",
           static_cast<unsigned>(s.gps_stop_zone),
-          core_state_.params.stop_zone_hold_cycles * 0.01);
+          backend_->params().stop_zone_hold_cycles * 0.01);
       } else {
         RCLCPP_INFO(get_logger(), "정차 완료 — 재출발");
       }
     }
-    if (core_state_.stop_zone_holding) {
+    if (backend_->stopZoneHolding()) {
       RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
         "정차 중 — 남은 %.1fs (v_ref %.2f)",
-        core_state_.stop_hold_left * 0.01, static_cast<double>(out.v_ref));
+        backend_->stopHoldLeft() * 0.01, static_cast<double>(out.v_ref));
     }
 
     TargetRef msg;
@@ -497,7 +524,7 @@ private:
     }
   }
 
-  CoreState core_state_;
+  std::unique_ptr<DecisionBackend> backend_;
   std::unique_ptr<JitterLogger> jitter_;
   int cpu_core_{-1};
   std::ofstream dump_;
@@ -540,7 +567,13 @@ private:
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<adas_mgm::MgmNode>());
+  try {
+    rclcpp::spin(std::make_shared<adas_mgm::MgmNode>());
+  } catch (const std::exception & error) {
+    RCLCPP_FATAL(rclcpp::get_logger("mgm_node"), "startup failed: %s", error.what());
+    rclcpp::shutdown();
+    return 1;
+  }
   rclcpp::shutdown();
   return 0;
 }
