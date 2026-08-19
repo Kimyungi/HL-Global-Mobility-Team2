@@ -75,6 +75,16 @@ colcon test --packages-select adas_mgm --event-handlers console_direct+   # 4/4 
    - ⚠ 구간 파일(`zones_*.yaml`)은 **찍어도 이 시험에선 무시된다.** 운영 런치용으로
      같이 찍어 두는 건 상관없다 (launch 가 개수를 세어 경고를 찍어 준다).
 
+> **⚠ 베이스 좌표만 단일 슬롯이다.** `setup_base.py --lat ... --lon ...` 가 F9P **플래시**에
+> 쓰는 값이라 새로 측량해 쓰면 **직전 지점 값이 덮인다.** 나머지(코스 CSV·구간 파일·
+> launch·로그 폴더)는 전부 파일이 갈려 섞이지 않는다.
+>
+> 그래서 **측량하면 그 자리에서 `stack_gps/tools/base_station/README.md` 의
+> "지점별 좌표 기록"에 한 줄 추가할 것.** 옛 지점으로 돌아갈 때 그 값으로
+> `setup_base.py` 를 다시 돌리면 복구된다. 기록이 없으면 그 지점의 코스 CSV 가 통째로
+> 못 쓰게 된다 — 웨이포인트 절대좌표 = 베이스 좌표 + RTK 기선이라, 베이스 값이
+> 달라지면 코스 전체가 그만큼 밀린다.
+
 ---
 
 ## 3. ① 정지 상태 전이 확인 — CAN 없음 (필수 게이트, 5분)
@@ -165,22 +175,44 @@ ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
 
 ## 6. 시험 후 — 레퍼런스 코어와 back-to-back (§5.5)
 
-이 시험의 진짜 산출물은 주행 성공/실패가 아니라 **두 구현의 차이**다.
-run 폴더의 `mgm_snapshots.bin` 을 레퍼런스 C++ 코어에 재생해 같은 입력에 같은 출력이
-나오는지 본다.
+이 시험의 진짜 산출물은 주행 성공/실패가 아니라 **두 구현이 같은 입력에 같은 판단을
+했는가**다. `parity_replay` 가 run 폴더의 `mgm_snapshots.bin` 을 **두 구현에 동시에**
+재생해 바로 답을 낸다.
 
 ```bash
 RUN=~/FMA_ws/drive_logs/run_mbd_<시각>
 ls $RUN            # rosbag/  mgm_snapshots.bin  mgm_jitter.csv  lateral.csv
 
-# 같은 스냅샷을 레퍼런스 C++ 코어에 재생 → CSV
-ros2 run adas_mgm core_replay $RUN/mgm_snapshots.bin $RUN/core_replay.csv
+ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
 ```
 
-- 스테이트 전이 시퀀스·v_ref·ref points 를 비교한다.
-- **차이가 나면 그게 곧 결과다** — 어느 쪽이 맞는지는 CLAUDE.md §4 가 정한다
-  (스펙의 단일 소스는 문서이고 두 구현 모두 거기서 파생한다).
-- 지정 구간·AVOID 관련 차이는 **예상된 차이**다 (§0 표). 그 밖의 차이만 보고 대상.
+```
+═══ back-to-back 재생 (CLAUDE.md §5.5) ═══
+재생      : 12480 틱 (124.8 s)
+비교 대상 : 12480 틱 / 범위 밖 0 틱 (0.0%)
+
+스테이트 전이 (범위 밖 틱 포함 — 실제로 흘러간 이력 그대로)
+  레퍼런스 : LANE@0.00s → WAYPOINT@34.21s → LANE@51.20s
+  생성     : LANE@0.00s → WAYPOINT@34.21s → LANE@51.20s
+  → 틱 단위까지 일치 (전이 3회 / 3회)
+
+필드별 불일치 (범위 안 틱만, 허용오차 3e-5)
+  state 0 / path_source 0 / immediate_stop 0 / v_ref 0 / n_points 0 / ref_points 0
+
+판정: 완전 일치
+```
+
+- **전이 시각이 틱 단위로 같은지**가 이 시험의 핵심 질문이다. 한 틱만 어긋나도
+  히스테리시스 카운팅이 다르다는 뜻이라 위 표에 그대로 드러난다.
+- 불일치가 있으면 `parity_diff.csv` 에 틱·필드·양쪽 값이 남는다. 첫 불일치 틱을
+  `rosbag` 의 같은 시각과 맞춰 보면 어떤 입력에서 갈렸는지 나온다.
+- 어느 쪽이 맞는지는 CLAUDE.md §4 가 정한다 — 스펙의 단일 소스는 문서이고 두 구현
+  모두 거기서 파생한다.
+- **"범위 밖" 틱은 예상된 차이다** (§0 표: AVOID·PARKING·종점·역방향). 판정에서 자동
+  제외되며, 전 구간이 범위 밖이면 "비교 불가"로 나온다.
+- 종료 코드: `0` 일치 / `1` 차이 있음 / `2` 비교 불가·재생 실패.
+
+> 레퍼런스 코어만 재생해 CSV 로 보고 싶으면 기존 `core_replay` 가 그대로 있다.
 
 ---
 
@@ -195,6 +227,7 @@ ros2 run adas_mgm core_replay $RUN/mgm_snapshots.bin $RUN/core_replay.csv
 | ROS wrapper 전이 (합성 lane/gps) | core `['LANE','WAYPOINT','LANE']` = generated **일치** |
 | `wait_go` 게이트 | 인가 전 v_ref 0 / 인가 후 1.0 — **기동 중 fault 래치 없음** |
 | `at_end` | 두 backend 모두 v_ref 0. generated 는 fault 래치 + ERROR 로그 |
+| `parity_replay` (2상태 덤프 1162틱) | 전이 5회 **틱 단위까지 일치**, 필드 불일치 0 → `완전 일치` |
 
 **실차 미검증** — 위는 전부 합성 입력이다. 실제 카메라 신뢰도 잡음·RTK 품질 변동에서
 어떻게 되는지가 이 시험의 목적이다.
