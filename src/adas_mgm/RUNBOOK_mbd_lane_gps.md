@@ -78,7 +78,7 @@ colcon test --packages-select adas_mgm --event-handlers console_direct+   # 4/4 
 
 - [ ] 한라대 좌표 측량 완료 + `BASE_LOCATIONS.md` 에 등록
 - [ ] 그 좌표로 `setup_base.py` 실행 (`fixType=5` 확인)
-- [ ] **새 코스 CSV** — 새로 측량했으므로 옛 한라대 코스는 못 쓴다
+- [x] **새 코스 CSV** — `waypoints_halla_univ_20260819_182657.csv` (303점, 전 구간 RTK FIXED, 2026-08-19 기록)
 - [ ] 로버 RTK **FIXED** 확인 (`rtk_probe.py`, C/N0 39dB 이상)
 - [ ] `-DADAS_MGM_ENABLE_GENERATED_BACKEND=ON` 빌드 (§1)
 
@@ -123,7 +123,7 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 
 ```bash
 ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<새 코스>.csv \
+    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv \
     usb_speed:=high camera_fps:=10
 ```
 
@@ -132,7 +132,7 @@ ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
 ```bash
 ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<새 코스>.csv \
+    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv \
     usb_speed:=high camera_fps:=10
 ```
 
