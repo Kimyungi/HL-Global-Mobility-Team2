@@ -12,6 +12,8 @@
   <depend>sensor_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>tf2_ros</depend>
+  <!-- mark_zone 이 기록하고 node 가 읽는 구간 파일(YAML) — ROS launch 도 쓰는 표준 의존 -->
+  <depend>python3-yaml</depend>
 
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
