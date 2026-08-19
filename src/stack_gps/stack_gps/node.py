@@ -24,6 +24,7 @@ import os
 import time
 
 import rclpy
+import yaml
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
@@ -46,6 +47,80 @@ def _pair_ranges(flat, name, logger):
     if len(flat) % 2:
         logger.warn(f"{name} 길이가 홀수 — 마지막 값 무시: {list(flat)}")
     return [(int(flat[i]), int(flat[i + 1])) for i in range(0, len(flat) - 1, 2)]
+
+
+def _parse_latlon_spec(spec, per, name, logger):
+    """"lat,lon; lat,lon" → [(lat, lon), ...] (per=2) / 구간이면 per=4.
+
+    지정 구간을 **위경도 문자열**로 받는 이유:
+      · 웨이포인트 인덱스는 트랙을 다시 기록하면 전부 어긋나지만 위경도는 장소다.
+      · launch 인자는 문자열밖에 못 넘긴다 — 실수 배열 파라미터는 launch
+        치환에서 타입이 깨져(ParameterValue 리스트 미지원) 현장에서 못 고친다.
+        문자열로 받아 노드가 파싱하면 `ros2 param` 으로도 그대로 다룰 수 있다.
+    구분자: 항목 사이 ';', 숫자 사이 ','. 형식이 어긋난 항목은 버리고 경고.
+    """
+    out = []
+    for chunk in (spec or "").split(';'):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        try:
+            vals = [float(v) for v in chunk.split(',')]
+        except ValueError:
+            logger.warn(f"{name} 항목 파싱 실패 — 무시: '{chunk}'")
+            continue
+        if len(vals) != per:
+            logger.warn(f"{name} 항목은 숫자 {per}개여야 함 — 무시: '{chunk}'")
+            continue
+        out.append(tuple(vals))
+    return out
+
+
+def _load_zones_file(path, logger):
+    """mark_zone 이 쓴 구간 YAML → ([(lat,lon)...], [(lat1,lon1,lat2,lon2)...]).
+
+    파일이 없으면 조용히 빈 목록 — 구간을 안 쓰는 run 이 정상이기 때문이다.
+    형식이 깨졌거나 회피 구간의 끝점이 없으면 **그 항목만 버리고 경고**한다:
+    구간 하나 때문에 주행 전체를 막는 것도, 조용히 무시하는 것도 나쁘다.
+    """
+    empty = ([], [], [])
+    if not path:
+        return empty
+    if not os.path.isfile(path):
+        logger.info(f"구간 파일 없음 (지정 구간 미사용): {path}")
+        return empty
+    try:
+        with open(path) as f:
+            z = yaml.safe_load(f) or {}
+    except Exception as e:                                    # noqa: BLE001
+        logger.error(f"구간 파일을 읽을 수 없음 — 무시하고 계속: {path} ({e})")
+        return empty
+
+    stops = []
+    for i, e in enumerate(z.get('stop_points') or []):
+        try:
+            stops.append((float(e['lat']), float(e['lon'])))
+            note = e.get('note') or ''
+            logger.info(f"  구간 파일 정지 지점 {i + 1}: {e['lat']:.7f},{e['lon']:.7f}"
+                        + (f" ({note})" if note else ""))
+        except (KeyError, TypeError, ValueError):
+            logger.warn(f"  정지 지점 {i + 1} 형식 오류 — 무시: {e!r}")
+    def _pairs(key, label):
+        out = []
+        for i, e in enumerate(z.get(key) or []):
+            try:
+                s_, t_ = e['start'], e['end']
+                out.append((float(s_['lat']), float(s_['lon']),
+                            float(t_['lat']), float(t_['lon'])))
+            except (KeyError, TypeError, ValueError):
+                logger.warn(f"  {label} {i + 1} 이 불완전(끝점 없음?) — 무시: {e!r}")
+        return out
+
+    avoid = _pairs('avoid_zones', '회피 구간')
+    gps_only = _pairs('gps_only_zones', 'GPS 전용 구간')
+    logger.info(f"구간 파일 로드: {path} (정지 {len(stops)} · 회피 {len(avoid)} · "
+                f"GPS전용 {len(gps_only)})")
+    return stops, avoid, gps_only
 
 
 class StackGpsNode(Node):
@@ -84,6 +159,11 @@ class StackGpsNode(Node):
         self.declare_parameter('rejoin_target_max_m', PathEngine.REJOIN_TARGET_MAX_M)
         self.declare_parameter('rejoin_target_min_m', PathEngine.REJOIN_TARGET_MIN_M)
         self.declare_parameter('rejoin_e_lpf_s', PathEngine.REJOIN_E_LPF_S)
+        # 곡선 대응 (2026-08-18) — 주행 중 `ros2 param set` 으로 끄고 켤 수 있다.
+        #   rejoin_curve_ff     : 트랙 곡률 선행 보상 이득 (0 = 끔 = 종전 동작)
+        #   rejoin_curve_margin : 곡선에서 목표를 당기는 기준 (0 = 끔)
+        self.declare_parameter('rejoin_curve_ff', PathEngine.REJOIN_CURVE_FF)
+        self.declare_parameter('rejoin_curve_margin', PathEngine.REJOIN_CURVE_MARGIN)
         self.declare_parameter('publish_period', 0.1)
         self.declare_parameter('stale_timeout', 1.5)  # [s] 이보다 오래된 fix는 무효
         # v_base(MGM params.yaml)보다 낮아야 이동 중 COG가 잡힌다.
@@ -99,6 +179,28 @@ class StackGpsNode(Node):
         self.declare_parameter('fusion_alpha', 0.1)   # offset 저역통과 이득
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
         self.declare_parameter('parking_zone_ranges', [0])  # 기본 [0] = 미설정(쌍 안 됨)
+        # ── 트랙 위 지정 구간 (2026-08-18). 위경도 문자열로 받아 시작 시
+        # 웨이포인트 인덱스 구간으로 변환한다 (_parse_latlon_spec 주석 참조).
+        #   stop_points_latlon : "lat,lon" — 그 지점에서 정지(정지 시간 판단은 MGM).
+        #                        여러 개는 ';' 로. 번호는 나열 순서(1부터).
+        #   avoid_zone_latlon  : "lat1,lon1,lat2,lon2" — 회피를 허용할 구간의
+        #                        시작·끝 지점. MGM avoid_zone_only 와 짝.
+        # 빈 문자열 = 없음. 지정 지점이 트랙에서 stop_zone_snap_max_m 보다 멀면
+        # **다른 코스의 좌표**로 보고 버린다 (조용히 엉뚱한 곳에서 서지 않도록).
+        # 구간 파일 (mark_zone 이 기록하는 YAML). 문자열 파라미터와 **합쳐진다** —
+        # 파일이 상시 소스이고, 문자열 쪽은 일회성 수동 지정/시험용이다.
+        self.declare_parameter('zones_file', '')
+        self.declare_parameter('stop_points_latlon', '')
+        self.declare_parameter('avoid_zone_latlon', '')
+        self.declare_parameter('gps_only_zone_latlon', '')
+        self.declare_parameter('stop_zone_span_m', 1.0)      # 정지 구간 폭 [m]
+        # 회피 허용 구간을 **앞쪽으로** 늘리는 길이 [m] (2026-08-18 실차에서 도출).
+        # 사람은 콘이 있는 자리를 구간으로 찍지만, 회피 판단(avoidable)은 감지
+        # 거리 3m 안에서 TTC 가 문턱(1.5s) 위일 때만 성립한다 — 구간이 콘에서
+        # 시작하면 그 창이 이미 지나간 뒤에 게이트가 열린다. detect_range 3.0m +
+        # 여유 2m 로 잡는다. path_engine.index_before() 주석에 실측 근거.
+        self.declare_parameter('avoid_zone_lead_m', 5.0)
+        self.declare_parameter('stop_zone_snap_max_m', 5.0)  # 트랙 스냅 허용 [m]
         self.declare_parameter('error_log_csv', '')  # 지정 시 매 틱 횡오차 CSV 기록
 
         p = self.get_parameter
@@ -121,7 +223,10 @@ class StackGpsNode(Node):
                                  full_cross_m=float(p('rejoin_full_cross_m').value),
                                  target_max_m=float(p('rejoin_target_max_m').value),
                                  target_min_m=float(p('rejoin_target_min_m').value),
-                                 e_lpf_s=float(p('rejoin_e_lpf_s').value))
+                                 e_lpf_s=float(p('rejoin_e_lpf_s').value),
+                                 curve_ff=float(p('rejoin_curve_ff').value),
+                                 curve_margin=float(p('rejoin_curve_margin').value))
+        self._setup_zones(p)
         self.add_on_set_parameters_callback(self._on_param)
         self.get_logger().info(
             f"재합류 기하: lookahead {self.engine.lookahead_m:.2f}m "
@@ -129,7 +234,8 @@ class StackGpsNode(Node):
             f"full_cross {self.engine.full_cross_m:.2f}m "
             f"target_max {self.engine.target_max_m:.2f}m "
             f"target_min {self.engine.target_min_m:.2f}m "
-            f"e_lpf {self.engine.e_lpf_s:.2f}s")
+            f"e_lpf {self.engine.e_lpf_s:.2f}s "
+            f"곡선ff {self.engine.curve_ff:.2f} 곡선당김 {self.engine.curve_margin:.1f}")
         self.get_logger().info(
             f"웨이포인트 {len(pts)}개 로드: {csv_path} "
             f"(accel {accel or '없음'}, parking {parking or '없음'})")
@@ -139,10 +245,16 @@ class StackGpsNode(Node):
             rtcm_host = ''
             self.get_logger().warn(
                 "RTCM 주입 꺼짐 — 단독 GPS 모드 (RTK 없음, 오차 수 m 예상)")
+        # NMEA 두절 시 USB 리셋 복구 (2026-08-18 실차 — usb_reset.py 주석).
+        # 0 이하면 끔. 판정은 fix 품질이 아니라 **NMEA 무수신**으로만 한다.
+        self.declare_parameter('usb_reset_after_s', 20.0)
+        self.declare_parameter('usb_reset_cooldown_s', 60.0)
         self.link = GgaLink(
             serial_port=p('serial_port').value, baud=int(p('baud').value),
             rtcm_host=rtcm_host, rtcm_port=int(p('rtcm_port').value),
-            log=lambda m: self.get_logger().info(f"[link] {m}"))
+            log=lambda m: self.get_logger().info(f"[link] {m}"),
+            usb_reset_after_s=float(p('usb_reset_after_s').value),
+            usb_reset_cooldown_s=float(p('usb_reset_cooldown_s').value))
         self.link.start()
 
         self.stale_timeout = float(p('stale_timeout').value)
@@ -277,6 +389,9 @@ class StackGpsNode(Node):
             msg.points.append(rp)
         msg.accel_zone = snap['accel_zone']
         msg.parking_zone = snap['parking_zone']
+        msg.stop_zone = int(snap['stop_zone'])
+        msg.avoid_zone = snap['avoid_zone']
+        msg.gps_only_zone = snap['gps_only_zone']
         msg.at_end = snap['at_end']
         msg.fix_quality = quality
         msg.cross_track_m = float(snap['cross_track_m'])
@@ -342,6 +457,83 @@ class StackGpsNode(Node):
         # estop=false 하트비트(manual_go/stack_estop)가 살아 있는 동안만 GO
         self._go_t = time.monotonic() if not msg.estop else None
 
+    def _setup_zones(self, p):
+        """위경도로 준 지정 구간 → 웨이포인트 인덱스 구간 (2026-08-18).
+
+        여기서 하는 일은 **좌표 변환과 검증**뿐이다. "정지 지점에 오면 3초 선다",
+        "이 구간에서만 회피한다" 같은 판단은 전부 MGM 스테이트 머신에 있다
+        (CLAUDE.md §5.1) — stack_gps 는 "지금 몇 번 구간 안인가"만 싣는다.
+        """
+        log = self.get_logger()
+        snap_max = float(p('stop_zone_snap_max_m').value)
+        span = float(p('stop_zone_span_m').value)
+
+        file_stops, file_avoid, file_gps_only = _load_zones_file(
+            p('zones_file').value, log)
+
+        stop_ranges = []
+        for k, (lat, lon) in enumerate(
+                file_stops +
+                _parse_latlon_spec(p('stop_points_latlon').value, 2,
+                                   'stop_points_latlon', log)):
+            a, b, d = self.engine.range_from_latlon(lat, lon, span)
+            if d > snap_max:
+                log.error(
+                    f"정지 지점 {k + 1} ({lat:.7f},{lon:.7f})이 트랙에서 {d:.1f}m "
+                    f"떨어져 있음 (한계 {snap_max:.1f}m) — 다른 코스의 좌표로 보고 **무시**한다")
+                continue
+            stop_ranges.append((a, b))
+            log.info(f"정지 지점 {len(stop_ranges)}: idx {a}~{b} "
+                     f"(트랙 스냅 {d:.2f}m, 폭 {span:.1f}m)")
+        # 지점이 서로 붙어 있으면 차가 몇 m 간격으로 두 번 선다 (번호가 다르면
+        # MGM 이 각각 한 번씩 정차한다). mark_zone 이 1.5m 안쪽은 갱신으로 합치지만
+        # 손으로 편집했거나 애매하게 떨어진 경우가 있으므로 여기서 한 번 더 알린다.
+        for i in range(1, len(stop_ranges)):
+            gap = stop_ranges[i][0] - stop_ranges[i - 1][1]
+            if gap < 10:
+                log.warn(f"정지 지점 {i}·{i + 1} 이 웨이포인트 {gap}칸 간격 — "
+                         "연속으로 두 번 정차하게 된다 (의도한 것인지 확인)")
+        self.engine.stop_ranges = stop_ranges
+
+        avoid_ranges = []
+        for lat1, lon1, lat2, lon2 in file_avoid + _parse_latlon_spec(
+                p('avoid_zone_latlon').value, 4, 'avoid_zone_latlon', log):
+            i1, d1 = self.engine.index_of(lat1, lon1)
+            i2, d2 = self.engine.index_of(lat2, lon2)
+            if max(d1, d2) > snap_max:
+                log.error(
+                    f"회피 구간 끝점이 트랙에서 {max(d1, d2):.1f}m 떨어져 있음 "
+                    f"(한계 {snap_max:.1f}m) — **무시**한다")
+                continue
+            a, b = min(i1, i2), max(i1, i2)
+            lead = float(p('avoid_zone_lead_m').value)
+            a_lead = self.engine.index_before(a, lead)
+            avoid_ranges.append((a_lead, b))
+            log.info(f"회피 허용 구간 {len(avoid_ranges)}: idx {a_lead}~{b} "
+                     f"(찍은 구간 {a}~{b} + 앞쪽 {lead:.1f}m 확장 — "
+                     f"감지 거리 안에서 미리 무장해야 회피가 성립한다, 스냅 {d1:.2f}/{d2:.2f}m)")
+        self.engine.avoid_ranges = avoid_ranges
+
+        gps_only_ranges = []
+        for lat1, lon1, lat2, lon2 in file_gps_only + _parse_latlon_spec(
+                p('gps_only_zone_latlon').value, 4, 'gps_only_zone_latlon', log):
+            i1, d1 = self.engine.index_of(lat1, lon1)
+            i2, d2 = self.engine.index_of(lat2, lon2)
+            if max(d1, d2) > snap_max:
+                log.error(f"GPS 전용 구간 끝점이 트랙에서 {max(d1, d2):.1f}m 떨어져 있음 "
+                          f"(한계 {snap_max:.1f}m) — **무시**한다")
+                continue
+            gps_only_ranges.append((min(i1, i2), max(i1, i2)))
+            log.info(f"GPS 전용 구간 {len(gps_only_ranges)}: idx {min(i1, i2)}~{max(i1, i2)} "
+                     f"(스냅 {d1:.2f}/{d2:.2f}m) — 이 구간에서는 차선 전이 없음")
+        self.engine.gps_only_ranges = gps_only_ranges
+
+        if not stop_ranges:
+            log.info("지정 정지 지점 없음")
+        if not avoid_ranges:
+            log.warn("회피 허용 구간 없음 — MGM avoid_zone_only 가 켜져 있으면 "
+                     "AVOID 전이가 어디서도 일어나지 않는다 (장애물은 estop 정지)")
+
     def _on_param(self, params):
         """재합류 기하 6종의 주행 중 조정 (2026-08-17).
 
@@ -382,6 +574,16 @@ class StackGpsNode(Node):
                     return SetParametersResult(
                         successful=False, reason='rejoin_e_lpf_s 는 0 이상 (0=끔)')
                 self.engine.e_lpf_s = v
+            elif prm.name == 'rejoin_curve_ff':
+                if v < 0.0:
+                    return SetParametersResult(
+                        successful=False, reason='rejoin_curve_ff 는 0 이상 (0=끔)')
+                self.engine.curve_ff = v
+            elif prm.name == 'rejoin_curve_margin':
+                if v < 0.0:
+                    return SetParametersResult(
+                        successful=False, reason='rejoin_curve_margin 은 0 이상 (0=끔)')
+                self.engine.curve_margin = v
             else:
                 continue
             self.get_logger().warn(f"재합류 기하 변경: {prm.name} = {v:.3f}")
@@ -390,8 +592,16 @@ class StackGpsNode(Node):
     def report_status(self):
         fix = self.link.latest_fix()
         rtcm = self.link.rtcm_rate_and_reset() / 2.0
+        nmea = self.link.nmea_rate_and_reset() / 2.0
         if fix is None:
-            self.get_logger().warn(f"fix 없음 (RTCM {rtcm:.0f}B/s)")
+            # NMEA 를 함께 찍는다 — RTCM>0 인데 NMEA==0 이면 수신기가 걸린 것이고
+            # (USB 리셋 대상), 둘 다 0 이면 시리얼 자체가 끊긴 것이다. 종전 로그는
+            # RTCM 만 찍어서 두 고장이 구분되지 않았다 (2026-08-18).
+            nrst = self.link.usb_reset_count()
+            self.get_logger().warn(
+                f"fix 없음 (RTCM {rtcm:.0f}B/s · NMEA {nmea:.0f}B/s"
+                + (f" · USB 리셋 {nrst}회" if nrst else "")
+                + (" ← 수신기 무응답, USB 리셋 대기" if rtcm > 0 and nmea == 0 else "") + ")")
             return
         _, _, _, quality, age, _ = fix
         qnames = {0: "NOFIX", 1: "GPS", 2: "DGPS", 4: "FIXED", 5: "FLOAT"}

@@ -1,0 +1,58 @@
+# stack_gps 지정 구간 — `ros2 run stack_gps mark_zone` 이 자동 기록.
+# 위경도는 RTK FIXED 표본의 중앙값(기본 3초). 손으로 고쳐도 된다.
+#   stop_points : 그 지점에서 정지 (정차 시간은 MGM stop_zone_hold_cycles)
+#   avoid_zones : 이 구간 안에서만 회피 허용 (MGM avoid_zone_only 와 짝)
+#   gps_only_zones : 이 구간에서는 차선 전이 없이 GPS(WAYPOINT)로만 주행
+# launch 가 waypoint_csv 옆의 이 파일을 자동으로 읽는다.
+stop_points:
+- lat: 37.3002937
+  lon: 127.9791397
+  note: 언덕 오르막 (2026-08-18 실차 정차 좌표, RTK FIXED 30초 중앙값)
+  marked: '2026-08-18 16:37:00'
+- lat: 37.3001615
+  lon: 127.9791757
+  note: 내리막
+  marked: '2026-08-18 17:32:59'
+avoid_zones:
+- start:
+    lat: 37.3001088
+    lon: 127.9795613
+    note: ''
+    marked: '2026-08-18 17:35:48'
+  end:
+    lat: 37.3002835
+    lon: 127.97975
+    note: ''
+    marked: '2026-08-18 17:37:09'
+track: waypoints_straight_1_20260818_160511.csv
+gps_only_zones:
+- start:
+    lat: 37.3002685
+    lon: 127.9791335
+    note: ''
+    marked: '2026-08-18 17:54:30'
+  end:
+    lat: 37.2999797
+    lon: 127.9792385
+    note: ''
+    marked: '2026-08-18 17:56:21'
+- start:
+    lat: 37.2999428
+    lon: 127.9794513
+    note: ''
+    marked: '2026-08-18 17:57:48'
+  end:
+    lat: 37.3001105
+    lon: 127.9795525
+    note: ''
+    marked: '2026-08-18 18:00:36'
+- start:
+    lat: 37.3002932
+    lon: 127.979793
+    note: ''
+    marked: '2026-08-18 18:02:23'
+  end:
+    lat: 37.3003468
+    lon: 127.9798475
+    note: ''
+    marked: '2026-08-18 18:02:53'

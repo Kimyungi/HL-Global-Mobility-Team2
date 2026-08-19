@@ -105,6 +105,17 @@ struct CoreSnapshot
   bool estop_latch_release;  // at_end 래치 해제 전용 — **실제 EstopRequest 수신값만**
                              // (watchdog 보정 estop으로 래치가 풀려 재출발하던 구멍
                              //  차단, 2026-08-11 — CLAUDE.md §4 래치)
+  // ── stack_gps 지정 구간 (2026-08-18 신설, GpsPath.msg 참조).
+  // 0 = 정지 지점 아님, 1~ = 몇 번째 정지 지점인가. **번호**인 이유는 MGM이
+  // 지점별로 "이미 정지했다"를 기억해야 하기 때문 — bool이면 언덕에서 정지 중
+  // 차가 밀려 구간을 벗어났다 다시 들어올 때 재정지 루프가 된다.
+  uint8_t gps_stop_zone;
+  bool gps_avoid_zone;       // 회피 허용 구간 안인가 (avoid_zone_only 게이트 입력)
+  // GPS 전용 구간 안인가 (2026-08-18). true면 LANE 전이를 하지 않고 WAYPOINT로
+  // 고정한다 — 차선을 믿기 어려운 구간을 **구간 단위로** 지정하기 위한 것.
+  // launch의 gps_only:=true(임계를 2.0으로 올려 run 전체에서 LANE 불가)와 달리
+  // 여기는 그 구간에서만 걸리고 벗어나면 정상 히스테리시스로 돌아온다.
+  bool gps_gps_only_zone;
 };
 
 // 튜닝 파라미터 — params.yaml과 1:1, Simulink에서는 tunable parameter
@@ -160,6 +171,18 @@ struct CoreParams
   //   run_0812_234253(0.44까지 내려가 조향이 죽은 사례)과는 다르다. 다만 감속과
   //   선회가 겹치는 구간이 생기는 것은 사실이라 회피 시험에서 확인 대상이다.
   float v_avoid;
+  // ── 지정 지점 정지 (2026-08-18 신설, §4 우선권 표).
+  // 트랙 위 지정 지점(GpsPath.stop_zone)에 도달하면 정지하고 이 틱수만큼 머문 뒤
+  // 스스로 재출발한다. 0 이하면 기능 끔(구동작 — 지점을 지나쳐도 아무 일 없음).
+  // 카운트다운은 **실제로 멈춘 뒤**(명령 속도 0) 시작한다 — 진입 시점부터 세면
+  // 감속에 쓴 시간만큼 정차가 짧아진다.
+  int32_t stop_zone_hold_cycles;
+  // 0이 아니면 **회피 허용 구간 안에서만** AVOID 전이를 허용한다 (2026-08-18).
+  // 구간 밖 장애물은 회피하지 않고 stack_estop 정지로만 대응한다 — 시험 코스에서
+  // 회피를 특정 구간에만 쓰고 싶을 때의 운용 스위치다. 0 = 어디서나 회피(구동작).
+  // ⚠ TTC 안전 바닥(ttc_stop)은 AVOID 스테이트 안에서만 걸리므로, 이 게이트를
+  //   켜면 구간 밖 장애물의 유일한 방어선은 stack_estop 이다.
+  int32_t avoid_zone_only;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -176,6 +199,12 @@ struct CoreState
   int32_t return_hold_left;               // >0이면 waypoint→lane 전이 보류 (avoid 복귀 직후)
   int32_t avoid_ticks;                    // AVOID 지속 틱 (avoid_max_cycles 상한 판정)
   bool at_end_latched;                    // 종점 도달 래치 — estop 인가 시 해제 (§4)
+  // 지정 지점 정지 (2026-08-18) — §4 우선권 표의 "지정 정지"
+  bool stop_zone_holding;                 // 정지 유지 중 (v_ref 0 요구)
+  int32_t stop_hold_left;                 // 남은 정차 틱 (멈춘 뒤에만 줄어든다)
+  uint8_t stop_zone_done_id;              // **실제로 정차한** 지점 번호 — 밀림 재정지 방지
+  uint8_t stop_zone_boot_id;              // 기동 시점에 이미 안에 있던 지점 번호 (임시 억제)
+  bool stop_zone_init;                    // 첫 유효 gps 틱을 지났나 (boot_id 확정용)
   // ref 조립 (전환 연속 처리)
   uint8_t last_src;                       // MGM_SRC_*
   int32_t blend_left;

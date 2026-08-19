@@ -31,3 +31,22 @@ uint8 HEADING_TANGENT = 0
 uint8 HEADING_COG = 1
 uint8 HEADING_FUSED = 2
 uint8 heading_source
+
+# ── 트랙 위 지정 구간 (2026-08-18 신설). 둘 다 "어디에 있나"라는 **측정값**이고,
+# 무엇을 할지(정지·회피 허용)는 MGM 스테이트 머신이 판단한다 (CLAUDE.md §5.1).
+#
+# stop_zone: 0 = 정지 지점 아님, 1~ = 몇 번째 정지 지점인가.
+#   구간 번호를 싣는 이유는 MGM이 "이 지점에서 이미 정지했다"를 지점별로 기억해야
+#   하기 때문이다. bool이면 언덕에서 정지 중 차가 밀려 구간을 벗어났다 다시
+#   들어올 때 재정지 루프가 된다 — 번호가 같으면 MGM이 소진 처리해 무시한다.
+uint8 stop_zone
+# 회피 허용 구간 안인가. MGM의 avoid_zone_only 게이트 입력 — 켜면 이 구간
+# 밖에서는 AVOID 전이를 하지 않는다(장애물은 stack_estop 정지로만 대응).
+# fix 상실 시 false = 보수적(회피 금지) 쪽으로 떨어진다.
+bool avoid_zone
+
+# GPS 전용 구간 안인가 (2026-08-18). 이 구간에서는 MGM 이 LANE 전이를 하지 않고
+# WAYPOINT 로 고정한다 — 차선 검출을 믿기 어려운 구간(역광·노면 표시 혼재 등)을
+# 코스 단위가 아니라 **구간 단위**로 지정하기 위한 것. launch 의 gps_only:=true 는
+# run 전체에 걸리는 반면 이쪽은 그 구간에서만 걸린다.
+bool gps_only_zone

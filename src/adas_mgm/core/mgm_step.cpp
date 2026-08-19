@@ -24,6 +24,12 @@ float min_f(float a, float b)
   return (a < b) ? a : b;
 }
 
+// "실제로 멈췄다"로 보는 명령 속도 [m/s] — 지정 지점 정차 카운트다운 시작 조건.
+// 실제 차속 피드백(`/vehicle/vector`)이 실측 0건이라 직전 틱 **명령** 속도를 쓴다.
+// merge()의 rate limit은 0에 정확히 도달하므로(감속 하한이 0을 넘으면 0으로 고정)
+// 문턱은 부동소수 여유분이면 충분하다.
+constexpr float kStoppedSpeed = 1e-3f;
+
 // 부동소수 그대로 통과된 값이라 실질적으로는 완전 동일 비교지만, 혹시 모를
 // 미세 오차에 대비해 아주 작은 허용치를 둔다.
 bool points_equal(const CorePoint & a, const CorePoint & b)
@@ -98,6 +104,52 @@ void transition(const CoreSnapshot & s, CoreState & st)
     st.at_end_latched = true;
   }
 
+  // ── 지정 지점 정지 (§4, 2026-08-18) — 트랙 위 지정 지점에 도달하면 정지하고
+  // stop_zone_hold_cycles 만큼 머문 뒤 **스스로** 재출발한다 (언덕 정차 시험 등).
+  // 어디서 서는지는 인지(stack_gps)가 위경도로 알고, "서고 다시 간다"는 판단은
+  // 여기 스테이트 머신에만 있다 (§5.1).
+  //
+  // 설계 세 가지:
+  //  ① 지점 **번호**로 소진 관리 — 진입 즉시 done_id에 찍는다. 언덕에서 정차 중
+  //     차가 밀려 구간 밖으로 나갔다 다시 들어와도 같은 번호면 재정지하지 않는다
+  //     (bool이면 밀림 → 재진입 → 재정지의 무한 루프가 된다).
+  //  ② 기동 시점에 이미 지점 안이면 **그 지점만 임시로 억제**한다 — 지점 안에서
+  //     launch 했을 때(그 자리에 멈춰 있는 상태) 출발도 하기 전에 정차를 소비하는
+  //     것을 막는다. 단 억제는 **구간을 벗어나면 풀린다**: 차를 출발점으로 옮겨
+  //     다시 지나가면 정상적으로 선다. ①의 소진(done_id)과 구분하는 것이 핵심이다
+  //     — 하나로 합치면 "언덕에 선 채로 launch → 출발점으로 옮김 → 그 지점을
+  //     영영 안 섬"이 된다(현장에서 알아채기 어려운 함정).
+  //  ③ 카운트다운은 **실제로 멈춘 뒤**(직전 틱 명령 속도 0) 시작한다. 진입
+  //     시점부터 세면 감속에 쓴 0.4s만큼 정차가 짧아진다.
+  if (!st.stop_zone_init && s.gps_path.n > 0) {
+    st.stop_zone_init = true;
+    st.stop_zone_boot_id = s.gps_stop_zone;   // 기동 지점이 정지 구간이면 임시 억제
+  }
+  if (st.stop_zone_boot_id != 0 && s.gps_stop_zone != st.stop_zone_boot_id) {
+    st.stop_zone_boot_id = 0;                 // 그 구간을 벗어남 → 억제 해제
+  }
+  if (s.estop_latch_release) {   // 새 run 준비 — at_end/역방향 래치와 같은 규약
+    st.stop_zone_done_id = 0;
+    st.stop_zone_holding = false;
+    st.stop_hold_left = 0;
+  }
+  if (st.params.stop_zone_hold_cycles > 0 && st.state != MGM_STATE_PARKING) {
+    if (!st.stop_zone_holding) {
+      if (s.gps_stop_zone != 0 && s.gps_stop_zone != st.stop_zone_done_id &&
+        s.gps_stop_zone != st.stop_zone_boot_id && s.gps_path.n > 0)
+      {
+        st.stop_zone_holding = true;
+        st.stop_hold_left = st.params.stop_zone_hold_cycles;
+        st.stop_zone_done_id = s.gps_stop_zone;   // ① 진입 시점에 소진 확정
+      }
+    } else if (st.v <= kStoppedSpeed) {
+      if (--st.stop_hold_left <= 0) {
+        st.stop_hold_left = 0;
+        st.stop_zone_holding = false;            // 재출발 (다음 틱부터 v_base 램프)
+      }
+    }
+  }
+
   // avoid 복귀 보류 카운터 — waypoint에서 GPS 트랙에 재합류할 시간을 벌어준다
   if (st.return_hold_left > 0) {
     --st.return_hold_left;
@@ -110,23 +162,52 @@ void transition(const CoreSnapshot & s, CoreState & st)
     (st.params.lane_entry_max_cross <= 0.0f) ||
     (s.gps_path.n > 0 && s.gps_cross_track <= st.params.lane_entry_max_cross);
 
+  // AVOID 진입 게이트 (2026-08-18) — avoid_zone_only 를 켜면 **회피 허용 구간
+  // 안에서만** 전이한다. 구간 밖 장애물은 회피 대신 stack_estop 정지로 대응한다.
+  // 이미 AVOID 중이면 관여하지 않는다 — 기동 중에 구간을 벗어났다고 회피를
+  // 중도 포기하면 장애물 옆에서 트랙으로 되꺾는 꼴이 된다. 이탈 상한은
+  // avoid_max_cycles 가 따로 지킨다.
+  const bool avoid_entry =
+    s.avoid_obstacle_detected && s.avoid_avoidable &&
+    (st.params.avoid_zone_only == 0 || s.gps_avoid_zone);
+
+  // GPS 전용 구간 (2026-08-18) — 이 구간 안에서는 차선으로 넘어가지 않는다.
+  // 판정에 gps_path 유효성을 함께 요구한다: 플래그는 fix 가 있어야 계산되고,
+  // 무효한 gps 로 WAYPOINT 를 강제하면 §5.7 ②의 gps watchdog 이 estop 을 걸어
+  // 되레 멈춰 세운다. 래치하지 않는다 — 위치로 정해지는 값이라 구간을 벗어나면
+  // 평소 히스테리시스(신뢰도 N주기 + 트랙 재합류)로 자연 복귀한다.
+  const bool gps_only_zone = s.gps_gps_only_zone && s.gps_path.n > 0;
+  // ★ 구간 안에서는 LANE 복귀 카운터를 **세지 않는다**(0으로 묶는다).
+  //   안 그러면 구간을 지나는 내내 쌓인 값으로 **벗어나는 순간 한 틱 만에** LANE이
+  //   된다 — 차선을 못 믿겠다고 지정한 구간을 막 빠져나온 참에, 그 구간 동안의
+  //   신뢰도로 곧장 카메라를 믿는 꼴이다. 2026-08-14 avoid 복귀에서 겪은 것과
+  //   같은 유형의 버그다(CLAUDE.md §4 히스테리시스 규약: "N주기 연속"은 실제로
+  //   전이가 가능한 동안 세어야 한다). 구간을 벗어난 뒤 새로 n_cycles(0.5s) 동안
+  //   신뢰도가 유지되고 트랙에도 붙어 있어야 LANE으로 간다.
+  if (gps_only_zone) {
+    st.lane_high_cnt = 0;
+  }
+
   const uint8_t prev_state = st.state;
 
   switch (st.state) {
     case MGM_STATE_LANE:
       if (s.gps_parking_zone && s.parking_space_found) {
         st.state = MGM_STATE_PARKING;
-      } else if (s.avoid_obstacle_detected && s.avoid_avoidable) {
+      } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
-      } else if (st.lane_low_cnt >= st.params.n_cycles) {
+      } else if (gps_only_zone || st.lane_low_cnt >= st.params.n_cycles) {
+        // 구간 진입은 **즉시** 내려간다(히스테리시스 없음) — 차선을 못 믿는
+        // 구간이라고 사람이 지정한 곳이므로, 신뢰도가 높게 나오는 동안 기다릴
+        // 이유가 없다. 나가는 쪽은 평소 조건(신뢰도 + 재합류)을 그대로 지킨다.
         st.state = MGM_STATE_WAYPOINT;
       }
       break;
 
     case MGM_STATE_WAYPOINT:
-      if (s.avoid_obstacle_detected && s.avoid_avoidable) {
+      if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
-      } else if (st.return_hold_left == 0 &&
+      } else if (!gps_only_zone && st.return_hold_left == 0 &&
         st.lane_high_cnt >= st.params.n_cycles && rejoined)
       {
         // 전이 조건 3개: ① 복귀 보류 시간 경과 ② 차선 신뢰도 히스테리시스
@@ -202,6 +283,11 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.v_ref = 0.0f;
       } else if (st.state == MGM_STATE_WAYPOINT && st.wrongway_latched) {
         out.v_ref = 0.0f;  // 역방향 — 경로를 등진 채 주행 금지 (§4, 2026-08-03)
+      } else if (st.stop_zone_holding) {
+        // 지정 지점 정지 (2026-08-18) — 신호등 정지와 같은 **일반 감속 정지**다
+        // (immediate_stop 아님 → a_down rate limit 적용). 판정·타이머는
+        // transition()에 있고 여기서는 그 결정을 속도로 옮기기만 한다.
+        out.v_ref = 0.0f;
       } else if (s.gps_accel_zone) {
         out.v_ref = st.params.v_accel_zone;
       } else {

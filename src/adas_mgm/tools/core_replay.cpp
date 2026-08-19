@@ -26,7 +26,8 @@ int main(int argc, char ** argv)
     std::fprintf(stderr,
       "usage: core_replay <dump.bin> <out.csv> [key=value ...]\n"
       "  오버라이드 가능: lane_conf_exit lane_conf_return n_cycles "
-      "avoid_return_hold_cycles v_base v_avoid\n");
+      "avoid_return_hold_cycles v_base v_avoid stop_zone_hold_cycles "
+      "avoid_zone_only\n");
     return 1;
   }
 
@@ -76,7 +77,12 @@ int main(int argc, char ** argv)
       key == "avoid_return_hold_cycles") {
       h.params.avoid_return_hold_cycles = static_cast<int32_t>(val);
     } else if (key == "v_base") {h.params.v_base = static_cast<float>(val);} else if (
-      key == "v_avoid") {h.params.v_avoid = static_cast<float>(val);} else {
+      key == "v_avoid") {h.params.v_avoid = static_cast<float>(val);} else if (
+      key == "stop_zone_hold_cycles") {
+      h.params.stop_zone_hold_cycles = static_cast<int32_t>(val);
+    } else if (key == "avoid_zone_only") {
+      h.params.avoid_zone_only = static_cast<int32_t>(val);
+    } else {
       std::fprintf(stderr, "무시: 알 수 없는 파라미터 %s\n", key.c_str());
       continue;
     }

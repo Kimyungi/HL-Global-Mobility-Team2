@@ -131,6 +131,28 @@ class PathEngine:
     # 밴드 [1.27, 1.8] 안에서 **완만한 쪽 끝**으로 옮긴다.
     # ⚠ 실차 재검증 전까지는 잠정값 — RUNBOOK §5-2 의 단계별 시험 순서를 따를 것.
     REJOIN_TARGET_MIN_M = 1.8
+    # ── 곡선 대응 2종 (2026-08-18 신설). run_0818_180614 실측에서 도출:
+    # 곡률 0.36(R 2.8m) 커브 진입 구간을 재생하니 두 가지가 동시에 걸렸다.
+    #  ① **선행 보상이 없다.** 명령 방위 b 는 ψₑ 를 뒤따르기만 했다 —
+    #     idx 344~348 에서 cross 0.09m(트랙 위)인데 b 가 ψₑ(-8~-16°)를 그대로 복사.
+    #     트랙이 휘는 만큼 미리 꺾지 않으니 ψₑ 가 쌓이고, idx 351 에서 -36°,
+    #     353 에서 -56° 까지 벌어졌다. 그때는 이미 늦어 cross 가 0.05→2.55m 로 발산.
+    #  ② **방위 상한 25° 에 물려 곡률이 안 나온다.** idx 350 부터 b 가 -25.0° 로
+    #     고착됐고, d=1.8m 에서 κ = 2·sin(25°)/1.8 = 0.469 가 천장이다. dSPACE 가
+    #     명령의 43~59% 만 실현하므로(CLAUDE.md §3 ③) 실제 κ 는 0.2~0.28 =
+    #     R 3.5~5m — 트랙이 요구하는 R 2.8m 를 물리적으로 못 돈다.
+    #
+    # 그래서 ① 트랙 곡률을 선행 보상으로 더하고, ② 곡선에서는 목표를 당겨
+    # 같은 25° 로 더 큰 곡률이 나오게 한다 (κ = 2·sin(b)/d 라 d 를 줄이면 커진다).
+    # 직선(κ≈0)에서는 두 항 모두 0 이 되어 **종전 동작과 완전히 같다** — 2026-08-17
+    # 잡음 대책(하한 1.8m)을 직선에서 그대로 보존하는 것이 설계 조건이었다.
+    #
+    # 선행 보상 이득 (0 = 끔, 1 = 트랙 곡률만큼 그대로 미리 꺾음).
+    REJOIN_CURVE_FF = 1.0
+    # 곡선에서 목표를 당기는 기준. 방위 상한 안에서 **트랙 곡률의 이 배수**를 낼 수
+    # 있도록 d 를 줄인다(오차 보정에 쓸 여유). 2.0 이면 |κ|>0.235 (R<4.3m) 부터
+    # 당기기 시작하고, 기하 하한 2·R_min·sin(25°)=1.267m 에서 멈춘다. 0 = 끔.
+    REJOIN_CURVE_MARGIN = 2.0
     # 접근각 α 가 쓰는 횡오차 e 의 저역통과 시상수 [s] (2026-08-17 신설).
     #
     # run_0817_020112 갱신열 분석: Δψₑ 의 lag-1 자기상관은 +0.002 로 **백색 성분이
@@ -143,7 +165,9 @@ class PathEngine:
     def __init__(self, latlon_pts, n_points=30,
                  accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0,
                  lookahead_m=0.0, rate_damp_s=None, full_cross_m=None,
-                 target_max_m=None, target_min_m=None, e_lpf_s=None):
+                 target_max_m=None, target_min_m=None, e_lpf_s=None,
+                 curve_ff=None, curve_margin=None,
+                 stop_ranges=(), avoid_ranges=(), gps_only_ranges=()):
         """lookahead_m: ref 시작점을 최근접점이 아니라 이만큼 전방의 트랙
         점으로 민다. dSPACE는 첫 점만 목표로 쓰므로(stack_avoid 실측 주석)
         최근접점(차 옆구리, x≈0)을 주면 도달 곡률 κ=2y/(x²+y²)가 폭주해
@@ -158,6 +182,12 @@ class PathEngine:
         self.n_points = n_points
         self.accel_ranges = list(accel_ranges)
         self.parking_ranges = list(parking_ranges)
+        # 지정 정지 지점 / 회피 허용 구간 (2026-08-18). accel·parking과 같은
+        # 인덱스 구간이지만 정지 쪽은 **구간 번호**를 내보낸다 — MGM이 지점별로
+        # "이미 정지함"을 기억해야 하기 때문 (GpsPath.msg stop_zone 주석).
+        self.stop_ranges = list(stop_ranges)
+        self.avoid_ranges = list(avoid_ranges)
+        self.gps_only_ranges = list(gps_only_ranges)
         self.lookahead_m = float(lookahead_m)
         self.rate_damp_s = (self.REJOIN_RATE_DAMP_S if rate_damp_s is None
                             else float(rate_damp_s))
@@ -169,6 +199,10 @@ class PathEngine:
                              else float(target_min_m))
         self.e_lpf_s = (self.REJOIN_E_LPF_S if e_lpf_s is None
                         else float(e_lpf_s))
+        self.curve_ff = (self.REJOIN_CURVE_FF if curve_ff is None
+                         else float(curve_ff))
+        self.curve_margin = (self.REJOIN_CURVE_MARGIN if curve_margin is None
+                             else float(curve_margin))
         self._prev_psi_e = None      # 재합류 감쇠항용 — 직전 헤딩오차와 시각
         self._prev_psi_t = None
         self._psi_rate = 0.0         # [rad/s] EMA 저역통과된 dψₑ/dt
@@ -218,6 +252,47 @@ class PathEngine:
     def to_enu(self, lat, lon):
         return ((lon - self._lon0) * self._m_per_deg_lon,
                 (lat - self._lat0) * M_PER_DEG_LAT)
+
+    def index_of(self, lat, lon):
+        """lat/lon → (최근접 웨이포인트 인덱스, 그 점까지 거리 [m]).
+
+        지정 구간을 **위경도로** 받기 위한 변환이다. 인덱스로 직접 받으면 트랙을
+        다시 기록하는 순간 전부 무의미해지지만, 위경도는 실제 장소를 가리키므로
+        같은 코스를 다시 딴 CSV 에서도 그대로 쓸 수 있다. 거리는 호출 측이
+        "이 트랙 위의 점이 맞나"를 검증(스냅 한계)하는 데 쓴다.
+        """
+        return self._nearest_idx(*self.to_enu(lat, lon))
+
+    def range_from_latlon(self, lat, lon, span_m=1.0):
+        """정지 지점 lat/lon → (start_idx, end_idx, 스냅 거리 [m]).
+
+        구간에 폭을 주는 이유: 판정이 "최근접 인덱스가 구간 안"이라 한 점짜리
+        구간도 원리상 놓치지 않지만(10Hz·0.6m/s = 갱신당 6cm, 간격 0.35m),
+        fix 튐이나 감속 중 인덱스 건너뜀에 대한 여유를 둔다. MGM 은 진입
+        한 번만 보고 이후는 자체 래치로 유지하므로 폭이 정지 시간에 영향을
+        주지는 않는다.
+        """
+        i, d = self.index_of(lat, lon)
+        k = max(1, round(span_m / max(self._spacing, 1e-6)))
+        return i, min(i + k, len(self.e) - 1), d
+
+    def index_before(self, idx, dist_m):
+        """idx 에서 트랙을 따라 dist_m 뒤로 간 인덱스 (트랙 시작에서 멈춤).
+
+        회피 허용 구간을 **앞쪽으로 늘리는** 데 쓴다. 사람은 "콘이 있는 곳"을
+        구간으로 찍지만, 회피 판단은 그보다 앞에서 성립해야 한다 — 감지 거리
+        3m 안에 들어와도 구간 밖이면 MGM 이 AVOID 로 못 가고, 구간에 들어왔을
+        땐 이미 TTC 가 문턱 아래로 떨어져 있다 (2026-08-18 실차 run_0818_184019:
+        t=60.6s 거리 3.6m 에서 avoidable=1 이었는데 구간 진입은 t=61.7s,
+        그때는 1.9m·TTC 1.17 로 판정이 꺼져 회피가 아예 성립하지 않았다).
+        """
+        if dist_m <= 0.0:
+            return idx
+        acc, i = 0.0, max(0, min(idx, len(self.e) - 1))
+        while i > 0 and acc < dist_m:
+            acc += math.hypot(self.e[i] - self.e[i - 1], self.n[i] - self.n[i - 1])
+            i -= 1
+        return i
 
     def _nearest_idx(self, e, n):
         best, best_d2 = 0, float("inf")
@@ -270,6 +345,14 @@ class PathEngine:
     def _in_ranges(idx, ranges):
         return any(a <= idx <= b for a, b in ranges)
 
+    @staticmethod
+    def _zone_id(idx, ranges):
+        """구간 목록 중 몇 번째 안에 있나 — 0 = 어디에도 없음, 1~ = 번호."""
+        for k, (a, b) in enumerate(ranges):
+            if a <= idx <= b:
+                return k + 1
+        return 0
+
     def _target_idx(self, idx, ev, nv, c, s, cross=0.0):
         """ref 시작점 = **차량 앞쪽**에 있으면서 lookahead_m 이상 떨어진 첫 트랙 점.
 
@@ -312,7 +395,8 @@ class PathEngine:
         return min(idx + self._la_pts, last)
 
     def snapshot(self, lat, lon, heading=None, now=None):
-        """현재 fix → dict(points, accel_zone, parking_zone, idx, cross_track_m).
+        """현재 fix → dict(points, accel_zone, parking_zone, stop_zone, avoid_zone,
+        gps_only_zone, idx, cross_track_m).
 
         points: [(x, y, yaw, curvature)] vehicle frame, 최근접점부터 앞으로
         n_points개 (트랙 끝에서는 남은 만큼만).
@@ -384,26 +468,46 @@ class PathEngine:
                                       (1.0 - self.REJOIN_RATE_EMA) * self._psi_rate)
             self._prev_psi_e, self._prev_psi_t = pyaw, now
 
-            alpha = self.MAX_TARGET_BEARING_RAD * min(
-                1.0, abs(e_signed) / max(self.full_cross_m, 1e-6))
-            b = (pyaw + math.copysign(alpha, e_signed) +
-                 self.rate_damp_s * self._psi_rate)
-            b = max(-self.MAX_TARGET_BEARING_RAD,
-                    min(self.MAX_TARGET_BEARING_RAD, b))
+            # ── 목표 거리 d 를 **먼저** 확정한다 (선행 보상이 d 에 의존하므로).
+            geom_floor = (2.0 * self.MIN_TURN_RADIUS_M *
+                          math.sin(self.MAX_TARGET_BEARING_RAD))   # 1.267m
             d = min(math.hypot(px, py), self.target_max_m)
-            # 하한 두 개를 뒤에 적용해 항상 이기게 한다:
+            # 하한 두 개를 적용해 항상 이기게 한다:
             #   ① 기하 제약 2·R_min·sin β — 도달 곡률 R 이 R_min 이상 (안전 바닥)
             #   ② REJOIN_TARGET_MIN_M — 잡음 증폭 억제 (재조정 대상, 클래스 주석)
             # target_min 이 max 보다 크게 설정돼도 밴드를 벗어나지 않도록 묶는다.
-            d = max(d, 2.0 * self.MIN_TURN_RADIUS_M *
-                    math.sin(self.MAX_TARGET_BEARING_RAD),
-                    min(self.target_min_m, self.target_max_m))
+            d = max(d, geom_floor, min(self.target_min_m, self.target_max_m))
+            # 곡선에서 목표 당기기 (2026-08-18) — 방위 상한 안에서 트랙 곡률의
+            # curve_margin 배를 낼 수 있는 거리까지. 직선에서는 조건이 안 걸린다.
+            k_track = abs(pcurv)
+            if self.curve_margin > 0.0 and k_track > 1e-6:
+                d_cap = (2.0 * math.sin(self.MAX_TARGET_BEARING_RAD) /
+                         (self.curve_margin * k_track))
+                d = max(geom_floor, min(d, d_cap))
+
+            alpha = self.MAX_TARGET_BEARING_RAD * min(
+                1.0, abs(e_signed) / max(self.full_cross_m, 1e-6))
+            # 곡률 선행 보상 — 거리 d 의 현(chord)이 트랙 호를 따라 그리는 방위.
+            # ψₑ 가 쌓이기를 기다리지 않고 트랙이 휘는 만큼 **미리** 꺾는다.
+            # 트랙 곡률은 CSV 에서 온 값이라 측정 잡음이 없다 — 이 항은 잡음을
+            # 늘리지 않는다(2026-08-17 잡음 대책과 충돌하지 않는 이유).
+            b_ff = 0.0
+            if self.curve_ff != 0.0:
+                arg = max(-1.0, min(1.0, d * pcurv / 2.0))
+                b_ff = self.curve_ff * math.asin(arg)
+            b = (pyaw + math.copysign(alpha, e_signed) +
+                 self.rate_damp_s * self._psi_rate + b_ff)
+            b = max(-self.MAX_TARGET_BEARING_RAD,
+                    min(self.MAX_TARGET_BEARING_RAD, b))
             points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
 
         return {
             "points": points,
             "accel_zone": self._in_ranges(idx, self.accel_ranges),
             "parking_zone": self._in_ranges(idx, self.parking_ranges),
+            "stop_zone": self._zone_id(idx, self.stop_ranges),
+            "avoid_zone": self._in_ranges(idx, self.avoid_ranges),
+            "gps_only_zone": self._in_ranges(idx, self.gps_only_ranges),
             "idx": idx,
             "cross_track_m": dist,
             "at_end": idx >= len(self.e) - 2,
