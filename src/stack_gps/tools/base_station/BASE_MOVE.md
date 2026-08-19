@@ -51,11 +51,26 @@ python3 read_base_position.py
 
 ### 3. 그 지점 좌표를 플래시에 쓴다 ← 설정은 사실상 이것 하나
 
+**가는 지점 것 한 줄만 그대로 복붙한다.**
+
 ```bash
-python3 setup_base.py --lat <위도> --lon <경도> --height <타원체고>
+# ── 원주 운전면허시험장 (outdoor_20260818)
+python3 setup_base.py --lat 37.300314764 --lon 127.979451327 --height 224.2647
+
+# ── 한라대학교 (outdoor_20260801, 1층 야외 재설치 지점)
+python3 setup_base.py --lat 37.303841799 --lon 127.907284433 --height 183.9014
+
+# ── 한라대학교 구지점 (outdoor_old_20260724, 위 지점에서 남쪽 ~0.6m)
+python3 setup_base.py --lat 37.303847372 --lon 127.907283480 --height 183.8623
+
+# ── 한라대학교 옥상 (rooftop_20260723)
+python3 setup_base.py --lat 37.303966817 --lon 127.906898421 --height 194.2744
 ```
 
 `fixType=5 (TIME — 베이스 정상)` 이 뜨면 성공.
+
+> 새 지점을 측량하면 [`BASE_LOCATIONS.md`](BASE_LOCATIONS.md) 표와 **이 블록에도**
+> 한 줄 추가할 것. 여기가 현장에서 실제로 복붙하는 자리다.
 
 ### 4. 송출 시작
 
@@ -70,7 +85,7 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 
 ### 5. 로버 launch 의 코스를 그 지점 것으로
 
-`waypoint_csv:=` 에 **그 지점에서 기록한 코스**를 지정한다 (표의 "위치 ↔ 코스 대응").
+`waypoint_csv:=` 에 **그 지점에서 기록한 코스**를 지정한다 (아래 "지점 ↔ 코스 짝").
 
 ⚠ **틀린 짝을 쓰면 조용히 실패한다** — RTK FIXED 는 멀쩡히 뜨는데 위치만 통째로 밀린다.
 코스 CSV 첫 줄의 lat/lon 으로 장소를 구분할 수 있다.
@@ -86,24 +101,17 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 
 ---
 
-## 지점별 커맨드 (복붙용)
+## 지점 ↔ 코스 짝
 
-### 한라대학교 — 8/1 지점
+§3 에서 쓴 지점과 **같은 줄의 코스**를 launch 의 `waypoint_csv:=` 에 넣는다.
 
-```bash
-python3 setup_base.py --lat 37.303841799 --lon 127.907284433 --height 183.9014
-```
-코스: `waypoints_straight_1_20260811_193556.csv` 등 (표 참조)
+| 지점 | 코스 CSV |
+|---|---|
+| 원주 운전면허시험장 (`outdoor_20260818`) | `waypoints_straight_1_20260818_160511.csv` (지정 구간 3종 포함) |
+| 한라대학교 (`outdoor_20260801`) | `waypoints_straight_1_20260811_193556.csv` 등 |
+| 한라대학교 구지점 (`outdoor_old_20260724`) | `waypoints_track_A_20260724_*.csv` · `waypoints_track_B_20260726_*.csv` |
 
-### 원주 운전면허시험장 — 8/18 지점
-
-```bash
-python3 setup_base.py --lat 37.300314764 --lon 127.979451327 --height 224.2647
-```
-코스: `waypoints_straight_1_20260818_160511.csv` (지정 구간 3종 포함)
-
-> 새 지점을 측량하면 [`BASE_LOCATIONS.md`](BASE_LOCATIONS.md) 표와 **이 목록에도**
-> 커맨드를 추가할 것.
+전체 목록은 [`BASE_LOCATIONS.md`](BASE_LOCATIONS.md) 의 "위치 ↔ 코스 대응".
 
 ---
 
