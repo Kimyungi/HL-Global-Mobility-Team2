@@ -4,6 +4,11 @@
 avoid 스테이트의 **첫 실차 검증** 절차. 기본 주행 절차는 `RUNBOOK_lane_gps.md`를 그대로
 따르고, 이 문서는 회피 시험에 **추가되는 것**만 담는다.
 
+> **시험 장소: 원주 운전면허시험장** — 코스 `waypoints_wonju_license_20260818_160511.csv`,
+> 베이스 `outdoor_20260818` (`stack_gps/tools/base_station/BASE_LOCATIONS.md`).
+> 다른 지점에서 이 코스를 쓰면 RTK FIXED 는 떠도 위치가 통째로 밀린다 —
+> 지점을 옮길 땐 [`BASE_MOVE.md`](../stack_gps/tools/base_station/BASE_MOVE.md).
+>
 > 전제: 통합 코드(2026-08-12)가 빌드된 상태. avoidable 판정·maneuver_done 클리어런스·
 > v_suggest 계수는 sim 검증만 된 **초기값**이다 — 이 시험이 그 값을 확정한다.
 > **이기돈 동석 권장** (stack_avoid 판정 계수의 현장 확인).
@@ -72,7 +77,7 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 # V2
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260818_160511.csv \
+    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_wonju_license_20260818_160511.csv \
     usb_speed:=high camera_fps:=10
     
 #  gps_only:=true
@@ -205,7 +210,7 @@ RTK FIXED 표본 30개(약 3초)의 중앙값을 쓰므로 3초간 차를 움직
 기동 로그에 무엇을 읽었는지 그대로 찍힌다 — 이걸 보고 출발할 것:
 
 ```
-[launch] 구간 파일: zones_straight_1_20260818_160511.yaml (정지 2 · 회피 1)
+[launch] 구간 파일: zones_wonju_license_20260818_160511.yaml (정지 2 · 회피 1)
 [launch]   정지 1: 37.3002937,127.9791397  (언덕 오르막)
 [launch]   정지 2: 37.3001777,127.9796392  (내리막)
 [launch] 지정 정지: 각 지점에서 3.0s 정차 후 자동 재출발
@@ -261,7 +266,7 @@ M 터미널에서 그 구간 동안 `gps` 로 고정돼 있으면 정상이다.
    ```bash
    ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
        REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260818_160511.csv \
+       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_wonju_license_20260818_160511.csv \
        gps_only:=true usb_speed:=high camera_fps:=10
    ```
 

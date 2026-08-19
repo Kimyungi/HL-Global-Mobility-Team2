@@ -30,7 +30,7 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 ```bash
 cd ~/FMA_ws/src/stack_gps/tools
 python3 heading_truth_check.py \
-    --track ../waypoints/waypoints_straight_1_20260803_181924.csv
+    --track ../waypoints/waypoints_wonju_license_20260818_160511.csv
 ```
 
 첫 줄에 `기준각(트랙 직선 방향): -133.x°`가 떠야 정상.

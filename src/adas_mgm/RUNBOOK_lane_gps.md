@@ -70,11 +70,12 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 ```bash
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv \
+    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_wonju_license_20260818_160511.csv \
     usb_speed:=high camera_fps:=10
 ```
 
-- `waypoint_csv`는 **필수** — 코스에 맞는 CSV로 교체 (S자: `waypoints_straight_1_20260806_191643.csv`).
+- `waypoint_csv`는 **필수** — 코스에 맞는 CSV로 교체. 코스는 **베이스 지점마다 다르다**
+  (`stack_gps/tools/base_station/BASE_LOCATIONS.md` 의 "위치 ↔ 코스 대응").
 - **`usb_speed:=high camera_fps:=10`도 사실상 필수 (2026-08-14).** 빼면 OAK-D가
   USB3(SuperSpeed)로 열거되고 그 방사 잡음이 GNSS L1을 덮어 **RTK FIXED가 안 잡힌다**
   (같은 안테나 위치에서 C/N0 39dB↔22dB). USB2 대역폭이 ~40MB/s라 `camera_fps:=10`을

@@ -107,9 +107,9 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 
 | 지점 | 코스 CSV |
 |---|---|
-| 원주 운전면허시험장 (`outdoor_20260818`) | `waypoints_straight_1_20260818_160511.csv` (지정 구간 3종 포함) |
-| 한라대학교 (`outdoor_20260801`) | `waypoints_straight_1_20260811_193556.csv` 등 |
-| 한라대학교 구지점 (`outdoor_old_20260724`) | `waypoints_track_A_20260724_*.csv` · `waypoints_track_B_20260726_*.csv` |
+| 원주 운전면허시험장 (`outdoor_20260818`) | `waypoints_wonju_license_20260818_160511.csv` (지정 구간 3종 포함) |
+| 한라대학교 (`outdoor_20260801`) | **없음** — 베이스를 새로 측량하므로 재기록 필요 ([`BASE_SURVEY.md`](BASE_SURVEY.md) §8) |
+| 한라대학교 구지점 (`outdoor_old_20260724`) | **없음** (위와 같음) |
 
 전체 목록은 [`BASE_LOCATIONS.md`](BASE_LOCATIONS.md) 의 "위치 ↔ 코스 대응".
 

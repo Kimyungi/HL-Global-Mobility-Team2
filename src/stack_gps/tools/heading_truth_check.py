@@ -10,7 +10,7 @@ RTK로 기록한 직선 트랙(접선 불확도 <0.1°)을 쓴다. 차를 트랙
 전제: B1·V1 가동(RTK), V2는 끌 것(로버 포트 단독 점유). 조이스틱 이동 가능.
 사용:
   python3 heading_truth_check.py \
-      --track ../../waypoints/waypoints_straight_1_20260803_181924.csv
+      --track ../../waypoints/waypoints_wonju_license_20260818_160511.csv
 결과는 화면 표 + drive_logs/heading_check_*.csv 저장.
 """
 import argparse

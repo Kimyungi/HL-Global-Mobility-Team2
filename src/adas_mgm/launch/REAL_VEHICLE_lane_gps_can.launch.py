@@ -138,7 +138,7 @@ def validate(context):
         raise RuntimeError(
             f'waypoint_csv 점이 {len(rows)}개뿐 (최소 {_MIN_POINTS}) — 트랙이 아니다: '
             f'{waypoint_csv}\n'
-            '  실코스 예: waypoints_straight_1_20260811_193556.csv (288점)\n'
+            '  실코스 예: waypoints_wonju_license_20260818_160511.csv (721점)\n'
             '  1~4점 파일은 FIXED 확인용 잔여물이다.')
     print(f'[launch] 웨이포인트 {len(rows)}점 확인: {os.path.basename(waypoint_csv)}')
     hold_s = LaunchConfiguration('stop_hold_sec').perform(context)

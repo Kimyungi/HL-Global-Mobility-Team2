@@ -16,7 +16,7 @@ GGA 사이(수백 ms)를 보간 — dSPACE 프레임과 ENU 정렬 방법 확정
 
 실행 예:
   ros2 run stack_gps stack_gps_node --ros-args \
-      -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_track_A.csv \
+      -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_wonju_license_20260818_160511.csv \
       -p rtcm_host:=100.70.198.29
 """
 import math

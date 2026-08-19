@@ -132,7 +132,7 @@ ros2 topic echo /perception/gps_path --once | grep fix_quality  # 4 = RTK FIXED
 ```bash
 # V5 [차량 PC] — 블랙박스 시작
 cd ~/FMA_ws/src/stack_gps/tools/drive_log
-./record_drive.sh run1 $HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260806_191643.csv
+./record_drive.sh run1 $HOME/FMA_ws/src/stack_gps/waypoints/waypoints_wonju_license_20260818_160511.csv
 
 
 # V6 [차량 PC] — ★ 이 줄이 곧 출발이다 ★  (비상정지 담당·동행 준비 확인 후!)
