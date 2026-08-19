@@ -73,6 +73,14 @@ if(BUILD_TESTING OR ADAS_MGM_ENABLE_GENERATED_BACKEND)
       target_link_libraries(mgm_node mgm_generated_adapter)
     endif()
 
+    # 실차 덤프 하나를 두 구현에 동시 재생하는 back-to-back 하네스 (§5.5).
+    # 범위 판정에 DecisionBackend 의 helper 를 그대로 쓰므로 같은 기준이 보장된다.
+    add_executable(parity_replay tools/parity_replay.cpp src/decision_backend.cpp)
+    target_compile_definitions(parity_replay PRIVATE ADAS_MGM_HAS_GENERATED_BACKEND=1)
+    target_include_directories(parity_replay PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(parity_replay mgm_generated_adapter)
+    install(TARGETS parity_replay DESTINATION lib/${PROJECT_NAME})
+
     if(BUILD_TESTING)
       add_executable(
         generated_lane_waypoint_parity_test
