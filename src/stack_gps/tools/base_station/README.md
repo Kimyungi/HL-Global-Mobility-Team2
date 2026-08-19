@@ -1,14 +1,24 @@
 # RTK 베이스 스테이션 구축 가이드
 
-> **확정 베이스 좌표 — 현재 운용 지점: 1층 야외 재설치 (2026-08-01, 10분 측량):**
-> `lat 37.303841799 / lon 127.907284433 / 타원체고 183.9014 m`
-> 웨이포인트 지도는 전부 이 좌표 기준 — **안테나를 옮기지 않는 한 절대 변경 금지.**
-> 옮기면 재측량(1단계) 후 이 블록과 수신기 설정(2단계)을 함께 갱신할 것.
->
-> **지점별 좌표 기록** (베이스를 옮겨 설치할 때는 해당 지점 좌표로 2단계 재설정):
-> - **1층 야외 재설치** (현재, 2026-08-01): `lat 37.303841799 / lon 127.907284433 / 타원체고 183.9014 m`
-> - 1층 야외 구지점 (2026-07-24, 신지점에서 남쪽 ~0.6m): `lat 37.303847372 / lon 127.907283480 / 타원체고 183.8623 m`
-> - 옥상 지점 (2026-07-23): `lat 37.303966817 / lon 127.906898421 / 타원체고 194.2744 m`
+EVK-F9P 를 자체 RTK 베이스로 만들고 차량의 FST-UEF9P 로버까지 RTCM3 보정을 배달하는
+전 과정. 모든 스크립트는 ROS 무의존(표준 python3 + pyserial + pyubx2).
+
+## 이 폴더의 문서
+
+| 하려는 것 | 문서 |
+|---|---|
+| **지금 어느 좌표가 등록돼 있나 / 어느 코스가 어느 지점 것인가** | [`BASE_LOCATIONS.md`](BASE_LOCATIONS.md) — 좌표 레지스트리 |
+| **처음 세우는 자리의 좌표를 측량한다** | [`BASE_SURVEY.md`](BASE_SURVEY.md) |
+| **이미 등록된 지점끼리 옮긴다** | [`BASE_MOVE.md`](BASE_MOVE.md) |
+| 팀원 PC 를 베이스 PC 로 세팅한다 | 이 문서 아래 |
+| 산업용 PC 세팅 | [`INDUSTRIAL_PC_SETUP.md`](INDUSTRIAL_PC_SETUP.md) |
+
+이 문서는 **하드웨어 구성·환경 세팅·라디오 운용·트러블슈팅**을 담는다. 좌표를 다루는
+절차는 위 세 문서에 있다.
+
+> ⚠ **좌표는 플래시에 한 벌만 들어간다.** 덮기 전에 항상
+> `python3 read_base_position.py` 로 현재 값을 확인하고, 레지스트리에 없는 값이면
+> 먼저 표에 적을 것. 안 그러면 그 지점의 코스 CSV 가 통째로 못 쓰게 된다.
 
 **담당: 김윤기** · stack_gps 산출물 "베이스 설치·RTK" (REQUIREMENTS.md)
 
@@ -20,7 +30,7 @@ EVK-F9P를 자체 RTK 베이스로 만들고, 차량의 FST-UEF9P 로버까지 R
      RTCM3 생성 (setup_base.py)      rtcm_server.py         rtcm_client_inject.py    RTK 연산은 내부에서
 ```
 
-- 베이스는 **인터넷 불필요** (인터넷은 1단계 좌표 측량 때 NGII VRS용으로 딱 한 번).
+- 베이스는 **인터넷 불필요** (인터넷은 좌표 측량 때 NGII VRS 용으로 딱 한 번).
 - 베이스↔차량은 인터넷 없는 로컬 WiFi 공유기면 충분.
 - 단일 베이스 RTK는 기준선 ~10km 이내 — 베이스는 시연 현장 근처에 설치.
 
@@ -43,63 +53,23 @@ sudo udevadm control --reload && sudo udevadm trigger
 # EVK 연결 후: /dev/ttyF9P (UART1, 115200), /dev/ttyF9P_uart2 (UART2, 38400) 생성 확인
 ```
 
-## 1단계 — 베이스 안테나 절대좌표 측량 (인터넷 필요, 최초 1회)
+## 좌표 측량·설정 → 별도 문서
 
-베이스를 세울 자리에 안테나를 **최종 위치로 고정**한 뒤 측량한다.
-(측량 후 안테나를 옮기면 좌표가 무효 — 다시 측량해야 함.)
+베이스 안테나 절대좌표 측량(NGII VRS 보정 + 10분 수집)과 `TMODE3=FIXED` 플래시 저장은
+[`BASE_SURVEY.md`](BASE_SURVEY.md) 에 있다. 이미 등록된 지점으로 옮기는 것뿐이라면
+[`BASE_MOVE.md`](BASE_MOVE.md) — **재측량하면 안 된다.**
 
-```bash
-cd ~/FMA_ws/src/stack_gps/tools/base_station
-
-# 터미널 A: NGII VRS 보정 주입 (이 측량 단계에서만 사용, 인터넷 필요)
-export NGII_USER=<내 통합 ID> NGII_PASS=ngii
-python3 ntrip_inject.py --lat <현장 개략 위도> --lon <현장 개략 경도>
-
-# 터미널 B: RTK FIXED 샘플 10분 수집·평균
-python3 measure_base_position.py --duration 600
-```
-
-> **NGII 계정 (2026-08-18 정리):**
-> - 비밀번호는 계정별 값이 아니라 **전 사용자 공통 고정값 `ngii`** (RTS1·RTS2 공통, NGII 공식 FAQ).
->   재발급 대상이 아니므로 401이 떠도 비번을 의심하지 말 것.
-> - **계정당 동시접속 1개.** PC마다 통합 ID를 따로 발급받아 쓴다 —
->   geodesy.ngii.go.kr 로그인 → 마이페이지 → 통합회원 연계 → 등록 (한 번에 RTS1·RTS2·데이터통합센터 3개 생성).
-> - **RTS2는 현재 정상 계정도 401로 거부한다.** 계정 문제가 아니라 캐스터 측 문제 —
->   신규 발급 ID·기존 ID 둘 다 RTS2 401 / RTS1 200으로 확인했다. 그래서 기본값이 **RTS1**이다.
-> - 접속 확인만 하려면(F9P 불필요): `python3 ntrip_check.py <내 통합 ID>`
-> - VRS는 GGA로 보낸 좌표 기준으로 보정을 만든다 — **현장이 바뀌면 `--lat/--lon`을 반드시 갱신**할 것.
-
-- ⚠ **EVK가 베이스 모드였다면 먼저 `python3 setup_base.py --disable`** — 베이스 모드(fixType=5)에서는 측위를 안 해서 샘플이 절대 안 쌓인다 (스크립트가 감지 시 경고 후 종료).
-- ⚠ `ublox_gps` ROS 노드(start_rtk.sh)는 꺼둘 것 — UART1 포트가 겹친다.
-- carrSoln=FIXED가 떠야 샘플이 쌓인다. FLOAT에 머물면 하늘 시야/NGII 계정 확인.
-- 출력된 **위도/경도/타원체고**를 팀 문서에 기록 — 이 좌표는 이후 절대 불변.
-  (높이는 해발고도가 아니라 WGS84 타원체고다. 스크립트 출력을 그대로 쓰면 됨.)
-
-## 2단계 — EVK-F9P를 베이스 모드로 설정 (플래시 저장, 최초 1회)
-
-```bash
-python3 setup_base.py --lat <1단계 위도> --lon <1단계 경도> --height <1단계 타원체고>
-```
-
-하는 일: TMODE3=FIXED + 항법 1Hz + UART2를 RTCM3 전용 출력으로 전환
-(1005/1074/1084/1094/1124/1230) + **플래시 저장**. 이후엔 전원만 넣으면 베이스로 동작한다.
-
-- 검증: 스크립트가 NAV-PVT `fixType=5 (TIME)` 를 확인해준다 — 베이스 정상 신호.
-- 로버 실습으로 되돌리려면: `python3 setup_base.py --disable`
-- 좌표 없이 급하게 돌릴 때(비권장): `python3 setup_base.py --svin` —
-  재부팅마다 좌표가 다시 잡혀 **웨이포인트 재현성이 깨진다.** 임시 테스트 전용.
-
-## 3단계 — RTCM 배포 서버 (베이스 PC, 운용 중 상시 실행)
+## RTCM 배포 서버 (베이스 PC, 운용 중 상시 실행)
 
 ```bash
 python3 rtcm_server.py          # /dev/ttyF9P_uart2 @38400 → tcp 0.0.0.0:2101
 ```
 
 - 10초마다 통계 출력. 정상이면 **수백 B/s** 수준의 RTCM 유입이 보인다.
-  `0 B/s ⚠` 이면 2단계 미완 또는 포트 오류.
+  `0 B/s ⚠` 이면 베이스 모드 설정 미완(`BASE_SURVEY.md` §6) 또는 포트 오류.
 - 베이스 PC IP를 고정(공유기 DHCP 예약)해두면 차량 쪽 설정이 편하다.
 
-## 4단계 — 차량(로버) 연결 검증
+## 차량(로버) 연결 검증
 
 FST-UEF9P를 로버 PC에 연결한다. 연결 방식은 둘 다 가능:
 
@@ -119,8 +89,8 @@ python3 rtcm_client_inject.py --host <베이스PC_IP> --serial /dev/ttyRover --m
 ## 팀원 PC를 베이스 PC로 세팅하기 (처음부터 끝까지)
 
 EVK-F9P 수신기는 이미 베이스로 설정 완료(플래시 저장)라서, **팀원 PC에서는
-수신기 설정을 건드릴 필요가 전혀 없다.** 1·2단계 스크립트 실행 금지 —
-잘못 실행하면 확정 좌표가 날아간다. 할 일은 "USB에서 나오는 RTCM을 WiFi로
+수신기 설정을 건드릴 필요가 전혀 없다.** `setup_base.py`·`measure_base_position.py`
+실행 금지 — 잘못 실행하면 플래시의 확정 좌표가 날아간다. 할 일은 "USB에서 나오는 RTCM을 WiFi로
 중계"하는 것뿐이며, ROS도 colcon 빌드도 필요 없다.
 
 ```bash
@@ -190,25 +160,27 @@ python3 rtcm_client_inject.py --from-serial /dev/ttyRadio --serial /dev/ttyRover
 - 실내에서는 1005/1230만 송출된다(~35B/s). MSM 관측 메시지는 안테나가 하늘을 봐야
   나오며 그때 총 유량 ~560B/s (라디오 용량 대비 여유).
 
-## 5단계 — 운용 절차 (시연 당일)
+## 운용 절차 (현장 도착 시)
 
-1. 베이스 안테나를 **측량했던 바로 그 위치**에 설치, EVK 전원 인가
+1. 베이스 안테나를 **그 지점의 등록된 자리·높이**에 설치, EVK 전원 인가
+   (`BASE_LOCATIONS.md` 의 "안테나 설치" 칸)
 2. 베이스 PC에서 `rtcm_server.py` 실행 (인터넷 불필요)
 3. 차량 PC에서 `rtcm_client_inject.py` 실행 → RTK FIXED 확인
-4. stack_gps 노드 기동 (FST NMEA → `/perception/gps_path`) — 추후 구현
+4. stack_gps 노드 기동 (FST NMEA → `/perception/gps_path`)
 
-⚠ **베이스를 옮기면 반드시 1단계부터 재측량.** 저장된 FIXED 좌표가 실제 위치와
-다르면 로버는 FIX가 떠도 위치 전체가 그 오차만큼 밀린다. 웨이포인트 지도도 같은
-베이스 좌표 기준일 때만 유효하다.
+⚠ 저장된 FIXED 좌표가 실제 안테나 위치와 다르면 로버는 FIX 가 떠도 **위치 전체가 그
+오차만큼 밀린다.** 웨이포인트도 같은 베이스 좌표 기준일 때만 유효하다.
+지점을 옮길 때는 [`BASE_MOVE.md`](BASE_MOVE.md), 처음 세우는 자리면
+[`BASE_SURVEY.md`](BASE_SURVEY.md).
 
 ## 트러블슈팅
 
 | 증상 | 점검 |
 |---|---|
 | `/dev/ttyF9P` 없음 | udev 규칙 설치·재트리거, `lsusb`로 1546:0507/0508 확인 |
-| measure가 첫 줄에서 멈춤 (UBX 무수신) | 이전 세션 잔재 설정 가능성 — UART1 출력 프로토콜 꺼짐(`CFG_UART1OUTPROT_UBX=0`). 스크립트가 자동으로 켜지만, 구버전이면 VALSET으로 1 설정 |
+| 측량이 안 됨 (샘플 0, UBX 무수신 등) | [`BASE_SURVEY.md`](BASE_SURVEY.md) 트러블슈팅 표 |
 | 보정 주입해도 carrSoln=NONE 고착 (diffSoln=1이어도) | diffSoln=1은 SBAS일 수 있음. RXM-RTCM으로 RTCM 유입 확인 — 0건이면 **UART2 baud 불일치** (실제 사례: 잔재 설정 115200 vs 주입기 38400). UART2를 38400으로 통일 |
 | VALSET 응답 없음 | 포트에 다른 프로세스(ROS 노드 등)가 붙어 있는지 확인 |
 | fixType=5 안 뜸 | 안테나 하늘 시야, 입력 좌표 오타(도 단위, 타원체고) 확인 |
-| 서버 0 B/s | UART2 baud 불일치(기본 38400), 2단계 재실행 |
+| 서버 0 B/s | UART2 baud 불일치(기본 38400) — `setup_base.py` 재실행 |
 | 로버 FLOAT 고착 | 기준선 거리, 로버 안테나 설치(차량 지붕 중앙, 금속 그라운드) |
