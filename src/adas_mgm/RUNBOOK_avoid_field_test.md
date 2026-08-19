@@ -62,6 +62,8 @@ avoidable이 안 서면 → 콘이 통로(±0.46m) 밖이거나 ttc<1.5 (§5 표
 
 차선·GPS·회피를 모두 켜고 **lane ↔ waypoint ↔ avoid** 전이를 함께 본다:
 
+python3 ~/FMA_ws/src/stack_gps/tools/rtk_probe.py --seconds 120
+
 ```bash
 # V1 [차량 PC]
 python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
@@ -70,8 +72,11 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 # V2
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv \
+    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260818_160511.csv \
     usb_speed:=high camera_fps:=10
+    
+#  gps_only:=true
+    
     
 # M (내내 켜 둠)
 ros2 run adas_mgm state
@@ -79,6 +84,22 @@ ros2 run adas_mgm state
 # V3 — 점검 5종(avoid 포함) 통과 시 출발
 ros2 run adas_mgm go
 ```
+
+# 패스플래닝
+# ① 오르막에 조이스틱으로 정차한 상태에서
+ros2 run stack_gps mark_zone stop --note "언덕 오르막"
+
+# ② 내리막에 정차한 상태에서
+ros2 run stack_gps mark_zone stop --note "내리막"
+
+# ③ 회피 구간 시작/끝에서 각각
+ros2 run stack_gps mark_zone avoid_start
+ros2 run stack_gps mark_zone avoid_end
+
+# GPS 전용 구간 (시작·끝)  ← 새로
+ros2 run stack_gps mark_zone gps_only_start
+ros2 run stack_gps mark_zone gps_only_end
+
 
 > **`usb_speed:=high camera_fps:=10`은 GPS를 위한 필수 인자다 (2026-08-14).**
 > 빼면 OAK-D가 USB3(SuperSpeed)로 열거되고 그 방사 잡음이 GNSS L1을 덮어
@@ -125,6 +146,113 @@ ros2 run adas_mgm go
 - AVOID에서 콘 반대쪽이 아닌 **콘 쪽으로 조향**
 - 이격이 눈짐작 0.3m 미만으로 스침
 
+## 2-1. 지정 지점 정지 · 회피 구간 (2026-08-18 신설)
+
+트랙 위 특정 장소에서 **자동으로 3초 서고 다시 출발**하게 하고(언덕 정차),
+**회피를 지정 구간에서만** 쓰게 하는 기능. 장소는 주행 중 현장에서 찍는다.
+
+### 어떻게 찍나 — `mark_zone` (V2 켜 둔 채로)
+
+launch가 도는 상태에서 **새 터미널**에 입력한다. 구독만 하므로 시리얼·CAN을
+건드리지 않는다(stack_gps가 잡은 포트와 무관).
+
+```bash
+# ① 오르막에 정차한 상태에서
+ros2 run stack_gps mark_zone stop --note "언덕 오르막"
+# ② 내리막에 정차한 상태에서
+ros2 run stack_gps mark_zone stop --note "내리막"
+# ③ 회피를 허용할 구간의 시작·끝에서 각각
+ros2 run stack_gps mark_zone avoid_start
+ros2 run stack_gps mark_zone avoid_end
+
+# ④ 차선 없이 GPS 로만 갈 구간의 시작·끝에서 각각
+ros2 run stack_gps mark_zone gps_only_start
+ros2 run stack_gps mark_zone gps_only_end
+```
+
+차를 세우는 방법은 상관없다 — **조이스틱 모드로 바꿔 정차해도 된다.**
+RTK FIXED 표본 30개(약 3초)의 중앙값을 쓰므로 3초간 차를 움직이지 말 것.
+
+기록 위치는 트랙 CSV 옆 `zones_<이름>.yaml` — 도구가 돌고 있는 stack_gps에게
+`waypoint_csv`를 물어 자동으로 정한다. 손으로 편집해도 되고, 지점을 빼려면 그
+항목을 지우면 된다.
+
+**⚠ 반영은 V2 재기동 후다.** 구간은 stack_gps 기동 시 위경도 → 웨이포인트 인덱스로
+변환된다. 두 지점을 다 찍고 마지막에 한 번만 재기동하면 된다.
+
+거절되는 경우(그때는 아무것도 기록되지 않는다):
+
+| 메시지 | 뜻 |
+|---|---|
+| `표본 부족 … fix_quality=5` | RTK FIXED 아님 — FIXED 잡고 다시 |
+| `이 지점이 트랙에서 N m 떨어져 있다 (한계 5m)` | 트랙 밖이거나 waypoint_csv가 다른 코스 |
+| `돌고 있는 stack_gps_node 를 못 찾았다` | V2가 안 떠 있음 (또는 `--out` 으로 파일 직접 지정) |
+| `짝이 될 시작점이 없다` | `avoid_end` 전에 `avoid_start` 부터 |
+
+같은 자리를 다시 찍으면(1.5m 이내) **새로 추가하지 않고 갱신**한다 — 안 그러면
+몇십 cm 간격으로 두 번 서게 된다. 지점끼리 웨이포인트 10칸(약 3.5m) 안으로
+붙으면 stack_gps가 기동 시 경고한다.
+
+### 어떻게 도나
+
+| 인자 | 기본값 | 뜻 |
+|---|---|---|
+| `zones_file` | (자동) | 빈 값이면 `waypoint_csv` 옆 `zones_*.yaml` (정지·회피·GPS전용 전부 여기) |
+| `stop_hold_sec` | `3.0` | 정차 시간. **완전히 멈춘 뒤부터** 잰다(감속 0.4s는 별도) |
+| `avoid_zone_only` | `true` | **회피 허용 구간 밖에서는 AVOID 전이 금지** |
+| `stop_points_latlon` / `avoid_zone_latlon` | (없음) | 파일 대신 인자로 직접 줄 때만 |
+
+기동 로그에 무엇을 읽었는지 그대로 찍힌다 — 이걸 보고 출발할 것:
+
+```
+[launch] 구간 파일: zones_straight_1_20260818_160511.yaml (정지 2 · 회피 1)
+[launch]   정지 1: 37.3002937,127.9791397  (언덕 오르막)
+[launch]   정지 2: 37.3001777,127.9796392  (내리막)
+[launch] 지정 정지: 각 지점에서 3.0s 정차 후 자동 재출발
+[stack_gps_node] 정지 지점 1: idx 108~111 (트랙 스냅 0.18m, 폭 1.0m)
+[stack_gps_node] 정지 지점 2: idx 400~403 (트랙 스냅 0.02m, 폭 1.0m)
+```
+
+통과할 때 (V2 콘솔):
+
+```
+[mgm_node] 지정 정지 지점 1 진입 — 정지 후 3.0s 정차
+[mgm_node] 정차 중 — 남은 2.6s (v_ref 0.00)
+[mgm_node] 정차 완료 — 재출발
+```
+
+### GPS 전용 구간
+
+찍은 구간 안에서는 **차선 스테이트로 넘어가지 않는다** — 역광·노면 표시 혼재 등으로
+차선을 믿기 어려운 구간을 코스 전체가 아니라 구간 단위로 지정하는 것이다.
+`gps_only:=true`(run 전체에서 LANE 불가)와 달리 구간을 벗어나면 평소 히스테리시스로
+자연 복귀한다.
+
+- **진입은 즉시**(히스테리시스 없음) — 못 믿겠다고 지정한 구간이니 기다릴 이유가 없다.
+- **이탈 후 복귀는 즉시가 아니다** — 구간 안에서는 `lane_high_cnt`를 0으로 묶으므로,
+  벗어난 뒤 새로 `n_cycles`(0.5s) 동안 신뢰도가 유지되고 트랙에도 붙어 있어야 LANE이
+  된다. (묶지 않으면 구간 내내 쌓인 값으로 **한 틱 만에** 튄다 — 단위시험으로 확인.)
+- RTK fix 가 무효면 강제하지 않는다 — 무효한 gps 로 WAYPOINT 를 강제하면 §5.7 ②
+  watchdog 이 estop 을 걸어 되레 멈춰 선다.
+
+M 터미널에서 그 구간 동안 `gps` 로 고정돼 있으면 정상이다.
+
+**회피 구간을 안 찍었으면 회피는 전면 차단이다** (`avoid_zone_only:=true` 기본).
+그때 장애물을 만나면 회피가 아니라 **정지**한다 — MGM의 TTC 안전 바닥은 AVOID
+스테이트 안에서만 걸리므로 구간 밖 방어선은 stack_estop(정적 0.7m / 동적 1.2m)뿐이다.
+종전처럼 어디서나 회피하려면 `avoid_zone_only:=false`.
+
+**정차는 지점당 한 번이다.** 언덕에서 밀려 구간을 다시 밟아도 재정지하지 않는다
+(정차를 마친 번호는 소진 처리 — 안 그러면 밀림→재진입→재정지 루프가 된다).
+지점 **안에서** launch 하면 그 지점은 임시 억제로 시작하고, **구간을 벗어나면
+억제가 풀린다** — 언덕에 선 채로 띄운 뒤 출발점으로 옮겨 다시 지나가면 정상적으로 선다.
+소진 리셋은 새 run(= 실제 EstopRequest 인가)뿐이다.
+
+⚠ **언덕 정차는 브레이크 유지가 아니다.** v_ref 0은 목표 속도 0일 뿐이라 경사에서
+밀릴 수 있다 — 3초 정차 중 뒤로 흐르는지 반드시 눈으로 확인하고, 밀리면 정차 시간을
+줄이거나(`stop_hold_sec`) 하위 제어의 정지 유지 토크를 손상민과 확인할 것.
+**내리막 정차는 더 위험하다** — 밀림 방향이 진행 방향이라 그대로 굴러간다.
+
 ## 3. 변형 2가지
 
 1. **변수 축소 (gps_only)** — 차선 전이를 빼고 **avoid↔waypoint만** 보고 싶을 때
@@ -133,7 +261,7 @@ ros2 run adas_mgm go
    ```bash
    ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
        REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260811_193556.csv \
+       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260818_160511.csv \
        gps_only:=true usb_speed:=high camera_fps:=10
    ```
 
@@ -289,6 +417,157 @@ detect_range 를 늘리는 건 위 이유로 **틀린 처방**이다.
 1. 0.6 m/s 에서 `maneuver_done` 이 정상적으로 뜨는지 먼저 확인 (12초 상한에 안 걸리는지).
 2. estop 문턱만 1.20/1.35 로 올리고 0.6 m/s 유지 — 회피가 여전히 성립하는지.
 3. 그 다음 0.8 m/s. detect_range 는 **건드리지 말 것**.
+
+### 5-1d. 2026-08-18 재시도 — 차선·GPS 1.0 m/s + 회피 0.6
+
+§5-1c에서 되돌린 1.0 m/s를 **조건을 바꿔** 다시 올린다. 그때와 다른 점 두 가지:
+
+| | 2026-08-17 (되돌림) | 2026-08-18 |
+|---|---|---|
+| `detect_range_m` | 3.0 → **5.0** (틀린 처방) | **3.0 그대로** |
+| 회피 진입 | 코스 전체 어디서나 | **구간 게이트** (지정 구간 밖 진입 없음) |
+| AVOID 속도 | 1.0 (v_avoid 꺼짐) | **0.6** (`v_avoid`) |
+
+§5-1c의 결론은 "무너진 건 속도가 아니라 **트리거 빈도**"였다 — 진입 1회가
+`avoid_max_cycles` 12초를 먹으므로 감지 범위를 늘린 만큼 회피 체류가 늘었다.
+구간 게이트는 그 빈도를 코스의 일부로 **구조적으로** 제한한다.
+
+같은 덤프 재생(`core_replay v_base=1.0 v_avoid=0.6`) 검증 — **판단은 완전 동일**:
+스테이트 시퀀스 20전이 동일 · 정차 구간 6개 동일 · `immediate_stop` 5975틱 동일.
+v_ref만 차선 0.573→0.949 · gps 0.420→0.690 · 회피 0.546→**0.549**.
+AVOID 진입 시 1.0→0.6 감속 램프는 **0.25s**(전체 AVOID 시간의 1.9%).
+
+**속도와 세트로 바뀐 값** (되돌릴 땐 함께):
+
+| 값 | 0.6 m/s | 1.0 m/s | 근거 |
+|---|---|---|---|
+| `v_base` (MGM) | 0.6 | **1.0** | 차선·GPS만 |
+| `v_avoid` (MGM) | 0 (끔) | **0.6** | 회피 구간만 저속 |
+| `target_speed_mps` (stack_avoid) | 0.6 | **1.0** | v_base와 항상 동일 (TTC 자차속도) |
+| `ttc_stop` (MGM) | 0.8 | **1.3** | 정지 필요거리 1.09m ÷ 1.0 |
+| `estop_on/off` | 0.70/0.80 | **1.20/1.35** | §5-1c 실측식 (0.70은 0.6 전용) |
+| `dynamic_stop_distance_m` | 1.20 | **1.35** | 〃 |
+| `detect_range_m` | 3.0 | **3.0 유지** | 늘리는 것이 §5-1c의 틀린 처방 |
+
+**⚠ §5-1c의 선행 결함(`maneuver_done`이 거의 안 뜸, 이기돈)은 아직 그대로다.**
+회피 복귀가 정상 경로가 아니라 12초 상한으로 이뤄지므로, 회피 구간에서는
+진입 1회당 12초·0.6 m/s = 7.2m를 회피 경로로 달린다고 보고 구간 길이를 잡을 것.
+
+### 5-1e. 곡선 구간 재합류 실패 → 곡률 선행 보상 (2026-08-18)
+
+**증상:** 곡선에서 조향이 완만해 복귀가 안 되고 이탈이 커진다.
+run_0818_180614에서 곡률 0.36(R 2.8m) 커브 진입 후 cross 0.05→**2.55m** 발산.
+
+**원인은 둘이었다** (실제 fix를 `PathEngine`에 재생해 갈라냄):
+
+| # | 원인 | 증거 |
+|---|---|---|
+| ① | **선행 보상이 없다** — 명령 방위가 ψₑ를 뒤따르기만 한다 | idx 344~348에서 cross 0.09m(트랙 위)인데 b가 ψₑ(−8~−16°)를 그대로 복사. 트랙이 휘는 만큼 미리 안 꺾어 ψₑ가 idx 353에서 −56°까지 쌓임 |
+| ② | **방위 상한 25° 포화 + d 고정** | idx 350부터 b = −25.0° 고착. d=1.8m에서 κ 천장 0.469, dSPACE 실현율 43~59% → 실제 R 3.5~5m로 트랙 R 2.8m를 못 돈다 |
+
+`ref[0]` 거리는 **곡률과 무관한 상수**였다 — gps 구간에서 정확히 1.8m가 43.9%·61.4%
+(`rejoin_target_min_m` = `rejoin_target_max_m` = 1.8이라 밴드가 한 점으로 붕괴).
+
+**조치 (기본값 반영):**
+
+| 파라미터 | 기본 | 뜻 |
+|---|---|---|
+| `rejoin_curve_ff` | 1.0 | 트랙 곡률 선행 보상 `b_ff = asin(d·κ/2)` 를 방위에 더한다. 0 = 끔(종전) |
+| `rejoin_curve_margin` | 2.0 | 곡선에서 목표 당김 — 25° 안에서 트랙 곡률의 2배를 낼 수 있는 거리까지. \|κ\|>0.235(R<4.3m)부터 작동, 하한 1.267m. 0 = 끔 |
+
+같은 run 재생 A/B:
+
+| 구간 | 종전 | 신규 |
+|---|---|---|
+| 커브 진입 idx 343~347 (cross 0.1m, 아직 트랙 위) | κ명령 0.088 / 0.158 / 0.276 | **0.222 / 0.295 / 0.469** (1.6~2.5배) |
+| 포화 구간 idx 348~351 | 0.469 (d 1.80 고정) | **0.613~0.667** (d 1.27~1.38) |
+| 곡선 전체 \|κ\|>0.2 | 중앙 0.436 최대 0.469 | 중앙 0.469 **최대 0.667** |
+| **직선 \|κ\|<0.05 (잡음)** | Δ방위 중앙 0.217° p95 1.283° | **0.231° / 1.621°** (거의 불변) |
+
+직선에서 κ≈0이라 두 항 모두 0이 된다 — 2026-08-17 잡음 대책이 그대로 보존된다.
+**실차 미검증.** 되돌리려면 주행 중에:
+`ros2 param set /stack_gps_node rejoin_curve_ff 0.0` / `rejoin_curve_margin 0.0`
+
+⚠ 남은 한계: ψₑ가 이미 50° 이상 벌어진 뒤에는 **방위 상한 25° 자체**가 병목이다
+(그 구간은 A/B가 동일하게 0.469). 상한을 올리는 것은 run_0814_201650의
+"거의 정옆을 겨눠 발산" 사례를 되살릴 수 있어 별도 검토가 필요하다 — 지금 조치는
+**애초에 ψₑ가 그만큼 벌어지지 않게** 하는 쪽이다.
+
+### 5-1f. RTK 두절 → USB 자동 리셋 (2026-08-18)
+
+**증상:** 주행 중 FIXED 가 끊기고 차가 선다. `rtk_probe.py` 로 재면 **C/N0 0dB**.
+GPS USB 를 뽑았다 꽂아야만 복구된다. 2026-08-18 한 코스에서 3회 재시작.
+
+**로그로 본 정체** (run_0818_183901·181207 의 `/rosout`):
+
+```
+[stack_gps_node] fix 없음 (RTCM 581B/s)     ← 52초 내내 반복
+```
+
+RTCM **쓰기는 성공**하는데 NMEA 가 **한 줄도 안 온다**. 장치는 열거된 채 남아
+있고(그래서 write 가 되고 `lsusb` 에도 보인다) 수신기 출력만 죽은 상태다 —
+포트를 닫았다 여는 것으로는 안 풀리고, USB 재열거가 필요하다.
+
+**조치:** `GgaLink` 가 NMEA 무수신을 감시하다가 `USBDEVFS_RESET` 으로 재열거한다
+(= 뽑았다 꽂기와 같은 커널 경로, 전원만 유지).
+
+| 파라미터 | 기본 | 뜻 |
+|---|---|---|
+| `usb_reset_after_s` | 20.0 | NMEA 무수신이 이만큼 지속되면 리셋 (0 = 끔) |
+| `usb_reset_cooldown_s` | 60.0 | 연속 리셋 방지 (안 살아나는 원인일 때 루프 차단) |
+
+판정은 **NMEA 무수신으로만** 한다 — fix 품질 저하(DGPS/FLOAT)나 위성 부족은
+정상 범위의 전파 상황이고, 그걸로 리셋하면 멀쩡한 링크를 끊는다.
+
+**⚠ 한 번은 설치가 필요하다** (usbfs 기본 권한이 root:root 0664):
+
+```bash
+sudo cp ~/FMA_ws/src/stack_gps/tools/99-ublox-f9p-usbreset.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger
+```
+
+안 하면 리셋 시도 시 로그에 위 명령이 그대로 찍히고 넘어간다(주행은 계속).
+
+진단 로그도 바뀌었다 — **RTCM 과 NMEA 를 짝으로** 찍는다:
+
+```
+fix 없음 (RTCM 581B/s · NMEA 0B/s ← 수신기 무응답, USB 리셋 대기)   ← 이번 고장
+fix 없음 (RTCM 0B/s · NMEA 0B/s)                                    ← 시리얼 자체 두절
+```
+
+⚠ **전원을 끊는 것은 아니다.** 수신기 펌웨어가 완전히 걸려 전원 재인가가 필요한
+상태면 이걸로도 안 풀린다 — `USB 재열거 대기 시간 초과` 가 뜨면 물리적으로 뽑았다 꽂을 것.
+어느 쪽인지는 아직 실차 미확인이다.
+
+### 5-1g. 회피 구간이 늦게 열려 첫 회피 실패 (2026-08-18)
+
+**증상:** 회피 구간 **첫 장애물**에서 회피가 성립하지 않고 그대로 접근 → 정지.
+
+**로그 (run_0818_184019):**
+
+| 시각 | 거리 | TTC | avoidable | 구간 안? |
+|---|---|---|---|---|
+| t=60.6s | 3.64m | 2.88 | **1** | ✖ 아직 밖 |
+| t=60.9s | 3.38m | 2.62 | **1** | ✖ 아직 밖 |
+| t=61.2s | 2.22m | 1.46 | 0 | ✖ |
+| **t=61.7s** | 1.82m | 1.06 | 0 | **✔ 구간 진입** |
+
+`avoidable=1` 창(3.6→2.2m)이 **구간 진입 1.1초 전에 이미 끝나** 있었다.
+MGM 은 구간 밖에서 AVOID 로 못 가고, 들어왔을 땐 TTC 가 문턱(1.5s) 아래라
+판정이 꺼진 뒤였다. 게이트가 늦게 열린 것이지 회피 로직 문제가 아니다.
+
+**조치:** 회피 구간을 **앞쪽으로 자동 확장**한다 — `avoid_zone_lead_m` (기본 5.0m).
+사람은 "콘이 있는 자리"를 찍지만 회피 판단은 감지 거리(3.0m) 안에서 TTC 가
+문턱 위일 때 성립하므로, 그 전에 무장돼 있어야 한다.
+
+실측 구간(idx 361~464)에 적용하면 **idx 346~464** 로 5.22m(15칸) 앞당겨진다 =
+1.0 m/s 에서 **5.2초 일찍** 열려 위 표의 창을 덮는다. 기동 로그로 확인:
+
+```
+회피 허용 구간 1: idx 346~464 (찍은 구간 361~464 + 앞쪽 5.0m 확장 …)
+```
+
+`mark_zone avoid_start` 는 그대로 콘 위치에서 찍으면 된다.
 
 ### 5-2. ⚠ 조향 PI 이후 **실현율 곡선 재측정**이 최우선
 
