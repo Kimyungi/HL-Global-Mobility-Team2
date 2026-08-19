@@ -33,6 +33,10 @@ public:
   // 기능이 없으므로 항상 미정차로 보고한다.
   bool stopZoneHolding() const;
   int32_t stopHoldLeft() const;
+  // 차선 히스테리시스 카운터 — 전이 이유 로깅용 관찰자 (판단 아님).
+  // core 는 CoreState, generated 는 모델 내부(ADAS_MGR2_DW)에서 읽는다.
+  int32_t laneLowCnt() const;
+  int32_t laneHighCnt() const;
   const CoreParams & params() const {return params_;}
   const std::string & name() const;
   bool faulted() const;

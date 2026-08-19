@@ -29,6 +29,12 @@ public:
   void reset(const CoreParams & params);
   CoreOutput step(const CoreSnapshot & input);
 
+  // 모델 내부 히스테리시스 카운터 (ADAS_MGR2_DW) — **관찰 전용**.
+  // 전이 이유 로깅이 레퍼런스 코어와 같은 값을 쓸 수 있게 하기 위한 것이며,
+  // 모델로 되먹임되는 경로는 없다.
+  int32_t laneLowCnt() const;
+  int32_t laneHighCnt() const;
+
 private:
   void initialize(const CoreParams & params);
   void requireOwningThread(const char * operation);

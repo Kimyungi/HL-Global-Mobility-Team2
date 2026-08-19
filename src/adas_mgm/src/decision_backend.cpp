@@ -209,6 +209,26 @@ int32_t DecisionBackend::stopHoldLeft() const
   return kind_ == Kind::kCore ? core_state_.stop_hold_left : 0;
 }
 
+int32_t DecisionBackend::laneLowCnt() const
+{
+#ifdef ADAS_MGM_HAS_GENERATED_BACKEND
+  if (kind_ == Kind::kGenerated) {
+    return generated_->laneLowCnt();
+  }
+#endif
+  return core_state_.lane_low_cnt;
+}
+
+int32_t DecisionBackend::laneHighCnt() const
+{
+#ifdef ADAS_MGM_HAS_GENERATED_BACKEND
+  if (kind_ == Kind::kGenerated) {
+    return generated_->laneHighCnt();
+  }
+#endif
+  return core_state_.lane_high_cnt;
+}
+
 uint8_t DecisionBackend::activeState() const
 {
   return kind_ == Kind::kCore ? core_state_.state : active_state_;

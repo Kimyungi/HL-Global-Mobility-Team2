@@ -48,7 +48,8 @@ v1.68 이 **갖고 있지 않은 것** (그래서 이 런치가 빼는 것):
 
 로깅 — run 마다 ~/FMA_ws/drive_logs/run_mbd_<시각>/ :
   rosbag/            MGM 입출력 전 토픽 + /scan + /rosout
-  mgm_snapshots.bin  매 10ms CoreSnapshot 덤프 — 같은 덤프를 core_replay 에 물리면
+  transitions.csv    **스테이트 전이 이유** — 바뀐 틱·규칙·결정 변수·스펙 대조
+  mgm_snapshots.bin  매 10ms CoreSnapshot 덤프 — 같은 덤프를 parity_replay 에 물리면
                      **레퍼런스 C++ 코어와 back-to-back 비교**가 된다 (§5.5 검증)
   mgm_jitter.csv     10ms 루프 주기 실측 (§7)
   lateral.csv        GPS 횡오차
@@ -378,6 +379,9 @@ def generate_launch_description():
 
                 'snapshot_dump_path': os.path.join(LOG_DIR, 'mgm_snapshots.bin'),
                 'jitter_csv_path': os.path.join(LOG_DIR, 'mgm_jitter.csv'),
+                # 스테이트가 바뀔 때마다 **왜** 바뀌었는지 — 그 틱의 결정 변수와
+                # §4 규칙 대조 결과. 콘솔에도 같은 줄이 뜬다.
+                'transition_csv_path': os.path.join(LOG_DIR, 'transitions.csv'),
                 'wait_go': True,
                 'lane_conf_exit': ParameterValue(PythonExpression(
                     ["2.0 if '", LaunchConfiguration('gps_only'),

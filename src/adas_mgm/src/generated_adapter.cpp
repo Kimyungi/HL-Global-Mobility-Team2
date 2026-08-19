@@ -228,6 +228,16 @@ void GeneratedMgmAdapter::reset(const CoreParams & params)
   initialize(params);
 }
 
+int32_t GeneratedMgmAdapter::laneLowCnt() const
+{
+  return ADAS_MGR2_DW.lane_low_cnt;
+}
+
+int32_t GeneratedMgmAdapter::laneHighCnt() const
+{
+  return ADAS_MGR2_DW.lane_high_cnt;
+}
+
 CoreOutput GeneratedMgmAdapter::step(const CoreSnapshot & input)
 {
   requireOwningThread("step");

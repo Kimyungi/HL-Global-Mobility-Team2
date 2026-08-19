@@ -37,6 +37,7 @@
 
 #include "core/mgm_step.hpp"
 #include "src/decision_backend.hpp"
+#include "src/transition_log.hpp"
 #include "tools/dump_format.hpp"
 
 using fma_interfaces::msg::TargetRef;
@@ -204,6 +205,18 @@ public:
     RCLCPP_INFO(
       get_logger(), "decision backend=%s%s", backend_->name().c_str(),
       backend_->name() == "generated" ? " (ADAS_MGR2 v1.68 LANE/WAYPOINT bench only)" : "");
+
+    // 스테이트 전이 이유 CSV — 빈 값이면 콘솔 로그만 (§4 전이 조건 관찰)
+    transition_csv_path_ = declare_parameter<std::string>("transition_csv_path", "");
+    if (!transition_csv_path_.empty()) {
+      transitions_.open(transition_csv_path_, std::ios::trunc);
+      if (transitions_) {
+        transitions_ << transitionCsvHeader();
+        transitions_.flush();
+      } else {
+        RCLCPP_WARN(get_logger(), "전이 CSV를 열 수 없음: %s", transition_csv_path_.c_str());
+      }
+    }
 
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기
     estop_stale_ns_ = static_cast<int64_t>(
@@ -464,6 +477,12 @@ private:
       dump_.write(reinterpret_cast<const char *>(&s), sizeof(s));
     }
 
+    // 전이 이유 로깅용 스냅샷 — 카운터는 **step 직전** 값이어야 한다.
+    // 전이가 일어나면 코어가 카운터를 리셋하므로(2026-08-14 규약) 이후 값은 0이다.
+    const uint8_t state_before = backend_->activeState();
+    const int32_t low_before = backend_->laneLowCnt();
+    const int32_t high_before = backend_->laneHighCnt();
+
     const bool was_faulted = backend_->faulted();
     const CoreOutput out = backend_->step(s);  // 판단+실행은 선택된 backend 한 곳에서만
     if (!was_faulted && backend_->faulted()) {
@@ -471,6 +490,24 @@ private:
         get_logger(), "decision backend fault latched; publishing fail-stop: %s",
         backend_->faultReason().c_str());
     }
+
+    // 스테이트 전이 이유 — 바뀐 그 틱의 결정 변수를 그대로 남긴다.
+    // 판단이 아니라 관찰이다: 전이는 이미 backend가 했고 여기서 되먹임하지 않는다.
+    // MBD 시험에서 "레퍼런스와 같은 조건으로 바뀌었나"가 이 줄로 판별된다.
+    if (out.state != state_before) {
+      const TransitionRecord tr = explainTransition(
+        state_before, out.state, s, backend_->params(),
+        low_before, high_before, out.v_ref, tick_);
+      RCLCPP_INFO(get_logger(), "전이 %s → %s @%.2fs | %s%s | %s",
+        stateName(tr.from), stateName(tr.to), tr.tick * 0.01,
+        tr.rule.c_str(), tr.spec_match ? "" : "  ★ 스펙 불일치",
+        tr.detail.c_str());
+      if (transitions_) {
+        transitions_ << tr.csv;
+        transitions_.flush();       // 현장에서 중단돼도 남아야 한다
+      }
+    }
+    ++tick_;
 
     // 지정 지점 정차 로그 — 현장에서 "왜 섰나"가 즉시 보이게 (판단 아님, 코어
     // 상태 관찰). 정차 중에는 남은 시간을 1초마다 흘린다.
@@ -525,6 +562,9 @@ private:
   }
 
   std::unique_ptr<DecisionBackend> backend_;
+  std::ofstream transitions_;          // 전이 이유 CSV (판단 아님 — 관찰 기록)
+  std::string transition_csv_path_;
+  int64_t tick_{0};
   std::unique_ptr<JitterLogger> jitter_;
   int cpu_core_{-1};
   std::ofstream dump_;

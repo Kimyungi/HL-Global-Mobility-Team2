@@ -187,6 +187,22 @@ M 과 V3 를 띄운 뒤:
 | 다시 열어 줌 | 신뢰도 ↑ → 0.5s 뒤 `→ 차선` 복귀 |
 | `[ERROR] decision backend fault latched` | **안 떠야 한다.** 뜨면 §6 |
 
+**전이가 일어나면 V2 콘솔에 이유가 한 줄로 뜬다** — 같은 줄이 `transitions.csv` 에도
+쌓인다.
+
+```
+전이 LANE → WAYPOINT @6.97s | lane→waypoint: 차선 신뢰도 < lane_conf_exit 가 n_cycles 연속
+  | lane_conf=0.200 lane_low_cnt=49/50 lane_high_cnt=0/50 cross_track=0.100 gps_n=20
+    gps_only_zone=0 at_end=0 estop=0 traffic_stop=0 obstacle=0 avoidable=0 ...
+```
+
+- `lane_low_cnt`/`lane_high_cnt` 는 **생성 모델 내부 카운터**(`ADAS_MGR2_DW`)를 그대로
+  읽은 값이다 — 레퍼런스 코어와 같은 자리에서 같은 이름으로 나온다
+- 규칙 이름 뒤에 **`★ 스펙 불일치`** 가 붙으면 §4 조건이 성립하지 않았는데 전이한
+  것이다. **이게 이 시험이 찾는 것** — 보이면 그 틱 번호와 `transitions.csv` 를 들고
+  김재민에게 넘긴다
+- 카운터는 **전이 직전 틱** 값이다(전이가 나면 코어가 리셋하므로 이후 값은 0)
+
 > 차를 손으로 밀어 트랙 밖으로 빼면 재합류 게이트(cross ≤ 0.5m)가 걸려 차선으로
 > 안 돌아오는 것도 여기서 확인할 수 있다.
 
@@ -235,7 +251,7 @@ V2 를 토큰과 함께 다시 띄운다 (§3). 콘솔에 이 줄이 떠야 한�
 
 ```bash
 RUN=~/FMA_ws/drive_logs/run_mbd_<시각>
-ls $RUN            # rosbag/  mgm_snapshots.bin  mgm_jitter.csv  lateral.csv
+ls $RUN     # rosbag/  transitions.csv  mgm_snapshots.bin  mgm_jitter.csv  lateral.csv
 
 ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
 ```
@@ -265,6 +281,15 @@ ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
 - **"범위 밖" 틱은 예상된 차이다** (§0 표: AVOID·PARKING·종점·역방향). 판정에서 자동
   제외되며, 전 구간이 범위 밖이면 "비교 불가"로 나온다.
 - 종료 코드: `0` 일치 / `1` 차이 있음 / `2` 비교 불가·재생 실패.
+
+`transitions.csv` 는 그 run 에서 **실제로 무슨 이유로 바뀌었는지**의 기록이다.
+`parity_replay` 가 "두 구현이 같은가"를 보고, 이쪽은 "왜 바뀌었나"를 본다 — 둘을
+같이 보면 차이가 났을 때 원인 틱으로 바로 갈 수 있다.
+
+```bash
+column -s, -t $RUN/transitions.csv | cut -c1-160     # 눈으로 훑기
+awk -F, 'NR>1 && $6==0' $RUN/transitions.csv         # 스펙 불일치만
+```
 
 > 레퍼런스 코어만 재생해 CSV 로 보고 싶으면 기존 `core_replay` 가 그대로 있다.
 

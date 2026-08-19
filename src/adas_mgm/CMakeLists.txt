@@ -23,7 +23,7 @@ add_library(mgm_core STATIC core/mgm_step.cpp)
 target_include_directories(mgm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ── ROS 2 wrapper 노드
-add_executable(mgm_node src/mgm_node.cpp src/decision_backend.cpp)
+add_executable(mgm_node src/mgm_node.cpp src/decision_backend.cpp src/transition_log.cpp)
 target_link_libraries(mgm_node mgm_core)
 ament_target_dependencies(mgm_node rclcpp rcl_interfaces fma_interfaces std_msgs)
 
