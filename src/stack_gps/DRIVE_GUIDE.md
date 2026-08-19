@@ -99,7 +99,7 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 #  최소 회전 반경 1.5m(idx 80~122). 코너 파먹기 크면 -p ref_lookahead_m:=0.7 시도
 #  — 단 낮출수록 위빙 위험과 교환. 직선 재검증은 ..._20260803_181924.csv로)
 ros2 run stack_gps stack_gps_node --ros-args \
-    -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_straight_1_20260806_191643.csv \
+    -p waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_new_1_20260818_191643.csv \
     -p rtcm_host:=127.0.0.1 \
     -p error_log_csv:=$HOME/FMA_ws/drive_logs/lateral_$(date +%m%d_%H%M).csv
 

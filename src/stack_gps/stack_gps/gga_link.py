@@ -15,6 +15,8 @@ import time
 
 import serial
 
+from stack_gps import usb_reset
+
 
 def parse_gga(line):
     """GGA 문장 → (utc, lat, lon, h_ellip, quality) 또는 None. (record_waypoints와 동일)"""
@@ -61,18 +63,30 @@ def parse_rmc(line):
 
 class GgaLink:
     def __init__(self, serial_port, baud=115200, rtcm_host="", rtcm_port=2101,
-                 log=print):
+                 log=print, usb_reset_after_s=20.0, usb_reset_cooldown_s=60.0):
         self._serial_port = serial_port
         self._baud = baud
         self._rtcm_host = rtcm_host
         self._rtcm_port = rtcm_port
         self._log = log
+        # ── NMEA 두절 → USB 리셋 복구 (2026-08-18 실차, usb_reset.py 주석 참조).
+        # 판정은 **NMEA 한 줄도 안 오는 것**으로 한다. fix_quality 저하(DGPS/FLOAT)나
+        # 위성 부족은 정상 범위의 전파 상황이고, 그걸로 리셋하면 멀쩡한 링크를
+        # 끊어 되레 주행을 망친다. 실측 사망 사례는 "쓰기는 되는데 읽기가 0" 이었고,
+        # 그것만이 사람이 뽑았다 꽂아야 했던 상태다.
+        # 0 이하면 기능 끔.
+        self._usb_reset_after_s = float(usb_reset_after_s)
+        self._usb_reset_cooldown_s = float(usb_reset_cooldown_s)
+        self._last_nmea_t = None      # 마지막으로 NMEA 를 **한 줄이라도** 받은 시각
+        self._last_reset_t = None
+        self._reset_count = 0
         self._lock = threading.Lock()
         self._fix = None          # (lat, lon, h, quality, monotonic_t)
         self._sat_info = (0, 0.0)  # (위성 수, HDOP) — 마지막 GGA 기준 (진단용)
         self._cog = None          # (speed_mps, yaw_enu, monotonic_t) — RMC 이동방향
         self._rtcm_bytes = 0
         self._stop = threading.Event()
+        self._nmea_bytes = 0
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
@@ -114,12 +128,58 @@ class GgaLink:
             b, self._rtcm_bytes = self._rtcm_bytes, 0
         return b
 
+    def nmea_rate_and_reset(self):
+        """수신 NMEA 바이트 — RTCM 과 **짝으로** 봐야 고장이 구분된다.
+
+        RTCM > 0 인데 NMEA == 0 이면 "쓰기는 되는데 수신기 출력이 죽은" 상태다
+        (2026-08-18 실차의 그 고장). 둘 다 0 이면 시리얼 자체가 끊긴 것.
+        """
+        with self._lock:
+            b, self._nmea_bytes = self._nmea_bytes, 0
+        return b
+
+    def usb_reset_count(self):
+        return self._reset_count
+
     def _connect_rtcm(self):
         if not self._rtcm_host:
             return None
         s = socket.create_connection((self._rtcm_host, self._rtcm_port), timeout=5)
         s.setblocking(False)
         return s
+
+    def _maybe_usb_reset(self, ser):
+        """NMEA 가 usb_reset_after_s 동안 한 바이트도 없으면 USB 리셋. 실행했으면 True.
+
+        수신기가 "열거는 됐는데 출력이 죽은" 상태를 푸는 유일한 수단이다
+        (usb_reset.py 주석의 2026-08-18 실측). 포트를 **먼저 닫고** 리셋한다 —
+        열린 채로 리셋하면 그 핸들이 무효가 되어 이후 read 가 EIO 로 떨어진다.
+        쿨다운을 두는 이유: 리셋해도 안 살아나는 원인(안테나 탈락·수신기 전원)에서
+        무한 리셋 루프에 빠지면 오히려 복구 기회를 없앤다.
+        """
+        if self._usb_reset_after_s <= 0.0:
+            return False
+        now = time.monotonic()
+        if self._last_nmea_t is None:
+            self._last_nmea_t = now          # 첫 연결 직후는 기준점만 잡는다
+            return False
+        if now - self._last_nmea_t < self._usb_reset_after_s:
+            return False
+        if (self._last_reset_t is not None and
+                now - self._last_reset_t < self._usb_reset_cooldown_s):
+            return False
+        self._log(f"⚠ NMEA {now - self._last_nmea_t:.0f}초 두절 — USB 리셋 시도 "
+                  f"(RTCM 쓰기는 되는데 읽기가 0이면 수신기가 걸린 것)")
+        try:
+            ser.close()
+        except OSError:
+            pass
+        self._last_reset_t = now
+        self._reset_count += 1
+        if usb_reset.reset(self._serial_port, log=self._log):
+            usb_reset.wait_for_tty(self._serial_port, log=self._log)
+        self._last_nmea_t = time.monotonic()   # 재연결 후 다시 센다
+        return True
 
     def _run(self):
         ser, sock, nmea_buf = None, None, b""
@@ -159,7 +219,15 @@ class GgaLink:
                         sock = None
 
                 # ② NMEA 수신·GGA 파싱
-                nmea_buf += ser.read(ser.in_waiting or 1)
+                chunk = ser.read(ser.in_waiting or 1)
+                if chunk:
+                    with self._lock:
+                        self._nmea_bytes += len(chunk)
+                    self._last_nmea_t = time.monotonic()
+                elif self._maybe_usb_reset(ser):
+                    ser, sock, nmea_buf = None, None, b""
+                    continue
+                nmea_buf += chunk
                 while b"\n" in nmea_buf:
                     raw, nmea_buf = nmea_buf.split(b"\n", 1)
                     line = raw.decode(errors="ignore").strip()

@@ -22,7 +22,10 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // core_replay가 옛 크기를 읽어 기본값으로 채우므로 버전을 올리지 않아도 된다.
 // v3 (2026-08-16): CoreSnapshot에 gps_heading_valid 추가 — v2 덤프는 레이아웃이
 // 달라 재생 불가(snapshot_size 검사가 잡는다).
-constexpr uint32_t kDumpVersion = 3;
+// v4 (2026-08-18): CoreSnapshot에 gps_stop_zone·gps_avoid_zone 추가 — v3 덤프는
+// 레이아웃이 달라 재생 불가(snapshot_size 검사가 잡는다).
+// v5 (2026-08-18): CoreSnapshot에 gps_gps_only_zone 추가.
+constexpr uint32_t kDumpVersion = 5;
 
 struct DumpHeader
 {

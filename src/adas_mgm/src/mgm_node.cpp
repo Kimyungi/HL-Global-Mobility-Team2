@@ -76,6 +76,9 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   s.gps_parking_zone = m.gps.parking_zone;
   s.gps_at_end = m.gps.at_end;
   s.gps_cross_track = m.gps.cross_track_m;
+  s.gps_stop_zone = m.gps.stop_zone;      // 0 = 아님, 1~ = 지정 정지 지점 번호
+  s.gps_avoid_zone = m.gps.avoid_zone;    // 회피 허용 구간 안인가
+  s.gps_gps_only_zone = m.gps.gps_only_zone;  // GPS 전용 구간 (차선 전이 금지)
   // 접선 폴백(HEADING_TANGENT)은 헤딩을 모를 때의 가정이라 신뢰 불가 (§4 역방향 래치)
   s.gps_heading_valid = (m.gps.heading_source != fma_interfaces::msg::GpsPath::HEADING_TANGENT);
   s.avoid_obstacle_detected = m.avoid.obstacle_detected;
@@ -175,6 +178,16 @@ public:
     // AVOID 최대 지속 틱 (0 이하 = 상한 없음)
     p.avoid_max_cycles =
       static_cast<int32_t>(declare_parameter<int>("avoid_max_cycles", 1200));
+    // 0 = 상한 없음(구동작). params.yaml 미적용 launch에서 조용히 감속되지 않도록
+    // 기본값은 끔으로 둔다 — 켜는 건 params.yaml의 명시적 선택이어야 한다.
+    p.v_avoid = static_cast<float>(declare_parameter<double>("v_avoid", 0.0));
+    // 지정 지점 정지 [틱] — GpsPath.stop_zone 지점에서 정차하는 시간 (0 = 끔).
+    // 지점 자체는 stack_gps 의 stop_points_latlon 이 정한다.
+    p.stop_zone_hold_cycles =
+      static_cast<int32_t>(declare_parameter<int>("stop_zone_hold_cycles", 0));
+    // 회피 허용 구간 밖에서는 AVOID 전이 금지 (stack_gps 의 avoid_zone_latlon 과 짝).
+    // 기본 false = 구동작(어디서나 회피) — 켜는 것은 launch/params의 명시적 선택.
+    p.avoid_zone_only = declare_parameter<bool>("avoid_zone_only", false) ? 1 : 0;
     rcl_interfaces::msg::ParameterDescriptor backend_descriptor;
     backend_descriptor.read_only = true;
     backend_descriptor.description = "startup-only decision backend: core or generated";
@@ -459,6 +472,24 @@ private:
         backend_->faultReason().c_str());
     }
 
+    // 지정 지점 정차 로그 — 현장에서 "왜 섰나"가 즉시 보이게 (판단 아님, 코어
+    // 상태 관찰). 정차 중에는 남은 시간을 1초마다 흘린다.
+    if (backend_->stopZoneHolding() != stop_holding_prev_) {
+      stop_holding_prev_ = backend_->stopZoneHolding();
+      if (stop_holding_prev_) {
+        RCLCPP_INFO(get_logger(), "지정 정지 지점 %u 진입 — 정지 후 %.1fs 정차",
+          static_cast<unsigned>(s.gps_stop_zone),
+          backend_->params().stop_zone_hold_cycles * 0.01);
+      } else {
+        RCLCPP_INFO(get_logger(), "정차 완료 — 재출발");
+      }
+    }
+    if (backend_->stopZoneHolding()) {
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+        "정차 중 — 남은 %.1fs (v_ref %.2f)",
+        backend_->stopHoldLeft() * 0.01, static_cast<double>(out.v_ref));
+    }
+
     TargetRef msg;
     msg.header.stamp = now();
     msg.header.frame_id = "base_link";
@@ -514,6 +545,7 @@ private:
   int64_t last_gps_rx_used_{-1};
   int64_t last_avoid_rx_used_{-1};
   int64_t avoid_stale_ns_{500'000'000};
+  bool stop_holding_prev_{false};   // 지정 지점 정차 로그용 (코어 상태의 직전 값)
   bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
   bool go_received_{false};         // /operator/go 마지막 수신값
 

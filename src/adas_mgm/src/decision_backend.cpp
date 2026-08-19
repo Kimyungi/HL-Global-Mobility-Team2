@@ -199,6 +199,16 @@ CoreOutput DecisionBackend::stepGenerated(const CoreSnapshot & input)
 #endif
 }
 
+bool DecisionBackend::stopZoneHolding() const
+{
+  return kind_ == Kind::kCore ? core_state_.stop_zone_holding : false;
+}
+
+int32_t DecisionBackend::stopHoldLeft() const
+{
+  return kind_ == Kind::kCore ? core_state_.stop_hold_left : 0;
+}
+
 uint8_t DecisionBackend::activeState() const
 {
   return kind_ == Kind::kCore ? core_state_.state : active_state_;

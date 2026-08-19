@@ -29,6 +29,11 @@ public:
 
   CoreOutput step(const CoreSnapshot & input);
   uint8_t activeState() const;
+  // 지정 지점 정차 관찰용 (판단 아님 — 로그 전용). generated backend 는 이
+  // 기능이 없으므로 항상 미정차로 보고한다.
+  bool stopZoneHolding() const;
+  int32_t stopHoldLeft() const;
+  const CoreParams & params() const {return params_;}
   const std::string & name() const;
   bool faulted() const;
   const std::string & faultReason() const;

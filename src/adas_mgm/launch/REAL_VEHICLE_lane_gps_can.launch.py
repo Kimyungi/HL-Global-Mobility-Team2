@@ -36,7 +36,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
-                            OpaqueFunction, Shutdown)
+                            OpaqueFunction, SetLaunchConfiguration, Shutdown)
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
@@ -85,6 +85,26 @@ RECORD_TOPICS = [
 DEFAULT_HOMOGRAPHY = os.path.expanduser(
     '~/FMA_ws/src/stack_lane/config/homography.json')
 
+# 지정 구간(정지 지점·회피 허용 구간)은 **트랙 CSV 옆의 구간 파일**에서 온다.
+#   waypoints_<이름>.csv  →  zones_<이름>.yaml   (같은 폴더)
+# 파일은 `ros2 run stack_gps mark_zone` 이 현장에서 기록한다 — 실차 launch 가 도는
+# 중에 원하는 자리에 정차하고 찍으면 된다. 위경도로 남기므로 트랙을 다시 기록해도
+# 같은 장소를 가리키고, 엉뚱한 코스에 쓰면 stack_gps 가 스냅 거리로 걸러 낸다.
+# 파일이 없으면 지정 구간 없이 그냥 주행한다 (에러 아님).
+
+
+def zones_path_for(waypoint_csv):
+    """트랙 CSV → 같은 폴더의 구간 파일 경로 (stack_gps.mark_zone 과 같은 규약).
+
+    launch 파싱은 셸 PYTHONPATH 에 좌우돼 stack_gps 를 import 하면 터질 수 있으므로
+    (2026-08-15 실측, validate() 주석 참조) 규약을 여기서 자립적으로 복제한다.
+    """
+    d, base = os.path.split(waypoint_csv)
+    stem = base[:-4] if base.endswith('.csv') else base
+    if stem.startswith('waypoints_'):
+        stem = stem[len('waypoints_'):]
+    return os.path.join(d, f'zones_{stem}.yaml')
+
 DEFAULT_YDLIDAR_PARAMS = os.path.join(
     os.path.expanduser('~'), 'ydlidar_ws', 'src', 'ydlidar_ros2_driver',
     'params', 'Tmini-Plus-SH.yaml')
@@ -121,6 +141,45 @@ def validate(context):
             '  실코스 예: waypoints_straight_1_20260811_193556.csv (288점)\n'
             '  1~4점 파일은 FIXED 확인용 잔여물이다.')
     print(f'[launch] 웨이포인트 {len(rows)}점 확인: {os.path.basename(waypoint_csv)}')
+    hold_s = LaunchConfiguration('stop_hold_sec').perform(context)
+    zones_file = (LaunchConfiguration('zones_file').perform(context)
+                  or zones_path_for(waypoint_csv))
+    n_stop, n_avoid = 0, 0
+    if os.path.isfile(zones_file):
+        try:
+            with open(zones_file) as f:
+                z = yaml.safe_load(f) or {}
+            stops = z.get('stop_points') or []
+            avoids = [a for a in (z.get('avoid_zones') or []) if 'end' in a]
+            gonly = [a for a in (z.get('gps_only_zones') or []) if 'end' in a]
+            n_stop, n_avoid = len(stops), len(avoids)
+            print(f'[launch] 구간 파일: {os.path.basename(zones_file)} '
+                  f'(정지 {n_stop} · 회피 {n_avoid} · GPS전용 {len(gonly)})')
+            if gonly:
+                print(f'[launch]   GPS 전용 구간 {len(gonly)}개 — 그 안에서는 차선 전이 없음 '
+                      '(run 전체를 GPS로만 가려면 gps_only:=true)')
+            for i, e in enumerate(stops):
+                note = f"  ({e.get('note')})" if e.get('note') else ''
+                print(f'[launch]   정지 {i + 1}: {e.get("lat")},{e.get("lon")}{note}')
+        except Exception as e:                                # noqa: BLE001
+            print(f'[launch] ⚠ 구간 파일을 못 읽음 — 지정 구간 없이 진행: {e}')
+    else:
+        print(f'[launch] 구간 파일 없음 ({os.path.basename(zones_file)}) — 지정 구간 없이 주행. '
+              '만들려면 주행 중 그 자리에 정차하고 `ros2 run stack_gps mark_zone stop`')
+    stop_pts = LaunchConfiguration('stop_points_latlon').perform(context)
+    if n_stop or stop_pts:
+        print(f'[launch] 지정 정지: 각 지점에서 {hold_s}s 정차 후 자동 재출발'
+              + (f' (+ 인자 지정 {stop_pts})' if stop_pts else ''))
+    zone_only = LaunchConfiguration('avoid_zone_only').perform(context) == 'true'
+    avoid_zone = LaunchConfiguration('avoid_zone_latlon').perform(context)
+    if zone_only and not (n_avoid or avoid_zone):
+        print('[launch] ⚠ 회피 전면 차단 (avoid_zone_only:=true + 구간 없음) — '
+              '장애물은 회피 없이 stack_estop 정지로만 대응한다. '
+              '구간은 `mark_zone avoid_start` / `avoid_end` 로 찍는다')
+    elif zone_only:
+        print(f'[launch] 회피 허용 구간에서만 회피 (구간 {n_avoid}개)')
+    else:
+        print('[launch] 회피 구간 제한 없음 (avoid_zone_only:=false) — 어디서나 회피')
     # 카메라를 안 띄우는 run(lane_enabled:=false)에선 호모그래피 유무가 무의미
     if LaunchConfiguration('lane_enabled').perform(context) == 'true':
         homography = LaunchConfiguration('homography_path').perform(context)
@@ -133,7 +192,9 @@ def validate(context):
               '차선 전이 없음, 출발 인가는 `ros2 run adas_mgm go --skip-lane`')
     os.makedirs(LOG_DIR, exist_ok=True)
     print(f'[record] 로그 디렉터리: {LOG_DIR}')
-    return []
+    # 확정한 구간 파일 경로를 노드에 넘긴다. 이 OpaqueFunction 은 LaunchDescription
+    # 목록에서 노드들보다 **앞**에 있으므로 여기서 설정한 값이 아래 Node 에 잡힌다.
+    return [SetLaunchConfiguration('zones_file_resolved', zones_file)]
 
 
 def generate_launch_description():
@@ -157,6 +218,48 @@ def generate_launch_description():
         DeclareLaunchArgument('waypoint_csv', default_value='',
                               description='코스 웨이포인트 CSV (필수)'),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
+
+        # ── GPS 재합류 기하 (2026-08-17). 셋 다 "dSPACE 조향이 느리던 시절"의
+        # 보상값이라 조향 PI 도입 후 재조정 대상이다. 주행 중에도 바꿀 수 있다:
+        #   ros2 param set /stack_gps_node rejoin_full_cross_m 1.0
+        # 빈 값 = stack_gps 노드 기본값 사용(= path_engine.py 의 REJOIN_*).
+        DeclareLaunchArgument('ref_lookahead_m', default_value='1.0'),
+        DeclareLaunchArgument('rejoin_rate_damp_s', default_value='0.0'),
+        DeclareLaunchArgument('rejoin_full_cross_m', default_value='0.5'),
+        DeclareLaunchArgument('rejoin_target_max_m', default_value='1.8'),
+        # 하한 — 실측상 ref[0] 거리의 82%가 하한에 붙으므로 **실효 이득은 이 값이
+        # 정한다**. 1.267(기하 바닥) → 1.8 로 올린 것이 2026-08-17 잡음 대책의 핵심.
+        DeclareLaunchArgument('rejoin_target_min_m', default_value='1.8'),
+        # 접근각이 쓰는 횡오차의 저역통과 [s]. 0 = 끔. ψₑ 쪽엔 절대 걸지 말 것.
+        DeclareLaunchArgument('rejoin_e_lpf_s', default_value='0.15'),
+
+        # ── 지정 지점 정지 (2026-08-18) — 트랙 위 특정 장소에서 자동으로 서고
+        # 다시 출발한다 (언덕 정차 시험). 지점은 **구간 파일**(mark_zone 이 기록)에서
+        # 오고, stack_gps 가 위경도 → 웨이포인트 인덱스 구간으로 바꿔
+        # GpsPath.stop_zone 에 싣는다. "정지하고 N초 뒤 재출발"이라는 판단은 MGM
+        # 스테이트 머신에만 있다 (CLAUDE.md §4·§5.1).
+        # 정차는 지점당 한 번이다 — 언덕에서 밀려 구간을 다시 밟아도 재정지하지
+        # 않는다(정차를 마친 번호는 소진 처리). 지점 **안에서** launch 하면 그
+        # 지점은 임시 억제로 시작하고, 구간을 벗어나면 억제가 풀린다.
+        DeclareLaunchArgument(
+            'zones_file', default_value='',
+            description='구간 파일 경로 (빈 값 = waypoint_csv 옆 zones_*.yaml 자동)'),
+        DeclareLaunchArgument(
+            'stop_points_latlon', default_value='',
+            description='구간 파일 외에 추가할 정지 지점 "lat,lon;lat,lon" (보통 비움)'),
+        DeclareLaunchArgument('stop_hold_sec', default_value='3.0'),
+        DeclareLaunchArgument('stop_zone_span_m', default_value='1.0',
+                              description='정지 지점 구간 폭 [m] (진입 판정 여유)'),
+
+        # ── 회피 허용 구간 (2026-08-18). avoid_zone_only:=true 면 이 구간 **안에서만**
+        # AVOID 전이가 일어난다. 기본값은 "구간 미지정 + 게이트 켬" = **회피 전면 차단**
+        # 이다 — 시험 코스에서 회피를 지정한 구간에서만 쓰기 위한 운용 스위치.
+        #   구간 지정: avoid_zone_latlon:="lat1,lon1,lat2,lon2" (구간의 시작·끝 좌표)
+        #   구동작 복귀: avoid_zone_only:=false (어디서나 회피 — 종전 회피 시험 절차)
+        # ⚠ 차단 상태에서 장애물을 만나면 회피가 아니라 stack_estop 정지로 대응한다
+        #   (MGM 의 TTC 안전 바닥은 AVOID 스테이트 안에서만 걸리기 때문).
+        DeclareLaunchArgument('avoid_zone_latlon', default_value=''),
+        DeclareLaunchArgument('avoid_zone_only', default_value='true'),
 
         # ── GPS 전용 모드: LANE 전이 차단 (히스테리시스 임계를 2.0으로 — confidence는
         # 최대 1.0이라 절대 도달 불가 → 항상 WAYPOINT). 야간 등 차선 오검출이 위험한
@@ -274,7 +377,14 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_port', default_value='/dev/ttyUSB_LIDAR'),
         DeclareLaunchArgument('laser_yaw_in_base_rad', default_value='1.57079632679'),
         DeclareLaunchArgument('dynamic_enabled', default_value='true'),
-        DeclareLaunchArgument('dynamic_stop_distance_m', default_value='1.20'),
+        DeclareLaunchArgument('dynamic_stop_distance_m', default_value='1.35'),
+        # ── 정적 장애물 estop 문턱 [m] (2026-08-18, v_base 0.6→1.0 과 세트).
+        # §5-1c 실측식: 필요거리 = 0.303·v + 1.19·(0.13·v + v²/(2·0.94))
+        #   0.6 → 0.49m | 1.0 → 1.09m.  0.70/0.80 은 **0.6 m/s 전용**이었다.
+        # 1.0 m/s 로 달리면서 그대로 두면 문턱에서 멈추기 전에 닿는다.
+        # ⚠ 속도를 되돌릴 땐 이 값도 함께 되돌릴 것.
+        DeclareLaunchArgument('estop_on_distance_m', default_value='1.20'),
+        DeclareLaunchArgument('estop_off_distance_m', default_value='1.35'),
         DeclareLaunchArgument('dynamic_tracking_max_distance_m', default_value='3.00'),
 
         OpaqueFunction(function=validate),
@@ -336,6 +446,10 @@ def generate_launch_description():
                     LaunchConfiguration('dynamic_stop_distance_m'), value_type=float),
                 'dynamic_tracking_max_distance_m': ParameterValue(
                     LaunchConfiguration('dynamic_tracking_max_distance_m'), value_type=float),
+                'estop_on_distance_m': ParameterValue(
+                    LaunchConfiguration('estop_on_distance_m'), value_type=float),
+                'estop_off_distance_m': ParameterValue(
+                    LaunchConfiguration('estop_off_distance_m'), value_type=float),
             }],
             output='screen',
         ),
@@ -348,6 +462,25 @@ def generate_launch_description():
                 'waypoint_csv': LaunchConfiguration('waypoint_csv'),
                 'rtcm_host': LaunchConfiguration('rtcm_host'),
                 'error_log_csv': LaunchConfiguration('gps_error_log_csv'),
+                'ref_lookahead_m': ParameterValue(
+                    LaunchConfiguration('ref_lookahead_m'), value_type=float),
+                'rejoin_rate_damp_s': ParameterValue(
+                    LaunchConfiguration('rejoin_rate_damp_s'), value_type=float),
+                'rejoin_full_cross_m': ParameterValue(
+                    LaunchConfiguration('rejoin_full_cross_m'), value_type=float),
+                'rejoin_target_max_m': ParameterValue(
+                    LaunchConfiguration('rejoin_target_max_m'), value_type=float),
+                'rejoin_target_min_m': ParameterValue(
+                    LaunchConfiguration('rejoin_target_min_m'), value_type=float),
+                'rejoin_e_lpf_s': ParameterValue(
+                    LaunchConfiguration('rejoin_e_lpf_s'), value_type=float),
+                # 지정 구간 (위경도 문자열 → 노드가 인덱스 구간으로 변환)
+                # validate() 가 확정한 경로 (인자 지정 또는 트랙 CSV 옆 zones_*.yaml)
+                'zones_file': LaunchConfiguration('zones_file_resolved'),
+                'stop_points_latlon': LaunchConfiguration('stop_points_latlon'),
+                'avoid_zone_latlon': LaunchConfiguration('avoid_zone_latlon'),
+                'stop_zone_span_m': ParameterValue(
+                    LaunchConfiguration('stop_zone_span_m'), value_type=float),
             }],
             output='screen',
             # 이 노드가 죽으면 launch 전체를 내린다 (2026-08-15). 예전에는 혼자
@@ -409,6 +542,13 @@ def generate_launch_description():
                     ["2.0 if '", LaunchConfiguration('gps_only'),
                      f"' == 'true' else {lane_return_default}"]),
                     value_type=float),
+                # 지정 지점 정차 시간 [틱] = stop_hold_sec × 100 (10ms 루프)
+                'stop_zone_hold_cycles': ParameterValue(PythonExpression(
+                    ["int(round(float('", LaunchConfiguration('stop_hold_sec'), "') * 100))"]),
+                    value_type=int),
+                # 회피 허용 구간 밖 AVOID 전이 금지 (기본 켬 — 위 인자 주석 참조)
+                'avoid_zone_only': ParameterValue(
+                    LaunchConfiguration('avoid_zone_only'), value_type=bool),
             }],
             output='screen',
             # MGM이 죽으면 TargetRef 송신이 끊긴다. dSPACE watchdog이 아직

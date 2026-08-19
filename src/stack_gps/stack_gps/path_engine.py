@@ -96,33 +96,118 @@ class PathEngine:
     # 작으면 온트랙 추종이 굼떠진다(3.0 이면 8.3°/m 로 6배 약함).
     # 0.5 → α_max/FULL = 50°/m 로 트랙 점과 비슷하다.
     REJOIN_FULL_CROSS_M = 0.5
-    # ψₑ 변화율 감쇠 시상수 [s]. **오버슈트의 원인은 이득이 아니라 지연이다** —
-    # run_0816_200226 실측: 명령이 t=76.0 에 이미 뒤집혔는데 차는 약 1초 뒤
-    # (t=77.25)에야 선회를 멈췄고 그 사이 ψₑ가 −19°→−49° 로 30° 더 넘어갔다
-    # (조향 응답 지연 0.18~0.44s + 선회 관성). 이득을 깎아 대응하면 근접 추종이
-    # 같이 죽으므로, 변화율 항으로 **미리 되돌린다**:
+    # ψₑ 변화율 감쇠 시상수 [s].
+    #
+    # ★ 2026-08-17: 기본값 0.6 → **0.0 (끔)**. 이 항은 dSPACE 조향 지연을
+    #   선행 보상하려고 넣은 것이다 — run_0816_200226 실측에서 명령이 t=76.0에
+    #   뒤집혔는데 차는 약 1초 뒤에야 선회를 멈췄고 그 사이 ψₑ가 −19°→−49°로
+    #   30° 더 넘어갔다. **그 지연을 dSPACE 조향 PI가 없앴다**(2026-08-17,
+    #   손상민). 보상 대상이 사라진 미분항은 10Hz GPS 헤딩의 **잡음 증폭기**로만
+    #   남는다 — 틱 잡음 이득이 T_d/dt = ×6, EMA 0.5로 ×3.
+    #   run_0817_011045 실측(gps 구간 66s): ψₑ 자체 sd 7.4° 인데 **감쇠항 sd
+    #   13.6°·스파이크 296°** 로 댐핑 대상보다 항이 2배 크다. 결과가 GPS 구간의
+    #   명령 채터링이다 — 같은 run의 차선 구간과 비교하면
+    #     ref[0] 1.29m ↔ 2.06m | 명령 |κ| 0.212 ↔ 0.068 1/m
+    #     방위 부호반전 1.53 ↔ 0.41 회/s | 틱간 Δ방위 sd 6.41° ↔ 0.94°
+    #     실제 요레이트 MAD 3.0 ↔ 1.0 °/s
+    #   덤프 재구성 추정으로 이 항만 빼면 Δ방위 sd 6.2→4.1°, 부호반전
+    #   1.20→0.68회/s.
+    #   되살릴 일이 있으면(조향 지연이 다시 생기면) 파라미터로 올리면 된다.
     #     b = ψₑ + sign(e)·α + T_d · dψₑ/dt
-    # 같은 궤적 대입 — 되돌림 시작이 t=76.0 → t≈75.2 로 앞당겨진다.
-    # 0.6s 근거: 관측 지연(약 1s)보다 짧게 잡아 과감쇠·잡음 증폭을 피한다.
-    # 변화율은 EMA로 저역통과한다(GPS 헤딩 10Hz).
-    REJOIN_RATE_DAMP_S = 0.6
+    REJOIN_RATE_DAMP_S = 0.0
     REJOIN_RATE_EMA = 0.5
+    # 재합류 목표점의 **거리 하한** [m] (2026-08-17 신설).
+    #
+    # 종전 하한은 기하 제약 하나뿐이었다 — 2·R_min·sin(25°) = 1.267m, "도달 곡률이
+    # R_min 을 넘지 않는 최소 거리". 그런데 run_0817_020112 실측에서 GPS 구간
+    # ref[0] 거리의 **81.7%가 이 하한에 붙어** 있었다. 사실상 상수 1.267m다.
+    # κ = 2·sin(b)/d 이므로 거리가 짧을수록 같은 방위 잡음이 그대로 증폭된다 —
+    # 차선(2.04m) 대비 1.61배. 이것이 "GPS만 ref가 튄다"의 증폭단이다.
+    #
+    # 이 하한은 dSPACE 조향이 명령의 10~55%만 실현하던 시절의 보상이었는데,
+    # **조향 PI 도입(2026-08-17, 손상민) 후 서보 실현율이 80~107%로 올라갔다**
+    # (같은 run: 실제δ/명령δ = 차선 79.9% · GPS 91.7% · 회피 107.4%).
+    # 보상 대상이 사라졌으므로 CLAUDE.md §3 ③ 이 "응답이 살아 있다"고 기록한
+    # 밴드 [1.27, 1.8] 안에서 **완만한 쪽 끝**으로 옮긴다.
+    # ⚠ 실차 재검증 전까지는 잠정값 — RUNBOOK §5-2 의 단계별 시험 순서를 따를 것.
+    REJOIN_TARGET_MIN_M = 1.8
+    # ── 곡선 대응 2종 (2026-08-18 신설). run_0818_180614 실측에서 도출:
+    # 곡률 0.36(R 2.8m) 커브 진입 구간을 재생하니 두 가지가 동시에 걸렸다.
+    #  ① **선행 보상이 없다.** 명령 방위 b 는 ψₑ 를 뒤따르기만 했다 —
+    #     idx 344~348 에서 cross 0.09m(트랙 위)인데 b 가 ψₑ(-8~-16°)를 그대로 복사.
+    #     트랙이 휘는 만큼 미리 꺾지 않으니 ψₑ 가 쌓이고, idx 351 에서 -36°,
+    #     353 에서 -56° 까지 벌어졌다. 그때는 이미 늦어 cross 가 0.05→2.55m 로 발산.
+    #  ② **방위 상한 25° 에 물려 곡률이 안 나온다.** idx 350 부터 b 가 -25.0° 로
+    #     고착됐고, d=1.8m 에서 κ = 2·sin(25°)/1.8 = 0.469 가 천장이다. dSPACE 가
+    #     명령의 43~59% 만 실현하므로(CLAUDE.md §3 ③) 실제 κ 는 0.2~0.28 =
+    #     R 3.5~5m — 트랙이 요구하는 R 2.8m 를 물리적으로 못 돈다.
+    #
+    # 그래서 ① 트랙 곡률을 선행 보상으로 더하고, ② 곡선에서는 목표를 당겨
+    # 같은 25° 로 더 큰 곡률이 나오게 한다 (κ = 2·sin(b)/d 라 d 를 줄이면 커진다).
+    # 직선(κ≈0)에서는 두 항 모두 0 이 되어 **종전 동작과 완전히 같다** — 2026-08-17
+    # 잡음 대책(하한 1.8m)을 직선에서 그대로 보존하는 것이 설계 조건이었다.
+    #
+    # 선행 보상 이득 (0 = 끔, 1 = 트랙 곡률만큼 그대로 미리 꺾음).
+    REJOIN_CURVE_FF = 1.0
+    # 곡선에서 목표를 당기는 기준. 방위 상한 안에서 **트랙 곡률의 이 배수**를 낼 수
+    # 있도록 d 를 줄인다(오차 보정에 쓸 여유). 2.0 이면 |κ|>0.235 (R<4.3m) 부터
+    # 당기기 시작하고, 기하 하한 2·R_min·sin(25°)=1.267m 에서 멈춘다. 0 = 끔.
+    REJOIN_CURVE_MARGIN = 2.0
+    # 접근각 α 가 쓰는 횡오차 e 의 저역통과 시상수 [s] (2026-08-17 신설).
+    #
+    # run_0817_020112 갱신열 분석: Δψₑ 의 lag-1 자기상관은 +0.002 로 **백색 성분이
+    # 없다**(= 진짜 요운동이니 필터링하면 실동작을 죽인다). 반면 Δα 는 −0.142 로
+    # **54%가 백색잡음**이고 그 sd 는 0.628° = e 환산 1.26cm — RTK 위치 잡음이다.
+    # 그래서 필터는 **ψₑ 가 아니라 e 에만** 건다.
+    #   τ=0.15s → 10Hz 백색 성분 약 1/2, 지연 0.6m/s 에서 9cm.
+    REJOIN_E_LPF_S = 0.15
 
     def __init__(self, latlon_pts, n_points=30,
                  accel_ranges=(), parking_ranges=(), tangent_baseline_m=1.0,
-                 lookahead_m=0.0):
+                 lookahead_m=0.0, rate_damp_s=None, full_cross_m=None,
+                 target_max_m=None, target_min_m=None, e_lpf_s=None,
+                 curve_ff=None, curve_margin=None,
+                 stop_ranges=(), avoid_ranges=(), gps_only_ranges=()):
         """lookahead_m: ref 시작점을 최근접점이 아니라 이만큼 전방의 트랙
         점으로 민다. dSPACE는 첫 점만 목표로 쓰므로(stack_avoid 실측 주석)
         최근접점(차 옆구리, x≈0)을 주면 도달 곡률 κ=2y/(x²+y²)가 폭주해
         풀조향 위빙을 유발한다 — 회피(0.4m 호 lookahead)와 같은 원리로
-        전방 점을 목표로 제공 (2026-08-05 위빙 원인 분석)."""
+        전방 점을 목표로 제공 (2026-08-05 위빙 원인 분석).
+
+        rate_damp_s / full_cross_m / target_max_m: 재합류 기하의 세 이득.
+        None이면 클래스 기본값(REJOIN_*)을 쓴다. **주행 중 조정 가능해야 하므로**
+        인스턴스 속성이다 — stack_gps 노드가 ROS 파라미터로 노출하고 콜백에서
+        직접 갈아끼운다 (2026-08-17). 셋 다 "dSPACE 조향이 느리던 시절"에 맞춰
+        잡은 보상값이라 조향 응답 특성이 바뀌면 함께 재조정해야 한다."""
         self.n_points = n_points
         self.accel_ranges = list(accel_ranges)
         self.parking_ranges = list(parking_ranges)
+        # 지정 정지 지점 / 회피 허용 구간 (2026-08-18). accel·parking과 같은
+        # 인덱스 구간이지만 정지 쪽은 **구간 번호**를 내보낸다 — MGM이 지점별로
+        # "이미 정지함"을 기억해야 하기 때문 (GpsPath.msg stop_zone 주석).
+        self.stop_ranges = list(stop_ranges)
+        self.avoid_ranges = list(avoid_ranges)
+        self.gps_only_ranges = list(gps_only_ranges)
         self.lookahead_m = float(lookahead_m)
+        self.rate_damp_s = (self.REJOIN_RATE_DAMP_S if rate_damp_s is None
+                            else float(rate_damp_s))
+        self.full_cross_m = (self.REJOIN_FULL_CROSS_M if full_cross_m is None
+                             else float(full_cross_m))
+        self.target_max_m = (self.REJOIN_TARGET_MAX_M if target_max_m is None
+                             else float(target_max_m))
+        self.target_min_m = (self.REJOIN_TARGET_MIN_M if target_min_m is None
+                             else float(target_min_m))
+        self.e_lpf_s = (self.REJOIN_E_LPF_S if e_lpf_s is None
+                        else float(e_lpf_s))
+        self.curve_ff = (self.REJOIN_CURVE_FF if curve_ff is None
+                         else float(curve_ff))
+        self.curve_margin = (self.REJOIN_CURVE_MARGIN if curve_margin is None
+                             else float(curve_margin))
         self._prev_psi_e = None      # 재합류 감쇠항용 — 직전 헤딩오차와 시각
         self._prev_psi_t = None
         self._psi_rate = 0.0         # [rad/s] EMA 저역통과된 dψₑ/dt
+        self._e_lpf = None           # [m] 저역통과된 부호 있는 횡오차
+        self._prev_e_t = None
 
         lat0, lon0 = latlon_pts[0]
         self._lat0, self._lon0 = lat0, lon0
@@ -141,6 +226,7 @@ class PathEngine:
                for i in range(m - 1)]
         spacing = sorted(seg)[len(seg) // 2]
         k = max(1, round(tangent_baseline_m / max(spacing, 1e-6)))
+        self._spacing = spacing          # set_lookahead() 재계산용
         self._la_pts = max(0, round(lookahead_m / max(spacing, 1e-6)))
 
         # 접선 yaw: i-k → i+k 중심 차분 (끝단은 클램프)
@@ -158,9 +244,55 @@ class PathEngine:
             dyaw = wrap_angle(self.yaw[b] - self.yaw[a])
             self.curvature.append(dyaw / arc if arc > 1e-6 else 0.0)
 
+    def set_lookahead(self, lookahead_m):
+        """주행 중 lookahead 변경 (ROS 파라미터 콜백용) — 폴백 인덱스도 재계산."""
+        self.lookahead_m = float(lookahead_m)
+        self._la_pts = max(0, round(self.lookahead_m / max(self._spacing, 1e-6)))
+
     def to_enu(self, lat, lon):
         return ((lon - self._lon0) * self._m_per_deg_lon,
                 (lat - self._lat0) * M_PER_DEG_LAT)
+
+    def index_of(self, lat, lon):
+        """lat/lon → (최근접 웨이포인트 인덱스, 그 점까지 거리 [m]).
+
+        지정 구간을 **위경도로** 받기 위한 변환이다. 인덱스로 직접 받으면 트랙을
+        다시 기록하는 순간 전부 무의미해지지만, 위경도는 실제 장소를 가리키므로
+        같은 코스를 다시 딴 CSV 에서도 그대로 쓸 수 있다. 거리는 호출 측이
+        "이 트랙 위의 점이 맞나"를 검증(스냅 한계)하는 데 쓴다.
+        """
+        return self._nearest_idx(*self.to_enu(lat, lon))
+
+    def range_from_latlon(self, lat, lon, span_m=1.0):
+        """정지 지점 lat/lon → (start_idx, end_idx, 스냅 거리 [m]).
+
+        구간에 폭을 주는 이유: 판정이 "최근접 인덱스가 구간 안"이라 한 점짜리
+        구간도 원리상 놓치지 않지만(10Hz·0.6m/s = 갱신당 6cm, 간격 0.35m),
+        fix 튐이나 감속 중 인덱스 건너뜀에 대한 여유를 둔다. MGM 은 진입
+        한 번만 보고 이후는 자체 래치로 유지하므로 폭이 정지 시간에 영향을
+        주지는 않는다.
+        """
+        i, d = self.index_of(lat, lon)
+        k = max(1, round(span_m / max(self._spacing, 1e-6)))
+        return i, min(i + k, len(self.e) - 1), d
+
+    def index_before(self, idx, dist_m):
+        """idx 에서 트랙을 따라 dist_m 뒤로 간 인덱스 (트랙 시작에서 멈춤).
+
+        회피 허용 구간을 **앞쪽으로 늘리는** 데 쓴다. 사람은 "콘이 있는 곳"을
+        구간으로 찍지만, 회피 판단은 그보다 앞에서 성립해야 한다 — 감지 거리
+        3m 안에 들어와도 구간 밖이면 MGM 이 AVOID 로 못 가고, 구간에 들어왔을
+        땐 이미 TTC 가 문턱 아래로 떨어져 있다 (2026-08-18 실차 run_0818_184019:
+        t=60.6s 거리 3.6m 에서 avoidable=1 이었는데 구간 진입은 t=61.7s,
+        그때는 1.9m·TTC 1.17 로 판정이 꺼져 회피가 아예 성립하지 않았다).
+        """
+        if dist_m <= 0.0:
+            return idx
+        acc, i = 0.0, max(0, min(idx, len(self.e) - 1))
+        while i > 0 and acc < dist_m:
+            acc += math.hypot(self.e[i] - self.e[i - 1], self.n[i] - self.n[i - 1])
+            i -= 1
+        return i
 
     def _nearest_idx(self, e, n):
         best, best_d2 = 0, float("inf")
@@ -170,9 +302,56 @@ class PathEngine:
                 best, best_d2 = i, d2
         return best, math.sqrt(best_d2)
 
+    def _foot_on_track(self, idx, e, n):
+        """최근접 **꼭짓점** idx 주변 두 선분에 내린 수선의 발 → (fe, fn, 수직거리).
+
+        ★ 2026-08-17 신설. 종전엔 `_nearest_idx` 의 **점-대-점 거리**를 그대로
+        cross_track_m 으로 내보냈다. 트랙은 이산 웨이포인트라 그 거리는 차가
+        트랙 위를 얌전히 따라가도 **웨이포인트 간격에 맞춰 톱니로 진동한다** —
+        수선의 발이 두 점의 중간에 있을 때 최대, 꼭짓점 옆일 때 최소.
+          h ↔ √(h² + (L/2)²),  L = 웨이포인트 간격
+        run_0817_020112 실측(간격 0.342m, 0.6m/s): 주기 0.583s · 진폭 0.081m,
+        이론값 0.083m 과 2mm 이내 일치. 갱신당 |Δcross| 3.43cm 중 69%가 이 톱니였다.
+        실제 수직 횡오차가 0.104m 로 일정한 구간에서 0.104~0.17m 를 오갔다.
+
+        이 값은 **MGM 의 waypoint→lane 전이 게이트**(§4 `lane_entry_max_cross_m`,
+        기본 0.5m)의 입력이다 — 0.5m 문턱에 0.08m 짜리 가짜 진동이 실려 있었다.
+        속도·간격이 커지면 진폭도 커지므로(L/2 에 비례) 그대로 둘 수 없다.
+
+        수선의 발은 최근접 꼭짓점에 인접한 두 선분 중 하나에 있다(트랙에 극단적
+        예각이 없는 한). 그래서 O(1) — 전체 선분을 다시 훑지 않는다.
+        """
+        best = None
+        for a in (idx - 1, idx):
+            if a < 0 or a + 1 >= len(self.e):
+                continue
+            ex, ey = self.e[a + 1] - self.e[a], self.n[a + 1] - self.n[a]
+            L2 = ex * ex + ey * ey
+            if L2 < 1e-12:
+                continue
+            # 선분 위로 클램프한 투영 파라미터 t∈[0,1]
+            t = ((e - self.e[a]) * ex + (n - self.n[a]) * ey) / L2
+            t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+            fe, fn = self.e[a] + t * ex, self.n[a] + t * ey
+            d2 = (e - fe) ** 2 + (n - fn) ** 2
+            if best is None or d2 < best[2]:
+                best = (fe, fn, d2)
+        if best is None:      # 트랙 점이 1개뿐 = 선분 없음 → 꼭짓점으로 폴백
+            return self.e[idx], self.n[idx], math.hypot(e - self.e[idx],
+                                                        n - self.n[idx])
+        return best[0], best[1], math.sqrt(best[2])
+
     @staticmethod
     def _in_ranges(idx, ranges):
         return any(a <= idx <= b for a, b in ranges)
+
+    @staticmethod
+    def _zone_id(idx, ranges):
+        """구간 목록 중 몇 번째 안에 있나 — 0 = 어디에도 없음, 1~ = 번호."""
+        for k, (a, b) in enumerate(ranges):
+            if a <= idx <= b:
+                return k + 1
+        return 0
 
     def _target_idx(self, idx, ev, nv, c, s, cross=0.0):
         """ref 시작점 = **차량 앞쪽**에 있으면서 lookahead_m 이상 떨어진 첫 트랙 점.
@@ -216,7 +395,8 @@ class PathEngine:
         return min(idx + self._la_pts, last)
 
     def snapshot(self, lat, lon, heading=None, now=None):
-        """현재 fix → dict(points, accel_zone, parking_zone, idx, cross_track_m).
+        """현재 fix → dict(points, accel_zone, parking_zone, stop_zone, avoid_zone,
+        gps_only_zone, idx, cross_track_m).
 
         points: [(x, y, yaw, curvature)] vehicle frame, 최근접점부터 앞으로
         n_points개 (트랙 끝에서는 남은 만큼만).
@@ -227,7 +407,8 @@ class PathEngine:
         (2026-08-01 첫 주행에서 이 가정 위반으로 선회 발산 — COG 도입 계기).
         """
         ev, nv = self.to_enu(lat, lon)
-        idx, dist = self._nearest_idx(ev, nv)
+        idx, _vertex_dist = self._nearest_idx(ev, nv)
+        fe, fn, dist = self._foot_on_track(idx, ev, nv)   # 선분까지 수직거리
         psi = self.yaw[idx] if heading is None else heading
         c, s = math.cos(psi), math.sin(psi)
 
@@ -259,11 +440,26 @@ class PathEngine:
             #   정상 온트랙 주행(cross 0.03~0.17m)에 대입해 확인했다 — 트랙 점을
             #   그대로 쓸 때와 명령 차이가 **±1~2°**(최대 4.65°)로 무시할 수준이다.
             #   e→0 이면 α→0 이라 b→ψₑ 로 수렴해 트랙 방향 정렬만 남는다.
-            de0, dn0 = self.e[idx] - ev, self.n[idx] - nv
-            e_signed = -s * de0 + c * dn0        # 최근접 트랙점의 차량 좌표 y (좌 +)
-            # ψₑ 변화율 (감쇠항) — dt 이상치는 무시하고 EMA 로 저역통과
+            # 부호 있는 횡오차 = **수선의 발**의 차량 좌표 y (좌 +).
+            # 종전엔 최근접 꼭짓점을 썼는데, 그러면 종방향 성분이 헤딩오차만큼
+            # y 로 새어 들어온다(누설 ≈ 종방향 offset × sin ψₑ). run_0817_020112
+            # 실측: 웨이포인트 위상에 따라 e 가 0.016m 흔들려 α 에 0.82°의 가짜
+            # 진폭을 만들었다. 수선의 발은 정의상 종방향 성분이 0이라 누설이 없다.
+            de0, dn0 = fe - ev, fn - nv
+            e_signed = -s * de0 + c * dn0
             if now is None:
                 now = time.monotonic()
+            # e 저역통과 — 백색잡음이 있는 채널은 여기뿐이다(클래스 주석 참조).
+            if self.e_lpf_s > 0.0:
+                dt_e = None if self._prev_e_t is None else now - self._prev_e_t
+                if self._e_lpf is None or dt_e is None or not (0.0 < dt_e < 1.0):
+                    self._e_lpf = e_signed       # 첫 호출·시간 점프 = 리셋
+                else:
+                    k = dt_e / (self.e_lpf_s + dt_e)
+                    self._e_lpf += k * (e_signed - self._e_lpf)
+                e_signed = self._e_lpf
+            self._prev_e_t = now
+            # ψₑ 변화율 (감쇠항) — dt 이상치는 무시하고 EMA 로 저역통과
             if self._prev_psi_t is not None:
                 dt = now - self._prev_psi_t
                 if 0.0 < dt < 1.0:
@@ -272,21 +468,46 @@ class PathEngine:
                                       (1.0 - self.REJOIN_RATE_EMA) * self._psi_rate)
             self._prev_psi_e, self._prev_psi_t = pyaw, now
 
+            # ── 목표 거리 d 를 **먼저** 확정한다 (선행 보상이 d 에 의존하므로).
+            geom_floor = (2.0 * self.MIN_TURN_RADIUS_M *
+                          math.sin(self.MAX_TARGET_BEARING_RAD))   # 1.267m
+            d = min(math.hypot(px, py), self.target_max_m)
+            # 하한 두 개를 적용해 항상 이기게 한다:
+            #   ① 기하 제약 2·R_min·sin β — 도달 곡률 R 이 R_min 이상 (안전 바닥)
+            #   ② REJOIN_TARGET_MIN_M — 잡음 증폭 억제 (재조정 대상, 클래스 주석)
+            # target_min 이 max 보다 크게 설정돼도 밴드를 벗어나지 않도록 묶는다.
+            d = max(d, geom_floor, min(self.target_min_m, self.target_max_m))
+            # 곡선에서 목표 당기기 (2026-08-18) — 방위 상한 안에서 트랙 곡률의
+            # curve_margin 배를 낼 수 있는 거리까지. 직선에서는 조건이 안 걸린다.
+            k_track = abs(pcurv)
+            if self.curve_margin > 0.0 and k_track > 1e-6:
+                d_cap = (2.0 * math.sin(self.MAX_TARGET_BEARING_RAD) /
+                         (self.curve_margin * k_track))
+                d = max(geom_floor, min(d, d_cap))
+
             alpha = self.MAX_TARGET_BEARING_RAD * min(
-                1.0, abs(e_signed) / max(self.REJOIN_FULL_CROSS_M, 1e-6))
+                1.0, abs(e_signed) / max(self.full_cross_m, 1e-6))
+            # 곡률 선행 보상 — 거리 d 의 현(chord)이 트랙 호를 따라 그리는 방위.
+            # ψₑ 가 쌓이기를 기다리지 않고 트랙이 휘는 만큼 **미리** 꺾는다.
+            # 트랙 곡률은 CSV 에서 온 값이라 측정 잡음이 없다 — 이 항은 잡음을
+            # 늘리지 않는다(2026-08-17 잡음 대책과 충돌하지 않는 이유).
+            b_ff = 0.0
+            if self.curve_ff != 0.0:
+                arg = max(-1.0, min(1.0, d * pcurv / 2.0))
+                b_ff = self.curve_ff * math.asin(arg)
             b = (pyaw + math.copysign(alpha, e_signed) +
-                 self.REJOIN_RATE_DAMP_S * self._psi_rate)
+                 self.rate_damp_s * self._psi_rate + b_ff)
             b = max(-self.MAX_TARGET_BEARING_RAD,
                     min(self.MAX_TARGET_BEARING_RAD, b))
-            d = min(math.hypot(px, py), self.REJOIN_TARGET_MAX_M)
-            d = max(d, 2.0 * self.MIN_TURN_RADIUS_M *
-                    math.sin(self.MAX_TARGET_BEARING_RAD))
             points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
 
         return {
             "points": points,
             "accel_zone": self._in_ranges(idx, self.accel_ranges),
             "parking_zone": self._in_ranges(idx, self.parking_ranges),
+            "stop_zone": self._zone_id(idx, self.stop_ranges),
+            "avoid_zone": self._in_ranges(idx, self.avoid_ranges),
+            "gps_only_zone": self._in_ranges(idx, self.gps_only_ranges),
             "idx": idx,
             "cross_track_m": dist,
             "at_end": idx >= len(self.e) - 2,
