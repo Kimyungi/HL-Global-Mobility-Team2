@@ -46,12 +46,54 @@ mgm_node:
     # ⚠ stack_avoid/config/params.yaml 의 target_speed_mps 와 **반드시 같이** 바꿀 것
     #   (그쪽이 AVOID 스테이트의 v_suggest 소스 — launch 주석에도 명시).
     # ⚠ lookahead는 그대로 1.8m: 미리보기 3.6s → 3.0s 로 위 권장(2s)보다 여유.
-    v_base: 0.6
+    # 0.6 → 1.0 (2026-08-18). 차선·GPS 만 올리고 **회피는 v_avoid 로 0.6 유지**한다.
+    # 2026-08-17 의 1.0 시도(run_0817_041219)는 회피가 79초 중 41초(52%)를 먹고
+    # 횡오차 2.08m 로 되돌렸는데, 그 원인은 속도가 아니라 **회피 트리거 빈도**였다
+    # (진입 1회 = 12초 고정 × detect_range 3.0→5.0 상향). 지금은 두 가지가 다르다:
+    #   · detect_range 는 3.0 그대로 (그때의 처방이 틀렸다는 것이 §5-1c 결론)
+    #   · 회피가 **구간 게이트**로 묶여 지정 구간 밖에서는 아예 진입하지 않는다
+    # 차선 구간은 그 run 에서도 1.0 m/s 에서 멀쩡했다 (cross 평균 0.061~0.114m).
+    # ⚠ stack_avoid 의 target_speed_mps 도 **반드시 같이** 1.0 으로 (TTC 자차속도).
+    v_base: 1.0
     v_accel_zone: 1.0
     v_narrow: 0.2
 
-    # avoid 안전 바닥
-    ttc_stop: 0.8           # [s]
+    # AVOID 스테이트 전용 속도 상한 [m/s] — **0 = 상한 없음(구동작), 현재 꺼짐.**
+    #
+    # 기구는 남겨 두되(2026-08-17 신설, core_replay 로 검증 완료) v_base 가 0.6 이라
+    # 지금은 쓸 일이 없어 끈다. v_base 를 1.0 이상으로 올릴 때 **회피 구간만 0.6 으로
+    # 유지하는 용도**로 켜면 된다 — `ros2 param set /adas_mgm_node v_avoid 0.6`.
+    #
+    # ★ 켤 때 stack_avoid 의 target_speed_mps 를 내리는 방식은 쓰지 말 것.
+    #   그 값은 ① v_suggest ② **TTC 자차속도 폴백**(`/vehicle/vector` 미수신 시 —
+    #   실측 0건이라 항상 폴백)을 겸한다. v_base 1.0 으로 달리며 그것만 0.6 으로
+    #   내리면 TTC = gap/0.6 이 되어 1.67배 부풀고 avoidable 판정·TTC 안전 바닥이
+    #   그만큼 늦게 걸린다. target_speed_mps 는 항상 v_base 와 같게 두어 TTC 를
+    #   정직하게 유지한다 (§3 규약).
+    # ⚠ 켜면 §3 ① "감속하면서 조향 금지"와 겹친다: 진입 시 v_base → v_avoid 감속이
+    #   생긴다. 회피 시험의 확인 대상 (RUNBOOK §5-1c).
+    # 회피 구간만 0.6 유지 (2026-08-18) — v_base 를 1.0 으로 올리면서 켰다.
+    # 진입 시 1.0 → 0.6 감속이 생기지만 조향 응답 하한 0.5 위이고 a_down 1.5 로
+    # 0.27s 면 끝난다 (run_0812_234253 의 0.44 무반응과는 다름). 회피 시험 확인 대상.
+    v_avoid: 0.6
+
+    # ── 지정 지점 정지 [틱] (2026-08-18) — GpsPath.stop_zone 지점에 도달하면
+    # 정지하고 이만큼 머문 뒤 스스로 재출발한다. 300틱 = 3.0s.
+    # 지점을 안 잡으면(stack_gps stop_points_latlon 비어 있음) stop_zone 이 항상
+    # 0이라 아무 일도 없다 — 그래서 여기 기본값을 켜 두어도 안전하다.
+    # 카운트다운은 **실제로 멈춘 뒤** 시작한다(감속 시간은 정차 시간에서 안 깎임).
+    stop_zone_hold_cycles: 300
+
+    # 회피 허용 구간 밖에서 AVOID 전이 금지 (2026-08-18). 기본은 **끔** = 어디서나
+    # 회피(구동작). 실차 통합 launch 는 이것을 인자로 켠다(avoid_zone_only:=true 가
+    # 그쪽 기본값) — 시험 코스에서 회피를 지정 구간에만 쓰기 위한 운용 스위치다.
+    # ⚠ 켜면 구간 밖 장애물의 방어선은 stack_estop 뿐이다 (MGM 의 TTC 안전 바닥은
+    #   AVOID 스테이트 안에서만 걸린다).
+    avoid_zone_only: false
+
+    # avoid 안전 바닥 — 속도에 비례해 올린다 (2026-08-18, v_base 0.6→1.0).
+    # 1.0 m/s 정지 필요거리 1.09m (§5-1c 실측식) ÷ 1.0 m/s ≈ 1.1s + 여유.
+    ttc_stop: 1.3           # [s]
 
     # 역방향 정지 (§4 waypoint) — |ref[0].yaw| > 2.1rad(120°)가 50틱(0.5s)
     # 지속되면 차가 경로를 등진 것 → v_ref 0 (유턴 후 트랙 역추종 차단)
@@ -74,6 +116,11 @@ mgm_node:
     # 무효화 + AVOID 스테이트 중이면 estop 보정. stack_avoid 발행 주기 = 스캔
     # 10Hz이므로 0.5s = 5주기 결손.
     avoid_stale_timeout_sec: 0.5
+
+    # ⚠ v_base 1.0 과 함께 바꾼 것들 (되돌릴 땐 세트로):
+    #   stack_avoid target_speed_mps 0.6→1.0 · ttc_stop 0.8→1.3
+    #   launch estop_on/off 0.70/0.80→1.20/1.35 · dynamic_stop 1.20→1.35
+    #   (detect_range_m 은 **건드리지 않는다** — RUNBOOK §5-1c 결론)
 
     # 조립/병합 (실행부 파라미터 — 판단 아님)
     blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)

@@ -1,0 +1,14 @@
+# 로버 GNSS(u-blox 1546:*) USB 리셋 허용 — stack_gps 가 NMEA 두절 시 자동 복구할 때 쓴다.
+#
+# 왜: 2026-08-18 실차에서 수신기가 "열거는 됐는데 출력이 죽은" 상태로 빠졌다
+#     (RTCM 쓰기 성공 · NMEA 0줄 · C/N0 0dB). 뽑았다 꽂으면 복구됐고, 그 소프트웨어
+#     등가물이 USBDEVFS_RESET 이다. 그런데 /dev/bus/usb/<bus>/<dev> 기본 권한이
+#     root:root 0664 라 sudo 없이는 못 연다 — 이 장치에 한해 0666 으로 연다.
+#
+# 설치:
+#   sudo cp ~/FMA_ws/src/stack_gps/tools/99-ublox-f9p-usbreset.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+#   (수신기를 한 번 뽑았다 꽂으면 확실하다)
+#
+# 범위: u-blox 벤더(1546) 장치만. 다른 USB 장치 권한에는 영향이 없다.
+SUBSYSTEM=="usb", ATTR{idVendor}=="1546", MODE="0666"

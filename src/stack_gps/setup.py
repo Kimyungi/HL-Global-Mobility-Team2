@@ -21,6 +21,9 @@ setup(
     entry_points={
         'console_scripts': [
             'stack_gps_node = stack_gps.node:main',
+            # 현장에서 "지금 이 자리"를 정지 지점·회피 구간으로 찍는 도구.
+            # 실차 launch 가 도는 중에 새 터미널로 실행한다 (구독만 — 포트 안 건드림).
+            'mark_zone = stack_gps.mark_zone:main',
         ],
     },
 )
