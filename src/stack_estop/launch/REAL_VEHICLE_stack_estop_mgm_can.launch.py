@@ -47,6 +47,12 @@ def generate_launch_description():
         ),
 
         DeclareLaunchArgument(
+            'front_lidar_port',
+            default_value='/dev/ttyUSB0',
+            description='Serial device used by the front YDLIDAR.',
+        ),
+
+        DeclareLaunchArgument(
             'laser_yaw_in_base_rad',
             default_value='1.57079632679',
         ),
@@ -76,7 +82,7 @@ def generate_launch_description():
             name='ydlidar_ros2_driver_node',
             namespace='/',
             parameters=[LaunchConfiguration('ydlidar_params'), {
-                'port': '/dev/ttyUSB0',
+                'port': LaunchConfiguration('front_lidar_port'),
                 'baudrate': 230400,
                 'lidar_type': 1,
                 'intensity_bit': 8,
