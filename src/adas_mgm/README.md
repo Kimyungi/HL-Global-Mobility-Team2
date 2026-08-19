@@ -23,6 +23,101 @@ adas_mgm/
 g++ -std=c++17 -Wall -Wextra -c core/mgm_step.cpp -I.   # 통과해야 정상
 ```
 
+## 실험용 generated backend (LANE/WAYPOINT, bench only)
+
+ROS 노드의 기본 backend는 기존 4상태 C++ `core`이며, 기본 빌드에는 생성
+backend가 링크되지 않는다. `ADAS_MGR2` v1.68을 실행하려면 아래 두 단계를 모두
+명시해야 한다.
+
+1. 지원 호스트에서 CMake opt-in:
+
+   ```bash
+   colcon --log-base log_generated build \
+     --build-base build_generated \
+     --install-base install_generated \
+     --symlink-install --packages-up-to adas_mgm \
+     --cmake-args \
+       -DADAS_MGM_ENABLE_GENERATED_BACKEND=ON \
+       -DBUILD_TESTING=ON
+   ```
+
+2. **CAN을 실행하지 않는 bench에서만** backend와 제한 범위 확인을 함께 지정:
+
+   ```bash
+   source install_generated/setup.bash
+   ros2 launch adas_mgm generated_backend_bench.launch.py \
+     backend:=generated \
+     generated_backend_acknowledge_limited_scope:=true
+   ```
+
+bench launch는 `mgm_node`만 실행하며 `bridge_dspace`, CAN 인터페이스 및
+`REAL_VEHICLE_lane_gps_can.launch.py`를 실행하지 않는다. 실제 차량 또는 CAN이
+연결된 환경에서 이 실험 backend를 사용하지 말 것. 기본 실행은 언제나
+`backend:=core`, `generated_backend_acknowledge_limited_scope:=false`이다.
+출력도 운영 `/adas/target_ref`가 아니라 격리된 `/bench/adas/target_ref`로 강제
+remap된다. bench 결과는 다음 토픽에서 확인한다.
+
+```bash
+ros2 topic echo /bench/adas/target_ref
+# 또는 발행 주기만 확인
+ros2 topic hz /bench/adas/target_ref
+```
+
+생성 backend 빌드는 Linux x86-64에서 GNU/Clang C·C++ 컴파일러를 사용할 때만
+지원한다. opt-in을 켠 채 미지원 환경에서 구성하면 CMake가 즉시 실패한다.
+`BUILD_TESTING=ON`이면 opt-in이 꺼져 있어도 패리티 테스트용 생성 라이브러리가
+빌드될 수 있지만, `ADAS_MGM_ENABLE_GENERATED_BACKEND=OFF`인 `mgm_node`에는
+링크되지 않는다.
+
+v1.68은 `LANE`과 `WAYPOINT` 두 상태의 공통 동작만 검증한 실험 모델이다. 다음
+운영 4상태 기능은 포함하지 않는다.
+
+- `AVOID`/`PARKING` 상태와 해당 경로·속도 처리
+- TTC 즉시 정지와 좁은 통로 속도 제한
+- 역방향 및 종점 래치, `estop_latch_release`
+- 회피 복귀 hold와 회피 timeout
+
+생성 C 자체의 `gps_at_end`는 운영 core의 래치가 아니라 현재 입력값을 직접
+사용한다. 실험 runtime은 이 차이를 숨겨 운행하지 않고, `AVOID`/`PARKING`, TTC
+안전 바닥, `gps_at_end`, 신뢰 가능한 역방향 입력이 들어오면 지원 범위 이탈로
+판정해 비어 있지 않은 0속도 참조를 영구 래치한다. 다시 시험하려면 원인을 제거한
+뒤 노드를 재시작해야 한다. 생성 API는 전역 상태 기반이라 adapter도 프로세스당
+단일 인스턴스·단일 10ms 스레드 사용을 강제한다.
+
+CMake cache는 이전 값을 유지한다. 한 번 ON으로 빌드한 디렉터리에서 옵션을
+생략해도 자동으로 OFF로 돌아가지 않으므로, 검증과 운영 빌드는 아래처럼 서로
+다른 build/install/log 디렉터리를 사용하고 옵션 값도 항상 명시한다.
+
+```bash
+# 기본 production/core 빌드
+colcon --log-base log_core build \
+  --build-base build_core \
+  --install-base install_core \
+  --symlink-install --packages-up-to adas_mgm \
+  --cmake-args \
+    -DADAS_MGM_ENABLE_GENERATED_BACKEND=OFF \
+    -DBUILD_TESTING=OFF
+
+# 지원 호스트의 generated 패리티 및 bench 빌드
+colcon --log-base log_generated build \
+  --build-base build_generated \
+  --install-base install_generated \
+  --symlink-install --packages-up-to adas_mgm \
+  --cmake-args \
+    -DADAS_MGM_ENABLE_GENERATED_BACKEND=ON \
+    -DBUILD_TESTING=ON
+colcon --log-base log_generated_test test \
+  --build-base build_generated \
+  --install-base install_generated \
+  --packages-select adas_mgm --event-handlers console_direct+
+```
+
+생성 파일은 MathWorks Academic License 고지를 유지하며 비상업적 학업 용도로만
+사용한다. opt-in 빌드는 생성 코드를 `mgm_node`에 정적으로 링크하므로 결과
+바이너리에도 해당 제한이 적용된다. 생성 헤더의 `Validation result: Not run`은
+그대로이며, 패리티 테스트가 MathWorks 코드 생성 검증 보고서를 대신하지 않는다.
+생성 예제 `ert_main.c`는 ROS 실행 경로에 포함하지 않는다.
+
 ## back-to-back 검증 (§5.5)
 
 ```bash

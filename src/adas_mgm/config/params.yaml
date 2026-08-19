@@ -1,5 +1,10 @@
 mgm_node:
   ros__parameters:
+    # 기본은 기존 4상태 C++ core. generated는 빌드 opt-in과 아래 명시적 확인을
+    # 모두 요구하는 LANE/WAYPOINT 2상태 bench 실험 전용이다.
+    backend: core
+    generated_backend_acknowledge_limited_scope: false
+
     # lane ↔ waypoint 히스테리시스 (CLAUDE.md §4)
     # 2026-08-14 run_0814_184624 실측으로 상향: 차선 confidence가 평균 0.47,
     # 중앙 0.48로 구 임계(0.4/0.6) 밴드 안에서 진동 → 110초에 전이 22회,
