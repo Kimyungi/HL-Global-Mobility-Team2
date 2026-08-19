@@ -67,6 +67,16 @@ CoreSnapshot makeSnapshot(int tick)
   makePath(input.lane_path, 1.0f, 0.0f);
   makePath(input.gps_path, 1.2f, 0.05f);
 
+  // Exercise the actual one-point input contract in both shared states. The
+  // first tick is a fresh observation; the following ticks are a consecutive
+  // stale run that must stay expanded to 20 output points with full parity.
+  if (tick >= 30 && tick < 50) {
+    makePath(input.lane_path, 1.0f, 0.0f, 1);
+  }
+  if (tick >= 530 && tick < 545) {
+    makePath(input.gps_path, 1.2f, 0.05f, 1);
+  }
+
   if (tick >= 20 && tick < 70) {
     input.gps_accel_zone = true;
   }
@@ -88,20 +98,32 @@ CoreSnapshot makeSnapshot(int tick)
     // Between the custom and generated-default lane-entry cross-track gates.
     input.gps_cross_track = 0.46f;
   }
-  if (tick >= 500 && tick < 620) {
+  if (tick >= 500 && tick < 760) {
     input.lane_confidence = 0.1f;
   }
-  if (tick >= 550 && tick < 610) {
-    input.traffic_stop_required = true;
-  }
-  if (tick >= 570 && tick < 600) {
+  if (tick >= 530 && tick < 650) {
+    // Pure WAYPOINT acceleration: no traffic stop or E-stop overlaps.
     input.gps_accel_zone = true;
   }
-  if (tick >= 700 && tick < 710) {
+  if (tick >= 650 && tick < 735) {
+    input.traffic_stop_required = true;
+  }
+  if (tick >= 740 && tick < 745) {
+    // Isolated WAYPOINT E-stop, after the normal-stop interval ends.
+    input.estop = true;
+  }
+  if (tick >= 820 && tick < 830) {
+    // LANE E-stop coverage.
     input.estop = true;
   }
   input.lane_updated = tick % 2 == 0;
   input.gps_updated = tick % 3 == 0;
+  if (tick >= 30 && tick < 50) {
+    input.lane_updated = tick == 30;
+  }
+  if (tick >= 530 && tick < 545) {
+    input.gps_updated = tick == 530;
+  }
   return input;
 }
 
@@ -144,12 +166,17 @@ int main()
   int mismatches = 0;
   bool seen_state[2]{};
   bool seen_source[2]{};
-  bool seen_immediate_stop = false;
-  bool seen_normal_stop = false;
+  bool seen_accel[2]{};
+  bool seen_estop[2]{};
+  bool seen_normal_stop[2]{};
+  bool seen_single_point[2]{};
+  bool seen_single_point_stale_parity[2]{};
+  bool seen_accel_target = false;
   bool seen_forward = false;
   bool seen_lane_exit = false;
   bool seen_lane_return = false;
   bool seen_cross_track_gate_hold = false;
+  int consecutive_single_point_stale = 0;
   uint8_t previous_state = 0U;
   constexpr int kTicks = 900;
   for (int tick = 0; tick < kTicks; ++tick) {
@@ -169,16 +196,66 @@ int main()
       std::fprintf(
         stderr, "out-of-scope reference source at tick=%d: %u\n", tick, reference.path_source);
     }
-    seen_immediate_stop = seen_immediate_stop || reference.immediate_stop;
-    seen_normal_stop = seen_normal_stop ||
-      (input.traffic_stop_required && !reference.immediate_stop && close(reference.v_ref, 0.0f));
+    if (reference.state < 2) {
+      const auto state = reference.state;
+      seen_accel[state] = seen_accel[state] ||
+        (input.gps_accel_zone && !input.traffic_stop_required && !input.estop &&
+        !reference.immediate_stop && reference.v_ref > 0.0f);
+      seen_accel_target = seen_accel_target ||
+        (input.gps_accel_zone && !input.traffic_stop_required && !input.estop &&
+        close(reference.v_ref, params.v_accel_zone));
+      seen_estop[state] = seen_estop[state] ||
+        (input.estop && reference.immediate_stop && close(reference.v_ref, 0.0f));
+      seen_normal_stop[state] = seen_normal_stop[state] ||
+        (input.traffic_stop_required && !input.estop && !reference.immediate_stop &&
+        close(reference.v_ref, 0.0f));
+    }
     seen_forward = seen_forward || reference.v_ref > 0.0f;
     seen_lane_exit = seen_lane_exit || (previous_state == 0U && reference.state == 1U);
     seen_lane_return = seen_lane_return || (previous_state == 1U && reference.state == 0U);
     seen_cross_track_gate_hold = seen_cross_track_gate_hold ||
-      (tick >= 360 && tick < 420 && reference.state == 1U);
+      (reference.state == 1U &&
+      input.lane_confidence > params.lane_conf_return &&
+      reference_state.lane_high_cnt >= params.n_cycles &&
+      input.gps_cross_track > params.lane_entry_max_cross);
     previous_state = reference.state;
-    if (!equal(reference, actual)) {
+
+    const bool outputs_match = equal(reference, actual);
+    const bool selected_single_point =
+      (reference.path_source == 0U && input.lane_path.n == 1) ||
+      (reference.path_source == 1U && input.gps_path.n == 1);
+    const bool selected_source_updated =
+      reference.path_source == 0U ? input.lane_updated : input.gps_updated;
+    bool single_point_contract_ok = true;
+    if (selected_single_point) {
+      if (reference.n_points != MGM_NUM_POINTS || actual.n_points != MGM_NUM_POINTS) {
+        single_point_contract_ok = false;
+        if (mismatches < 10) {
+          std::fprintf(
+            stderr,
+            "tick=%d single-point expansion failed: C++ n=%d ERT n=%d expected=%d\n",
+            tick, reference.n_points, actual.n_points, MGM_NUM_POINTS);
+        }
+      } else if (reference.state < 2) {
+        seen_single_point[reference.state] = true;
+      }
+
+      if (!selected_source_updated) {
+        ++consecutive_single_point_stale;
+        if (consecutive_single_point_stale >= 3 && outputs_match &&
+          single_point_contract_ok && reference.state < 2)
+        {
+          // equal() compares state, velocity, n_points, and all 20 point fields.
+          seen_single_point_stale_parity[reference.state] = true;
+        }
+      } else {
+        consecutive_single_point_stale = 0;
+      }
+    } else {
+      consecutive_single_point_stale = 0;
+    }
+
+    if (!outputs_match || !single_point_contract_ok) {
       if (mismatches < 10) {
         std::fprintf(
           stderr,
@@ -206,15 +283,26 @@ int main()
         stderr, "coverage missing: state[%d]=%d source[%d]=%d\n",
         i, seen_state[i], i, seen_source[i]);
     }
+    if (!seen_accel[i] || !seen_estop[i] || !seen_normal_stop[i] ||
+      !seen_single_point[i] || !seen_single_point_stale_parity[i])
+    {
+      ++mismatches;
+      std::fprintf(
+        stderr,
+        "state[%d] coverage missing: accel=%d estop=%d normal_stop=%d "
+        "single=%d single_stale_parity=%d\n",
+        i, seen_accel[i], seen_estop[i], seen_normal_stop[i],
+        seen_single_point[i], seen_single_point_stale_parity[i]);
+    }
   }
-  if (!seen_immediate_stop || !seen_normal_stop || !seen_forward ||
-    !seen_lane_exit || !seen_lane_return || !seen_cross_track_gate_hold)
+  if (!seen_forward || !seen_accel_target || !seen_lane_exit || !seen_lane_return ||
+    !seen_cross_track_gate_hold)
   {
     ++mismatches;
     std::fprintf(
       stderr,
-      "coverage missing: immediate=%d normal_stop=%d forward=%d exit=%d return=%d cross=%d\n",
-      seen_immediate_stop, seen_normal_stop, seen_forward, seen_lane_exit, seen_lane_return,
+      "coverage missing: forward=%d accel_target=%d exit=%d return=%d cross_ready_hold=%d\n",
+      seen_forward, seen_accel_target, seen_lane_exit, seen_lane_return,
       seen_cross_track_gate_hold);
   }
 

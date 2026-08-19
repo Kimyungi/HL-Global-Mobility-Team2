@@ -22,6 +22,12 @@ as a raw stop input, while the production core deliberately latches a valid
 track end until an explicit release. That policy difference is not part of the
 two-state switching experiment and must not be presented as verified parity.
 
+`gps_heading_valid` is held false as well. Version 1.68 does not implement the
+production core's WAYPOINT wrong-way counters or latch, so heading-valid and
+wrong-way behavior is outside this parity scope. "WAYPOINT parity" here covers
+the switching, path, and longitudinal items listed above, not every production
+WAYPOINT safety policy.
+
 Included:
 
 - model API and bus definitions (`ADAS_MGR2.c/.h`, private/types headers)
