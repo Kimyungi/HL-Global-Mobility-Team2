@@ -73,7 +73,7 @@ CoreSnapshot makeSnapshot(int tick)
   if (tick >= 30 && tick < 50) {
     makePath(input.lane_path, 1.0f, 0.0f, 1);
   }
-  if (tick >= 530 && tick < 545) {
+  if (tick >= 550 && tick < 570) {
     makePath(input.gps_path, 1.2f, 0.05f, 1);
   }
 
@@ -82,6 +82,14 @@ CoreSnapshot makeSnapshot(int tick)
   }
   if (tick >= 100 && tick < 170) {
     input.traffic_stop_required = true;
+  }
+  if (tick >= 140 && tick < 160) {
+    // LANE priority: traffic stop must override acceleration.
+    input.gps_accel_zone = true;
+  }
+  if (tick >= 160 && tick < 165) {
+    // LANE priority: E-stop must override the active traffic stop.
+    input.estop = true;
   }
   if (tick >= 200 && tick < 230) {
     // Between the custom and generated-default lane-exit thresholds.
@@ -98,15 +106,28 @@ CoreSnapshot makeSnapshot(int tick)
     // Between the custom and generated-default lane-entry cross-track gates.
     input.gps_cross_track = 0.46f;
   }
-  if (tick >= 500 && tick < 760) {
+  if (tick >= 420 && tick < 520) {
+    // Pure LANE acceleration after v_base is established. The interval is
+    // long enough to reach the custom v_accel_zone target.
+    input.gps_accel_zone = true;
+  }
+  if (tick >= 520 && tick < 760) {
     input.lane_confidence = 0.1f;
   }
-  if (tick >= 530 && tick < 650) {
+  if (tick >= 550 && tick < 650) {
     // Pure WAYPOINT acceleration: no traffic stop or E-stop overlaps.
     input.gps_accel_zone = true;
   }
   if (tick >= 650 && tick < 735) {
     input.traffic_stop_required = true;
+  }
+  if (tick >= 700 && tick < 730) {
+    // WAYPOINT priority: traffic stop must override acceleration.
+    input.gps_accel_zone = true;
+  }
+  if (tick >= 730 && tick < 735) {
+    // WAYPOINT priority: E-stop must override the active traffic stop.
+    input.estop = true;
   }
   if (tick >= 740 && tick < 745) {
     // Isolated WAYPOINT E-stop, after the normal-stop interval ends.
@@ -121,8 +142,8 @@ CoreSnapshot makeSnapshot(int tick)
   if (tick >= 30 && tick < 50) {
     input.lane_updated = tick == 30;
   }
-  if (tick >= 530 && tick < 545) {
-    input.gps_updated = tick == 530;
+  if (tick >= 550 && tick < 570) {
+    input.gps_updated = tick == 550;
   }
   return input;
 }
@@ -171,7 +192,9 @@ int main()
   bool seen_normal_stop[2]{};
   bool seen_single_point[2]{};
   bool seen_single_point_stale_parity[2]{};
-  bool seen_accel_target = false;
+  bool seen_accel_target[2]{};
+  bool seen_accel_traffic_priority[2]{};
+  bool seen_traffic_estop_priority[2]{};
   bool seen_forward = false;
   bool seen_lane_exit = false;
   bool seen_lane_return = false;
@@ -201,9 +224,15 @@ int main()
       seen_accel[state] = seen_accel[state] ||
         (input.gps_accel_zone && !input.traffic_stop_required && !input.estop &&
         !reference.immediate_stop && reference.v_ref > 0.0f);
-      seen_accel_target = seen_accel_target ||
+      seen_accel_target[state] = seen_accel_target[state] ||
         (input.gps_accel_zone && !input.traffic_stop_required && !input.estop &&
         close(reference.v_ref, params.v_accel_zone));
+      seen_accel_traffic_priority[state] = seen_accel_traffic_priority[state] ||
+        (input.gps_accel_zone && input.traffic_stop_required && !input.estop &&
+        !reference.immediate_stop && close(reference.v_ref, 0.0f));
+      seen_traffic_estop_priority[state] = seen_traffic_estop_priority[state] ||
+        (input.traffic_stop_required && input.estop && reference.immediate_stop &&
+        close(reference.v_ref, 0.0f));
       seen_estop[state] = seen_estop[state] ||
         (input.estop && reference.immediate_stop && close(reference.v_ref, 0.0f));
       seen_normal_stop[state] = seen_normal_stop[state] ||
@@ -283,27 +312,29 @@ int main()
         stderr, "coverage missing: state[%d]=%d source[%d]=%d\n",
         i, seen_state[i], i, seen_source[i]);
     }
-    if (!seen_accel[i] || !seen_estop[i] || !seen_normal_stop[i] ||
-      !seen_single_point[i] || !seen_single_point_stale_parity[i])
+    if (!seen_accel[i] || !seen_accel_target[i] || !seen_estop[i] ||
+      !seen_normal_stop[i] || !seen_accel_traffic_priority[i] ||
+      !seen_traffic_estop_priority[i] || !seen_single_point[i] ||
+      !seen_single_point_stale_parity[i])
     {
       ++mismatches;
       std::fprintf(
         stderr,
-        "state[%d] coverage missing: accel=%d estop=%d normal_stop=%d "
-        "single=%d single_stale_parity=%d\n",
-        i, seen_accel[i], seen_estop[i], seen_normal_stop[i],
+        "state[%d] coverage missing: accel=%d accel_target=%d estop=%d normal_stop=%d "
+        "accel_traffic=%d traffic_estop=%d single=%d single_stale_parity=%d\n",
+        i, seen_accel[i], seen_accel_target[i], seen_estop[i], seen_normal_stop[i],
+        seen_accel_traffic_priority[i], seen_traffic_estop_priority[i],
         seen_single_point[i], seen_single_point_stale_parity[i]);
     }
   }
-  if (!seen_forward || !seen_accel_target || !seen_lane_exit || !seen_lane_return ||
+  if (!seen_forward || !seen_lane_exit || !seen_lane_return ||
     !seen_cross_track_gate_hold)
   {
     ++mismatches;
     std::fprintf(
       stderr,
-      "coverage missing: forward=%d accel_target=%d exit=%d return=%d cross_ready_hold=%d\n",
-      seen_forward, seen_accel_target, seen_lane_exit, seen_lane_return,
-      seen_cross_track_gate_hold);
+      "coverage missing: forward=%d exit=%d return=%d cross_ready_hold=%d\n",
+      seen_forward, seen_lane_exit, seen_lane_return, seen_cross_track_gate_hold);
   }
 
   std::printf("lane-waypoint generated parity: ticks=%d mismatches=%d\n", kTicks, mismatches);
