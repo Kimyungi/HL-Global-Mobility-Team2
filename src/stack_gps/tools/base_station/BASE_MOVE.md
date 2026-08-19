@@ -57,14 +57,8 @@ python3 read_base_position.py
 # ── 원주 운전면허시험장 (outdoor_20260818)
 python3 setup_base.py --lat 37.300314764 --lon 127.979451327 --height 224.2647
 
-# ── 한라대학교 (outdoor_20260801, 1층 야외 재설치 지점)
-python3 setup_base.py --lat 37.303841799 --lon 127.907284433 --height 183.9014
-
-# ── 한라대학교 구지점 (outdoor_old_20260724, 위 지점에서 남쪽 ~0.6m)
-python3 setup_base.py --lat 37.303847372 --lon 127.907283480 --height 183.8623
-
-# ── 한라대학교 옥상 (rooftop_20260723)
-python3 setup_base.py --lat 37.303966817 --lon 127.906898421 --height 194.2744
+# ── 한라대학교 (halla_20260819)
+python3 setup_base.py --lat 37.303844970 --lon 127.907281838 --height 183.7405
 ```
 
 `fixType=5 (TIME — 베이스 정상)` 이 뜨면 성공.
@@ -109,8 +103,6 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 |---|---|
 | 원주 운전면허시험장 (`outdoor_20260818`) | `waypoints_wonju_license_20260818_160511.csv` (지정 구간 3종 포함) |
 | 한라대학교 (`halla_20260819`, MBD 시험) | `waypoints_halla_univ_20260819_182657.csv` (303점, 전 구간 FIXED) |
-| 한라대학교 (`outdoor_20260801`) | **없음** — 2026-08-19 정리 시 삭제 |
-| 한라대학교 구지점 (`outdoor_old_20260724`) | **없음** (위와 같음) |
 
 전체 목록은 [`BASE_LOCATIONS.md`](BASE_LOCATIONS.md) 의 "위치 ↔ 코스 대응".
 
