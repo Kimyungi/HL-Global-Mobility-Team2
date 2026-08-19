@@ -304,7 +304,7 @@ class TestOakDeviceSelection(unittest.TestCase):
             patch("stack_traffic.oak_camera.time.sleep") as sleep,
             self.assertRaisesRegex(
                 RuntimeError,
-                "단일 OAK-D.*4회.*열거되지 않았습니다",
+                "단일 OAK-D.*3회.*열거되지 않았습니다",
             ),
         ):
             open_oak_device(pipeline)
@@ -312,12 +312,12 @@ class TestOakDeviceSelection(unittest.TestCase):
         fake_dai.DeviceInfo.assert_not_called()
         self.assertEqual(
             fake_dai.Device.getAllConnectedDevices.call_count,
-            4,
+            3,
         )
         fake_dai.Device.assert_not_called()
         self.assertEqual(
             sleep.call_args_list,
-            [call(5.0), call(5.0), call(5.0)],
+            [call(2.0), call(2.0)],
         )
 
     def test_blank_mxid_reenumerates_after_transient_open_failure(self):
@@ -349,7 +349,7 @@ class TestOakDeviceSelection(unittest.TestCase):
                 call(pipeline, fresh_info, fake_dai.UsbSpeed.SUPER),
             ],
         )
-        sleep.assert_called_once_with(5.0)
+        sleep.assert_called_once_with(2.0)
 
     def test_blank_mxid_accepts_device_appearing_during_retry(self):
         pipeline = object()
@@ -374,7 +374,7 @@ class TestOakDeviceSelection(unittest.TestCase):
             device_info,
             fake_dai.UsbSpeed.SUPER,
         )
-        sleep.assert_called_once_with(5.0)
+        sleep.assert_called_once_with(2.0)
 
     def test_blank_mxid_retries_enumeration_error(self):
         pipeline = object()
@@ -399,7 +399,7 @@ class TestOakDeviceSelection(unittest.TestCase):
             device_info,
             fake_dai.UsbSpeed.SUPER,
         )
-        sleep.assert_called_once_with(5.0)
+        sleep.assert_called_once_with(2.0)
 
     def test_explicit_mxid_retries_transient_open_failure(self):
         pipeline = object()
@@ -438,7 +438,7 @@ class TestOakDeviceSelection(unittest.TestCase):
             ],
         )
         fake_dai.Device.getAllConnectedDevices.assert_not_called()
-        sleep.assert_called_once_with(5.0)
+        sleep.assert_called_once_with(2.0)
 
     def test_explicit_mxid_reports_error_after_bounded_retries(self):
         pipeline = object()
@@ -452,17 +452,17 @@ class TestOakDeviceSelection(unittest.TestCase):
             patch("stack_traffic.oak_camera.time.sleep") as sleep,
             self.assertRaisesRegex(
                 RuntimeError,
-                "oak_mxid=traffic-oak.*4회.*X_LINK_BOOTED",
+                "oak_mxid=traffic-oak.*3회.*X_LINK_BOOTED",
             ),
         ):
             open_oak_device(pipeline, "traffic-oak")
 
-        self.assertEqual(fake_dai.DeviceInfo.call_count, 4)
-        self.assertEqual(fake_dai.Device.call_count, 4)
+        self.assertEqual(fake_dai.DeviceInfo.call_count, 3)
+        self.assertEqual(fake_dai.Device.call_count, 3)
         fake_dai.Device.getAllConnectedDevices.assert_not_called()
         self.assertEqual(
             sleep.call_args_list,
-            [call(5.0), call(5.0), call(5.0)],
+            [call(2.0), call(2.0)],
         )
 
     def test_blank_mxid_rejects_ambiguous_multiple_devices(self):
@@ -617,7 +617,7 @@ class TestOakDeviceSelection(unittest.TestCase):
         self.assertEqual(build_pipeline.call_count, 2)
         first_device.close.assert_called_once_with()
         second_device.close.assert_not_called()
-        sleep.assert_called_once_with(5.0)
+        sleep.assert_called_once_with(2.0)
 
     def test_actual_high_link_rechecks_super_profile_bandwidth(self):
         device = make_device("traffic-oak", "HIGH")
@@ -744,7 +744,7 @@ class TestOakDeviceSelection(unittest.TestCase):
         first_pipeline.wait.assert_called_once_with()
         first_device.close.assert_called_once_with()
         second_device.close.assert_not_called()
-        sleep.assert_called_once_with(5.0)
+        sleep.assert_called_once_with(2.0)
 
 
 class TestOakConfiguration(unittest.TestCase):

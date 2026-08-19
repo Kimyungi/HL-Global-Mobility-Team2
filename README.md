@@ -77,7 +77,9 @@ ros2 launch stack_traffic stopline_distance_test.launch.py \
 ```
 
 노드를 직접 실행하거나 개인 launch를 쓰는 경우에도 OAK-D가 두 대라면 MxID를
-반드시 지정한다.
+반드시 지정한다. 특히 `ros2 run stack_traffic stack_traffic_node` 같은 직접 실행은
+다중 장치 환경에서 자동 선택이 거부되어 즉시 종료될 수 있으니, 아래처럼
+`oak_mxid`를 명시해서 기동하세요.
 산업용 PC에서는 카메라 기동 전에 아래 사전점검으로 torch/torchvision NMS,
 Ultralytics, DepthAI API를 확인한다. 이 명령은 패키지를 변경하지 않는다.
 
