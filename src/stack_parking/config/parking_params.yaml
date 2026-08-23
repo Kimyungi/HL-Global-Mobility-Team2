@@ -1,0 +1,92 @@
+# stack_parking ICP + mapping + parking mission parameters.
+#
+# Vehicle constants are copies for ROS parameter injection only. Their single
+# project source is stack_avoid/config/params.yaml; measurement rationale is in
+# stack_parking/MEASUREMENTS.md. Keep them synchronized after a re-measurement.
+/**:
+  ros__parameters:
+    map_frame: parking_map
+    base_frame: base_link
+    merged_cloud_topic: /lidar/merged_cloud
+    rear_scan_topic: /lidar/a2/scan
+    publish_rate_hz: 20.0
+    debug_publish_rate_hz: 5.0
+
+    # Existing GpsPath only has parking_zone (no type). The default below is
+    # used on that rising edge. A GPS node that decides type should publish
+    # "start perpendicular right" or "start parallel right" as std_msgs/String
+    # on /parking/gps_command.
+    auto_trigger_gps_zone: true
+    gps_default_mode: perpendicular
+    gps_default_side: right
+    # Test-only. parking_standalone.launch.py overrides this to true. Never
+    # enable together with the real stack_gps publisher.
+    manual_test_publish_gps_gate: false
+
+    slam_stale_timeout_s: 0.6
+    rear_scan_stale_timeout_s: 0.35
+
+    # rear(a2) sensor-frame centre: raw 270deg == normalized -90deg.
+    # multi_lidar_fusion/config/lidar_extrinsics.yaml applies +0.069m range
+    # correction to the fused cloud; raw LaserScan needs the same subtraction.
+    rear_scan_center_deg: -90.0
+    rear_scan_half_width_deg: 12.0
+    rear_range_offset_m: 0.069
+    rear_wall_min_points: 5
+    rear_wall_cluster_m: 0.04
+
+    vehicle:
+      width_m: 0.62
+      length_m: 0.85
+      front_m: 0.760
+      rear_m: 0.090
+      wheelbase_m: 0.595
+      min_turn_radius_m: 1.15
+    lidar:
+      rear_x_m: -0.055
+
+    icp:
+      scan_voxel_m: 0.06
+      # Runtime bound; polar stratification retains coverage from all 4 units.
+      max_scan_points: 900
+      map_voxel_m: 0.08
+      max_correspondence_m: 0.35
+      max_iterations: 18
+      min_correspondences: 24
+      max_rmse_m: 0.16
+      local_map_radius_m: 8.0
+
+    space:
+      boundary_near_m: 0.42
+      boundary_far_m: 1.05
+      # Parallel space includes the two minimum-radius S arcs and vehicle
+      # front/rear clearances; it is intentionally longer than body length.
+      parallel_min_length_m: 2.90
+      perpendicular_min_width_m: 0.86
+      perpendicular_min_depth_m: 1.35
+      stable_frames: 3
+
+    path:
+      sample_step_m: 0.06
+      static_clearance_m: 0.035
+
+    preview_distance_m: 1.0
+    speed:
+      # Project tests show steering authority collapses below ~0.5m/s. Keep
+      # turning at >=0.5; only the final zero-curvature docking leg is slower.
+      forward_mps: 0.60
+      reverse_turn_mps: 0.55
+      reverse_dock_mps: 0.15
+      exit_mps: 0.55
+    dock_slow_distance_m: 0.55
+    completion_clearance_m: 0.20
+    # Goal is 2cm inside the trigger so sampled/noisy data can cross <=20cm.
+    completion_trigger_margin_m: 0.02
+    parked_wait_s: 5.0
+    # Safety: do not start the 5s timer without /vehicle/vector stop feedback.
+    require_vehicle_stop_feedback: true
+
+    dynamic:
+      confirm_frames: 2
+      static_match_m: 0.14
+      clearance_m: 0.12
