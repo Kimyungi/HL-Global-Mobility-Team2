@@ -84,11 +84,24 @@ NVIDIA 가 없고 인텔 Arc iGPU 라 XPU 빌드를 썼다.
 | NVIDIA GPU | 일반 CUDA 빌드 → `lane_device:=0` |
 | GPU 없음 | CPU 빌드 → `lane_device:=cpu` (추론 390ms/frame ≈ 2.5Hz, 느리지만 동작함) |
 
-김윤기 노트북 기준 검증된 조합: `torch 2.12.1+xpu`, `torchvision 0.27.1`,
-`depthai 3.6.1`, `numpy 1.26.4`, `scipy 1.8.0`.
+김윤기 노트북 기준 조합: `torch 2.12.1+xpu`, `torchvision 0.27.1`, `depthai 3.6.1`,
+`numpy 1.26.4`, `scipy 1.8.0`. **차선(stack_lane)은 이 조합에서 정상 동작한다.**
 
 > 차선을 안 쓸 거면 PyTorch 없이도 된다 — launch 에 `lane_enabled:=false`,
 > 출발 인가는 `ros2 run adas_mgm go --skip-lane`.
+
+**⚠ 신호등(stack_traffic)은 이 PC 조합에서 기동 불가 상태다 (2026-08-24 실측).**
+`ultralytics` → `torchvision` 을 끌어오는데 `import torchvision` 자체가 실패한다:
+
+```
+RuntimeError: operator torchvision::nms does not exist
+```
+
+torchvision 이 지금 깔린 torch 와 다른 버전에 맞춰 빌드된 것이다(XPU 빌드 torch 와
+일반 torchvision 을 섞은 결과로 보인다). stack_lane 은 torchvision 을 안 쓰므로 멀쩡하고,
+**stack_traffic 만 막힌다.** 신호등을 쓰려면 torch/torchvision 을 **짝이 맞는 조합으로**
+다시 설치해야 한다 — 그때 stack_lane 의 XPU 동작이 유지되는지 함께 확인할 것.
+담당자(김재민)가 떠났으므로 이 문제를 아는 사람이 없다.
 
 ### 2.4 저장소에 **없는** 파일 — 수동으로 채워야 한다
 
@@ -380,3 +393,4 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 | estop/조향이 이상하게 겹침 | **§3.4** — launch 중복 실행 |
 | PC 껐는데 차가 계속 굴러감 | **§3.6** — dSPACE watchdog 미구현. `can_zero` 가드 포함된 launch 를 쓸 것 |
 | stack_lane 기동 실패 | **§2.4** — `yolopv2.pt` 없음 |
+| stack_traffic 기동 실패 (`torchvision::nms does not exist`) | **§2.3** — torch/torchvision 짝 불일치. 이 PC 의 기존 문제이며 신호등만 영향 |
