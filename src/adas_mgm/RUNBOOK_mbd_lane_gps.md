@@ -76,7 +76,7 @@ colcon test --packages-select adas_mgm --event-handlers console_direct+   # 4/4 
 
 시험 시작 전 갖춰져야 할 것:
 
-- [x] 한라대 좌표 측량 완료 + `BASE_LOCATIONS.md` 에 등록 (`halla_20260819`)
+- [ ] 한라대 좌표 측량 완료 + `BASE_LOCATIONS.md` 에 등록
 - [ ] 그 좌표로 `setup_base.py` 실행 (`fixType=5` 확인)
 - [x] **새 코스 CSV** — `waypoints_halla_univ_20260819_182657.csv` (303점, 전 구간 RTK FIXED, 2026-08-19 기록)
 - [ ] 로버 RTK **FIXED** 확인 (`rtk_probe.py`, C/N0 39dB 이상)
