@@ -36,6 +36,7 @@ ros2 launch bridge_dspace loopback_test.launch.py
 # 다른 터미널에서:
 ros2 topic hz /vehicle/vector     # ≈100 Hz
 ros2 topic echo /vehicle/vector   # x·v 증가 = 왕복 성립
+ros2 topic hz /vehicle/mpc_trajectory  # ≈100 Hz, dSPACE MPC 51점 XY
 ```
 
 실기 (dSPACE CAN 연결) — **단계별 검증 절차는 [CAN_BRINGUP.md](src/bridge_dspace/CAN_BRINGUP.md)** (배선·candump·watchdog까지 복붙 가이드):
@@ -82,3 +83,4 @@ ros2 run stack_estop stack_estop_node    # 박찬미
 | /perception/estop | EstopRequest | stack_estop → MGM |
 | /adas/target_ref | TargetRef | MGM → bridge (10ms) |
 | /vehicle/vector | VehicleVector | bridge → stack_gps 등 (10ms) |
+| /vehicle/mpc_trajectory | MpcTrajectory | dSPACE → bridge, 51점 XY (10ms) |

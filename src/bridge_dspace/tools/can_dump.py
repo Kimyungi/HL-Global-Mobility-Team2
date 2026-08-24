@@ -14,11 +14,13 @@ import struct
 import time
 
 ID_TARGET_HEADER = 0x100
-ID_REF_POINT_BASE = 0x101   # 0x101..0x114
-NUM_POINTS = 20
+ID_REF_POINT_BASE = 0x101   # 0x101..0x103
+NUM_REF_POINTS = 3
 ID_VEH_POSE = 0x200
 ID_VEH_VEL = 0x201
 ID_VEH_COMMIT = 0x202
+ID_TRAJECTORY_POINT_BASE = 0x203  # 0x203..0x235
+NUM_TRAJECTORY_POINTS = 51
 
 STATES = {0: "lane", 1: "waypoint", 2: "avoid", 3: "parking"}
 
@@ -34,7 +36,7 @@ def decode(can_id: int, d: bytes) -> str:
         counter, state, n_points, v_ref, _ = struct.unpack("<HBBhH", d)
         return (f"HEADER counter={counter} state={STATES.get(state, state)} "
                 f"n={n_points} v_ref={v_ref * VEL_SCALE:.3f}m/s")
-    if ID_REF_POINT_BASE <= can_id < ID_REF_POINT_BASE + NUM_POINTS:
+    if ID_REF_POINT_BASE <= can_id < ID_REF_POINT_BASE + NUM_REF_POINTS:
         x, y, yaw, curv = struct.unpack("<hhhh", d)
         return (f"PT[{can_id - ID_REF_POINT_BASE:02d}] x={x * POS_SCALE:.3f} "
                 f"y={y * POS_SCALE:.3f} yaw={yaw * YAW_SCALE:.4f} "
@@ -48,6 +50,11 @@ def decode(can_id: int, d: bytes) -> str:
     if can_id == ID_VEH_COMMIT:
         s, counter, _ = struct.unpack("<fHH", d)
         return f"COMMIT str={s:.4f} counter={counter}"
+    if (ID_TRAJECTORY_POINT_BASE <= can_id <
+            ID_TRAJECTORY_POINT_BASE + NUM_TRAJECTORY_POINTS):
+        x, y = struct.unpack("<ff", d)
+        index = can_id - ID_TRAJECTORY_POINT_BASE
+        return f"TRAJ[{index:02d}] x={x:.3f} y={y:.3f}"
     return "?"
 
 

@@ -11,14 +11,18 @@
 namespace bridge_dspace
 {
 
-constexpr int kNumPoints = 20;  // MPC 예측 지평 200ms / Ts 10ms
+constexpr int kNumRefPoints = 3;
+constexpr int kNumTrajectoryPoints = 51;  // 10ms 주기로 전송되는 MPC XY 궤적 한 세트
 
 // CAN ID 맵 (PROTOCOL.md)
 constexpr uint32_t kIdTargetHeader = 0x100;  // 커밋 프레임 — watchdog 입력 (counter)
-constexpr uint32_t kIdRefPointBase = 0x101;  // 0x101 + i, i = 0..19
+constexpr uint32_t kIdRefPointBase = 0x101;  // 0x101 + i, i = 0..2
 constexpr uint32_t kIdVehPose = 0x200;
 constexpr uint32_t kIdVehVel = 0x201;
 constexpr uint32_t kIdVehCommit = 0x202;     // 커밋 프레임 — 수신 시 /vehicle/vector 퍼블리시
+constexpr uint32_t kIdTrajectoryPointBase = 0x203;  // 0x203 + i, i = 0..50
+constexpr uint32_t kIdTrajectoryPointLast =
+  kIdTrajectoryPointBase + kNumTrajectoryPoints - 1;  // 0x235, 궤적 세트 완료
 
 // 양자화 스케일 (LSB) — TX만 int16, RX는 f32 무손실
 constexpr double kPosScale = 1e-3;   // [m]   ±32.767 m
@@ -76,6 +80,12 @@ struct VehCommitPayload  // 0x202
   uint16_t reserved;
 };
 
+struct TrajectoryPointXyPayload  // 0x203 + i
+{
+  float x;
+  float y;
+};
+
 #pragma pack(pop)
 
 static_assert(sizeof(RefPointPayload) == 8, "must match PROTOCOL.md");
@@ -83,6 +93,7 @@ static_assert(sizeof(TargetHeaderPayload) == 8, "must match PROTOCOL.md");
 static_assert(sizeof(VehPosePayload) == 8, "must match PROTOCOL.md");
 static_assert(sizeof(VehVelPayload) == 8, "must match PROTOCOL.md");
 static_assert(sizeof(VehCommitPayload) == 8, "must match PROTOCOL.md");
+static_assert(sizeof(TrajectoryPointXyPayload) == 8, "must match PROTOCOL.md");
 
 }  // namespace bridge_dspace
 

@@ -9,6 +9,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RefPoint.msg"
   "msg/TargetRef.msg"
   "msg/VehicleVector.msg"
+  "msg/MpcTrajectory.msg"
   "msg/LanePath.msg"
   "msg/GpsPath.msg"
   "msg/AvoidStatus.msg"

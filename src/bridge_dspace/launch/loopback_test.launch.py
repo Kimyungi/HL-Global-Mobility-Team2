@@ -3,7 +3,7 @@
 사전 준비 (최초 1회 — vcan0 상시 생성, PROTOCOL.md):
     sudo src/bridge_dspace/tools/can_setup/install.sh --vcan
 
-검증: ros2 topic hz /vehicle/vector  (≈100Hz), ros2 topic echo /vehicle/vector (x 증가)
+검증: /vehicle/vector와 /vehicle/mpc_trajectory 모두 ≈100Hz, vehicle x 증가
 watchdog 검증: dummy_ref_publisher 프로세스 kill → sim 로그에 TIMEOUT, v→0
 저수준 확인: candump vcan0  또는  python3 tools/can_dump.py --iface vcan0
 """

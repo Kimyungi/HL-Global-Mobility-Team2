@@ -22,6 +22,6 @@ ament_target_dependencies(dspace_sim_node rclcpp)
 install(TARGETS can_bridge_node dummy_ref_publisher dspace_sim_node
   DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY launch dbc DESTINATION share/${PROJECT_NAME})
 
 ament_package()

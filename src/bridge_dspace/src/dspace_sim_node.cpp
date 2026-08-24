@@ -1,6 +1,6 @@
 // dspace_sim_node — dSPACE 에뮬레이터 (PC 단독 루프백 검증용).
 // 실제 dSPACE의 최소 동작을 재현: REF_POINT 버퍼링 → TARGET_HEADER에서 latch →
-// watchdog(30ms) → kinematic bicycle 적분(10ms) → VEH_* 3프레임 회신.
+// watchdog(30ms) → kinematic bicycle 적분(10ms) → VEH_* + MPC XY 51점 회신.
 // ROS 토픽 인터페이스 없음 — 순수 CAN (실기와 같은 조건, vcan0 사용).
 #include <atomic>
 #include <chrono>
@@ -26,10 +26,10 @@ public:
     wheelbase_ = declare_parameter<double>("wheelbase", 0.32);      // WHEELTEC 근사
     timeout_ms_ = declare_parameter<int>("watchdog_timeout_ms", 30);
 
-    // 수신은 PC→dSPACE ID만 (0x100 헤더 + 0x101..0x114 포인트)
+    // 수신은 PC→dSPACE ID만 (0x100 헤더 + 0x101..0x103 포인트)
     const std::vector<can_filter> rx_filters = {
       {kIdTargetHeader, CAN_SFF_MASK},
-      // 0x101..0x114를 하나의 mask 필터로: 0x100~0x11F 대역에서 헤더 제외 상위 매칭
+      // 0x101..0x103을 포함하는 0x100~0x11F 대역 (여분 ID는 rxLoop에서 무시)
       {kIdRefPointBase, static_cast<canid_t>(CAN_SFF_MASK & ~0x01F)},
     };
     sock_ = openCanSocket(can_interface_, rx_filters);
@@ -58,7 +58,7 @@ private:
       if (len != sizeof(can_frame) || f.can_dlc != 8) {continue;}
 
       if (f.can_id >= kIdRefPointBase &&
-        f.can_id < kIdRefPointBase + kNumPoints)
+        f.can_id < kIdRefPointBase + kNumRefPoints)
       {
         // point 프레임은 스테이징 버퍼에만 — latch는 헤더 수신 시점 (PROTOCOL.md)
         std::memcpy(&staged_points_[f.can_id - kIdRefPointBase], f.data,
@@ -105,13 +105,26 @@ private:
     y_ += v_ * std::sin(yaw_) * dt;
     yaw_ += v_ / wheelbase_ * std::tan(str_) * dt;
 
-    // 회신 순서: POSE → VEL → COMMIT (PC는 COMMIT에서 퍼블리시)
+    // 회신 순서: POSE → VEL → COMMIT → TRAJ_P00..P50.
+    // PC는 COMMIT에서 vehicle vector, P50에서 완성된 궤적을 퍼블리시한다.
     VehPosePayload pose{static_cast<float>(x_), static_cast<float>(y_)};
     VehVelPayload vel{static_cast<float>(yaw_), static_cast<float>(v_)};
     VehCommitPayload commit{static_cast<float>(str_), ++tx_counter_, 0};
     sendCanFrame(sock_, kIdVehPose, pose);
     sendCanFrame(sock_, kIdVehVel, vel);
     sendCanFrame(sock_, kIdVehCommit, commit);
+
+    double pred_x = x_;
+    double pred_y = y_;
+    double pred_yaw = yaw_;
+    for (int i = 0; i < kNumTrajectoryPoints; ++i) {
+      TrajectoryPointXyPayload point{
+        static_cast<float>(pred_x), static_cast<float>(pred_y)};
+      sendCanFrame(sock_, kIdTrajectoryPointBase + i, point);
+      pred_x += v_ * std::cos(pred_yaw) * dt;
+      pred_y += v_ * std::sin(pred_yaw) * dt;
+      pred_yaw += v_ / wheelbase_ * std::tan(str_) * dt;
+    }
   }
 
   std::string can_interface_;
@@ -119,7 +132,7 @@ private:
   int timeout_ms_{};
   int sock_{-1};
   std::mutex mtx_;
-  RefPointPayload staged_points_[kNumPoints]{};
+  RefPointPayload staged_points_[kNumRefPoints]{};
   uint16_t last_counter_{0}, tx_counter_{0};
   Clock::time_point last_rx_;
   bool timeout_latched_{false};

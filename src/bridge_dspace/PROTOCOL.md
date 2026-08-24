@@ -1,7 +1,8 @@
-# PC ↔ dSPACE CAN 프로토콜 v2
+# PC ↔ dSPACE CAN 프로토콜 v3
 
-CLAUDE.md §3의 바이너리 구현. dSPACE 측(RTI CAN 블록셋)과 **반드시 이 문서 기준으로 합의**할 것 (담당: 손상민).
-변경 시 이 문서 → `src/can_protocol.hpp` 구조체 → dSPACE 모델 순서로 갱신.
+CLAUDE.md §3의 바이너리 구현. dSPACE 측(RTI CAN 블록셋)과 **반드시 이 문서 및
+`dbc/HL_Global_Mobility_CAN_MPC_XY_10ms.dbc` 기준으로 합의**할 것 (담당: 손상민).
+변경 시 DBC → 이 문서 → `src/can_protocol.hpp` 구조체 → dSPACE 모델 순서로 갱신.
 
 > v1(Ethernet UDP)은 dSPACE 측 이더넷 불가로 폐기. 논리 계약(§3의 ref_points/v_ref/flags/vehicle_vector,
 > watchdog)은 동일하고 **물리 계층과 프레임 분할만** 변경됨.
@@ -9,7 +10,7 @@ CLAUDE.md §3의 바이너리 구현. dSPACE 측(RTI CAN 블록셋)과 **반드�
 ## 공통
 
 - **CAN 2.0A, 11-bit 표준 ID, 페이로드 8 bytes 고정** (CAN FD 아님)
-- **Bitrate: 1 Mbps** (권장 기본값) — dSPACE 설정 화면에는 **"baud rate"로 표기됨. CAN에서 baud rate = bitrate (같은 값, 1 MBaud 선택)**. sample point는 기본값 유지. 500 kbps도 동작하나 양쪽 일치 필수
+- **Bitrate: 1 Mbps 필수** — dSPACE 설정 화면에는 **"baud rate"로 표기됨. CAN에서 baud rate = bitrate (같은 값, 1 MBaud 선택)**. sample point는 기본값 유지. v3의 51점 궤적을 10ms마다 보낼 때 500 kbps는 대역폭이 부족하다.
 - 페이로드 내 byte order: **little-endian (Intel format)** — dSPACE RTI CAN 블록에서 Intel로 설정할 것
 - float = IEEE 754 single (4 bytes), int16 = 2's complement
 - PC 측: **PCAN(USB) 어댑터** — peak_usb 드라이버가 커널 기본 포함이라 표준 SocketCAN(`can0`)으로 잡힘. 루프백 테스트는 가상 CAN (`vcan0`)
@@ -19,10 +20,11 @@ CLAUDE.md §3의 바이너리 구현. dSPACE 측(RTI CAN 블록셋)과 **반드�
 | ID | 방향 | 이름 | 주기 |
 |---|---|---|---|
 | `0x100` | PC → dSPACE | TARGET_HEADER (커밋 프레임, **watchdog 입력**) | 10ms |
-| `0x101`~`0x114` | PC → dSPACE | REF_POINT_0 ~ REF_POINT_19 (ID = 0x101 + index) | 10ms |
+| `0x101`~`0x103` | PC → dSPACE | REF_POINT_0 ~ REF_POINT_2 (ID = 0x101 + index) | 10ms |
 | `0x200` | dSPACE → PC | VEH_POSE | 10ms |
 | `0x201` | dSPACE → PC | VEH_VEL | 10ms |
 | `0x202` | dSPACE → PC | VEH_COMMIT (커밋 프레임) | 10ms |
+| `0x203`~`0x235` | dSPACE → PC | TRAJ_P00_XY ~ TRAJ_P50_XY (ID = 0x203 + index) | 10ms |
 
 - `0x000`~`0x0FF`: 예약 (향후 긴급/진단용). `0x300` 이상: 하위 제어 내부용으로 자유 — 단 이 문서에 등록 후 사용.
 
@@ -33,13 +35,13 @@ dSPACE는 point 프레임을 버퍼에 쌓다가 **TARGET_HEADER 수신 시점�
 latch**한다 (프레임 간 반쯤 갱신된 세트를 MPC가 읽는 것 방지). 점이 sparse해도 되는 이유:
 dSPACE 궤적 생성(quintic)이 목표점(들)로부터 MPC 지평(200ms/N=20) 궤적을 만들기 때문.
 
-**소스별 점 수 (팀 합의, 2026-07-29 / 2026-08-10 재확정): 모든 스테이트 1점** — 단 avoid는 2점까지 허용.
-n_points = 1(avoid 최대 2), 주기당 TX 2~3프레임(`0x101`[+`0x102`] + `0x100`). n_points는 확장 대비 가변 필드로 유지.
+와이어의 n_points는 1~3이며, 주기당 TX 2~4프레임(`0x101`~`0x103` 중 유효 점 + `0x100`)이다.
+ROS `TargetRef`가 3점을 초과하면 브리지는 전 구간에서 균등하게 첫점·중간점·끝점 3개를
+선택한다(현재 MGM 20점 입력은 index 0, 10, 19). 이로써 내부 20점 보간은 유지하면서 v3
+와이어 상한과 최종 목표점을 함께 보존한다.
 주의: 조향이 제대로 반응하려면 **v_ref ≥ 0.4 m/s** 필요 (2026-08-10 실측 — 저속에서 str 무반응은 점 수 문제가 아님).
 
-ID `0x101`~`0x114`는 최대 20점 폭으로 예약 — 나중에 점 수를 늘려도 ID 맵은 불변.
-
-### REF_POINT_i (`0x101 + i`, i = 0…19) — 8 bytes
+### REF_POINT_i (`0x101 + i`, i = 0…2) — 8 bytes
 
 | offset | 형식 | 필드 | 스케일 (LSB) | 범위 |
 |---|---|---|---|---|
@@ -58,7 +60,7 @@ ID `0x101`~`0x114`는 최대 20점 폭으로 예약 — 나중에 점 수를 늘
 |---|---|---|---|
 | 0 | u16 | counter | 송신마다 +1 (wrap). **watchdog 판정 입력** — 30ms(3주기) 미갱신 시 v_ref=0, 조향 유지 |
 | 2 | u8 | state | 0=lane, 1=waypoint, 2=avoid, 3=parking |
-| 3 | u8 | n_points | 유효 포인트 수 (1~20) — 이번 주기에 송신된 REF_POINT 프레임 수 |
+| 3 | u8 | n_points | 유효 포인트 수 (1~3) — 이번 주기에 송신된 REF_POINT 프레임 수 |
 | 4 | i16 | v_ref | 1 mm/s LSB. [±32.767 m/s] 최종 목표 속도. 정지 = 0. **음수 = 후진** (2026-08-24: MGM §4 후진 탈출이 처음으로 음수를 낸다 — 그전까지 PC는 0 이상만 보냈다. dSPACE MPC·하위 PI 가 음수 목표속도를 그대로 후진으로 처리한다는 팀 확인을 받았으나 **실차 재확인 권장**) |
 | 6 | u16 | reserved | 0 |
 
@@ -81,10 +83,14 @@ ID `0x101`~`0x114`는 최대 20점 폭으로 예약 — 나중에 점 수를 늘
 - 레퍼런스 동작: `dspace_sim_node` (위 규정 전부 구현, `watchdog_timeout_ms` 파라미터) —
   PC 단독 루프백으로 실기 구현과 동작 대조 가능.
 
-## RX — dSPACE → PC, 매 10ms 3프레임
+## RX — dSPACE → PC, 매 10ms 54프레임
 
 **송신 순서: VEH_POSE → VEH_VEL → 마지막에 VEH_COMMIT.** PC는 VEH_COMMIT 수신 시점에
 `/vehicle/vector` 1회 퍼블리시 (한 주기 세트 = 한 메시지).
+
+그 뒤 **TRAJ_P00_XY → … → TRAJ_P50_XY를 CAN ID 오름차순으로 송신**한다. PC는 51개
+ID를 모두 받은 상태에서 마지막 `0x235`를 수신하면 `/vehicle/mpc_trajectory`를 1회 퍼블리시한다.
+중간 프레임이 빠진 세트는 이전 주기 값과 섞지 않고 폐기한다.
 
 **모든 스테이트에서 상시 송신 — parking 중에도 끊지 말 것.** 주차 스택(stack_parking)의
 로컬맵·경로 추종이 vehicle vector를 입력으로 쓴다.
@@ -113,12 +119,24 @@ ID `0x101`~`0x114`는 최대 20점 폭으로 예약 — 나중에 점 수를 늘
 | 4 | u16 | counter (dSPACE 송신 카운터, wrap) |
 | 6 | u16 | reserved |
 
+### TRAJ_Pxx_XY (`0x203 + i`, i = 0…50) — 각 8 bytes
+
+| offset | 형식 | 필드 |
+|---|---|---|
+| 0 | f32 | x [m] |
+| 4 | f32 | y [m] |
+
+- MPC가 계산한 51개 XY 예측점이며, 전체 세트를 10ms 주기로 갱신한다.
+- 브리지는 VEH_POSE와 동일한 `odom` 좌표계로 ROS 메시지 헤더를 채운다.
+- 별도 궤적 counter/commit 프레임은 없다. `P50`(`0x235`) 수신이 한 세트의 완료 신호다.
+
 ## 버스 부하
 
 프레임당 최악 ~135 bits (11-bit ID, 8B 데이터, stuffing 포함).
 
-전 스테이트 동일: 주기당 TX 2 + RX 3 = **5프레임 ≈ 68 kbit/s** → 1 Mbps에서 ~7%, 500 kbps에서 ~14%.
-어느 쪽이든 여유 충분 — 기본값은 1 Mbps로 하되 dSPACE 측 설정과 일치만 시키면 됨.
+최소 구성은 주기당 TX 2 + RX 54 = **56프레임 ≈ 756 kbit/s** → 1 Mbps에서 최악 조건
+약 76%다. TX가 3점이면 58프레임 ≈ 783 kbit/s다. **500 kbps는 사용할 수 없으며 1 Mbps로
+양쪽 설정을 고정**한다. v3 외 추가 주기 프레임을 넣기 전에는 반드시 총 버스 부하를 다시 계산한다.
 
 ## PC 측 CAN 인터페이스 설정
 
@@ -151,7 +169,7 @@ sudo ip link set vcan0 up
 > 실기(dSPACE 연결) 단계별 검증은 **`CAN_BRINGUP.md`** — 배선·수신·송신·왕복·watchdog 순서의 복붙 가이드.
 
 1. PC 단독 (dSPACE 없이): 위 vcan0 설정 후 `ros2 launch bridge_dspace loopback_test.launch.py`
-   — dummy_ref_publisher → can_bridge → **dspace_sim_node**(dSPACE 에뮬레이터, watchdog 동작 포함) → vehicle vector 회신 → `/vehicle/vector` 토픽 확인.
+   — dummy_ref_publisher → can_bridge → **dspace_sim_node**(dSPACE 에뮬레이터, watchdog 동작 포함) → vehicle vector와 MPC 궤적 회신 → `/vehicle/vector`, `/vehicle/mpc_trajectory` 토픽 확인.
 2. 실기: dspace_sim_node 대신 실제 dSPACE (`can_interface:=can0`). 더미 ref(직선, v_ref 0.3)로 바퀴 반응 + vehicle vector 회신 확인.
 3. watchdog 검증: dummy_ref_publisher를 죽이고 30ms 후 dSPACE가 v_ref=0 처리하는지 확인.
 4. 저수준 디버그: `candump can0` (can-utils) 또는 `python3 tools/can_dump.py` (본 프로토콜 해석 출력).

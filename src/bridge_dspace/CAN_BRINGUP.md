@@ -20,9 +20,10 @@ ros2 launch bridge_dspace loopback_test.launch.py
 
 ```bash
 ros2 topic hz /vehicle/vector
+ros2 topic hz /vehicle/mpc_trajectory
 ```
 
-✅ **성공 판정**: `average rate: 99.9~100.0` 부근. 확인 후 두 터미널 모두 `Ctrl-C`.
+✅ **성공 판정**: 두 토픽 모두 `average rate: 99.9~100.0` 부근. 확인 후 두 터미널 모두 `Ctrl-C`.
 
 | 실패 증상 | 처방 |
 |---|---|
@@ -77,7 +78,7 @@ PCAN D-sub9 ↔ dSPACE(MicroLabBox) CAN 포트:
 
 ## 3단계 — dSPACE → PC 수신 확인 (한 방향씩!)
 
-**dSPACE 쪽(손상민)**: 모델에서 `0x200`~`0x202` 3프레임을 10ms 주기로 송신 시작
+**dSPACE 쪽(손상민)**: 모델에서 `0x200`~`0x235` 54프레임을 10ms 주기로 송신 시작
 (값은 아무거나, 예: x=1.0). 설정 필수 확인 — **baud rate 1 MBaud(= bitrate 1 Mbps, 같은 말) / 11-bit 표준 ID / byte order Intel(little-endian)**.
 
 **PC 쪽:**
@@ -86,7 +87,7 @@ PCAN D-sub9 ↔ dSPACE(MicroLabBox) CAN 포트:
  candump -td can0
 ```
 
-✅ **성공 판정**: `0x200`, `0x201`, `0x202`가 각각 ~10ms 간격으로 계속 찍힘.
+✅ **성공 판정**: `0x200`~`0x235`가 주기마다 찍히고, 궤적은 `0x203`→`0x235` 오름차순으로 도착.
 
 값까지 해석해서 보려면 (공학 단위 출력):
 
@@ -141,7 +142,7 @@ v_ref = 300 (=0.3 m/s), `0x101` x = 500 (=0.5 m).
 | dSPACE 측이 꼭 지킬 것 | 근거 |
 |---|---|
 | point 프레임은 버퍼링만, **`0x100` 수신 시점에 n_points개 latch** | PROTOCOL.md 커밋 규칙 |
-| n_points는 헤더에서 읽기 (현재 모든 소스 1 — 확장 대비 가변 필드, 20개 아님!) | 점은 전 스테이트 1개 |
+| n_points는 헤더에서 읽기 (프로토콜 상한 3) | MGM 20점 입력은 브리지가 첫·중간·끝 3점으로 축약 |
 | watchdog: `0x100` counter 30ms 미갱신 → v_ref=0, 조향 유지 | CLAUDE.md §3 |
 
 ---
@@ -152,9 +153,10 @@ v_ref = 300 (=0.3 m/s), `0x101` x = 500 (=0.5 m).
 
 ```bash
 ros2 topic hz /vehicle/vector
+ros2 topic hz /vehicle/mpc_trajectory
 ```
 
-✅ **성공 판정**: ~100 Hz. 이 시점에 **바퀴가 0.3 m/s로 굴러야 한다** (dummy ref = 직선 0.3 m/s).
+✅ **성공 판정**: 두 토픽 모두 ~100 Hz. 이 시점에 **바퀴가 0.3 m/s로 굴러야 한다** (dummy ref = 직선 0.3 m/s).
 
 ```bash
 ros2 topic echo /vehicle/vector

@@ -1,0 +1,453 @@
+VERSION "HL-Global-Mobility-Team2 CAN protocol v3, 51-point MPC XY trajectory at 10 ms"
+
+
+NS_ :
+    NS_DESC_
+    CM_
+    BA_DEF_
+    BA_DEF_DEF_
+    BA_
+    VAL_
+    SIG_VALTYPE_
+
+BS_:
+
+BU_: IndustrialPC dSPACE
+
+
+BO_ 256 TARGET_HEADER: 8 IndustrialPC
+ SG_ counter : 0|16@1+ (1,0) [0|65535] "" dSPACE
+ SG_ state : 16|8@1+ (1,0) [0|3] "" dSPACE
+ SG_ n_points : 24|8@1+ (1,0) [1|3] "" dSPACE
+ SG_ v_ref : 32|16@1- (0.001,0) [-32.767|32.767] "m/s" dSPACE
+ SG_ reserved : 48|16@1+ (1,0) [0|65535] "" dSPACE
+
+BO_ 257 REF_POINT_00: 8 IndustrialPC
+ SG_ x : 0|16@1- (0.001,0) [-32.767|32.767] "m" dSPACE
+ SG_ y : 16|16@1- (0.001,0) [-32.767|32.767] "m" dSPACE
+ SG_ yaw : 32|16@1- (0.0001,0) [-3.2767|3.2767] "rad" dSPACE
+ SG_ curvature : 48|16@1- (0.0005,0) [-16.3835|16.3835] "1/m" dSPACE
+
+BO_ 258 REF_POINT_01: 8 IndustrialPC
+ SG_ x : 0|16@1- (0.001,0) [-32.767|32.767] "m" dSPACE
+ SG_ y : 16|16@1- (0.001,0) [-32.767|32.767] "m" dSPACE
+ SG_ yaw : 32|16@1- (0.0001,0) [-3.2767|3.2767] "rad" dSPACE
+ SG_ curvature : 48|16@1- (0.0005,0) [-16.3835|16.3835] "1/m" dSPACE
+
+BO_ 259 REF_POINT_02: 8 IndustrialPC
+ SG_ x : 0|16@1- (0.001,0) [-32.767|32.767] "m" dSPACE
+ SG_ y : 16|16@1- (0.001,0) [-32.767|32.767] "m" dSPACE
+ SG_ yaw : 32|16@1- (0.0001,0) [-3.2767|3.2767] "rad" dSPACE
+ SG_ curvature : 48|16@1- (0.0005,0) [-16.3835|16.3835] "1/m" dSPACE
+
+BO_ 512 VEH_POSE: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 513 VEH_VEL: 8 dSPACE
+ SG_ yaw : 0|32@1- (1,0) [-100000|100000] "rad" IndustrialPC
+ SG_ v : 32|32@1- (1,0) [-1000|1000] "m/s" IndustrialPC
+
+BO_ 514 VEH_COMMIT: 8 dSPACE
+ SG_ str : 0|32@1- (1,0) [-100|100] "rad" IndustrialPC
+ SG_ counter : 32|16@1+ (1,0) [0|65535] "" IndustrialPC
+ SG_ reserved : 48|16@1+ (1,0) [0|65535] "" IndustrialPC
+
+
+BO_ 515 TRAJ_P00_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 516 TRAJ_P01_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 517 TRAJ_P02_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 518 TRAJ_P03_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 519 TRAJ_P04_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 520 TRAJ_P05_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 521 TRAJ_P06_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 522 TRAJ_P07_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 523 TRAJ_P08_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 524 TRAJ_P09_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 525 TRAJ_P10_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 526 TRAJ_P11_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 527 TRAJ_P12_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 528 TRAJ_P13_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 529 TRAJ_P14_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 530 TRAJ_P15_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 531 TRAJ_P16_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 532 TRAJ_P17_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 533 TRAJ_P18_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 534 TRAJ_P19_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 535 TRAJ_P20_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 536 TRAJ_P21_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 537 TRAJ_P22_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 538 TRAJ_P23_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 539 TRAJ_P24_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 540 TRAJ_P25_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 541 TRAJ_P26_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 542 TRAJ_P27_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 543 TRAJ_P28_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 544 TRAJ_P29_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 545 TRAJ_P30_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 546 TRAJ_P31_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 547 TRAJ_P32_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 548 TRAJ_P33_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 549 TRAJ_P34_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 550 TRAJ_P35_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 551 TRAJ_P36_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 552 TRAJ_P37_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 553 TRAJ_P38_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 554 TRAJ_P39_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 555 TRAJ_P40_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 556 TRAJ_P41_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 557 TRAJ_P42_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 558 TRAJ_P43_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 559 TRAJ_P44_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 560 TRAJ_P45_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 561 TRAJ_P46_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 562 TRAJ_P47_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 563 TRAJ_P48_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 564 TRAJ_P49_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+BO_ 565 TRAJ_P50_XY: 8 dSPACE
+ SG_ x : 0|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+ SG_ y : 32|32@1- (1,0) [-100000|100000] "m" IndustrialPC
+
+CM_ "MPC XY trajectory extension: dSPACE transmits 51 points in CAN IDs 515 through 565 (decimal) every 10 ms. Each frame contains IEEE-754 single-precision x and y in little-endian order. This schedule requires a 1 Mbit/s Classic CAN bus and careful total bus-load management. Transmit in ascending CAN-ID order; reception of ID 565 completes one trajectory set.";
+
+CM_ BO_ 256 "Commit frame and watchdog input. IndustrialPC sends this frame after all active REF_POINT frames.";
+CM_ SG_ 256 counter "Increment once per transmitted target set. Wraps at 65535.";
+CM_ SG_ 256 state "Driving state: 0 lane, 1 waypoint, 2 avoid, 3 parking.";
+CM_ SG_ 256 n_points "Number of valid REF_POINT frames in the current target set. Valid range 1 to 3.";
+CM_ SG_ 256 v_ref "Final longitudinal target speed. Zero means stop; negative means reverse.";
+CM_ SG_ 256 reserved "Reserved by protocol v2. Transmitter shall set zero.";
+
+CM_ BO_ 257 "Reference point index 0 in the vehicle frame.";
+CM_ BO_ 258 "Reference point index 1 in the vehicle frame.";
+CM_ BO_ 259 "Reference point index 2 in the vehicle frame.";
+
+CM_ BO_ 512 "Vehicle position feedback. First frame in the dSPACE feedback set.";
+CM_ BO_ 513 "Vehicle yaw and velocity feedback. Second frame in the dSPACE feedback set.";
+CM_ BO_ 514 "Vehicle steering feedback and commit counter. Send after VEH_POSE and VEH_VEL.";
+CM_ SG_ 514 counter "Increment once per transmitted feedback set. Wraps at 65535.";
+CM_ SG_ 514 reserved "Reserved by protocol v2. Transmitter shall set zero.";
+
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+BA_DEF_DEF_ "GenMsgCycleTime" 0;
+
+BA_ "GenMsgCycleTime" BO_ 256 10;
+BA_ "GenMsgCycleTime" BO_ 257 10;
+BA_ "GenMsgCycleTime" BO_ 258 10;
+BA_ "GenMsgCycleTime" BO_ 259 10;
+BA_ "GenMsgCycleTime" BO_ 512 10;
+BA_ "GenMsgCycleTime" BO_ 513 10;
+BA_ "GenMsgCycleTime" BO_ 514 10;
+BA_ "GenMsgCycleTime" BO_ 515 10;
+BA_ "GenMsgCycleTime" BO_ 516 10;
+BA_ "GenMsgCycleTime" BO_ 517 10;
+BA_ "GenMsgCycleTime" BO_ 518 10;
+BA_ "GenMsgCycleTime" BO_ 519 10;
+BA_ "GenMsgCycleTime" BO_ 520 10;
+BA_ "GenMsgCycleTime" BO_ 521 10;
+BA_ "GenMsgCycleTime" BO_ 522 10;
+BA_ "GenMsgCycleTime" BO_ 523 10;
+BA_ "GenMsgCycleTime" BO_ 524 10;
+BA_ "GenMsgCycleTime" BO_ 525 10;
+BA_ "GenMsgCycleTime" BO_ 526 10;
+BA_ "GenMsgCycleTime" BO_ 527 10;
+BA_ "GenMsgCycleTime" BO_ 528 10;
+BA_ "GenMsgCycleTime" BO_ 529 10;
+BA_ "GenMsgCycleTime" BO_ 530 10;
+BA_ "GenMsgCycleTime" BO_ 531 10;
+BA_ "GenMsgCycleTime" BO_ 532 10;
+BA_ "GenMsgCycleTime" BO_ 533 10;
+BA_ "GenMsgCycleTime" BO_ 534 10;
+BA_ "GenMsgCycleTime" BO_ 535 10;
+BA_ "GenMsgCycleTime" BO_ 536 10;
+BA_ "GenMsgCycleTime" BO_ 537 10;
+BA_ "GenMsgCycleTime" BO_ 538 10;
+BA_ "GenMsgCycleTime" BO_ 539 10;
+BA_ "GenMsgCycleTime" BO_ 540 10;
+BA_ "GenMsgCycleTime" BO_ 541 10;
+BA_ "GenMsgCycleTime" BO_ 542 10;
+BA_ "GenMsgCycleTime" BO_ 543 10;
+BA_ "GenMsgCycleTime" BO_ 544 10;
+BA_ "GenMsgCycleTime" BO_ 545 10;
+BA_ "GenMsgCycleTime" BO_ 546 10;
+BA_ "GenMsgCycleTime" BO_ 547 10;
+BA_ "GenMsgCycleTime" BO_ 548 10;
+BA_ "GenMsgCycleTime" BO_ 549 10;
+BA_ "GenMsgCycleTime" BO_ 550 10;
+BA_ "GenMsgCycleTime" BO_ 551 10;
+BA_ "GenMsgCycleTime" BO_ 552 10;
+BA_ "GenMsgCycleTime" BO_ 553 10;
+BA_ "GenMsgCycleTime" BO_ 554 10;
+BA_ "GenMsgCycleTime" BO_ 555 10;
+BA_ "GenMsgCycleTime" BO_ 556 10;
+BA_ "GenMsgCycleTime" BO_ 557 10;
+BA_ "GenMsgCycleTime" BO_ 558 10;
+BA_ "GenMsgCycleTime" BO_ 559 10;
+BA_ "GenMsgCycleTime" BO_ 560 10;
+BA_ "GenMsgCycleTime" BO_ 561 10;
+BA_ "GenMsgCycleTime" BO_ 562 10;
+BA_ "GenMsgCycleTime" BO_ 563 10;
+BA_ "GenMsgCycleTime" BO_ 564 10;
+BA_ "GenMsgCycleTime" BO_ 565 10;
+
+
+VAL_ 256 state 0 "lane" 1 "waypoint" 2 "avoid" 3 "parking";
+
+
+SIG_VALTYPE_ 512 x : 1;
+SIG_VALTYPE_ 512 y : 1;
+SIG_VALTYPE_ 513 yaw : 1;
+SIG_VALTYPE_ 513 v : 1;
+SIG_VALTYPE_ 514 str : 1;
+SIG_VALTYPE_ 515 x : 1;
+SIG_VALTYPE_ 515 y : 1;
+SIG_VALTYPE_ 516 x : 1;
+SIG_VALTYPE_ 516 y : 1;
+SIG_VALTYPE_ 517 x : 1;
+SIG_VALTYPE_ 517 y : 1;
+SIG_VALTYPE_ 518 x : 1;
+SIG_VALTYPE_ 518 y : 1;
+SIG_VALTYPE_ 519 x : 1;
+SIG_VALTYPE_ 519 y : 1;
+SIG_VALTYPE_ 520 x : 1;
+SIG_VALTYPE_ 520 y : 1;
+SIG_VALTYPE_ 521 x : 1;
+SIG_VALTYPE_ 521 y : 1;
+SIG_VALTYPE_ 522 x : 1;
+SIG_VALTYPE_ 522 y : 1;
+SIG_VALTYPE_ 523 x : 1;
+SIG_VALTYPE_ 523 y : 1;
+SIG_VALTYPE_ 524 x : 1;
+SIG_VALTYPE_ 524 y : 1;
+SIG_VALTYPE_ 525 x : 1;
+SIG_VALTYPE_ 525 y : 1;
+SIG_VALTYPE_ 526 x : 1;
+SIG_VALTYPE_ 526 y : 1;
+SIG_VALTYPE_ 527 x : 1;
+SIG_VALTYPE_ 527 y : 1;
+SIG_VALTYPE_ 528 x : 1;
+SIG_VALTYPE_ 528 y : 1;
+SIG_VALTYPE_ 529 x : 1;
+SIG_VALTYPE_ 529 y : 1;
+SIG_VALTYPE_ 530 x : 1;
+SIG_VALTYPE_ 530 y : 1;
+SIG_VALTYPE_ 531 x : 1;
+SIG_VALTYPE_ 531 y : 1;
+SIG_VALTYPE_ 532 x : 1;
+SIG_VALTYPE_ 532 y : 1;
+SIG_VALTYPE_ 533 x : 1;
+SIG_VALTYPE_ 533 y : 1;
+SIG_VALTYPE_ 534 x : 1;
+SIG_VALTYPE_ 534 y : 1;
+SIG_VALTYPE_ 535 x : 1;
+SIG_VALTYPE_ 535 y : 1;
+SIG_VALTYPE_ 536 x : 1;
+SIG_VALTYPE_ 536 y : 1;
+SIG_VALTYPE_ 537 x : 1;
+SIG_VALTYPE_ 537 y : 1;
+SIG_VALTYPE_ 538 x : 1;
+SIG_VALTYPE_ 538 y : 1;
+SIG_VALTYPE_ 539 x : 1;
+SIG_VALTYPE_ 539 y : 1;
+SIG_VALTYPE_ 540 x : 1;
+SIG_VALTYPE_ 540 y : 1;
+SIG_VALTYPE_ 541 x : 1;
+SIG_VALTYPE_ 541 y : 1;
+SIG_VALTYPE_ 542 x : 1;
+SIG_VALTYPE_ 542 y : 1;
+SIG_VALTYPE_ 543 x : 1;
+SIG_VALTYPE_ 543 y : 1;
+SIG_VALTYPE_ 544 x : 1;
+SIG_VALTYPE_ 544 y : 1;
+SIG_VALTYPE_ 545 x : 1;
+SIG_VALTYPE_ 545 y : 1;
+SIG_VALTYPE_ 546 x : 1;
+SIG_VALTYPE_ 546 y : 1;
+SIG_VALTYPE_ 547 x : 1;
+SIG_VALTYPE_ 547 y : 1;
+SIG_VALTYPE_ 548 x : 1;
+SIG_VALTYPE_ 548 y : 1;
+SIG_VALTYPE_ 549 x : 1;
+SIG_VALTYPE_ 549 y : 1;
+SIG_VALTYPE_ 550 x : 1;
+SIG_VALTYPE_ 550 y : 1;
+SIG_VALTYPE_ 551 x : 1;
+SIG_VALTYPE_ 551 y : 1;
+SIG_VALTYPE_ 552 x : 1;
+SIG_VALTYPE_ 552 y : 1;
+SIG_VALTYPE_ 553 x : 1;
+SIG_VALTYPE_ 553 y : 1;
+SIG_VALTYPE_ 554 x : 1;
+SIG_VALTYPE_ 554 y : 1;
+SIG_VALTYPE_ 555 x : 1;
+SIG_VALTYPE_ 555 y : 1;
+SIG_VALTYPE_ 556 x : 1;
+SIG_VALTYPE_ 556 y : 1;
+SIG_VALTYPE_ 557 x : 1;
+SIG_VALTYPE_ 557 y : 1;
+SIG_VALTYPE_ 558 x : 1;
+SIG_VALTYPE_ 558 y : 1;
+SIG_VALTYPE_ 559 x : 1;
+SIG_VALTYPE_ 559 y : 1;
+SIG_VALTYPE_ 560 x : 1;
+SIG_VALTYPE_ 560 y : 1;
+SIG_VALTYPE_ 561 x : 1;
+SIG_VALTYPE_ 561 y : 1;
+SIG_VALTYPE_ 562 x : 1;
+SIG_VALTYPE_ 562 y : 1;
+SIG_VALTYPE_ 563 x : 1;
+SIG_VALTYPE_ 563 y : 1;
+SIG_VALTYPE_ 564 x : 1;
+SIG_VALTYPE_ 564 y : 1;
+SIG_VALTYPE_ 565 x : 1;
+SIG_VALTYPE_ 565 y : 1;

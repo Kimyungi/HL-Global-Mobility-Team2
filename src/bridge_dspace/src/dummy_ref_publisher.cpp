@@ -20,9 +20,9 @@ public:
     v_ref_ = declare_parameter<double>("v_ref", 0.3);           // [m/s]
     curvature_ = declare_parameter<double>("curvature", 0.0);   // [1/m] 0 = 직선
     period_ms_ = declare_parameter<int>("period_ms", 10);
-    // 실제 소스와 동일 조건: lane/gps = 1점 (avoid 흉내는 3, 최대 20)
+    // 실제 소스와 동일 조건: lane/gps = 1점, 프로토콜 상한 3점
     n_points_ = static_cast<int>(declare_parameter<int>("n_points", 1));
-    n_points_ = std::clamp(n_points_, 1, bridge_dspace::kNumPoints);
+    n_points_ = std::clamp(n_points_, 1, bridge_dspace::kNumRefPoints);
 
     pub_ = create_publisher<TargetRef>("/adas/target_ref", rclcpp::QoS(1));
     timer_ = create_wall_timer(
