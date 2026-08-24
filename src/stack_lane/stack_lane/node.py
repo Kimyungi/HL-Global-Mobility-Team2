@@ -254,7 +254,13 @@ class StackLaneNode(Node):
                         f'카메라 오픈 실패({attempt + 1}/4): {e} — 8s 후 재시도')
                     time.sleep(8.0)
 
-        if hasattr(dai.Pipeline(), 'createColorCamera'):  # v2
+        # ⚠ dai.Pipeline() 을 '인스턴스로' 만들어 판별하면 안 된다 — depthai v3 에서는
+        # 인자 없는 Pipeline() 이 **기본 장치를 암묵적으로 연다**(2026-08-25 실측:
+        # getDefaultDevice() 가 Device 반환). MxID 핀닝을 무시하고 아무 카메라나
+        # 잡아 버리고, 이어지는 dai.Device(DeviceInfo(mxid)) 가 점유 충돌로 실패해
+        # open_device 의 8s×4 재시도(최대 24s)에 걸린다 — 기동이 멈춘 것처럼 보인다.
+        # 클래스 속성으로 보면 하드웨어를 건드리지 않는다 (v2 True / v3 False 확인).
+        if hasattr(dai.Pipeline, 'createColorCamera'):  # v2
             pipeline = dai.Pipeline()
             cam = pipeline.createColorCamera()
             cam.setPreviewSize(1280, 720)

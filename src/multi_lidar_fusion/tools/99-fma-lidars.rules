@@ -1,0 +1,30 @@
+# FMA 라이다 4대 슬롯 고정 (2026-08-25)
+#
+# 왜 필요한가
+#   ① ttyUSB 번호는 열거 순서라 재부팅·재삽입마다 바뀐다 — 2026-08-25 한 세션 안에서만
+#      세 번 바뀌었다(라디오 0→2, IMU 2→1, 전방 라이다 5→4). 번호로 지정하면 반드시 틀린다.
+#   ② T-mini Plus 두 대는 시리얼이 **둘 다 "0001"** 이라 by-id 로 구분되지 않는다.
+#      허브 포트 위치(ID_PATH)로만 갈린다.
+#   ③ C1M1 두 대는 시리얼이 고유하므로 시리얼로 건다 — 포트를 옮겨도 따라간다.
+#   ④ 전방/후방을 헷갈리면 증상이 "estop 이 안 풀린다"로만 보인다 (실제로 겪음:
+#      후방 라이다가 차체를 15cm 로 보고 DISTANCE_AT_OR_BELOW_THRESHOLD 영구 발동).
+#
+# 슬롯 정의는 multi_lidar_fusion/README.md 표를 따른다.
+# ⚠ ID_PATH 는 이 PC 의 USB 컨트롤러·허브 배치에 묶인다. 라이다를 다른 구멍에 꽂거나
+#    PC 를 바꾸면 `udevadm info -q property -n /dev/ttyUSBx | grep ID_PATH` 로 다시 확인할 것.
+#
+# 설치: sudo cp 99-fma-lidars.rules /etc/udev/rules.d/
+#       sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# a1 전방 T-mini Plus — 허브 포트 3.4
+#   /dev/ttyUSB_LIDAR = launch 의 lidar_port 기본값 → 인자를 안 붙여도 전방이 잡힌다
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:3.4:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="ttyUSB_LIDAR", SYMLINK+="lidar_front", SYMLINK+="ydlidar"
+
+# a2 후방 T-mini Plus — 허브 포트 3.3
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:3.3:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_rear"
+
+# b1 좌측 RPLiDAR C1M1
+SUBSYSTEM=="tty", ENV{ID_SERIAL_SHORT}=="f2ee467bfb1df111a7b6c4e40f0f12f8", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_left", SYMLINK+="rplidar"
+
+# b2 우측 RPLiDAR C1M1
+SUBSYSTEM=="tty", ENV{ID_SERIAL_SHORT}=="76d341fd291ef1118e6dbee40f0f12f8", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_right"

@@ -319,9 +319,18 @@ def generate_launch_description():
         #   봐야 보인다. 안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 올린다:
         #     ros2 launch ... usb_speed:=super camera_fps:=30
         DeclareLaunchArgument('usb_speed', default_value='high'),
-        # 이 PC(산업용)는 NVIDIA 없음 — 인텔 Arc iGPU를 XPU 백엔드로 사용
-        # (fp16 172ms/frame ≈ 5.8Hz, CPU 390ms 대비 2.3배 — 2026-08-11 실측).
-        # XPU 초기화 실패 시(드라이버 문제 등) lane_device:=cpu 로 폴백.
+        # NVIDIA 없음 — 인텔 iGPU를 XPU 백엔드로 쓴다.
+        #   산업용 PC (Arc 140V)      fp16 172ms/frame ≈ 5.8Hz   (2026-08-11)
+        #   Xanadu-book5 (Lunar Lake) fp16  35ms/frame ≈ 28.7Hz  (2026-08-25)
+        #   같은 노트북 CPU            fp32 617ms/frame ≈ 1.6Hz   (17.6배 차이)
+        #
+        # ⚠ XPU 는 컴퓨트 런타임이 있어야 뜬다. resolve_device()는 없을 때 폴백하지
+        # 않고 RuntimeError 를 던지므로(yolopv2_infer.py:26) stack_lane 이 기동 즉시
+        # 죽고 /perception/lane_path 퍼블리셔가 0이 된다 — go 점검 ②가 막힌다.
+        # 새 PC 에서 `torch.xpu.is_available() == False` 면 런타임 미설치다:
+        #   ~/intel_gpu_runtime/README.md  (22.04 는 compute-runtime 25.13 이 상한 —
+        #   25.18 부터 glibc 2.38 을 요구해 설치 자체가 안 된다)
+        # 급하면 lane_device:=cpu 로 폴백 (느리지만 뜨긴 한다).
         DeclareLaunchArgument('lane_device', default_value='xpu',
                               description="YOLOPv2 추론 장치: 'xpu'(인텔 GPU)/'cpu'/cuda 인덱스"),
         # 1.8 → 0.0(외삽 끔, ref[0] = points_x_start 2.5m 균일) — 2026-08-15.

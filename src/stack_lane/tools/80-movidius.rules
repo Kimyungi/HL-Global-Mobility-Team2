@@ -1,0 +1,14 @@
+# OAK-D (Luxonis / Intel Movidius MyriadX) — depthai 접근 권한
+#
+# 없으면 카메라가 lsusb 에는 보이는데 depthai 가 0 대로 열거하고
+# "Insufficient permissions to communicate with X_LINK_UNBOOTED device" 를 찍는다.
+# stack_lane 이 카메라를 못 열고 죽어 /perception/lane_path 퍼블리셔가 0 이 된다
+# (2026-08-25 실측 — 이 PC 에 규칙이 없어 발생).
+#
+# 03e7:2485 = 부팅 전(bootloader), 03e7:f63b = 파이프라인 실행 중.
+# 두 상태 모두 열려야 하므로 vid 만 보고 건다.
+#
+# 설치: sudo cp 80-movidius.rules /etc/udev/rules.d/
+#       sudo udevadm control --reload-rules && sudo udevadm trigger
+# 확인: python3 -c "import depthai; print(depthai.Device.getAllAvailableDevices())"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"

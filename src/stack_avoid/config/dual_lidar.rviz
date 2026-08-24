@@ -1,0 +1,147 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /ScanA_TminiPlus1
+        - /ScanB_RPLidarC11
+      Splitter Ratio: 0.5
+    Tree Height: 700
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 0.5
+      Class: rviz_default_plugins/Grid
+      Color: 100; 100; 100
+      Enabled: true
+      Line Style:
+        Line Width: 0.02
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: base_link
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Marker Scale: 0.3
+      Name: TF
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Value: true
+    # ── A: YDLidar T-mini Plus — 파랑 ──
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/LaserScan
+      Color: 0; 120; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Name: ScanA_TminiPlus
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 4
+      Size (m): 0.01
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan_a
+      Use Fixed Frame: true
+      Use rainbow: false
+      Value: true
+    # ── B: Slamtec RPLidar C1M1 — 빨강 ──
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/LaserScan
+      Color: 255; 40; 40
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Name: ScanB_RPLidarC1
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 4
+      Size (m): 0.01
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan_b
+      Use Fixed Frame: true
+      Use rainbow: false
+      Value: true
+    # ── 각도 눈금 (0/90/180/270°) — 라이다별 색 ──
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: AngleA_파랑
+      Namespaces: {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /angle_labels_a
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: AngleB_빨강
+      Namespaces: {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /angle_labels_b
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 20; 22; 28
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      # 기본은 위에서 내려다보기(XY 정렬 확인용).
+      # ★ 높이(z) 차이를 보려면 Views 패널에서 Current View 를 Orbit 으로 바꾸고
+      #   옆에서 볼 것 — 두 스캔 평면이 다른 높이의 선으로 갈라져 보인다.
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Current View
+      Scale: 120
+      Target Frame: base_link
+      X: 0
+      Y: 0
+    Saved:
+      - Class: rviz_default_plugins/Orbit
+        Distance: 4
+        Focal Point:
+          X: 1.0
+          Y: 0
+          Z: 0
+        Name: SideView_높이확인
+        Pitch: 0.02
+        Yaw: 1.57
+        Target Frame: base_link
+Window Geometry:
+  Height: 900
+  Width: 1400
+  Displays:
+    collapsed: false
+  Views:
+    collapsed: false
