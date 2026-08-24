@@ -2,14 +2,22 @@
 
 아키텍처·설계 결론은 [CLAUDE.md](CLAUDE.md)가 기준. 통신 바이너리 계약은 [PROTOCOL.md](src/bridge_dspace/PROTOCOL.md).
 
+> **처음 세팅하는 PC라면 [HANDOVER.md](HANDOVER.md) 부터.** 새 PC 세팅 순서, 운용 함정
+> (카메라 USB3 가 RTK 를 죽이는 건 등), 남긴 미완 작업이 정리돼 있다.
+
 ## 빌드
 
 ```bash
 source /opt/ros/humble/setup.bash
 cd ~/FMA_ws
-colcon build --symlink-install
+colcon build          # ⚠ --symlink-install 쓰지 말 것 (아래)
 source install/setup.bash
 ```
+
+> ⚠ **`--symlink-install` 금지.** 이 워크스페이스는 일반 `colcon build` 로 통일한다.
+> 두 방식을 섞으면 `stack_gps` 가 `PackageNotFoundError` 로 즉사하는데, **이미 열려 있던
+> 터미널에서만** 터져서 원인을 찾기 어렵다. 섞였다면 `rm -rf build install log` 후 재빌드.
+> 처음 세팅하는 PC라면 [HANDOVER.md](HANDOVER.md) 를 먼저 볼 것.
 
 ## 부트스트래핑 순서 (CLAUDE.md §6)
 

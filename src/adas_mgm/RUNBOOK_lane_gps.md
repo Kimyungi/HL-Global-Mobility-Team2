@@ -76,7 +76,8 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 
 - `waypoint_csv`는 **필수** — 코스에 맞는 CSV로 교체. 코스는 **베이스 지점마다 다르다**
   (`stack_gps/tools/base_station/BASE_LOCATIONS.md` 의 "위치 ↔ 코스 대응").
-- **`usb_speed:=high camera_fps:=10`도 사실상 필수 (2026-08-14).** 빼면 OAK-D가
+- **`usb_speed:=high camera_fps:=10`은 2026-08-24부터 기본값이라 더 이상 안 붙여도 된다.**
+  (아래 명령에는 명시적으로 남겨 뒀다 — 붙여도 같은 값이다.) 배경: 이 값을 빼면 OAK-D가
   USB3(SuperSpeed)로 열거되고 그 방사 잡음이 GNSS L1을 덮어 **RTK FIXED가 안 잡힌다**
   (같은 안테나 위치에서 C/N0 39dB↔22dB). USB2 대역폭이 ~40MB/s라 `camera_fps:=10`을
   반드시 동반한다. 적용되면 `stack_lane` 콘솔에 `USB 링크 속도 제한: HIGH`가 뜬다.
@@ -90,8 +91,8 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 
 | 인자 | 기본값 | 언제 바꾸나 |
 |---|---|---|
-| `usb_speed` | `super` (제한 없음) | **실주행은 항상 `high`** — GPS 간섭 대책 (위 설명) |
-| `camera_fps` | `30` | `usb_speed:=high`면 **반드시 `10`** (USB2 대역폭) |
+| `usb_speed` | **`high` (USB2 강제, 2026-08-24부터 기본)** | 그대로 두면 된다. USB3 대역이 필요할 때만 `super` |
+| `camera_fps` | **`10` (2026-08-24부터 기본)** | `usb_speed:=super`로 올릴 때만 `30`으로 함께 올린다 |
 | `lane_enabled` | `true` | `false`면 stack_lane 미기동 — 카메라 없이 GPS/회피만 시험할 때. 출발은 `ros2 run adas_mgm go --skip-lane` |
 | `gps_only` | `false` | `true`면 LANE **전이**만 차단(카메라는 그대로 뜸 — 사후 분석용 데이터 유지) |
 | `lane_device` | `xpu` (인텔 iGPU, 172ms/frame) | XPU 초기화 실패 시 `cpu`로 폴백 |
