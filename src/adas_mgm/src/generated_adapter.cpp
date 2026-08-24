@@ -33,9 +33,13 @@ void validateParams(const CoreParams & params)
   require_finite(params.lane_conf_return, "lane_conf_return");
   require_finite(params.v_base, "v_base");
   require_finite(params.v_accel_zone, "v_accel_zone");
+  require_finite(params.v_narrow, "v_narrow");
+  require_finite(params.ttc_stop, "ttc_stop");
   require_finite(params.a_up, "a_up");
   require_finite(params.a_down, "a_down");
+  require_finite(params.wrongway_yaw, "wrongway_yaw");
   require_finite(params.lane_entry_max_cross, "lane_entry_max_cross");
+  require_finite(params.v_avoid, "v_avoid");
 
   const bool gps_only_sentinel =
     params.lane_conf_exit == 2.0f && params.lane_conf_return == 2.0f;
@@ -65,6 +69,12 @@ void validateParams(const CoreParams & params)
     throw std::invalid_argument(
             "GeneratedMgmAdapter: v_accel_zone must be at least v_base");
   }
+  if (params.v_narrow < 0.0f) {
+    throw std::invalid_argument("GeneratedMgmAdapter: v_narrow must be non-negative");
+  }
+  if (params.ttc_stop < 0.0f) {
+    throw std::invalid_argument("GeneratedMgmAdapter: ttc_stop must be non-negative");
+  }
   if (params.blend_cycles < 0) {
     throw std::invalid_argument("GeneratedMgmAdapter: blend_cycles must be non-negative");
   }
@@ -74,9 +84,27 @@ void validateParams(const CoreParams & params)
   if (params.a_down <= 0.0f) {
     throw std::invalid_argument("GeneratedMgmAdapter: a_down must be greater than zero");
   }
-  if (params.lane_entry_max_cross < 0.0f) {
+  constexpr float kPi = 3.14159265358979323846f;
+  if (params.wrongway_yaw < 0.0f || params.wrongway_yaw > kPi) {
     throw std::invalid_argument(
-            "GeneratedMgmAdapter: lane_entry_max_cross must be non-negative");
+            "GeneratedMgmAdapter: wrongway_yaw must be in [0, pi]");
+  }
+  if (params.wrongway_cycles <= 0) {
+    throw std::invalid_argument(
+            "GeneratedMgmAdapter: wrongway_cycles must be greater than zero");
+  }
+  if (params.avoid_return_hold_cycles < 0) {
+    throw std::invalid_argument(
+            "GeneratedMgmAdapter: avoid_return_hold_cycles must be non-negative");
+  }
+  if (params.avoid_zone_only != 0 && params.avoid_zone_only != 1) {
+    throw std::invalid_argument(
+            "GeneratedMgmAdapter: avoid_zone_only must be exactly 0 or 1");
+  }
+  if (params.escape_after_cycles != 0) {
+    throw std::invalid_argument(
+            "GeneratedMgmAdapter: escape_after_cycles must be zero because "
+            "ADAS_MGR2 v1.88 does not implement rear escape");
   }
 }
 
@@ -137,6 +165,9 @@ void copySnapshot(const CoreSnapshot & source, CoreSnapshotBus & target)
   target.traffic_stop_required = source.traffic_stop_required;
   target.estop = source.estop;
   target.estop_latch_release = source.estop_latch_release;
+  target.gps_stop_zone = source.gps_stop_zone;
+  target.gps_avoid_zone = source.gps_avoid_zone;
+  target.gps_gps_only_zone = source.gps_gps_only_zone;
 }
 
 }  // namespace
@@ -191,10 +222,19 @@ void GeneratedMgmAdapter::initialize(const CoreParams & params)
   MGM_n_cycles = params.n_cycles;
   MGM_v_base = params.v_base;
   MGM_v_accel_zone = params.v_accel_zone;
+  MGM_v_narrow = params.v_narrow;
+  MGM_ttc_stop = params.ttc_stop;
   MGM_blend_cycles = params.blend_cycles;
   MGM_a_up = params.a_up;
   MGM_a_down = params.a_down;
+  MGM_wrongway_yaw = params.wrongway_yaw;
+  MGM_wrongway_cycles = params.wrongway_cycles;
+  MGM_avoid_return_hold_cycles = params.avoid_return_hold_cycles;
   MGM_lane_entry_max_cross = params.lane_entry_max_cross;
+  MGM_avoid_max_cycles = params.avoid_max_cycles;
+  MGM_v_avoid = params.v_avoid;
+  MGM_stop_zone_hold_cycles = params.stop_zone_hold_cycles;
+  MGM_avoid_zone_only = params.avoid_zone_only;
 
   ADAS_MGR2_initialize();
   throwIfModelError("initialize");
@@ -236,6 +276,26 @@ int32_t GeneratedMgmAdapter::laneLowCnt() const
 int32_t GeneratedMgmAdapter::laneHighCnt() const
 {
   return ADAS_MGR2_DW.lane_high_cnt;
+}
+
+int32_t GeneratedMgmAdapter::avoidTicks() const
+{
+  return ADAS_MGR2_DW.avoid_ticks;
+}
+
+int32_t GeneratedMgmAdapter::returnHoldLeft() const
+{
+  return ADAS_MGR2_DW.return_hold_left;
+}
+
+bool GeneratedMgmAdapter::stopZoneHolding() const
+{
+  return ADAS_MGR2_DW.stop_zone_holding;
+}
+
+int32_t GeneratedMgmAdapter::stopHoldLeft() const
+{
+  return ADAS_MGR2_DW.stop_hold_left;
 }
 
 CoreOutput GeneratedMgmAdapter::step(const CoreSnapshot & input)

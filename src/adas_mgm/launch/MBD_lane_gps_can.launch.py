@@ -1,8 +1,8 @@
-"""MBD(Simulink 생성 C) MGM 실차 시험 launch — 차선 ↔ GPS 2상태만.
+"""MBD(Simulink 생성 C) MGM 실차 시험 launch — v1.88 4상태.
 
 **REAL_VEHICLE_lane_gps_can.launch.py 와는 별개 파일이다.** 그쪽(V2)은 베이스
 좌표부터 지정 구간 3종까지 다 물려 있는 운영 런치이므로 건드리지 않는다.
-이 파일은 김재민의 `ADAS_MGR2` v1.68 생성 C 를 `mgm_step()` 자리에 끼워
+이 파일은 김재민의 `ADAS_MGR2` v1.88 생성 C 를 `mgm_step()` 자리에 끼워
 (CLAUDE.md §5.5 이중 트랙) **레퍼런스 C++ 코어와 같은 차를 같은 코스에서**
 굴려 보기 위한 것이다.
 
@@ -11,18 +11,12 @@
   생성 C 도 `(ref_points, v_ref, flags)` 까지만 내놓는다 (§5.5 인터페이스).
   CAN 은 MBD 모델의 몫이 아니다 — 양자화·프레임 분할은 계속 bridge_dspace 다.
 
-v1.68 이 **갖고 있지 않은 것** (그래서 이 런치가 빼는 것):
-  · AVOID / PARKING 스테이트  → stack_avoid 를 아예 안 띄운다
-  · TTC 안전 바닥 · narrow_gap 감속
-  · 종점(at_end) 래치 · 역방향 래치 · estop_latch_release
-  · 지정 구간 3종(gps_only_zone · stop_zone · avoid_zone — 2026-08-18 main)
-  DecisionBackend 가 이 입력들을 감시하다가 하나라도 들어오면 **영구 fail-stop
-  래치**(v_ref 0)를 건다. 즉 "몰래 다르게 굴러가는" 일은 없고, 대신 트랙 종점을
-  지나면 그 자리에서 서고 **노드를 재시작해야** 다시 움직인다.
-
-그래서 **LANE ↔ WAYPOINT 전이는 차선 신뢰도 히스테리시스 + 재합류 게이트로만**
-일어난다. 구간 파일에 GPS 전용 구간을 찍어 두었어도 MBD 는 그것을 못 본다
-(validate() 가 경고를 찍는다).
+v1.88은 LANE/WAYPOINT/AVOID/PARKING, TTC·narrow 제한, 종점·역방향
+래치, 지정 정지·회피·GPS 전용 구간을 구현한다. 단, 모델 생성 직후
+main에 추가된 **후진 탈출(rear escape)**은 없다. 이 런치는
+`escape_after_cycles=0`을 강제하고, 생성 backend도 활성값을 fail-fast한다.
+PARKING 로직은 오프라인 패리티로 검증하되 이 런치에는 parking producer가
+없으므로 실차 항목에서는 제외한다.
 
 2단계로 쓴다:
 
@@ -30,8 +24,9 @@ v1.68 이 **갖고 있지 않은 것** (그래서 이 런치가 빼는 것):
        ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
            waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
            usb_speed:=high camera_fps:=10
-       확인:  ros2 run adas_mgm state          (스테이트 전이 이력)
-              ros2 topic echo /adas/target_ref  (v_ref·ref points)
+       확인:  ros2 run adas_mgm state --ros-args \
+                  -r /adas/target_ref:=/bench/adas/target_ref
+              ros2 topic echo /bench/adas/target_ref
 
   ② 실주행 — 확인 토큰을 주면 bridge_dspace + can_zero 가드가 붙는다.
        ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
@@ -39,8 +34,7 @@ v1.68 이 **갖고 있지 않은 것** (그래서 이 런치가 빼는 것):
            waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
            usb_speed:=high camera_fps:=10
 
-출발 인가는 **`ros2 run adas_mgm go --skip-avoid`** 다 — stack_avoid 를 안 띄우므로
-회피 점검을 건너뛰어야 한다.
+출발 인가는 **`ros2 run adas_mgm go`** 다. stack_avoid도 함께 띄운다.
 
 빌드는 별도 opt-in 이 필요하다 (생성 C 는 기본 빌드에 링크되지 않는다):
     colcon build --packages-up-to adas_mgm \
@@ -94,7 +88,8 @@ LOG_DIR = os.path.expanduser(
 RECORD_TOPICS = [
     '/perception/lane_path', '/perception/gps_path', '/perception/gps_fix',
     '/perception/estop', '/perception/avoid', '/perception/parking',
-    '/perception/traffic_stop', '/adas/target_ref', '/vehicle/vector',
+    '/perception/traffic_stop', '/adas/target_ref', '/bench/adas/target_ref',
+    '/vehicle/vector',
     '/scan', '/rosout', '/tf', '/tf_static',
 ]
 
@@ -125,12 +120,14 @@ def validate(context):
     can_on = confirm == CONFIRM_TOKEN
 
     print('[launch] ════════ MBD(생성 C) MGM 시험 ════════')
-    print('[launch] backend = generated (ADAS_MGR2 v1.68) — LANE/WAYPOINT 2상태만')
+    print('[launch] backend = generated (ADAS_MGR2 v1.88) — 4상태, rear escape 비활성')
     if can_on:
         print('[launch] ⚠ 실주행 모드 — CAN TX 나갑니다. 물리 비상정지에 손 올릴 것')
+        mgm_output_topic = '/adas/target_ref'
     else:
-        print('[launch] bench 모드 — bridge_dspace 미기동, 바퀴 안 움직입니다')
+        print('[launch] bench 모드 — MGM 출력을 /bench/adas/target_ref로 격리')
         print('[launch]   실주행하려면: REAL_VEHICLE_CONFIRM:=' + CONFIRM_TOKEN)
+        mgm_output_topic = '/bench/adas/target_ref'
 
     waypoint_csv = LaunchConfiguration('waypoint_csv').perform(context)
     if not waypoint_csv:
@@ -149,11 +146,10 @@ def validate(context):
             f'{waypoint_csv}')
     print(f'[launch] 웨이포인트 {len(rows)}점 확인: {os.path.basename(waypoint_csv)}')
 
-    # 구간 파일은 stack_gps 에 그대로 넘긴다 (GpsPath 에 실려 bag 에 남고, 나중에
-    # 같은 덤프를 레퍼런스 코어로 재생할 때 필요하다). 다만 **MBD 는 못 본다** —
-    # 여기서 크게 경고하지 않으면 "언덕에서 왜 안 서지?" 로 현장에서 헤맨다.
+    # v1.88은 구간 3종을 직접 입력받으므로 파일과 개수를 현장 로그에 남긴다.
     zones_file = (LaunchConfiguration('zones_file').perform(context)
                   or zones_path_for(waypoint_csv))
+    n_avoid = 0
     if os.path.isfile(zones_file):
         try:
             with open(zones_file) as f:
@@ -163,23 +159,21 @@ def validate(context):
             n_gonly = len([a for a in (z.get('gps_only_zones') or []) if 'end' in a])
             print(f'[launch] 구간 파일: {os.path.basename(zones_file)} '
                   f'(정지 {n_stop} · 회피 {n_avoid} · GPS전용 {n_gonly})')
-            if n_stop or n_avoid or n_gonly:
-                print('[launch] ⚠ ADAS_MGR2 v1.68 은 지정 구간 3종을 구현하지 않는다 — '
-                      '이 run 에서는 **전부 무시**된다')
-                if n_stop:
-                    print('[launch]   · 지정 지점에서 자동 정차하지 않는다')
-                if n_gonly:
-                    print('[launch]   · GPS 전용 구간에서도 차선 신뢰도가 높으면 LANE 으로 간다 '
-                          '(run 전체를 GPS 로만 가려면 gps_only:=true)')
         except Exception as e:                                # noqa: BLE001
             print(f'[launch] ⚠ 구간 파일을 못 읽음 — 지정 구간 없이 진행: {e}')
     else:
         print(f'[launch] 구간 파일 없음 ({os.path.basename(zones_file)}) — 지정 구간 없이 주행')
 
-    print('[launch] ⚠ stack_avoid 미기동 — 장애물은 회피가 아니라 stack_estop 정지로만 대응.'
-          ' 출발 인가는 `ros2 run adas_mgm go --skip-avoid`')
-    print('[launch] ⚠ 트랙 종점(at_end)에 닿으면 생성 backend 가 영구 fail-stop 래치를 건다 —'
-          ' 정지는 정상, 다시 달리려면 launch 재시작')
+    if LaunchConfiguration('avoid_zone_only').perform(context) == 'true':
+        if not os.path.isfile(zones_file) or n_avoid == 0:
+            print('[launch] ⚠ avoid_zone_only=true + 회피 구간 없음 — AVOID 진입 차단')
+        else:
+            print('[launch] AVOID는 구간 파일의 회피 구간 안에서만 허용')
+    else:
+        print('[launch] avoid_zone_only=false — 어느 위치에서나 AVOID 진입 허용')
+
+    print('[launch] stack_avoid 기동 — AVOID/TTC/narrow/v_avoid 입력을 v1.88에 연결')
+    print('[launch] ⚠ v1.88 rear escape 미지원 — escape_after_cycles=0 고정')
 
     if LaunchConfiguration('lane_enabled').perform(context) == 'true':
         homography = LaunchConfiguration('homography_path').perform(context)
@@ -189,11 +183,14 @@ def validate(context):
                 '(stack_lane CALIBRATION_GUIDE.md)')
     else:
         print('[launch] ⚠ stack_lane 미기동 — LANE 전이 없음, '
-              '`ros2 run adas_mgm go --skip-lane --skip-avoid`')
+              '`ros2 run adas_mgm go --skip-lane`')
 
     os.makedirs(LOG_DIR, exist_ok=True)
     print(f'[record] 로그 디렉터리: {LOG_DIR}')
-    return [SetLaunchConfiguration('zones_file_resolved', zones_file)]
+    return [
+        SetLaunchConfiguration('zones_file_resolved', zones_file),
+        SetLaunchConfiguration('mgm_output_topic', mgm_output_topic),
+    ]
 
 
 def generate_launch_description():
@@ -226,8 +223,12 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'zones_file', default_value='',
             description='구간 파일 경로 (빈 값 = waypoint_csv 옆 zones_*.yaml 자동). '
-                        'MBD 는 구간을 무시하지만 bag 기록·재생 비교용으로 넘긴다'),
+                        'v1.88의 지정 정지·회피·GPS 전용 구간 입력'),
+        DeclareLaunchArgument('stop_hold_sec', default_value='3.0'),
         DeclareLaunchArgument('stop_zone_span_m', default_value='1.0'),
+        DeclareLaunchArgument(
+            'avoid_zone_only', default_value='true',
+            description='참이면 구간 파일의 avoid zone 안에서만 AVOID 진입'),
 
         # LANE 전이 차단 (임계 2.0 = confidence 최대 1.0 이라 도달 불가).
         # 생성 backend 의 adapter 도 이 2.0/2.0 을 "GPS 전용 sentinel" 로 인정한다.
@@ -291,13 +292,16 @@ def generate_launch_description():
             respawn_delay=2.0,
         ),
 
-        # ★ stack_avoid 는 띄우지 않는다. v1.68 에 AVOID 가 없어서만이 아니라,
-        #   장애물이 한 번이라도 잡히면 DecisionBackend 가 "지원 범위 이탈" 로
-        #   영구 fail-stop 을 래치해 run 이 끝나기 때문이다.
-        #   ⚠ 그 대가로 base_link→laser_frame TF 발행자가 없다 (평소엔 stack_avoid
-        #     노드가 실측값으로 발행). stack_estop 은 laser_yaw_in_base_rad 를 직접
-        #     받으므로 동작에 영향 없고, RViz 로 /scan 을 보려면 그때만 TF 를 따로
-        #     띄울 것.
+        # v1.88은 AVOID를 구현하므로 운영 런치와 같은 인지 노드를 연결한다.
+        # base_link→laser_frame TF도 이 노드가 실측 파라미터로 발행한다.
+        Node(
+            package='stack_avoid',
+            executable='stack_avoid_node',
+            name='stack_avoid_node',
+            parameters=[os.path.join(
+                get_package_share_directory('stack_avoid'), 'config', 'params.yaml')],
+            output='screen',
+        ),
 
         Node(
             package='stack_estop',
@@ -377,6 +381,11 @@ def generate_launch_description():
             package='adas_mgm',
             executable='mgm_node',
             name='mgm_node',
+            # 확인 토큰이 없으면 다른 launch의 운영 bridge가 남아 있어도
+            # 읽을 수 없는 bench 토픽으로 출력을 강제 격리한다.
+            remappings=[
+                ('/adas/target_ref', LaunchConfiguration('mgm_output_topic')),
+            ],
             parameters=[mgm_params, {
                 # ★ 이 두 줄이 MBD 시험의 전부다 — 나머지는 V2 와 같은 구성.
                 #   acknowledge 를 빼면 노드가 기동 실패한다 (core 로 몰래 폴백하지 않음).
@@ -397,10 +406,14 @@ def generate_launch_description():
                     ["2.0 if '", LaunchConfiguration('gps_only'),
                      f"' == 'true' else {lane_return_default}"]),
                     value_type=float),
-                # 지정 구간 기구는 전부 끈다 — v1.68 이 구현하지 않으므로 켜 두면
-                # 레퍼런스 코어와 비교할 때 "왜 다르지" 의 원인만 늘어난다.
-                'stop_zone_hold_cycles': 0,
-                'avoid_zone_only': False,
+                # v1.88의 지정 정지와 회피 허용 구간을 운영 코어와 같은 값으로 연결한다.
+                'stop_zone_hold_cycles': ParameterValue(PythonExpression(
+                    ["int(round(float('", LaunchConfiguration('stop_hold_sec'),
+                     "') * 100))"]), value_type=int),
+                'avoid_zone_only': ParameterValue(
+                    LaunchConfiguration('avoid_zone_only'), value_type=bool),
+                # ADAS_MGR2 v1.88은 main의 rear-escape 계약을 아직 포함하지 않는다.
+                'escape_after_cycles': 0,
             }],
             output='screen',
             on_exit=die_hard('mgm_node',
@@ -414,10 +427,9 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # CAN 브리지 + 종료 시 목표값 0 복귀 — 확인 토큰을 준 run 에서만 붙는다.
-        # 토큰이 없으면 이 셋이 통째로 빠져 /adas/target_ref 를 아무도 안 읽는다
-        # (= 바퀴가 안 움직인다). 김재민의 PR #39 는 대신 토픽 이름을 remap 해
-        # 격리했는데, 그러면 실주행 단계로 못 넘어가므로 조건부 기동으로 바꿨다.
+        # 확인 토큰이 없으면 bridge/can_zero를 모두 빼고 MGM 출력도
+        # /bench/adas/target_ref로 격리한다. 토큰이 있으면 운영 /adas/target_ref와
+        # bridge/can_zero를 함께 활성화한다.
         *can_bridge_with_zero_guard(
             condition=IfCondition(CAN_ON),
             can_interface=LaunchConfiguration('can_interface')),

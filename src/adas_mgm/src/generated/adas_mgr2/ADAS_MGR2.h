@@ -7,9 +7,9 @@
  *
  * Code generated for Simulink model 'ADAS_MGR2'.
  *
- * Model version                  : 1.68
+ * Model version                  : 1.88
  * Simulink Coder version         : 26.1 (R2026a) 20-Nov-2025
- * C/C++ source code generated on : Tue Aug 18 12:41:30 2026
+ * C/C++ source code generated on : Mon Aug 24 16:57:32 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -45,14 +45,12 @@ typedef struct {
   real32_T target_y[20];
   real32_T target_yaw[20];
   real32_T target_curvature[20];
-  real32_T v_ref_req;                  /* '<S1>/Chart' */
   real32_T v_min;
-  real32_T UnitDelay;                  /* '<S8>/Unit Delay' */
+  real32_T v_max;
+  real32_T v_ref_req;
   real32_T rtb_selected_path_pts_m;
   int32_T n_valid;
   int32_T i;
-  uint8_T path_source;                 /* '<S1>/Chart' */
-  boolean_T immediate_stop;            /* '<S1>/Chart' */
 } B_ADAS_MGR2_T;
 
 /* Block states (default storage) for system '<Root>' */
@@ -75,8 +73,19 @@ typedef struct {
   int32_T raw_n;                       /* '<S7>/Ref_Hold_Blend_Core' */
   int32_T lane_low_cnt;                /* '<S1>/Chart' */
   int32_T lane_high_cnt;               /* '<S1>/Chart' */
+  int32_T avoid_ticks;                 /* '<S1>/Chart' */
+  int32_T return_hold_left;            /* '<S1>/Chart' */
+  int32_T wrongway_cnt;                /* '<S1>/Chart' */
+  int32_T wrongway_ok_cnt;             /* '<S1>/Chart' */
+  int32_T stop_hold_left;              /* '<S1>/Chart' */
   uint8_T last_src;                    /* '<S7>/Ref_Hold_Blend_Core' */
+  uint8_T stop_zone_done_id;           /* '<S1>/Chart' */
+  uint8_T stop_zone_boot_id;           /* '<S1>/Chart' */
   boolean_T has_raw_target;            /* '<S7>/Ref_Hold_Blend_Core' */
+  boolean_T wrongway_latched;          /* '<S1>/Chart' */
+  boolean_T at_end_latched;            /* '<S1>/Chart' */
+  boolean_T stop_zone_holding;         /* '<S1>/Chart' */
+  boolean_T stop_zone_init;            /* '<S1>/Chart' */
 } DW_ADAS_MGR2_T;
 
 /* External inputs (root inport signals with default storage) */
@@ -114,6 +123,18 @@ extern ExtY_ADAS_MGR2_T ADAS_MGR2_Y;
  * these parameters and exports their symbols.
  *
  */
+extern int32_T MGM_avoid_max_cycles;   /* Variable: avoid_max_cycles
+                                        * Referenced by: '<S1>/Chart'
+                                        * Maximum AVOID duration in ticks
+                                        */
+extern int32_T MGM_avoid_return_hold_cycles;/* Variable: avoid_return_hold_cycles
+                                             * Referenced by: '<S1>/Chart'
+                                             * WAYPOINT hold time after leaving AVOID
+                                             */
+extern int32_T MGM_avoid_zone_only;    /* Variable: avoid_zone_only
+                                        * Referenced by: '<S1>/Chart'
+                                        * Restrict AVOID entry to GPS avoid zone
+                                        */
 extern int32_T MGM_blend_cycles;       /* Variable: blend_cycles
                                         * Referenced by: '<S7>/blend_cycles'
                                         * Reference path blend duration in ticks
@@ -121,6 +142,14 @@ extern int32_T MGM_blend_cycles;       /* Variable: blend_cycles
 extern int32_T MGM_n_cycles;           /* Variable: n_cycles
                                         * Referenced by: '<S1>/Chart'
                                         * Required consecutive lane confidence cycles
+                                        */
+extern int32_T MGM_stop_zone_hold_cycles;/* Variable: stop_zone_hold_cycles
+                                          * Referenced by: '<S1>/Chart'
+                                          * Stop-zone hold duration in ticks
+                                          */
+extern int32_T MGM_wrongway_cycles;    /* Variable: wrongway_cycles
+                                        * Referenced by: '<S1>/Chart'
+                                        * Consecutive cycles for wrong-way latch/set-clear
                                         */
 extern real32_T MGM_a_down;            /* Variable: a_down
                                         * Referenced by: '<S8>/a_down'
@@ -142,13 +171,29 @@ extern real32_T MGM_lane_entry_max_cross;/* Variable: lane_entry_max_cross
                                           * Referenced by: '<S1>/Chart'
                                           * Maximum GPS cross-track error for WAYPOINT -> LANE
                                           */
+extern real32_T MGM_ttc_stop;          /* Variable: ttc_stop
+                                        * Referenced by: '<S1>/Chart'
+                                        * Immediate stop TTC threshold
+                                        */
 extern real32_T MGM_v_accel_zone;      /* Variable: v_accel_zone
                                         * Referenced by: '<S1>/Chart'
                                         * Target velocity in GPS acceleration zone
                                         */
+extern real32_T MGM_v_avoid;           /* Variable: v_avoid
+                                        * Referenced by: '<S1>/Chart'
+                                        * AVOID state velocity upper limit
+                                        */
 extern real32_T MGM_v_base;            /* Variable: v_base
                                         * Referenced by: '<S1>/Chart'
                                         * Base target velocity
+                                        */
+extern real32_T MGM_v_narrow;          /* Variable: v_narrow
+                                        * Referenced by: '<S1>/Chart'
+                                        * AVOID velocity upper limit in narrow gap
+                                        */
+extern real32_T MGM_wrongway_yaw;      /* Variable: wrongway_yaw
+                                        * Referenced by: '<S1>/Chart'
+                                        * Wrong-way latch yaw threshold
                                         */
 
 /* Model entry point functions */

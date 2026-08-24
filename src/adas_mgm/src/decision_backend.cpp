@@ -25,36 +25,76 @@ bool finitePoint(const CorePoint & point)
          std::isfinite(point.yaw) && std::isfinite(point.curvature);
 }
 
-bool nonzeroOrInvalid(float value)
+bool validInputPath(const CorePath & path)
 {
-  return !std::isfinite(value) || std::fabs(value) > 1.0e-6f;
+  if (path.n < 0 || path.n > MGM_NUM_POINTS) {
+    return false;
+  }
+  for (int32_t index = 0; index < path.n; ++index) {
+    if (!finitePoint(path.pts[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+uint8_t sourceForState(uint8_t state)
+{
+  switch (state) {
+    case MGM_STATE_WAYPOINT: return MGM_SRC_GPS;
+    case MGM_STATE_AVOID: return MGM_SRC_AVOID;
+    case MGM_STATE_PARKING: return MGM_SRC_PARKING;
+    default: return MGM_SRC_LANE;
+  }
 }
 
 }  // namespace
 
 bool validateGeneratedOutput(
   const CoreOutput & output, const CoreSnapshot & input,
-  const CoreParams & params, std::string & reason)
+  const CoreParams & params, std::string & reason,
+  bool allow_parking_reverse_ramp, float previous_v_ref)
 {
-  if (output.state > MGM_STATE_WAYPOINT) {
-    reason = "generated state is outside LANE/WAYPOINT";
+  if (output.state > MGM_STATE_PARKING) {
+    reason = "generated state is outside LANE/WAYPOINT/AVOID/PARKING";
     return false;
   }
-  if (output.path_source > MGM_SRC_GPS || output.path_source != output.state) {
-    reason = "generated path source does not match the two-state output";
+  if (output.path_source != sourceForState(output.state)) {
+    reason = "generated path source does not match the four-state output";
     return false;
   }
   if (output.n_points < 1 || output.n_points > MGM_NUM_POINTS) {
     reason = "generated output path must contain 1..20 points";
     return false;
   }
-  if (!std::isfinite(output.v_ref) || output.v_ref < 0.0f) {
-    reason = "generated v_ref is non-finite or negative";
+  if (!std::isfinite(output.v_ref)) {
+    reason = "generated v_ref is non-finite";
     return false;
   }
-  const float maximum_v_ref = std::max(params.v_base, params.v_accel_zone);
-  if (output.v_ref > maximum_v_ref + 1.0e-4f) {
-    reason = "generated v_ref exceeds the configured maximum";
+  if (output.v_ref < 0.0f && output.state != MGM_STATE_PARKING) {
+    if (!allow_parking_reverse_ramp || !std::isfinite(previous_v_ref) ||
+      previous_v_ref >= 0.0f || output.v_ref + 1.0e-4f < previous_v_ref)
+    {
+      reason = "generated negative v_ref is not a monotonic PARKING exit ramp";
+      return false;
+    }
+  }
+  float maximum_abs_v_ref = std::max(std::fabs(params.v_base), std::fabs(params.v_accel_zone));
+  maximum_abs_v_ref = std::max(maximum_abs_v_ref, std::fabs(params.v_narrow));
+  maximum_abs_v_ref = std::max(maximum_abs_v_ref, std::fabs(params.v_avoid));
+  if (std::isfinite(input.avoid_v_suggest)) {
+    maximum_abs_v_ref = std::max(maximum_abs_v_ref, std::fabs(input.avoid_v_suggest));
+  }
+  if (std::isfinite(input.parking_v_suggest)) {
+    maximum_abs_v_ref = std::max(maximum_abs_v_ref, std::fabs(input.parking_v_suggest));
+  }
+  if (output.v_ref < 0.0f && allow_parking_reverse_ramp &&
+    std::isfinite(previous_v_ref))
+  {
+    maximum_abs_v_ref = std::max(maximum_abs_v_ref, std::fabs(previous_v_ref));
+  }
+  if (std::fabs(output.v_ref) > maximum_abs_v_ref + 1.0e-4f) {
+    reason = "generated |v_ref| exceeds all configured and requested speeds";
     return false;
   }
   for (int32_t i = 0; i < output.n_points; ++i) {
@@ -71,6 +111,12 @@ bool validateGeneratedOutput(
     reason = "generated output did not honor E-stop";
     return false;
   }
+  if (output.state == MGM_STATE_AVOID && input.avoid_ttc < params.ttc_stop &&
+    (!output.immediate_stop || output.v_ref != 0.0f))
+  {
+    reason = "generated AVOID output did not honor the TTC stop threshold";
+    return false;
+  }
   return true;
 }
 
@@ -78,31 +124,27 @@ bool generatedInputWithinLaneWaypointScope(
   const CoreSnapshot & input, const CoreParams & params,
   std::string & reason)
 {
-  if (input.avoid_obstacle_detected || input.avoid_avoidable ||
-    input.avoid_narrow_gap || input.avoid_maneuver_done ||
-    input.avoid_path.n != 0 || nonzeroOrInvalid(input.avoid_v_suggest) ||
-    !std::isfinite(input.avoid_ttc) || !std::isfinite(params.ttc_stop) ||
-    input.avoid_ttc <= params.ttc_stop)
-  {
-    reason = "AVOID input is unsupported by ADAS_MGR2 v1.68";
+  if (params.escape_after_cycles != 0) {
+    reason = "rear escape is unsupported by ADAS_MGR2 v1.88";
     return false;
   }
-  if (input.gps_parking_zone || input.parking_space_found ||
-    input.parking_path_blocked || input.parking_done ||
-    input.parking_path.n != 0 || nonzeroOrInvalid(input.parking_v_suggest))
+  if (!std::isfinite(input.lane_confidence) ||
+    !std::isfinite(input.gps_cross_track) ||
+    !std::isfinite(input.avoid_ttc) ||
+    !std::isfinite(input.avoid_v_suggest) ||
+    !std::isfinite(input.parking_v_suggest))
   {
-    reason = "PARKING input is unsupported by ADAS_MGR2 v1.68";
+    reason = "generated backend input contains a non-finite decision value";
     return false;
   }
-  if (input.gps_at_end) {
-    reason = "the production gps_at_end latch is unsupported by ADAS_MGR2 v1.68";
+  if (input.avoid_v_suggest < 0.0f) {
+    reason = "generated backend requires a non-negative AVOID speed suggestion";
     return false;
   }
-  if (input.gps_heading_valid && input.gps_path.n > 0 &&
-    std::isfinite(input.gps_path.pts[0].yaw) &&
-    std::fabs(input.gps_path.pts[0].yaw) > params.wrongway_yaw)
+  if (!validInputPath(input.lane_path) || !validInputPath(input.gps_path) ||
+    !validInputPath(input.avoid_path) || !validInputPath(input.parking_path))
   {
-    reason = "the production wrong-way latch is unsupported by ADAS_MGR2 v1.68";
+    reason = "generated backend input contains an invalid path";
     return false;
   }
   return true;
@@ -124,6 +166,11 @@ DecisionBackend::DecisionBackend(
   if (!generated_scope_acknowledged) {
     throw std::invalid_argument(
             "backend=generated requires generated_backend_acknowledge_limited_scope=true");
+  }
+  if (params_.escape_after_cycles != 0) {
+    throw std::invalid_argument(
+            "backend=generated requires escape_after_cycles=0 because "
+            "ADAS_MGR2 v1.88 has no rear-escape input or state");
   }
   if (!std::isfinite(params_.ttc_stop) || params_.ttc_stop < 0.0f) {
     throw std::invalid_argument("backend=generated requires a finite non-negative ttc_stop");
@@ -178,10 +225,18 @@ CoreOutput DecisionBackend::stepGenerated(const CoreSnapshot & input)
     if (input.estop && output.n_points == 0) {
       return failStopOutput();
     }
-    if (!validateGeneratedOutput(output, input, params_, reason)) {
+    const bool allow_parking_reverse =
+      output.state == MGM_STATE_PARKING || active_state_ == MGM_STATE_PARKING ||
+      parking_reverse_ramp_active_;
+    const float previous_v_ref =
+      has_last_valid_output_ ? last_valid_output_.v_ref : 0.0f;
+    if (!validateGeneratedOutput(
+        output, input, params_, reason, allow_parking_reverse, previous_v_ref))
+    {
       latchFault(reason);
       return failStopOutput();
     }
+    parking_reverse_ramp_active_ = allow_parking_reverse && output.v_ref < 0.0f;
     active_state_ = output.state;
     last_valid_output_ = output;
     has_last_valid_output_ = true;
@@ -201,12 +256,22 @@ CoreOutput DecisionBackend::stepGenerated(const CoreSnapshot & input)
 
 bool DecisionBackend::stopZoneHolding() const
 {
-  return kind_ == Kind::kCore ? core_state_.stop_zone_holding : false;
+#ifdef ADAS_MGM_HAS_GENERATED_BACKEND
+  if (kind_ == Kind::kGenerated) {
+    return generated_->stopZoneHolding();
+  }
+#endif
+  return core_state_.stop_zone_holding;
 }
 
 int32_t DecisionBackend::stopHoldLeft() const
 {
-  return kind_ == Kind::kCore ? core_state_.stop_hold_left : 0;
+#ifdef ADAS_MGM_HAS_GENERATED_BACKEND
+  if (kind_ == Kind::kGenerated) {
+    return generated_->stopHoldLeft();
+  }
+#endif
+  return core_state_.stop_hold_left;
 }
 
 int32_t DecisionBackend::laneLowCnt() const
@@ -227,6 +292,26 @@ int32_t DecisionBackend::laneHighCnt() const
   }
 #endif
   return core_state_.lane_high_cnt;
+}
+
+int32_t DecisionBackend::avoidTicks() const
+{
+#ifdef ADAS_MGM_HAS_GENERATED_BACKEND
+  if (kind_ == Kind::kGenerated) {
+    return generated_->avoidTicks();
+  }
+#endif
+  return core_state_.avoid_ticks;
+}
+
+int32_t DecisionBackend::returnHoldLeft() const
+{
+#ifdef ADAS_MGM_HAS_GENERATED_BACKEND
+  if (kind_ == Kind::kGenerated) {
+    return generated_->returnHoldLeft();
+  }
+#endif
+  return core_state_.return_hold_left;
 }
 
 uint8_t DecisionBackend::activeState() const
@@ -264,7 +349,7 @@ CoreOutput DecisionBackend::failStopOutput() const
     output = last_valid_output_;
   } else {
     output.state = active_state_;
-    output.path_source = active_state_ == MGM_STATE_WAYPOINT ? MGM_SRC_GPS : MGM_SRC_LANE;
+    output.path_source = sourceForState(active_state_);
     output.n_points = 1;
     output.ref_points[0] = CorePoint{MGM_MIN_REF_X, 0.0f, 0.0f, 0.0f};
   }

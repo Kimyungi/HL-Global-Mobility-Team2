@@ -7,9 +7,9 @@
  *
  * Code generated for Simulink model 'ADAS_MGR2'.
  *
- * Model version                  : 1.68
+ * Model version                  : 1.88
  * Simulink Coder version         : 26.1 (R2026a) 20-Nov-2025
- * C/C++ source code generated on : Tue Aug 18 12:41:30 2026
+ * C/C++ source code generated on : Mon Aug 24 16:57:32 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)

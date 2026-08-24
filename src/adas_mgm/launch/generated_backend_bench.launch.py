@@ -1,4 +1,4 @@
-"""No-CAN bench launcher for the experimental generated MGM backend."""
+"""No-CAN bench launcher for the experimental ADAS_MGR2 v1.88 backend."""
 
 import os
 
@@ -21,12 +21,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'backend',
             default_value='core',
-            description='MGM backend: core or generated (bench only)'),
+            description='MGM backend: core or generated (isolated bench output)'),
         DeclareLaunchArgument(
             'generated_backend_acknowledge_limited_scope',
             default_value='false',
             description=(
-                'Must be true to run the limited two-state generated backend')),
+                'Must be true to run the four-state v1.88 generated backend; '
+                'rear escape remains unsupported')),
         Node(
             package='adas_mgm',
             executable='mgm_node',

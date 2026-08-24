@@ -1,15 +1,15 @@
-# MBD(생성 C) MGM 실차 시험 런북 — 차선 + GPS 2상태
+# MBD(생성 C) MGM 실차 시험 런북 — ADAS_MGR2 v1.88 4상태
 
 **launch: `adas_mgm/launch/MBD_lane_gps_can.launch.py`**
 
-김재민이 Simulink 로 만든 `ADAS_MGR2` v1.68 생성 C 를 `mgm_step()` 자리에 끼워
+김재민이 Simulink 로 만든 `ADAS_MGR2` v1.88 생성 C 를 `mgm_step()` 자리에 끼워
 (CLAUDE.md §5.5 이중 트랙) 레퍼런스 C++ 코어와 **같은 차·같은 코스**에서 굴려 보는
 절차. **이 문서 하나로 시험이 돌아간다** — 터미널 명령은 전부 복붙 가능하게 §3 에
 모아 두었다. 베이스 좌표 측량·지점 이동처럼 시험 이전의 준비는
 `stack_gps/tools/base_station/` 문서로 갈라 두었다 (§2).
 
 > **운영 런치(`REAL_VEHICLE_lane_gps_can.launch.py`)는 건드리지 않는다.** 그쪽은
-> 지정 구간 3종까지 물려 있는 4상태 운영 구성이고, 이 파일은 별개다. 두 launch 를
+> 후진 탈출까지 포함한 운영 C++ 코어 구성이고, 이 파일은 생성 C 검증 전용이다. 두 launch 를
 > 동시에 띄우지 말 것 (estop·mgm·bridge 중복).
 
 ---
@@ -21,23 +21,21 @@ dSPACE 는 전부 그대로다. 생성 C 도 `(ref_points, v_ref, flags)` 까지
 **CAN 은 MBD 모델의 몫이 아니다.** 양자화·프레임 분할은 계속 `bridge_dspace` 가 한다
 (그래서 김재민의 PR 에서 `bridge_dspace` diff 는 0 이다).
 
-### v1.68 이 갖고 있지 않은 것 — 시험 전에 반드시 알고 갈 것
+### v1.88 범위와 최신 main의 차이
 
-| 없는 것 | 이 시험에서 어떻게 되나 |
-|---|---|
-| AVOID · PARKING 스테이트 | **stack_avoid 를 아예 안 띄운다.** 장애물은 회피가 아니라 stack_estop 정지로만 대응 |
-| TTC 안전 바닥 · narrow_gap 감속 | 없음 (AVOID 가 없으므로 애초에 경로가 없다) |
-| 종점(at_end) 래치 | 종점에 닿으면 **영구 fail-stop 래치** → v_ref 0. 다시 달리려면 launch 재시작 |
-| 역방향 래치 | 차가 트랙을 등지면 영구 fail-stop 래치 (정지 자체는 정상 동작) |
-| 지정 구간 3종 (gps_only_zone · stop_zone · avoid_zone, 2026-08-18) | **전부 무시된다.** 언덕 지정 정차 안 함, GPS 전용 구간에서도 차선 신뢰도가 높으면 LANE 으로 감 |
+v1.88에는 다음이 들어 있다.
 
-`DecisionBackend` 가 이 입력들을 매 틱 감시하다가 하나라도 들어오면 **영구 fail-stop
-래치**(v_ref 0, 비어 있지 않은 ref)를 걸고 `[ERROR] decision backend fault latched` 를
-찍는다. 즉 "몰래 다르게 굴러가는" 일은 구조적으로 없다 — 대신 **원인을 없애고 노드를
-재시작해야** 다시 움직인다.
+- `LANE / WAYPOINT / AVOID / PARKING` 4상태
+- TTC 즉시 정지, 좁은 회피로 감속, AVOID 속도·시간 상한과 복귀 hold
+- 종점·역방향 래치
+- 지정 정지, 회피 허용, GPS 전용 구간
+- PARKING의 음수 속도
 
-그래서 이 시험에서 **LANE ↔ WAYPOINT 전이는 차선 신뢰도 히스테리시스
-(0.35 / 0.70, 50틱) + 재합류 게이트(cross ≤ 0.5m) 로만** 일어난다.
+모델 생성 직후 main에 추가된 **후진 탈출(rear escape)**만 없다. 따라서 생성 backend는
+`escape_after_cycles=0`에서만 기동한다. 이 런치도 값을 0으로 고정한다. 후진 탈출까지
+비교하려면 `estop_rear_clear`, `escape_*`, `MGM_SRC_ESCAPE`를 모델에 넣어 재생성해야 한다.
+PARKING은 오프라인 패리티에는 포함되지만 이 런치에 parking producer가 없어 실차 항목은
+아니다.
 
 ---
 
@@ -49,7 +47,7 @@ dSPACE 는 전부 그대로다. 생성 C 도 `(ref_points, v_ref, flags)` 까지
 cd ~/FMA_ws
 colcon build --packages-up-to adas_mgm \
     --cmake-args -DADAS_MGM_ENABLE_GENERATED_BACKEND=ON -DBUILD_TESTING=ON
-colcon test --packages-select adas_mgm --event-handlers console_direct+   # 4/4 통과여야 정상
+colcon test --packages-select adas_mgm --event-handlers console_direct+   # 전부 통과해야 정상
 ```
 
 - **CMake cache 는 값을 기억한다.** 한 번 ON 으로 빌드한 뒤 옵션을 생략해도 OFF 로
@@ -82,8 +80,8 @@ colcon test --packages-select adas_mgm --event-handlers console_direct+   # 4/4 
 - [ ] 로버 RTK **FIXED** 확인 (`rtk_probe.py`, C/N0 39dB 이상)
 - [ ] `-DADAS_MGM_ENABLE_GENERATED_BACKEND=ON` 빌드 (§1)
 
-> ⚠ 구간 파일(`zones_*.yaml`)은 **찍어도 이 시험에선 무시된다** (v1.68 미구현).
-> 운영 런치용으로 같이 찍어 두는 건 상관없다 — launch 가 개수를 세어 경고를 찍는다.
+> 구간 파일(`zones_*.yaml`)의 정지·회피·GPS 전용 구간은 v1.88 입력으로 전달된다.
+> `avoid_zone_only:=true`인데 회피 구간이 없으면 AVOID 진입은 안전하게 차단된다.
 
 ---
 
@@ -141,18 +139,37 @@ ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
 
 ### M [차량 PC]
 
+① CAN 없는 bench:
+
+```bash
+ros2 run adas_mgm state --ros-args \
+    -r /adas/target_ref:=/bench/adas/target_ref
+```
+
+② CAN 실주행:
+
 ```bash
 ros2 run adas_mgm state
 ```
 
 ### V3 [차량 PC]
 
+① CAN 없는 bench에서는 센서 토픽과 `/bench/adas/target_ref`를
+별도로 확인한 뒤 출발 인가만 낸다. 출력은 bench 토픽에 격리되어 CAN으로
+전달되지 않는다.
+
 ```bash
-ros2 run adas_mgm go --skip-avoid
+ros2 run adas_mgm go --force
 ```
 
-★ **`--skip-avoid` 필수** — 이 시험은 `stack_avoid` 를 안 띄우므로 회피 점검을
-건너뛰어야 인가가 난다.
+② CAN 실주행에서는 모든 출발 전 점검을 실행한다.
+
+```bash
+ros2 run adas_mgm go
+```
+
+`stack_avoid`도 기동되므로 `--skip-avoid`를 쓰지 않는다. 의도적으로 차선 노드만
+끄는 시험이라면 `--skip-lane`만 추가한다.
 
 ### 종료
 
@@ -163,16 +180,17 @@ ros2 run adas_mgm go --skip-avoid
 
 ## 4. ① 정지 상태 전이 확인 — 필수 게이트 (5분)
 
-V2 를 **CAN 없이**(토큰 없이) 띄운 상태. `bridge_dspace` 가 아예 안 뜨므로
-`/adas/target_ref` 를 아무도 읽지 않는다. **여기서 스테이트가 안 변하면 주행으로
-넘어가지 말 것.**
+V2 를 **CAN 없이**(토큰 없이) 띄운 상태. `bridge_dspace`는 기동하지 않고,
+MGM 출력도 `/bench/adas/target_ref`로 강제 remap된다. 다른 launch에서 이전
+bridge가 남아 있어도 운영 `/adas/target_ref`를 받을 수 없다. **여기서
+스테이트가 안 변하면 주행으로 넘어가지 말 것.**
 
 기동 직후 콘솔에서 이 세 줄을 확인한다:
 
 ```
-[launch] backend = generated (ADAS_MGR2 v1.68) — LANE/WAYPOINT 2상태만
-[launch] bench 모드 — bridge_dspace 미기동, 바퀴 안 움직입니다
-[INFO] [mgm_node]: decision backend=generated (ADAS_MGR2 v1.68 LANE/WAYPOINT bench only)
+[launch] backend = generated (ADAS_MGR2 v1.88) — 4상태, rear escape 비활성
+[launch] bench 모드 — MGM 출력을 /bench/adas/target_ref로 격리
+[INFO] [mgm_node]: decision backend=generated (ADAS_MGR2 v1.88 four-state; rear escape disabled)
 ```
 
 세 번째 줄이 `decision backend=core` 면 빌드 opt-in 문제가 아니라 **파라미터가 안 먹은
@@ -182,9 +200,11 @@ M 과 V3 를 띄운 뒤:
 
 | 확인 | 기대 |
 |---|---|
-| `ros2 topic hz /adas/target_ref` | 100 Hz |
+| `ros2 topic hz /bench/adas/target_ref` | 100 Hz |
 | 카메라를 손으로 가림 | 차선 신뢰도 ↓ → 0.5s 뒤 `→ gps` 전이 |
 | 다시 열어 줌 | 신뢰도 ↑ → 0.5s 뒤 `→ 차선` 복귀 |
+| 회피 가능 장애물 합성/정지 상태 확인 | `→ AVOID`, 완료 또는 시간 상한에서 `→ WAYPOINT` |
+| 정지 구간 입력 | 일반 감속으로 0 도달 후 설정 시간 정차·재출발 |
 | `[ERROR] decision backend fault latched` | **안 떠야 한다.** 뜨면 §6 |
 
 **전이가 일어나면 V2 콘솔에 이유가 한 줄로 뜬다** — 같은 줄이 `transitions.csv` 에도
@@ -221,8 +241,9 @@ V2 를 토큰과 함께 다시 띄운다 (§3). 콘솔에 이 줄이 떠야 한�
 - 속도는 운영과 같은 `v_base` 1.0 m/s 다 (params.yaml). 첫 run 을 낮춰 보고 싶으면
   `--ros-args` 가 아니라 params.yaml 을 고칠 것 — **운영 런치와 값이 갈리면
   back-to-back 비교가 무의미해진다**
-- **트랙 종점에 닿으면 서고 안 움직인다** (fail-stop 래치). 정상이다. 다음 바퀴를
-  돌리려면 V2 를 재시작한다 — 이 시험의 가장 큰 운용상 불편이다
+- **트랙 종점에 닿으면 at_end 래치로 정지**한다. 해제는 실제 E-stop의
+  `estop_latch_release` 계약을 따른다. watchdog 보정값으로는 래치가 풀리지 않는다.
+- rear escape는 이 모델에 없으므로 장시간 E-stop이 유지돼도 자동 후진하지 않는다.
 
 ---
 
@@ -232,11 +253,9 @@ V2 를 토큰과 함께 다시 띄운다 (§3). 콘솔에 이 줄이 떠야 한�
 
 | 메시지 | 원인 | 조치 |
 |---|---|---|
-| `the production gps_at_end latch is unsupported` | 트랙 종점 도달 | 정상. 재시작 |
-| `the production wrong-way latch is unsupported` | 차가 트랙을 등짐 | 차를 트랙 방향으로 놓고 재시작 |
-| `AVOID input is unsupported` | stack_avoid 가 떠 있음 | 이 launch 는 안 띄운다 — 운영 런치가 같이 떠 있는지 확인 |
-| `PARKING input is unsupported` | stack_parking 이 떠 있음 | 같음 |
-| `generated v_ref exceeds the configured maximum` | 모델 출력이 `max(v_base, v_accel_zone)` 초과 | **모델 버그다.** 덤프 들고 김재민에게 |
+| `rear escape is unsupported` | `escape_after_cycles`가 0이 아님 | 생성 backend는 중단. 0으로 복구하거나 모델 재생성 |
+| `generated state/path source mismatch` | 상태와 선택 경로가 다름 | **모델/어댑터 버그.** 덤프 보존 |
+| `generated v_ref exceeds the configured state limit` | 상태별 속도 상한 위반 | **모델 버그다.** 덤프 보존 |
 | `generated output did not honor E-stop` | estop 인데 v_ref ≠ 0 | **모델 버그다.** 최우선 보고 |
 
 아래 두 개가 뜨면 실주행 중단하고 김재민에게 넘긴다 — 안전 계약 위반이다.
@@ -259,9 +278,9 @@ ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
 ```
 ═══ back-to-back 재생 (CLAUDE.md §5.5) ═══
 재생      : 12480 틱 (124.8 s)
-비교 대상 : 12480 틱 / 범위 밖 0 틱 (0.0%)
+비교 대상 : 12480 틱 (rear escape 비활성)
 
-스테이트 전이 (범위 밖 틱 포함 — 실제로 흘러간 이력 그대로)
+스테이트 전이
   레퍼런스 : LANE@0.00s → WAYPOINT@34.21s → LANE@51.20s
   생성     : LANE@0.00s → WAYPOINT@34.21s → LANE@51.20s
   → 틱 단위까지 일치 (전이 3회 / 3회)
@@ -278,8 +297,8 @@ ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
   `rosbag` 의 같은 시각과 맞춰 보면 어떤 입력에서 갈렸는지 나온다.
 - 어느 쪽이 맞는지는 CLAUDE.md §4 가 정한다 — 스펙의 단일 소스는 문서이고 두 구현
   모두 거기서 파생한다.
-- **"범위 밖" 틱은 예상된 차이다** (§0 표: AVOID·PARKING·종점·역방향). 판정에서 자동
-  제외되며, 전 구간이 범위 밖이면 "비교 불가"로 나온다.
+- v1.88 범위인 LANE·WAYPOINT·AVOID·PARKING·지정 구간·종점·역방향은 전 틱을
+  비교한다. `escape_after_cycles!=0`인 덤프만 명시적으로 비교 불가다.
 - 종료 코드: `0` 일치 / `1` 차이 있음 / `2` 비교 불가·재생 실패.
 
 `transitions.csv` 는 그 run 에서 **실제로 무슨 이유로 바뀌었는지**의 기록이다.
@@ -295,18 +314,17 @@ awk -F, 'NR>1 && $6==0' $RUN/transitions.csv         # 스펙 불일치만
 
 ---
 
-## 8. 사전 검증 기록 (2026-08-19, 실차 전)
+## 8. 사전 검증 기록
 
 실차에 나가기 전 벤치에서 확인한 것:
 
 | 항목 | 결과 |
 |---|---|
 | 최신 main 위 병합 빌드 | 성공 (`-DADAS_MGM_ENABLE_GENERATED_BACKEND=ON -DBUILD_TESTING=ON`) |
-| ctest | 4/4 통과 — 패리티 900틱 `mismatches=0` 포함 |
-| ROS wrapper 전이 (합성 lane/gps) | core `['LANE','WAYPOINT','LANE']` = generated **일치** |
-| `wait_go` 게이트 | 인가 전 v_ref 0 / 인가 후 1.0 — **기동 중 fault 래치 없음** |
-| `at_end` | 두 backend 모두 v_ref 0. generated 는 fault 래치 + ERROR 로그 |
-| `parity_replay` (2상태 덤프 1162틱) | 전이 5회 **틱 단위까지 일치**, 필드 불일치 0 → `완전 일치` |
+| 생성 C 단독 Linux x86-64 GCC 빌드 | 경고를 오류로 처리해 통과 |
+| 합성 랜덤 back-to-back | escape 비활성 50,000틱, 4상태 포함, 불일치 0 |
+| 4상태 결정론 패리티 | LANE/WAYPOINT/AVOID/PARKING 및 구간·래치·속도 우선권 포함 |
+| rear escape | **미지원** — `escape_after_cycles=0`만 허용 |
 
 **실차 미검증** — 위는 전부 합성 입력이다. 실제 카메라 신뢰도 잡음·RTK 품질 변동에서
 어떻게 되는지가 이 시험의 목적이다.

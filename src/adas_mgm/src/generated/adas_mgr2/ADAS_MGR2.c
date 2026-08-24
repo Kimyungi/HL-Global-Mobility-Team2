@@ -7,9 +7,9 @@
  *
  * Code generated for Simulink model 'ADAS_MGR2'.
  *
- * Model version                  : 1.68
+ * Model version                  : 1.88
  * Simulink Coder version         : 26.1 (R2026a) 20-Nov-2025
- * C/C++ source code generated on : Tue Aug 18 12:41:30 2026
+ * C/C++ source code generated on : Mon Aug 24 16:57:32 2026
  *
  * Target selection: ert.tlc
  * Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -28,12 +28,28 @@
 #include "rt_defines.h"
 
 /* Named constants for Chart: '<S1>/Chart' */
+#define ADAS_MGR2_Source_Avoid         ((uint8_T)2U)
 #define ADAS_MGR2_Source_GPS           ((uint8_T)1U)
 #define ADAS_MGR2_Source_Lane          ((uint8_T)0U)
+#define ADAS_MGR2_Source_Parking       ((uint8_T)3U)
+#define ADAS_MGR2_State_Avoid          ((uint8_T)2U)
 #define ADAS_MGR2_State_Lane           ((uint8_T)0U)
+#define ADAS_MGR2_State_Parking        ((uint8_T)3U)
 #define ADAS_MGR2_State_Waypoint       ((uint8_T)1U)
 
 /* Exported block parameters */
+int32_T MGM_avoid_max_cycles = 1200;   /* Variable: avoid_max_cycles
+                                        * Referenced by: '<S1>/Chart'
+                                        * Maximum AVOID duration in ticks
+                                        */
+int32_T MGM_avoid_return_hold_cycles = 300;/* Variable: avoid_return_hold_cycles
+                                            * Referenced by: '<S1>/Chart'
+                                            * WAYPOINT hold time after leaving AVOID
+                                            */
+int32_T MGM_avoid_zone_only = 0;       /* Variable: avoid_zone_only
+                                        * Referenced by: '<S1>/Chart'
+                                        * Restrict AVOID entry to GPS avoid zone
+                                        */
 int32_T MGM_blend_cycles = 10;         /* Variable: blend_cycles
                                         * Referenced by: '<S7>/blend_cycles'
                                         * Reference path blend duration in ticks
@@ -41,6 +57,14 @@ int32_T MGM_blend_cycles = 10;         /* Variable: blend_cycles
 int32_T MGM_n_cycles = 50;             /* Variable: n_cycles
                                         * Referenced by: '<S1>/Chart'
                                         * Required consecutive lane confidence cycles
+                                        */
+int32_T MGM_stop_zone_hold_cycles = 300;/* Variable: stop_zone_hold_cycles
+                                         * Referenced by: '<S1>/Chart'
+                                         * Stop-zone hold duration in ticks
+                                         */
+int32_T MGM_wrongway_cycles = 50;      /* Variable: wrongway_cycles
+                                        * Referenced by: '<S1>/Chart'
+                                        * Consecutive cycles for wrong-way latch/set-clear
                                         */
 real32_T MGM_a_down = 1.5F;            /* Variable: a_down
                                         * Referenced by: '<S8>/a_down'
@@ -62,13 +86,29 @@ real32_T MGM_lane_entry_max_cross = 0.5F;/* Variable: lane_entry_max_cross
                                           * Referenced by: '<S1>/Chart'
                                           * Maximum GPS cross-track error for WAYPOINT -> LANE
                                           */
+real32_T MGM_ttc_stop = 1.3F;          /* Variable: ttc_stop
+                                        * Referenced by: '<S1>/Chart'
+                                        * Immediate stop TTC threshold
+                                        */
 real32_T MGM_v_accel_zone = 1.0F;      /* Variable: v_accel_zone
                                         * Referenced by: '<S1>/Chart'
                                         * Target velocity in GPS acceleration zone
                                         */
-real32_T MGM_v_base = 0.6F;            /* Variable: v_base
+real32_T MGM_v_avoid = 0.6F;           /* Variable: v_avoid
+                                        * Referenced by: '<S1>/Chart'
+                                        * AVOID state velocity upper limit
+                                        */
+real32_T MGM_v_base = 1.0F;            /* Variable: v_base
                                         * Referenced by: '<S1>/Chart'
                                         * Base target velocity
+                                        */
+real32_T MGM_v_narrow = 0.2F;          /* Variable: v_narrow
+                                        * Referenced by: '<S1>/Chart'
+                                        * AVOID velocity upper limit in narrow gap
+                                        */
+real32_T MGM_wrongway_yaw = 2.1F;      /* Variable: wrongway_yaw
+                                        * Referenced by: '<S1>/Chart'
+                                        * Wrong-way latch yaw threshold
                                         */
 
 /* Block signals (default storage) */
@@ -88,21 +128,155 @@ static RT_MODEL_ADAS_MGR2_T ADAS_MGR2_M_;
 RT_MODEL_ADAS_MGR2_T *const ADAS_MGR2_M = &ADAS_MGR2_M_;
 
 /* Forward declaration for local functions */
+static void ADAS_MGR2_update_wrongway_guard(int32_T *out_wrongway_cnt, int32_T
+  *out_wrongway_ok_cnt, boolean_T *out_wrongway_latched);
+static boolean_T ADAS_MGR2_update_at_end_latch(void);
+static void ADAS_MGR2_update_stop_zone(const real32_T *UnitDelay, boolean_T
+  *out_stop_zone_holding, int32_T *out_stop_hold_left, uint8_T
+  *out_stop_zone_done_id, uint8_T *out_stop_zone_boot_id, boolean_T
+  *out_stop_zone_init);
 static void ADAS_MGR2_process_lane_state(uint8_T *out_state, uint8_T
   *out_path_source, real32_T *out_v_ref_req, boolean_T *out_immediate_stop,
-  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt);
+  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt, int32_T
+  *out_avoid_ticks, int32_T *out_return_hold_left);
+static void ADAS_MGR2_process_parking_state(uint8_T *out_state, uint8_T
+  *out_path_source, real32_T *out_v_ref_req, boolean_T *out_immediate_stop,
+  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt, int32_T
+  *out_avoid_ticks, int32_T *out_return_hold_left);
+static void ADAS_MGR2_process_avoid_state(uint8_T *out_state, uint8_T
+  *out_path_source, real32_T *out_v_ref_req, boolean_T *out_immediate_stop,
+  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt, int32_T
+  *out_avoid_ticks, int32_T *out_return_hold_left);
 static void ADAS_MGR_process_waypoint_state(uint8_T *out_state, uint8_T
   *out_path_source, real32_T *out_v_ref_req, boolean_T *out_immediate_stop,
-  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt);
+  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt, int32_T
+  *out_avoid_ticks, int32_T *out_return_hold_left);
+static void finalize_wrongway_state_change(const uint8_T *prev_state, int32_T
+  *out_wrongway_cnt, int32_T *out_wrongway_ok_cnt);
+
+/* Function for Chart: '<S1>/Chart' */
+static void ADAS_MGR2_update_wrongway_guard(int32_T *out_wrongway_cnt, int32_T
+  *out_wrongway_ok_cnt, boolean_T *out_wrongway_latched)
+{
+  real32_T b_y0;
+  boolean_T head_ok;
+  *out_wrongway_cnt = ADAS_MGR2_DW.wrongway_cnt;
+  *out_wrongway_ok_cnt = ADAS_MGR2_DW.wrongway_ok_cnt;
+
+  /* Inport: '<Root>/core_snapshot' */
+  head_ok = (ADAS_MGR2_U.core_snapshot.gps_heading_valid &&
+             (ADAS_MGR2_U.core_snapshot.gps_path.n > 0));
+  b_y0 = 0.0F;
+
+  /* Inport: '<Root>/core_snapshot' */
+  if (ADAS_MGR2_U.core_snapshot.gps_path.n > 0) {
+    b_y0 = ADAS_MGR2_U.core_snapshot.gps_path.pts[0].yaw;
+  }
+
+  if (head_ok) {
+    if ((b_y0 > MGM_wrongway_yaw) || (b_y0 < -MGM_wrongway_yaw)) {
+      if (ADAS_MGR2_DW.wrongway_cnt > 2147483646) {
+        *out_wrongway_cnt = MAX_int32_T;
+      } else {
+        *out_wrongway_cnt = ADAS_MGR2_DW.wrongway_cnt + 1;
+      }
+
+      *out_wrongway_ok_cnt = 0;
+    } else {
+      *out_wrongway_cnt = 0;
+      if (ADAS_MGR2_DW.wrongway_ok_cnt > 2147483646) {
+        *out_wrongway_ok_cnt = MAX_int32_T;
+      } else {
+        *out_wrongway_ok_cnt = ADAS_MGR2_DW.wrongway_ok_cnt + 1;
+      }
+    }
+  }
+
+  /* Inport: '<Root>/core_snapshot' */
+  *out_wrongway_latched = (!ADAS_MGR2_U.core_snapshot.estop_latch_release &&
+    ((*out_wrongway_cnt >= MGM_wrongway_cycles) || ((!head_ok ||
+    (*out_wrongway_ok_cnt < MGM_wrongway_cycles)) &&
+    ADAS_MGR2_DW.wrongway_latched)));
+}
+
+/* Function for Chart: '<S1>/Chart' */
+static boolean_T ADAS_MGR2_update_at_end_latch(void)
+{
+  /* Inport: '<Root>/core_snapshot' */
+  return !ADAS_MGR2_U.core_snapshot.estop_latch_release &&
+    (((ADAS_MGR2_Y.core_output.state != ADAS_MGR2_State_Parking) &&
+      ADAS_MGR2_U.core_snapshot.gps_at_end &&
+      (ADAS_MGR2_U.core_snapshot.gps_path.n > 0)) || ADAS_MGR2_DW.at_end_latched);
+}
+
+/* Function for Chart: '<S1>/Chart' */
+static void ADAS_MGR2_update_stop_zone(const real32_T *UnitDelay, boolean_T
+  *out_stop_zone_holding, int32_T *out_stop_hold_left, uint8_T
+  *out_stop_zone_done_id, uint8_T *out_stop_zone_boot_id, boolean_T
+  *out_stop_zone_init)
+{
+  *out_stop_zone_holding = ADAS_MGR2_DW.stop_zone_holding;
+  *out_stop_hold_left = ADAS_MGR2_DW.stop_hold_left;
+  *out_stop_zone_done_id = ADAS_MGR2_DW.stop_zone_done_id;
+  *out_stop_zone_boot_id = ADAS_MGR2_DW.stop_zone_boot_id;
+  *out_stop_zone_init = ADAS_MGR2_DW.stop_zone_init;
+
+  /* Inport: '<Root>/core_snapshot' */
+  if (!ADAS_MGR2_DW.stop_zone_init && (ADAS_MGR2_U.core_snapshot.gps_path.n > 0))
+  {
+    *out_stop_zone_init = true;
+    *out_stop_zone_boot_id = ADAS_MGR2_U.core_snapshot.gps_stop_zone;
+  }
+
+  if ((*out_stop_zone_boot_id != 0) && (ADAS_MGR2_U.core_snapshot.gps_stop_zone
+       != *out_stop_zone_boot_id)) {
+    *out_stop_zone_boot_id = 0U;
+  }
+
+  if (ADAS_MGR2_U.core_snapshot.estop_latch_release) {
+    *out_stop_zone_done_id = 0U;
+    *out_stop_zone_holding = false;
+    *out_stop_hold_left = 0;
+  }
+
+  if ((MGM_stop_zone_hold_cycles > 0) && (ADAS_MGR2_Y.core_output.state !=
+       ADAS_MGR2_State_Parking)) {
+    if (!*out_stop_zone_holding) {
+      /* Inport: '<Root>/core_snapshot' */
+      if ((ADAS_MGR2_U.core_snapshot.gps_stop_zone != 0) &&
+          (ADAS_MGR2_U.core_snapshot.gps_stop_zone != *out_stop_zone_done_id) &&
+          (ADAS_MGR2_U.core_snapshot.gps_stop_zone != *out_stop_zone_boot_id) &&
+          (ADAS_MGR2_U.core_snapshot.gps_path.n > 0)) {
+        *out_stop_zone_holding = true;
+        *out_stop_hold_left = MGM_stop_zone_hold_cycles;
+        *out_stop_zone_done_id = ADAS_MGR2_U.core_snapshot.gps_stop_zone;
+      }
+    } else if (*UnitDelay <= 0.001F) {
+      if (*out_stop_hold_left < -2147483647) {
+        *out_stop_hold_left = MIN_int32_T;
+      } else {
+        (*out_stop_hold_left)--;
+      }
+
+      if (*out_stop_hold_left <= 0) {
+        *out_stop_hold_left = 0;
+        *out_stop_zone_holding = false;
+      }
+    }
+  }
+}
 
 /* Function for Chart: '<S1>/Chart' */
 static void ADAS_MGR2_process_lane_state(uint8_T *out_state, uint8_T
   *out_path_source, real32_T *out_v_ref_req, boolean_T *out_immediate_stop,
-  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt)
+  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt, int32_T
+  *out_avoid_ticks, int32_T *out_return_hold_left)
 {
   *out_state = ADAS_MGR2_State_Lane;
   *out_path_source = ADAS_MGR2_Source_Lane;
   *out_lane_high_cnt = 0;
+  *out_avoid_ticks = 0;
+  *out_return_hold_left = ADAS_MGR2_DW.return_hold_left;
 
   /* Inport: '<Root>/core_snapshot' */
   if (ADAS_MGR2_U.core_snapshot.lane_confidence < MGM_lane_conf_exit) {
@@ -115,39 +289,231 @@ static void ADAS_MGR2_process_lane_state(uint8_T *out_state, uint8_T
     *out_lane_low_cnt = 0;
   }
 
-  if (*out_lane_low_cnt >= MGM_n_cycles) {
+  if (ADAS_MGR2_U.core_snapshot.gps_parking_zone &&
+      ADAS_MGR2_U.core_snapshot.parking_space_found) {
+    *out_state = ADAS_MGR2_State_Parking;
+    *out_path_source = ADAS_MGR2_Source_Parking;
+    *out_lane_low_cnt = 0;
+  } else if (ADAS_MGR2_U.core_snapshot.avoid_obstacle_detected &&
+             ADAS_MGR2_U.core_snapshot.avoid_avoidable && ((MGM_avoid_zone_only ==
+    0) || ADAS_MGR2_U.core_snapshot.gps_avoid_zone)) {
+    *out_state = ADAS_MGR2_State_Avoid;
+    *out_path_source = ADAS_MGR2_Source_Avoid;
+    *out_lane_low_cnt = 0;
+    *out_avoid_ticks = 1;
+  } else if ((ADAS_MGR2_U.core_snapshot.gps_gps_only_zone &&
+              (ADAS_MGR2_U.core_snapshot.gps_path.n > 0)) || (*out_lane_low_cnt >=
+              MGM_n_cycles)) {
     *out_state = ADAS_MGR2_State_Waypoint;
     *out_path_source = ADAS_MGR2_Source_GPS;
     *out_lane_low_cnt = 0;
   }
 
+  switch (*out_state) {
+   case ADAS_MGR2_State_Parking:
+    /* Inport: '<Root>/core_snapshot' */
+    if (ADAS_MGR2_U.core_snapshot.estop) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = true;
+    } else if (ADAS_MGR2_U.core_snapshot.parking_path_blocked) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else {
+      *out_v_ref_req = ADAS_MGR2_U.core_snapshot.parking_v_suggest;
+      *out_immediate_stop = false;
+    }
+    break;
+
+   case ADAS_MGR2_State_Avoid:
+    /* Inport: '<Root>/core_snapshot' */
+    if (ADAS_MGR2_U.core_snapshot.estop || (ADAS_MGR2_U.core_snapshot.avoid_ttc <
+         MGM_ttc_stop)) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = true;
+    } else {
+      *out_v_ref_req = ADAS_MGR2_U.core_snapshot.avoid_v_suggest;
+      *out_immediate_stop = false;
+      if (ADAS_MGR2_U.core_snapshot.avoid_narrow_gap &&
+          (ADAS_MGR2_U.core_snapshot.avoid_v_suggest > MGM_v_narrow)) {
+        *out_v_ref_req = MGM_v_narrow;
+      }
+
+      if ((MGM_v_avoid > 0.0F) && (*out_v_ref_req > MGM_v_avoid)) {
+        *out_v_ref_req = MGM_v_avoid;
+      }
+    }
+    break;
+
+   default:
+    /* Inport: '<Root>/core_snapshot' */
+    if (ADAS_MGR2_U.core_snapshot.estop) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = true;
+    } else if (ADAS_MGR2_U.core_snapshot.traffic_stop_required) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.at_end_latched) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if ((*out_state == ADAS_MGR2_State_Waypoint) &&
+               ADAS_MGR2_DW.wrongway_latched) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.stop_zone_holding) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_U.core_snapshot.gps_accel_zone) {
+      *out_v_ref_req = MGM_v_accel_zone;
+      *out_immediate_stop = false;
+    } else {
+      *out_v_ref_req = MGM_v_base;
+      *out_immediate_stop = false;
+    }
+    break;
+  }
+}
+
+/* Function for Chart: '<S1>/Chart' */
+static void ADAS_MGR2_process_parking_state(uint8_T *out_state, uint8_T
+  *out_path_source, real32_T *out_v_ref_req, boolean_T *out_immediate_stop,
+  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt, int32_T
+  *out_avoid_ticks, int32_T *out_return_hold_left)
+{
+  *out_state = ADAS_MGR2_State_Parking;
+  *out_path_source = ADAS_MGR2_Source_Parking;
+  *out_lane_low_cnt = 0;
+  *out_lane_high_cnt = 0;
+  *out_avoid_ticks = 0;
+  *out_return_hold_left = ADAS_MGR2_DW.return_hold_left;
+
   /* Inport: '<Root>/core_snapshot' */
-  if (ADAS_MGR2_U.core_snapshot.estop) {
+  if (ADAS_MGR2_U.core_snapshot.parking_done) {
+    *out_state = ADAS_MGR2_State_Lane;
+    *out_path_source = ADAS_MGR2_Source_Lane;
+    if (ADAS_MGR2_U.core_snapshot.estop) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = true;
+    } else if (ADAS_MGR2_U.core_snapshot.traffic_stop_required) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.at_end_latched) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.stop_zone_holding) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_U.core_snapshot.gps_accel_zone) {
+      *out_v_ref_req = MGM_v_accel_zone;
+      *out_immediate_stop = false;
+    } else {
+      *out_v_ref_req = MGM_v_base;
+      *out_immediate_stop = false;
+    }
+  } else if (ADAS_MGR2_U.core_snapshot.estop) {
     *out_v_ref_req = 0.0F;
     *out_immediate_stop = true;
-  } else if (ADAS_MGR2_U.core_snapshot.traffic_stop_required ||
-             ADAS_MGR2_U.core_snapshot.gps_at_end) {
+  } else if (ADAS_MGR2_U.core_snapshot.parking_path_blocked) {
     *out_v_ref_req = 0.0F;
     *out_immediate_stop = false;
-  } else if (ADAS_MGR2_U.core_snapshot.gps_accel_zone) {
-    *out_v_ref_req = MGM_v_accel_zone;
-    *out_immediate_stop = false;
   } else {
-    *out_v_ref_req = MGM_v_base;
+    *out_v_ref_req = ADAS_MGR2_U.core_snapshot.parking_v_suggest;
     *out_immediate_stop = false;
   }
+
+  /* End of Inport: '<Root>/core_snapshot' */
+}
+
+/* Function for Chart: '<S1>/Chart' */
+static void ADAS_MGR2_process_avoid_state(uint8_T *out_state, uint8_T
+  *out_path_source, real32_T *out_v_ref_req, boolean_T *out_immediate_stop,
+  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt, int32_T
+  *out_avoid_ticks, int32_T *out_return_hold_left)
+{
+  *out_state = ADAS_MGR2_State_Avoid;
+  *out_path_source = ADAS_MGR2_Source_Avoid;
+  *out_lane_low_cnt = 0;
+  *out_lane_high_cnt = 0;
+  *out_return_hold_left = ADAS_MGR2_DW.return_hold_left;
+  if (ADAS_MGR2_DW.return_hold_left > 0) {
+    *out_return_hold_left = ADAS_MGR2_DW.return_hold_left - 1;
+  }
+
+  /* Inport: '<Root>/core_snapshot' */
+  if (ADAS_MGR2_U.core_snapshot.avoid_maneuver_done || ((MGM_avoid_max_cycles >
+        0) && (ADAS_MGR2_DW.avoid_ticks >= MGM_avoid_max_cycles))) {
+    *out_state = ADAS_MGR2_State_Waypoint;
+    *out_path_source = ADAS_MGR2_Source_GPS;
+    *out_avoid_ticks = 0;
+    *out_return_hold_left = MGM_avoid_return_hold_cycles;
+    if (ADAS_MGR2_U.core_snapshot.estop) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = true;
+    } else if (ADAS_MGR2_U.core_snapshot.traffic_stop_required) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.at_end_latched) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.wrongway_latched) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.stop_zone_holding) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_U.core_snapshot.gps_accel_zone) {
+      *out_v_ref_req = MGM_v_accel_zone;
+      *out_immediate_stop = false;
+    } else {
+      *out_v_ref_req = MGM_v_base;
+      *out_immediate_stop = false;
+    }
+  } else {
+    if (ADAS_MGR2_DW.avoid_ticks > 2147483646) {
+      *out_avoid_ticks = MAX_int32_T;
+    } else {
+      *out_avoid_ticks = ADAS_MGR2_DW.avoid_ticks + 1;
+    }
+
+    if (ADAS_MGR2_U.core_snapshot.estop || (ADAS_MGR2_U.core_snapshot.avoid_ttc <
+         MGM_ttc_stop)) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = true;
+    } else {
+      *out_v_ref_req = ADAS_MGR2_U.core_snapshot.avoid_v_suggest;
+      *out_immediate_stop = false;
+      if (ADAS_MGR2_U.core_snapshot.avoid_narrow_gap &&
+          (ADAS_MGR2_U.core_snapshot.avoid_v_suggest > MGM_v_narrow)) {
+        *out_v_ref_req = MGM_v_narrow;
+      }
+
+      if ((MGM_v_avoid > 0.0F) && (*out_v_ref_req > MGM_v_avoid)) {
+        *out_v_ref_req = MGM_v_avoid;
+      }
+    }
+  }
+
+  /* End of Inport: '<Root>/core_snapshot' */
 }
 
 /* Function for Chart: '<S1>/Chart' */
 static void ADAS_MGR_process_waypoint_state(uint8_T *out_state, uint8_T
   *out_path_source, real32_T *out_v_ref_req, boolean_T *out_immediate_stop,
-  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt)
+  int32_T *out_lane_low_cnt, int32_T *out_lane_high_cnt, int32_T
+  *out_avoid_ticks, int32_T *out_return_hold_left)
 {
+  boolean_T gps_only_zone;
   *out_state = ADAS_MGR2_State_Waypoint;
   *out_path_source = ADAS_MGR2_Source_GPS;
   *out_lane_low_cnt = 0;
+  *out_avoid_ticks = 0;
+  *out_return_hold_left = ADAS_MGR2_DW.return_hold_left;
+  if (ADAS_MGR2_DW.return_hold_left > 0) {
+    *out_return_hold_left = ADAS_MGR2_DW.return_hold_left - 1;
+  }
 
   /* Inport: '<Root>/core_snapshot' */
+  gps_only_zone = (ADAS_MGR2_U.core_snapshot.gps_gps_only_zone &&
+                   (ADAS_MGR2_U.core_snapshot.gps_path.n > 0));
   if (ADAS_MGR2_U.core_snapshot.lane_confidence > MGM_lane_conf_return) {
     if (ADAS_MGR2_DW.lane_high_cnt > 2147483646) {
       *out_lane_high_cnt = MAX_int32_T;
@@ -158,31 +524,81 @@ static void ADAS_MGR_process_waypoint_state(uint8_T *out_state, uint8_T
     *out_lane_high_cnt = 0;
   }
 
-  if ((*out_lane_high_cnt >= MGM_n_cycles) && ((MGM_lane_entry_max_cross <= 0.0F)
-       || ((ADAS_MGR2_U.core_snapshot.gps_path.n > 0) &&
-           (ADAS_MGR2_U.core_snapshot.gps_cross_track <=
-            MGM_lane_entry_max_cross)))) {
-    *out_state = ADAS_MGR2_State_Lane;
-    *out_path_source = ADAS_MGR2_Source_Lane;
+  if (gps_only_zone) {
     *out_lane_high_cnt = 0;
   }
 
-  if (ADAS_MGR2_U.core_snapshot.estop) {
-    *out_v_ref_req = 0.0F;
-    *out_immediate_stop = true;
-  } else if (ADAS_MGR2_U.core_snapshot.traffic_stop_required ||
-             ADAS_MGR2_U.core_snapshot.gps_at_end) {
-    *out_v_ref_req = 0.0F;
-    *out_immediate_stop = false;
-  } else if (ADAS_MGR2_U.core_snapshot.gps_accel_zone) {
-    *out_v_ref_req = MGM_v_accel_zone;
-    *out_immediate_stop = false;
-  } else {
-    *out_v_ref_req = MGM_v_base;
-    *out_immediate_stop = false;
-  }
+  /* Inport: '<Root>/core_snapshot' */
+  if (ADAS_MGR2_U.core_snapshot.avoid_obstacle_detected &&
+      ADAS_MGR2_U.core_snapshot.avoid_avoidable && ((MGM_avoid_zone_only == 0) ||
+       ADAS_MGR2_U.core_snapshot.gps_avoid_zone)) {
+    *out_state = ADAS_MGR2_State_Avoid;
+    *out_path_source = ADAS_MGR2_Source_Avoid;
+    *out_lane_high_cnt = 0;
+    *out_avoid_ticks = 1;
+    if (ADAS_MGR2_U.core_snapshot.estop || (ADAS_MGR2_U.core_snapshot.avoid_ttc <
+         MGM_ttc_stop)) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = true;
+    } else {
+      *out_v_ref_req = ADAS_MGR2_U.core_snapshot.avoid_v_suggest;
+      *out_immediate_stop = false;
+      if (ADAS_MGR2_U.core_snapshot.avoid_narrow_gap &&
+          (ADAS_MGR2_U.core_snapshot.avoid_v_suggest > MGM_v_narrow)) {
+        *out_v_ref_req = MGM_v_narrow;
+      }
 
-  /* End of Inport: '<Root>/core_snapshot' */
+      if ((MGM_v_avoid > 0.0F) && (*out_v_ref_req > MGM_v_avoid)) {
+        *out_v_ref_req = MGM_v_avoid;
+      }
+    }
+  } else {
+    if (!gps_only_zone && (*out_return_hold_left == 0) && (*out_lane_high_cnt >=
+         MGM_n_cycles) && ((MGM_lane_entry_max_cross <= 0.0F) ||
+                           ((ADAS_MGR2_U.core_snapshot.gps_path.n > 0) &&
+                            (ADAS_MGR2_U.core_snapshot.gps_cross_track <=
+           MGM_lane_entry_max_cross)))) {
+      *out_state = ADAS_MGR2_State_Lane;
+      *out_path_source = ADAS_MGR2_Source_Lane;
+      *out_lane_high_cnt = 0;
+    }
+
+    if (ADAS_MGR2_U.core_snapshot.estop) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = true;
+    } else if (ADAS_MGR2_U.core_snapshot.traffic_stop_required) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.at_end_latched) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if ((*out_state == ADAS_MGR2_State_Waypoint) &&
+               ADAS_MGR2_DW.wrongway_latched) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_DW.stop_zone_holding) {
+      *out_v_ref_req = 0.0F;
+      *out_immediate_stop = false;
+    } else if (ADAS_MGR2_U.core_snapshot.gps_accel_zone) {
+      *out_v_ref_req = MGM_v_accel_zone;
+      *out_immediate_stop = false;
+    } else {
+      *out_v_ref_req = MGM_v_base;
+      *out_immediate_stop = false;
+    }
+  }
+}
+
+/* Function for Chart: '<S1>/Chart' */
+static void finalize_wrongway_state_change(const uint8_T *prev_state, int32_T
+  *out_wrongway_cnt, int32_T *out_wrongway_ok_cnt)
+{
+  *out_wrongway_cnt = ADAS_MGR2_DW.wrongway_cnt;
+  *out_wrongway_ok_cnt = ADAS_MGR2_DW.wrongway_ok_cnt;
+  if (ADAS_MGR2_Y.core_output.state != *prev_state) {
+    *out_wrongway_cnt = 0;
+    *out_wrongway_ok_cnt = 0;
+  }
 }
 
 real32_T rt_atan2f_snf(real32_T u0, real32_T u1)
@@ -224,7 +640,10 @@ real32_T rt_atan2f_snf(real32_T u0, real32_T u1)
 /* Model step function */
 void mgm_step(void)
 {
-  real32_T rtb_selected_path_pts;
+  uint8_T path_source;
+  uint8_T prev_state;
+  uint8_T stop_zone_boot_id;
+  boolean_T immediate_stop;
   boolean_T is_stale_repeat;
   boolean_T rtb_path_valid;
   static const int32_T offsets[4] = { 0, 1, 2, 3 };
@@ -235,29 +654,63 @@ void mgm_step(void)
   __m128 tmp_0;
   __m128 tmp_1;
 
-  /* Chart: '<S1>/Chart' */
+  /* Chart: '<S1>/Chart' incorporates:
+   *  UnitDelay: '<S8>/Unit Delay'
+   */
+  prev_state = ADAS_MGR2_Y.core_output.state;
+  ADAS_MGR2_update_wrongway_guard(&ADAS_MGR2_B.n_valid, &ADAS_MGR2_B.i,
+    &immediate_stop);
+  ADAS_MGR2_DW.wrongway_cnt = ADAS_MGR2_B.n_valid;
+  ADAS_MGR2_DW.wrongway_ok_cnt = ADAS_MGR2_B.i;
+  ADAS_MGR2_DW.wrongway_latched = immediate_stop;
+  ADAS_MGR2_DW.at_end_latched = ADAS_MGR2_update_at_end_latch();
+  ADAS_MGR2_update_stop_zone(&ADAS_MGR2_DW.UnitDelay_DSTATE, &immediate_stop,
+    &ADAS_MGR2_B.n_valid, &path_source, &stop_zone_boot_id, &rtb_path_valid);
+  ADAS_MGR2_DW.stop_zone_holding = immediate_stop;
+  ADAS_MGR2_DW.stop_hold_left = ADAS_MGR2_B.n_valid;
+  ADAS_MGR2_DW.stop_zone_done_id = path_source;
+  ADAS_MGR2_DW.stop_zone_boot_id = stop_zone_boot_id;
+  ADAS_MGR2_DW.stop_zone_init = rtb_path_valid;
   switch (ADAS_MGR2_Y.core_output.state) {
-   case ADAS_MGR2_State_Lane:
-    ADAS_MGR2_process_lane_state(&ADAS_MGR2_Y.core_output.state,
-      &ADAS_MGR2_B.path_source, &ADAS_MGR2_B.v_ref_req,
-      &ADAS_MGR2_B.immediate_stop, &ADAS_MGR2_B.n_valid,
-      &ADAS_MGR2_DW.lane_high_cnt);
-    ADAS_MGR2_DW.lane_low_cnt = ADAS_MGR2_B.n_valid;
+   case ADAS_MGR2_State_Parking:
+    ADAS_MGR2_process_parking_state(&ADAS_MGR2_Y.core_output.state, &path_source,
+      &ADAS_MGR2_B.v_ref_req, &immediate_stop, &ADAS_MGR2_DW.lane_low_cnt,
+      &ADAS_MGR2_DW.lane_high_cnt, &ADAS_MGR2_DW.avoid_ticks,
+      &ADAS_MGR2_B.n_valid);
+    ADAS_MGR2_DW.return_hold_left = ADAS_MGR2_B.n_valid;
+    break;
+
+   case ADAS_MGR2_State_Avoid:
+    ADAS_MGR2_process_avoid_state(&ADAS_MGR2_Y.core_output.state, &path_source,
+      &ADAS_MGR2_B.v_ref_req, &immediate_stop, &ADAS_MGR2_DW.lane_low_cnt,
+      &ADAS_MGR2_DW.lane_high_cnt, &ADAS_MGR2_B.n_valid, &ADAS_MGR2_B.i);
+    ADAS_MGR2_DW.avoid_ticks = ADAS_MGR2_B.n_valid;
+    ADAS_MGR2_DW.return_hold_left = ADAS_MGR2_B.i;
     break;
 
    case ADAS_MGR2_State_Waypoint:
-    ADAS_MGR_process_waypoint_state(&ADAS_MGR2_Y.core_output.state,
-      &ADAS_MGR2_B.path_source, &ADAS_MGR2_B.v_ref_req,
-      &ADAS_MGR2_B.immediate_stop, &ADAS_MGR2_DW.lane_low_cnt,
-      &ADAS_MGR2_B.n_valid);
+    ADAS_MGR_process_waypoint_state(&ADAS_MGR2_Y.core_output.state, &path_source,
+      &ADAS_MGR2_B.v_ref_req, &immediate_stop, &ADAS_MGR2_DW.lane_low_cnt,
+      &ADAS_MGR2_B.n_valid, &ADAS_MGR2_DW.avoid_ticks, &ADAS_MGR2_B.i);
     ADAS_MGR2_DW.lane_high_cnt = ADAS_MGR2_B.n_valid;
+    ADAS_MGR2_DW.return_hold_left = ADAS_MGR2_B.i;
+    break;
+
+   default:
+    ADAS_MGR2_process_lane_state(&ADAS_MGR2_Y.core_output.state, &path_source,
+      &ADAS_MGR2_B.v_ref_req, &immediate_stop, &ADAS_MGR2_B.n_valid,
+      &ADAS_MGR2_DW.lane_high_cnt, &ADAS_MGR2_DW.avoid_ticks, &ADAS_MGR2_B.i);
+    ADAS_MGR2_DW.lane_low_cnt = ADAS_MGR2_B.n_valid;
+    ADAS_MGR2_DW.return_hold_left = ADAS_MGR2_B.i;
     break;
   }
 
-  /* End of Chart: '<S1>/Chart' */
+  finalize_wrongway_state_change(&prev_state, &ADAS_MGR2_B.n_valid,
+    &ADAS_MGR2_B.i);
+  ADAS_MGR2_DW.wrongway_cnt = ADAS_MGR2_B.n_valid;
+  ADAS_MGR2_DW.wrongway_ok_cnt = ADAS_MGR2_B.i;
 
-  /* UnitDelay: '<S8>/Unit Delay' */
-  ADAS_MGR2_B.UnitDelay = ADAS_MGR2_DW.UnitDelay_DSTATE;
+  /* End of Chart: '<S1>/Chart' */
 
   /* MATLAB Function: '<S8>/MATLAB Function' incorporates:
    *  Constant: '<S8>/MGM_PERIOD_S'
@@ -265,15 +718,15 @@ void mgm_step(void)
    *  Constant: '<S8>/a_up'
    *  UnitDelay: '<S8>/Unit Delay'
    */
-  if (ADAS_MGR2_B.immediate_stop) {
-    ADAS_MGR2_DW.UnitDelay_DSTATE = 0.0F;
+  if (immediate_stop) {
+    ADAS_MGR2_B.v_ref_req = 0.0F;
   } else {
     ADAS_MGR2_B.v_min = ADAS_MGR2_DW.UnitDelay_DSTATE - MGM_a_down * 0.01F;
-    ADAS_MGR2_DW.UnitDelay_DSTATE += MGM_a_up * 0.01F;
+    ADAS_MGR2_B.v_max = MGM_a_up * 0.01F + ADAS_MGR2_DW.UnitDelay_DSTATE;
     if (ADAS_MGR2_B.v_ref_req < ADAS_MGR2_B.v_min) {
-      ADAS_MGR2_DW.UnitDelay_DSTATE = ADAS_MGR2_B.v_min;
-    } else if (!(ADAS_MGR2_B.v_ref_req > ADAS_MGR2_DW.UnitDelay_DSTATE)) {
-      ADAS_MGR2_DW.UnitDelay_DSTATE = ADAS_MGR2_B.v_ref_req;
+      ADAS_MGR2_B.v_ref_req = ADAS_MGR2_B.v_min;
+    } else if (ADAS_MGR2_B.v_ref_req > ADAS_MGR2_B.v_max) {
+      ADAS_MGR2_B.v_ref_req = ADAS_MGR2_B.v_max;
     }
   }
 
@@ -282,7 +735,7 @@ void mgm_step(void)
   /* MATLAB Function: '<S6>/Select_Path' incorporates:
    *  Inport: '<Root>/core_snapshot'
    */
-  switch (ADAS_MGR2_B.path_source) {
+  switch (path_source) {
    case 0U:
     ADAS_MGR2_B.n_valid = ADAS_MGR2_U.core_snapshot.lane_path.n;
     memcpy(&ADAS_MGR2_B.rtb_raw_path_pts[0],
@@ -350,6 +803,7 @@ void mgm_step(void)
    *  Constant: '<S7>/blend_cycles'
    *  Inport: '<Root>/core_snapshot'
    *  Outport: '<Root>/core_output'
+   *  UnitDelay: '<S8>/Unit Delay'
    */
   if (rtb_path_valid) {
     if (ADAS_MGR2_B.n_valid > 20) {
@@ -371,17 +825,17 @@ void mgm_step(void)
     if (ADAS_MGR2_B.n_valid == 1) {
       ADAS_MGR2_B.v_min = rt_atan2f_snf(ADAS_MGR2_B.rtb_selected_path_pts[0].y,
         ADAS_MGR2_B.rtb_selected_path_pts[0].x);
+      ADAS_MGR2_B.v_max = ADAS_MGR2_B.rtb_selected_path_pts[0].x;
       ADAS_MGR2_B.rtb_selected_path_pts_m = ADAS_MGR2_B.rtb_selected_path_pts[0]
-        .x;
-      rtb_selected_path_pts = ADAS_MGR2_B.rtb_selected_path_pts[0].y;
+        .y;
       for (ADAS_MGR2_B.i = 0; ADAS_MGR2_B.i <= 16; ADAS_MGR2_B.i += 4) {
         tmp_0 = _mm_div_ps(_mm_add_ps(_mm_cvtepi32_ps(_mm_add_epi32
           (_mm_set1_epi32(ADAS_MGR2_B.i), _mm_loadu_si128((const __m128i *)
           &offsets_0[0]))), _mm_set1_ps(1.0F)), _mm_set1_ps(20.0F));
         _mm_storeu_ps(&ADAS_MGR2_B.target_x[ADAS_MGR2_B.i], _mm_mul_ps
-                      (_mm_set1_ps(ADAS_MGR2_B.rtb_selected_path_pts_m), tmp_0));
+                      (_mm_set1_ps(ADAS_MGR2_B.v_max), tmp_0));
         _mm_storeu_ps(&ADAS_MGR2_B.target_y[ADAS_MGR2_B.i], _mm_mul_ps
-                      (_mm_set1_ps(rtb_selected_path_pts), tmp_0));
+                      (_mm_set1_ps(ADAS_MGR2_B.rtb_selected_path_pts_m), tmp_0));
         _mm_storeu_ps(&ADAS_MGR2_B.target_yaw[ADAS_MGR2_B.i], _mm_set1_ps
                       (ADAS_MGR2_B.v_min));
         _mm_storeu_ps(&ADAS_MGR2_B.target_curvature[ADAS_MGR2_B.i], _mm_set1_ps
@@ -391,7 +845,7 @@ void mgm_step(void)
       ADAS_MGR2_DW.n_out = 20;
     }
 
-    switch (ADAS_MGR2_B.path_source) {
+    switch (path_source) {
      case 0U:
       rtb_path_valid = ADAS_MGR2_U.core_snapshot.lane_updated;
       break;
@@ -435,7 +889,7 @@ void mgm_step(void)
       }
     }
 
-    if (ADAS_MGR2_B.path_source != ADAS_MGR2_DW.last_src) {
+    if (path_source != ADAS_MGR2_DW.last_src) {
       memcpy(&ADAS_MGR2_DW.from_x[0], &ADAS_MGR2_DW.ref_x[0], 20U * sizeof
              (real32_T));
       memcpy(&ADAS_MGR2_DW.from_y[0], &ADAS_MGR2_DW.ref_y[0], 20U * sizeof
@@ -445,7 +899,7 @@ void mgm_step(void)
       memcpy(&ADAS_MGR2_DW.from_curvature[0], &ADAS_MGR2_DW.ref_curvature[0],
              20U * sizeof(real32_T));
       ADAS_MGR2_DW.blend_left = MGM_blend_cycles;
-      ADAS_MGR2_DW.last_src = ADAS_MGR2_B.path_source;
+      ADAS_MGR2_DW.last_src = path_source;
     }
 
     if (ADAS_MGR2_DW.blend_left > 0) {
@@ -455,12 +909,12 @@ void mgm_step(void)
         ADAS_MGR2_B.i = MGM_blend_cycles + 1;
       }
 
-      ADAS_MGR2_B.UnitDelay = 1.0F - (real32_T)ADAS_MGR2_DW.blend_left /
-        (real32_T)ADAS_MGR2_B.i;
+      ADAS_MGR2_B.v_min = 1.0F - (real32_T)ADAS_MGR2_DW.blend_left / (real32_T)
+        ADAS_MGR2_B.i;
       for (ADAS_MGR2_B.i = 0; ADAS_MGR2_B.i <= 16; ADAS_MGR2_B.i += 4) {
         tmp_0 = _mm_loadu_ps(&ADAS_MGR2_B.target_x[ADAS_MGR2_B.i]);
         tmp = _mm_loadu_ps(&ADAS_MGR2_DW.from_x[ADAS_MGR2_B.i]);
-        tmp_1 = _mm_set1_ps(ADAS_MGR2_B.UnitDelay);
+        tmp_1 = _mm_set1_ps(ADAS_MGR2_B.v_min);
         _mm_storeu_ps(&ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i], _mm_add_ps(_mm_mul_ps
           (_mm_sub_ps(tmp_0, tmp), tmp_1), tmp));
         tmp_0 = _mm_loadu_ps(&ADAS_MGR2_B.target_y[ADAS_MGR2_B.i]);
@@ -479,12 +933,12 @@ void mgm_step(void)
 
       ADAS_MGR2_DW.blend_left--;
     } else if (is_stale_repeat) {
-      ADAS_MGR2_B.UnitDelay *= 0.01F;
+      ADAS_MGR2_B.v_min = ADAS_MGR2_DW.UnitDelay_DSTATE * 0.01F;
       if (ADAS_MGR2_B.n_valid == 1) {
-        ADAS_MGR2_B.v_min = ADAS_MGR2_DW.ref_y[19];
-        ADAS_MGR2_B.UnitDelay = ADAS_MGR2_DW.ref_x[19] - ADAS_MGR2_B.UnitDelay;
-        if (!(ADAS_MGR2_B.UnitDelay > 0.19999999F)) {
-          ADAS_MGR2_B.UnitDelay = 0.19999999F;
+        ADAS_MGR2_B.v_max = ADAS_MGR2_DW.ref_y[19];
+        ADAS_MGR2_B.v_min = ADAS_MGR2_DW.ref_x[19] - ADAS_MGR2_B.v_min;
+        if (!(ADAS_MGR2_B.v_min > 0.19999999F)) {
+          ADAS_MGR2_B.v_min = 0.19999999F;
         }
 
         for (ADAS_MGR2_B.i = 0; ADAS_MGR2_B.i <= 16; ADAS_MGR2_B.i += 4) {
@@ -492,16 +946,16 @@ void mgm_step(void)
             (_mm_set1_epi32(ADAS_MGR2_B.i), _mm_loadu_si128((const __m128i *)
             &offsets[0]))), _mm_set1_ps(1.0F)), _mm_set1_ps(20.0F));
           _mm_storeu_ps(&ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i], _mm_mul_ps
-                        (_mm_set1_ps(ADAS_MGR2_B.UnitDelay), tmp_0));
-          _mm_storeu_ps(&ADAS_MGR2_DW.ref_y[ADAS_MGR2_B.i], _mm_mul_ps
                         (_mm_set1_ps(ADAS_MGR2_B.v_min), tmp_0));
+          _mm_storeu_ps(&ADAS_MGR2_DW.ref_y[ADAS_MGR2_B.i], _mm_mul_ps
+                        (_mm_set1_ps(ADAS_MGR2_B.v_max), tmp_0));
         }
       } else {
         for (ADAS_MGR2_B.i = 0; ADAS_MGR2_B.i < 20; ADAS_MGR2_B.i++) {
-          ADAS_MGR2_B.v_min = ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i] -
-            ADAS_MGR2_B.UnitDelay;
-          if (ADAS_MGR2_B.v_min > 0.01F) {
-            ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i] = ADAS_MGR2_B.v_min;
+          ADAS_MGR2_B.v_max = ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i] -
+            ADAS_MGR2_B.v_min;
+          if (ADAS_MGR2_B.v_max > 0.01F) {
+            ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i] = ADAS_MGR2_B.v_max;
           } else {
             ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i] = 0.01F;
           }
@@ -547,12 +1001,14 @@ void mgm_step(void)
   /* BusCreator: '<S4>/Bus Creator' incorporates:
    *  MATLAB Function: '<S7>/Ref_Hold_Blend_Core'
    *  Outport: '<Root>/core_output'
-   *  UnitDelay: '<S8>/Unit Delay'
    */
-  ADAS_MGR2_Y.core_output.path_source = ADAS_MGR2_B.path_source;
-  ADAS_MGR2_Y.core_output.immediate_stop = ADAS_MGR2_B.immediate_stop;
-  ADAS_MGR2_Y.core_output.v_ref = ADAS_MGR2_DW.UnitDelay_DSTATE;
+  ADAS_MGR2_Y.core_output.path_source = path_source;
+  ADAS_MGR2_Y.core_output.immediate_stop = immediate_stop;
+  ADAS_MGR2_Y.core_output.v_ref = ADAS_MGR2_B.v_ref_req;
   ADAS_MGR2_Y.core_output.n_points = ADAS_MGR2_DW.n_out;
+
+  /* Update for UnitDelay: '<S8>/Unit Delay' */
+  ADAS_MGR2_DW.UnitDelay_DSTATE = ADAS_MGR2_B.v_ref_req;
 }
 
 /* Model initialize function */

@@ -56,10 +56,19 @@ CoreParams validParams()
   params.n_cycles = 20;
   params.v_base = 0.5f;
   params.v_accel_zone = 1.0f;
+  params.v_narrow = 0.2f;
+  params.ttc_stop = 0.8f;
   params.blend_cycles = 10;
   params.a_up = 0.5f;
   params.a_down = 1.5f;
+  params.wrongway_yaw = 2.1f;
+  params.wrongway_cycles = 20;
+  params.avoid_return_hold_cycles = 30;
   params.lane_entry_max_cross = 0.5f;
+  params.avoid_max_cycles = 120;
+  params.v_avoid = 0.4f;
+  params.stop_zone_hold_cycles = 30;
+  params.avoid_zone_only = 1;
   return params;
 }
 
@@ -102,15 +111,28 @@ int main()
   expectInvalidParams([](CoreParams & p) {p.v_base = -0.1f;}, "v_base");
   expectInvalidParams([inf](CoreParams & p) {p.v_accel_zone = inf;}, "v_accel_zone");
   expectInvalidParams([](CoreParams & p) {p.v_accel_zone = 0.4f;}, "v_accel_zone");
+  expectInvalidParams([nan](CoreParams & p) {p.v_narrow = nan;}, "v_narrow");
+  expectInvalidParams([](CoreParams & p) {p.v_narrow = -0.1f;}, "v_narrow");
+  expectInvalidParams([inf](CoreParams & p) {p.ttc_stop = inf;}, "ttc_stop");
+  expectInvalidParams([](CoreParams & p) {p.ttc_stop = -0.1f;}, "ttc_stop");
   expectInvalidParams([](CoreParams & p) {p.blend_cycles = -1;}, "blend_cycles");
   expectInvalidParams([nan](CoreParams & p) {p.a_up = nan;}, "a_up");
   expectInvalidParams([](CoreParams & p) {p.a_up = 0.0f;}, "a_up");
   expectInvalidParams([inf](CoreParams & p) {p.a_down = inf;}, "a_down");
   expectInvalidParams([](CoreParams & p) {p.a_down = 0.0f;}, "a_down");
+  expectInvalidParams([nan](CoreParams & p) {p.wrongway_yaw = nan;}, "wrongway_yaw");
+  expectInvalidParams([](CoreParams & p) {p.wrongway_yaw = -0.1f;}, "wrongway_yaw");
+  expectInvalidParams([](CoreParams & p) {p.wrongway_yaw = 3.2f;}, "wrongway_yaw");
+  expectInvalidParams([](CoreParams & p) {p.wrongway_cycles = 0;}, "wrongway_cycles");
+  expectInvalidParams(
+    [](CoreParams & p) {p.avoid_return_hold_cycles = -1;}, "avoid_return_hold_cycles");
   expectInvalidParams(
     [nan](CoreParams & p) {p.lane_entry_max_cross = nan;}, "lane_entry_max_cross");
+  expectInvalidParams([inf](CoreParams & p) {p.v_avoid = inf;}, "v_avoid");
+  expectInvalidParams([](CoreParams & p) {p.avoid_zone_only = 2;}, "avoid_zone_only");
   expectInvalidParams(
-    [](CoreParams & p) {p.lane_entry_max_cross = -0.1f;}, "lane_entry_max_cross");
+    [](CoreParams & p) {p.escape_after_cycles = 1;},
+    "escape_after_cycles");
 
   const CoreParams params = validParams();
   const CoreSnapshot snapshot = validSnapshot();
@@ -165,18 +187,27 @@ int main()
       [&recreated, &snapshot]() {recreated.step(snapshot);}, injected_error,
       "model errorStatus must be preserved in the step exception");
 
-    // Reset on the owner thread clears a prior model error and may update all
-    // nine generated tunable parameters.
+    // Reset on the owner thread clears a prior model error and updates all
+    // 18 generated tunable parameters.
     CoreParams updated = params;
     updated.lane_conf_exit = 0.25f;
     updated.lane_conf_return = 0.75f;
     updated.n_cycles = 12;
     updated.v_base = 0.4f;
     updated.v_accel_zone = 0.8f;
+    updated.v_narrow = 0.15f;
+    updated.ttc_stop = 0.6f;
     updated.blend_cycles = 6;
     updated.a_up = 0.4f;
     updated.a_down = 1.2f;
+    updated.wrongway_yaw = 1.9f;
+    updated.wrongway_cycles = 12;
+    updated.avoid_return_hold_cycles = 24;
     updated.lane_entry_max_cross = 0.35f;
+    updated.avoid_max_cycles = 80;
+    updated.v_avoid = 0.35f;
+    updated.stop_zone_hold_cycles = 20;
+    updated.avoid_zone_only = 0;
     recreated.reset(updated);
     check(rtmGetErrorStatus(ADAS_MGR2_M) == nullptr, "reset must clear model errorStatus");
     check(
@@ -185,11 +216,20 @@ int main()
       MGM_n_cycles == updated.n_cycles &&
       MGM_v_base == updated.v_base &&
       MGM_v_accel_zone == updated.v_accel_zone &&
+      MGM_v_narrow == updated.v_narrow &&
+      MGM_ttc_stop == updated.ttc_stop &&
       MGM_blend_cycles == updated.blend_cycles &&
       MGM_a_up == updated.a_up &&
       MGM_a_down == updated.a_down &&
-      MGM_lane_entry_max_cross == updated.lane_entry_max_cross,
-      "reset must update all nine generated parameters");
+      MGM_wrongway_yaw == updated.wrongway_yaw &&
+      MGM_wrongway_cycles == updated.wrongway_cycles &&
+      MGM_avoid_return_hold_cycles == updated.avoid_return_hold_cycles &&
+      MGM_lane_entry_max_cross == updated.lane_entry_max_cross &&
+      MGM_avoid_max_cycles == updated.avoid_max_cycles &&
+      MGM_v_avoid == updated.v_avoid &&
+      MGM_stop_zone_hold_cycles == updated.stop_zone_hold_cycles &&
+      MGM_avoid_zone_only == updated.avoid_zone_only,
+      "reset must update all 18 generated parameters");
     recreated.step(snapshot);
   }
 

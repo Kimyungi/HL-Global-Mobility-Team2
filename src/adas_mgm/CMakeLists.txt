@@ -8,7 +8,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 option(
   ADAS_MGM_ENABLE_GENERATED_BACKEND
-  "Link the experimental ADAS_MGR2 v1.68 backend into mgm_node"
+  "Link the experimental four-state ADAS_MGR2 v1.88 backend into mgm_node"
   OFF)
 
 find_package(ament_cmake REQUIRED)
@@ -73,9 +73,8 @@ if(BUILD_TESTING OR ADAS_MGM_ENABLE_GENERATED_BACKEND)
       target_link_libraries(mgm_node mgm_generated_adapter)
     endif()
 
-    # 실차 덤프 하나를 두 구현에 동시 재생하는 back-to-back 하네스 (§5.5).
-    # 범위 판정에 DecisionBackend 의 helper 를 그대로 쓰므로 같은 기준이 보장된다.
-    add_executable(parity_replay tools/parity_replay.cpp src/decision_backend.cpp)
+    # 실차 덤프 하나를 두 구현에 동시 재생해 전 틱 출력 parity 를 검증한다 (§5.5).
+    add_executable(parity_replay tools/parity_replay.cpp)
     target_compile_definitions(parity_replay PRIVATE ADAS_MGM_HAS_GENERATED_BACKEND=1)
     target_include_directories(parity_replay PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(parity_replay mgm_generated_adapter)
@@ -89,6 +88,14 @@ if(BUILD_TESTING OR ADAS_MGM_ENABLE_GENERATED_BACKEND)
       add_test(
         NAME generated_lane_waypoint_parity_test
         COMMAND generated_lane_waypoint_parity_test)
+
+      add_executable(
+        generated_four_state_parity_test
+        test/generated_four_state_parity_test.cpp)
+      target_link_libraries(generated_four_state_parity_test mgm_generated_adapter)
+      add_test(
+        NAME generated_four_state_parity_test
+        COMMAND generated_four_state_parity_test)
 
       add_executable(
         generated_adapter_safety_test
@@ -112,7 +119,7 @@ if(BUILD_TESTING OR ADAS_MGM_ENABLE_GENERATED_BACKEND)
     endif()
   else()
     message(STATUS
-      "ADAS_MGR2 LANE/WAYPOINT parity disabled: requires Linux x86-64 with GNU/Clang; "
+      "ADAS_MGR2 four-state parity disabled: requires Linux x86-64 with GNU/Clang; "
       "got ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}/${CMAKE_C_COMPILER_ID}")
   endif()
 endif()
@@ -139,6 +146,15 @@ if(BUILD_TESTING)
   add_test(
     NAME escape_reverse_test
     COMMAND escape_reverse_test)
+
+  add_executable(
+    transition_log_test
+    test/transition_log_test.cpp
+    src/transition_log.cpp)
+  target_include_directories(transition_log_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(
+    NAME transition_log_test
+    COMMAND transition_log_test)
 endif()
 
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
