@@ -37,6 +37,20 @@ enum : uint8_t
   MGM_SRC_GPS = 1,
   MGM_SRC_AVOID = 2,
   MGM_SRC_PARKING = 3,
+  // 후진 탈출 전용 — 인지 소스가 아니라 조립 블록이 만드는 **직선 ref**다
+  // (2026-08-24). 후진 중에는 조향을 중립으로 두고 곧게 빼는 것이 유일하게
+  // 안전한 기하다: 전진용 ref(차 앞의 목표점)를 그대로 두고 v_ref만 음수로
+  // 뒤집으면 차가 목표를 등진 채 반대로 꺾인다.
+  MGM_SRC_ESCAPE = 4,
+};
+
+// 후진 탈출 페이즈 (CoreState.escape_phase) — AVOID 스테이트 **안의** 단계다.
+// 스테이트로 승격하지 않는 이유: 후진은 새 횡방향 경로 소스를 만드는 일이 아니라
+// 회피를 성립시키기 위한 준비 동작이고, §4가 정지를 스테이트에서 뺀 것과 같은 계열이다.
+enum : uint8_t
+{
+  MGM_ESCAPE_NONE = 0,       // 평시
+  MGM_ESCAPE_REVERSING = 1,  // 후진 중 (v_ref < 0, 직선 ref)
 };
 
 // fma_interfaces/RefPoint과 동일 의미 — float 4개 (CAN 전송 시 양자화는 bridge_dspace 담당)
@@ -116,6 +130,10 @@ struct CoreSnapshot
   // launch의 gps_only:=true(임계를 2.0으로 올려 run 전체에서 LANE 불가)와 달리
   // 여기는 그 구간에서만 걸리고 벗어나면 정상 히스테리시스로 돌아온다.
   bool gps_gps_only_zone;
+  // 후방 여유 — 후진 탈출(§4)의 전제 (EstopRequest.rear_clear, 2026-08-24).
+  // **모르면 false**: 후방 센서 미탑재·스캔 무효·stack_estop staleness 전부 false다.
+  // escape_require_rear_clear가 켜져 있으면 이 값이 true인 동안만 후진한다.
+  bool estop_rear_clear;
 };
 
 // 튜닝 파라미터 — params.yaml과 1:1, Simulink에서는 tunable parameter
@@ -183,6 +201,33 @@ struct CoreParams
   // ⚠ TTC 안전 바닥(ttc_stop)은 AVOID 스테이트 안에서만 걸리므로, 이 게이트를
   //   켜면 구간 밖 장애물의 유일한 방어선은 stack_estop 이다.
   int32_t avoid_zone_only;
+
+  // ── 후진 탈출 (2026-08-24 신설, §4 우선권 표 / AVOID 진입 페이즈).
+  //
+  // 푸는 문제: 회피 불가 장애물 앞에서 estop이 걸리면 차가 영영 못 빠져나온다.
+  // estop은 레벨 신호라 장애물이 치워져야 풀리는데, 시험 코스에서는 치워질 일이
+  // 없는 경우가 있다(길을 막은 구조물·주차된 차). 그러면 v_ref 0 으로 무한 대기다.
+  // 그래서 estop이 충분히 오래 유지되면 **곧게 조금 물러나** 회피가 성립하는
+  // 거리를 만들고 AVOID 로 넘어간다.
+
+  // estop이 이 틱수만큼 **연속** 유지되면 후진을 개시한다. 0 이하 = 기능 끔(구동작).
+  // 1000틱 = 10s. 카운터는 **실제 EstopRequest 인가**로만 센다(estop_latch_release) —
+  // §5.7 watchdog 보정이나 wait_go 대기로 걸린 estop 은 세지 않는다. 이게 없으면
+  // 출발 인가 전 대기 중에 차가 스스로 후진한다.
+  int32_t escape_after_cycles;
+
+  // 후진 목표 속도 [m/s]. **반드시 음수** — 0 이상이면 기능이 꺼진다(안전 불변식).
+  // 이 값이 음수라는 것만으로 "탈출 페이즈는 절대 전진하지 못한다"가 보장된다.
+  float v_escape;
+
+  // 후진 최대 틱. 거리 상한 대용이다 (v_escape × escape_max_cycles × 10ms).
+  // 예: -0.3 m/s × 200틱 = 0.6m. 0 이하면 기능 끔 — 상한 없는 후진은 만들지 않는다.
+  int32_t escape_max_cycles;
+
+  // 0이 아니면 후방 여유(estop_rear_clear)가 확인될 때만 후진한다. **기본 켬.**
+  // 후방 센서가 붙기 전에는 이 값이 항상 false 라 기능이 자연히 잠긴다.
+  // 끄면 후방을 보지 않고 시간 상한만으로 후진한다 — 관측자를 세운 시험에서만 쓸 것.
+  int32_t escape_require_rear_clear;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -221,6 +266,16 @@ struct CoreState
   CorePoint last_raw_target[MGM_NUM_POINTS];
   // 종방향 병합 (rate limit)
   float v;
+  // ── 후진 탈출 (2026-08-24)
+  int32_t estop_hold_cnt;   // 실제 estop 연속 틱 (watchdog 보정 제외)
+  uint8_t escape_phase;     // MGM_ESCAPE_* — AVOID 안의 단계
+  int32_t escape_ticks;     // 후진 진행 틱 (escape_max_cycles 상한 판정)
+  // 주행을 한 번이라도 시작했는가 (명령 속도가 0을 넘은 적이 있는가).
+  // **후진 탈출의 무장 조건**이다. 없으면 다음 함정에 빠진다: 벽을 마주 보고
+  // launch 하면 첫 틱부터 실제 estop 이 참이라, 아무도 출발 인가를 하지 않았는데
+  // 10초 뒤 차가 스스로 뒤로 물러난다. 한 번이라도 굴러간 뒤에만 "갇혔다"고
+  // 말할 수 있다.
+  bool escape_armed;
 };
 
 // 매 틱의 출력 — wrapper가 TargetRef로 변환·발행

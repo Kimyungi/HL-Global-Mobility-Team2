@@ -25,7 +25,10 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v4 (2026-08-18): CoreSnapshot에 gps_stop_zone·gps_avoid_zone 추가 — v3 덤프는
 // 레이아웃이 달라 재생 불가(snapshot_size 검사가 잡는다).
 // v5 (2026-08-18): CoreSnapshot에 gps_gps_only_zone 추가.
-constexpr uint32_t kDumpVersion = 5;
+// v6 (2026-08-24): CoreSnapshot에 estop_rear_clear 추가 (§4 후진 탈출) — v5 덤프는
+// 레이아웃이 달라 재생 불가(snapshot_size 검사가 잡는다). 같이 들어간 CoreParams
+// 4개(escape_*)는 구조체 뒤에 붙였으므로 옛 params_size 로도 기본값으로 채워진다.
+constexpr uint32_t kDumpVersion = 6;
 
 struct DumpHeader
 {
