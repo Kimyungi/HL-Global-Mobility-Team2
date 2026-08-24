@@ -110,15 +110,20 @@ class StackLaneNode(Node):
         # 잡을지 비결정적이므로 필수). 기본값 = 차선용 OAK-D Pro 실측 MxID
         # (2026-08-11 확정, 팀장). 빈 문자열이면 첫 가용 장치 사용(단독 시험용).
         self.declare_parameter('camera_mxid', '14442C105157D3D200')
-        self.declare_parameter('camera_fps', 30)
-        # USB 링크 속도 상한. 'super'(기본) = 제한 없음(SuperSpeed 5Gbps로 열거).
+        self.declare_parameter('camera_fps', 10)
+        # USB 링크 속도 상한. 'super' = 제한 없음(SuperSpeed 5Gbps로 열거).
         # 'high' = USB 2.0 강제 — SuperSpeed 신호 자체가 사라져 GNSS L1(1575MHz)
         # 방사 잡음의 주 원인이 제거된다 (2026-08-14 실측: 카메라 부팅 시 GPS
         # C/N0가 42→28dB, 근접 시 17dB까지 붕괴. camera_fps를 30→10으로 낮춰도
         # 무효였는데, 그건 페이로드일 뿐 링크는 계속 5Gbps로 돌기 때문).
         # ⚠ 'high'는 대역폭이 ~40MB/s라 1280x720 BGR 30fps(83MB/s)가 안 들어간다
         # — 반드시 camera_fps를 10 이하로 함께 낮출 것 (추론은 5.8Hz라 무손실).
-        self.declare_parameter('usb_speed', 'super')
+        # ★ 기본값을 'high'/10 으로 뒤집었다 (2026-08-24, 인수인계).
+        #   USB3 로 열거되면 GNSS L1 이 덮여 RTK 가 죽는다 — 그걸 피하려면
+        #   매 launch 마다 인자를 손으로 붙여야 했는데, 한 번 잊으면 위성 수도
+        #   HDOP 도 RTCM 도 정상으로 보이는 채 FIXED 만 안 잡혀 원인을 찾기 어렵다.
+        #   안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 명시적으로 올린다.
+        self.declare_parameter('usb_speed', 'high')
         self.declare_parameter('warmup_frames', 30)
         self.declare_parameter('poll_period_sec', 0.02)
         self.declare_parameter('publish_debug_image', False)

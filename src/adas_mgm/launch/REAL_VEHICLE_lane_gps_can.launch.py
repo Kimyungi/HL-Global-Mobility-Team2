@@ -309,10 +309,16 @@ def generate_launch_description():
         # USB3 트래픽 = 1280x720x3 x fps. 기본 30fps는 ≈83MB/s인데 YOLOPv2 추론은
         # XPU에서 172ms(5.8Hz)라 실사용량의 5배를 흘리는 셈 — RTK 간섭이 확인되면
         # camera_fps:=10 (≈28MB/s)이 성능 손실 없는 1차 완화책 (2026-08-14).
-        DeclareLaunchArgument('camera_fps', default_value='30'),
+        DeclareLaunchArgument('camera_fps', default_value='10'),
         # 'high' = 카메라를 USB2로 강제 → SuperSpeed 신호가 사라져 GPS 간섭의
         # 주 원인이 제거된다. 반드시 camera_fps:=10 과 함께 쓸 것 (2026-08-14).
-        DeclareLaunchArgument('usb_speed', default_value='super'),
+        # ★ 기본값을 'high'/10 으로 뒤집었다 (2026-08-24, 인수인계). USB3 로
+        #   열거되면 GNSS L1 이 덮여 RTK 가 죽는데, 그걸 피하려면 매 launch 마다
+        #   인자를 손으로 붙여야 했다. 한 번 잊으면 위성 수도 HDOP 도 RTCM 도
+        #   정상으로 보이는 채 FIXED 만 안 잡혀 원인 찾기가 어렵다 — C/N0(GSV)를
+        #   봐야 보인다. 안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 올린다:
+        #     ros2 launch ... usb_speed:=super camera_fps:=30
+        DeclareLaunchArgument('usb_speed', default_value='high'),
         # 이 PC(산업용)는 NVIDIA 없음 — 인텔 Arc iGPU를 XPU 백엔드로 사용
         # (fp16 172ms/frame ≈ 5.8Hz, CPU 390ms 대비 2.3배 — 2026-08-11 실측).
         # XPU 초기화 실패 시(드라이버 문제 등) lane_device:=cpu 로 폴백.

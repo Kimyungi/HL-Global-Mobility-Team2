@@ -590,13 +590,18 @@ class StackTrafficNode(Node):
         self.declare_parameter("camera_height", 480)
         self.declare_parameter("oak_width", 640)
         self.declare_parameter("oak_height", 360)
-        self.declare_parameter("oak_fps", 30.0)
+        self.declare_parameter("oak_fps", 10.0)
         # 신호등용 OAK-D MxID (CLAUDE.md §6, 2026-08-12 실측 확정) — 2대 운용 시
         # 핀닝 없으면 차선용 카메라를 잡을 수 있다. 빈 문자열이면 첫 가용 장치.
         self.declare_parameter("oak_mxid", "14442C10B167CFD200")
-        # USB 링크 속도 상한: 'super'(기본, 제한 없음) | 'high'(USB2 강제).
+        # USB 링크 속도 상한: 'super'(제한 없음) | 'high'(USB2 강제, 기본).
         # 'high'는 GPS 간섭 대책 — oak_camera.py 주석 참조 (2026-08-14).
-        self.declare_parameter("oak_usb_speed", "super")
+        # ★ 기본값을 'high'/10 으로 뒤집었다 (2026-08-24, 인수인계).
+        #   USB3 로 열거되면 GNSS L1 이 덮여 RTK 가 죽는다 — 그걸 피하려면
+        #   매 launch 마다 인자를 손으로 붙여야 했는데, 한 번 잊으면 위성 수도
+        #   HDOP 도 RTCM 도 정상으로 보이는 채 FIXED 만 안 잡혀 원인을 찾기 어렵다.
+        #   안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 명시적으로 올린다.
+        self.declare_parameter("oak_usb_speed", "high")
         self.declare_parameter("oak_depth_enabled", True)
         # 작은 물체를 후처리가 지우는지 확인하는 raw 진단 기본값.
         self.declare_parameter("oak_depth_confidence_threshold", 245)

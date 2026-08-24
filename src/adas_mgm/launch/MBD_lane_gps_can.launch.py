@@ -245,8 +245,14 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_mxid', default_value='14442C105157D3D200'),
         # OAK-D USB3 가 RTK 를 죽인다 — usb_speed:=high 는 반드시 camera_fps:=10 과
         # 함께 (CLAUDE.md §6, 2026-08-14 실측 -16.5dB).
-        DeclareLaunchArgument('camera_fps', default_value='30'),
-        DeclareLaunchArgument('usb_speed', default_value='super'),
+        DeclareLaunchArgument('camera_fps', default_value='10'),
+        # ★ 기본값을 'high'/10 으로 뒤집었다 (2026-08-24, 인수인계). USB3 로
+        #   열거되면 GNSS L1 이 덮여 RTK 가 죽는데, 그걸 피하려면 매 launch 마다
+        #   인자를 손으로 붙여야 했다. 한 번 잊으면 위성 수도 HDOP 도 RTCM 도
+        #   정상으로 보이는 채 FIXED 만 안 잡혀 원인 찾기가 어렵다 — C/N0(GSV)를
+        #   봐야 보인다. 안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 올린다:
+        #     ros2 launch ... usb_speed:=super camera_fps:=30
+        DeclareLaunchArgument('usb_speed', default_value='high'),
         DeclareLaunchArgument('lane_device', default_value='xpu'),
         DeclareLaunchArgument('ref_point0_lookahead_m', default_value='2.0'),
         DeclareLaunchArgument('ref_point0_extrap_mode', default_value='linear'),

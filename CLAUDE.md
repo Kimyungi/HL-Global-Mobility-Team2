@@ -169,7 +169,7 @@ adas_ws/src/
   RTK는 반송파 위상을 쓰므로 코드 기반 측위(DGPS)보다 훨씬 먼저 무너진다.
   | 대책 | 효과 |
   |---|---|
-  | `usb_speed:=high`(stack_lane) / `oak_usb_speed:=high`(stack_traffic) | **-16.5dB → -2dB**. 링크 자체를 USB2로 내려 SuperSpeed 신호를 없앤다 |
+  | `usb_speed:=high`(stack_lane) / `oak_usb_speed:=high`(stack_traffic) | **-16.5dB → -2dB**. 링크 자체를 USB2로 내려 SuperSpeed 신호를 없앤다. **2026-08-24부터 이것이 기본값이다** — 노드(`stack_lane/node.py`, `stack_traffic/node.py`)와 통합 launch 2종 모두 `high`/`fps 10`으로 뒤집었다. 인자를 손으로 붙이는 걸 한 번 잊으면 위성 수·HDOP·RTCM이 전부 정상으로 보이는 채 FIXED만 안 잡혀 원인을 찾기 어렵기 때문이다. USB3가 필요하면 그때 명시적으로 올린다: `usb_speed:=super camera_fps:=30` |
   | `camera_fps` 하향 | **단독으론 무효** (30→10 해도 동일) — 페이로드일 뿐 링크는 계속 5Gbps. 단 USB2는 대역폭 ~40MB/s라 720p 30fps(83MB/s)가 안 들어가므로 **`camera_fps:=10`을 반드시 동반**할 것 |
   | 안테나 이격 | 유효하나 보조 수단 — USB2 적용 후엔 하늘 시야만 보고 위치를 잡으면 된다 |
   2대 동시 가동(둘 다 USB2) 실측: C/N0 39.4~42.4dB, 100초 FIXED 유지 · lane_path 10Hz 정상.
