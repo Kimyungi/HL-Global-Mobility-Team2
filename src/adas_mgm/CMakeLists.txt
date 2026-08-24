@@ -131,6 +131,14 @@ if(BUILD_TESTING)
   add_test(
     NAME decision_backend_unavailable_test
     COMMAND decision_backend_unavailable_test)
+
+  # 후진 탈출 (§4) — 코어 스테이트 머신만 대상으로 하는 단위 시험.
+  add_executable(escape_reverse_test test/escape_reverse_test.cpp)
+  target_include_directories(escape_reverse_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(escape_reverse_test mgm_core)
+  add_test(
+    NAME escape_reverse_test
+    COMMAND escape_reverse_test)
 endif()
 
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})

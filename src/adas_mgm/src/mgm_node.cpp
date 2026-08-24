@@ -96,6 +96,8 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   s.parking_v_suggest = m.parking.v_suggest;
   s.traffic_stop_required = m.traffic.stop_required;
   s.estop = m.estop.estop;
+  // 후방 여유 (§4 후진 탈출) — staleness 보정은 loop()에서 estop 과 함께 처리한다.
+  s.estop_rear_clear = m.estop.rear_clear;
   return s;
 }
 
@@ -189,6 +191,18 @@ public:
     // 회피 허용 구간 밖에서는 AVOID 전이 금지 (stack_gps 의 avoid_zone_latlon 과 짝).
     // 기본 false = 구동작(어디서나 회피) — 켜는 것은 launch/params의 명시적 선택.
     p.avoid_zone_only = declare_parameter<bool>("avoid_zone_only", false) ? 1 : 0;
+    // ── 후진 탈출 (§4, 2026-08-24). 기본 끔 — 켜는 것은 params.yaml/launch 의
+    // 명시적 선택이어야 한다. 후진은 사람이 뒤를 확인한 상태에서만 시험할 동작이다.
+    p.escape_after_cycles =
+      static_cast<int32_t>(declare_parameter<int>("escape_after_cycles", 0));
+    // 음수여야 의미가 있다 — 0 이상이면 코어가 기능을 끈다(안전 불변식).
+    p.v_escape = static_cast<float>(declare_parameter<double>("v_escape", -0.3));
+    // 200틱 × 10ms × 0.3m/s = 0.6m
+    p.escape_max_cycles =
+      static_cast<int32_t>(declare_parameter<int>("escape_max_cycles", 200));
+    // 기본 켬 — 후방 센서가 붙기 전에는 rear_clear 가 항상 false 라 기능이 잠긴다.
+    p.escape_require_rear_clear =
+      declare_parameter<bool>("escape_require_rear_clear", true) ? 1 : 0;
     rcl_interfaces::msg::ParameterDescriptor backend_descriptor;
     backend_descriptor.read_only = true;
     backend_descriptor.description = "startup-only decision backend: core or generated";
@@ -395,6 +409,9 @@ private:
     const bool estop_real = !estop_stale && m.estop.estop;
     if (estop_stale) {
       m.estop.estop = true;
+      // 후방 여유는 반대 방향으로 보정한다 — "모르면 false"(§4 후진 탈출).
+      // stack_estop 이 죽었는데 마지막 "뒤가 비었다"를 믿고 후진하면 안 된다.
+      m.estop.rear_clear = false;
     }
     // 출발 인가 게이트 — 인가 전까지 estop 보정으로 정지 대기 (운용 입력
     // 컨디셔닝, §5.7과 동류). estop_real(래치 해제용)에는 영향 없음.
