@@ -94,6 +94,59 @@ colcon test --packages-select adas_mgm --event-handlers console_direct+   # 전�
 > launch 가 기동 시 어느 쪽인지 한 줄로 찍는다 —
 > `⚠ avoid_zone_only=true + 회피 구간 없음 — AVOID 진입 차단` 이 보이면 그대로 나가지 말 것.
 
+### 2-1. 구간 찍기 — MBD 에서도 명령이 똑같다
+
+v1.88 은 지정 구간 3종을 **직접 입력으로 받는다**(v1.68 이 무시하던 것). 그래서 찍는
+방법도 운영과 완전히 동일하다 — 절차 원본은
+[`RUNBOOK_avoid_field_test.md` §2-1](RUNBOOK_avoid_field_test.md) 이고, 여기 옮겨
+적지 않는다. **V2(launch)를 켜 둔 채** 새 터미널에서:
+
+```bash
+# 지정 정지 지점 (점 하나)
+ros2 run stack_gps mark_zone stop --note "언덕 오르막"
+
+# 회피 허용 구간 (시작·끝 짝)
+ros2 run stack_gps mark_zone avoid_start
+ros2 run stack_gps mark_zone avoid_end
+
+# GPS 전용 구간 (시작·끝 짝)
+ros2 run stack_gps mark_zone gps_only_start
+ros2 run stack_gps mark_zone gps_only_end
+```
+
+- **CAN 토큰 없이 띄운 V2(①)로 찍는 것이 안전하다.** `mark_zone` 은 구독만 하고,
+  bench 라도 `stack_gps_node` 는 똑같이 돈다. 조이스틱으로 그 자리에 정차한 뒤 찍는다.
+- 트랙 CSV 옆 `zones_<코스>.yaml` 한 파일에 쌓이고, **MBD 와 운영 런치가 그 파일을
+  공유한다** — 한 번 찍으면 양쪽에 다 적용된다.
+- RTK **FIXED(quality=4)** 표본만 쓴다. 30개(약 3초) 중앙값이라 FIXED 가 아니면 안 찍힌다.
+- ⚠ **찍은 뒤 V2 를 재시작할 것.** `stack_gps` 는 구간 파일을 **기동 시 한 번만** 읽는다
+  (`_setup_zones`). 재시작하면 콘솔에
+  `구간 파일 로드: ... (정지 N · 회피 N · GPS전용 N)` 이 뜬다 — 그 숫자로 확인한다.
+
+**⚠ `gps_only_zone`(구간) 과 `gps_only:=true`(런치 인자)는 다른 것이다.**
+
+| | 무엇 | 범위 | 되돌리기 |
+|---|---|---|---|
+| `gps_only_zone` | 구간 파일에 찍은 **장소** | 그 구간 안에서만 WAYPOINT 고정, 벗어나면 정상 히스테리시스 | 구간 파일에서 지운다 |
+| `gps_only:=true` | 런치 인자 — `lane_conf_exit`·`lane_conf_return` 을 **둘 다 2.0** 으로 덮어씀 | **run 전체.** 신뢰도 최대가 1.0 이라 LANE 전이가 구조적으로 불가능 | 인자를 뺀다 |
+
+후자를 모르고 붙이면 `lane_path` 가 정상 수신되는데도 run 내내 gps 라
+**인지 고장으로 오진하기 쉽다**(2026-08-15 run_0815_162102 실측). 구간을 쓰려는
+거라면 `gps_only` 는 붙이지 말 것.
+
+**동작은 레퍼런스 코어와 같은 것을 확인했다** (2026-08-25, back-to-back 1200틱):
+차선 신뢰도를 0.9(복귀 임계 0.70 위)로 **계속 높게** 둔 채 구간만 켰다 껐다 했을 때 —
+
+| | 레퍼런스 | 생성 v1.88 |
+|---|---|---|
+| 구간 진입 → WAYPOINT | t=200 (즉시, 히스테리시스 없음) | t=200 |
+| 구간 안 (600틱) | 신뢰도 0.9 여도 WAYPOINT 유지 | 동일 |
+| 구간 이탈 → LANE | t=849 (**50틱 새로 채운 뒤**) | t=849 |
+| 필드 불일치 | — | **0 / 1200틱** |
+
+이탈 직후 0틱 만에 LANE 이 되면 CLAUDE.md §4 위반이다(`lane_high_cnt` 를 구간 안에서
+0 으로 묶는 규칙). 생성 C 도 그 규칙을 갖고 있다.
+
 ---
 
 ## 3. 터미널 구성
