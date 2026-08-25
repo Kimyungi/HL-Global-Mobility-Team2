@@ -79,20 +79,18 @@ colcon test --packages-select adas_mgm --event-handlers console_direct+   # 전�
 - [x] **새 코스 CSV** — `waypoints_halla_univ_20260819_182657.csv` (303점, 전 구간 RTK FIXED, 2026-08-19 기록)
 - [ ] 로버 RTK **FIXED** 확인 (`rtk_probe.py`, C/N0 39dB 이상)
 - [ ] `-DADAS_MGM_ENABLE_GENERATED_BACKEND=ON` 빌드 (§1)
-- [ ] **회피 구간을 찍었나** (`ros2 run stack_gps mark_zone`) — 아래 함정 참조
+- [ ] (`avoid_zone_only:=true` 로 띄울 때만) 회피 구간을 찍었나 — 아래 참조
 
 > 구간 파일(`zones_*.yaml`)의 정지·회피·GPS 전용 구간은 이제 v1.88 입력으로 전달된다
 > (v1.68 때처럼 무시되지 않는다).
 >
-> ⚠ **`avoid_zone_only` 기본값은 `true` 다** (운영 런치와 같은 값 — 그래야 back-to-back
-> 비교가 성립한다). 즉 **회피 구간을 안 찍으면 AVOID 가 한 번도 안 걸린다.** 4상태를
-> 보러 나가서 2상태만 보고 오는 가장 쉬운 길이므로, 둘 중 하나를 고르고 나갈 것:
+> **`avoid_zone_only` 기본값은 `false` 다 — 어디서나 회피한다** (CLAUDE.md §4 의 기본).
+> 그냥 띄우면 회피 구간을 안 찍어도 AVOID 가 정상 동작한다.
 >
-> - 구간 파일에 회피 구간을 찍는다 (운영과 동일 조건 — **권장**)
-> - `avoid_zone_only:=false` 로 띄운다 (어디서나 회피. 종전 회피 시험 절차와 같음)
->
-> launch 가 기동 시 어느 쪽인지 한 줄로 찍는다 —
-> `⚠ avoid_zone_only=true + 회피 구간 없음 — AVOID 진입 차단` 이 보이면 그대로 나가지 말 것.
+> ⚠ 회피를 **지정 구간에만** 쓰려는 코스(원주 운전면허시험장 등)에서만
+> `avoid_zone_only:=true` 를 붙이고, **그때는 구간을 반드시 찍을 것.** 켜 놓고 구간이
+> 없으면 회피가 전면 차단되고 장애물 앞에서 estop 으로만 선다 — 2026-08-25 한라대에서
+> 실제로 그렇게 됐다(§8 참조). launch 가 그 조합을 기동 시 큰 경고로 찍는다.
 
 ### 2-1. 구간 찍기 — MBD 에서도 명령이 똑같다
 
@@ -457,11 +455,39 @@ awk -F, 'NR>1 && $6==0' $RUN/transitions.csv         # 스펙 불일치만
 | `generated_lane_waypoint_parity_test` | `ticks=900 mismatches=0` |
 | `generated_four_state_parity_test` | `ticks=383 mismatches=0 assertions=0` |
 | 운영 빌드(OFF) 에 생성 심볼 누출 | `nm` 결과 **0개** — 운영 경로는 영향 없음 |
-| `--show-args` | `usb_speed=high` · `camera_fps=10` · `avoid_zone_only=true` 기본값 확인 |
+| `--show-args` | `usb_speed=high` · `camera_fps=10` · `avoid_zone_only=false` 기본값 확인 |
 | `go` remap (가짜 발행자로 재현) | remap 주면 인가, 안 주면 target_ref FAIL — §3 V3 절차대로 동작 |
 
-**실차 미검증** — 위는 전부 합성 입력이다. 실제 카메라 신뢰도 잡음·RTK 품질 변동에서
-어떻게 되는지가 이 시험의 목적이다.
+### 실차 1회차 — 2026-08-25 한라대 (`run_mbd_0825_162752`, 39.4s)
+
+| 항목 | 결과 |
+|---|---|
+| LANE ↔ WAYPOINT 전이 | 정상 2회 (0.49s LANE→WAYP, 22.51s WAYP→LANE), 둘 다 `spec_match=1` |
+| AVOID | **한 번도 안 걸림** — 원인은 모델이 아니라 launch 설정(아래) |
+| dSPACE RX | **0건** — `vehicle_vector.csv` 헤더만, bag `/vehicle/vector` Count 0 |
+
+**AVOID 미진입 원인 (모델 결함 아님).** `avoid_zone_only=1` 로 떠 있었는데 한라대
+코스에는 구간 파일이 없어 `gps_avoid_zone` 이 0% 였다. 인지는 정상이었다 —
+`avoid_obstacle_detected` 35.9%, t=25.28s 에 `avoidable` 참 + `avoid_path.n=1` 로
+**1.49초 동안 회피 가능**이라고 말했는데 게이트가 막았고, 그대로 직진하다
+t=27.07s 에 estop 으로 섰다.
+
+→ 2026-08-25 에 `avoid_zone_only` 기본값을 `false` 로 되돌렸다 (원주 전용 선택이
+전 코스 기본이 돼 있던 것). 지금은 그냥 띄우면 어디서나 회피한다.
+
+**같은 덤프를 두 설정으로 재생해 확인**(`core_replay`) — 게이트만 끄면 그날 그 자리에서
+회피한다. 인지 입력은 한 글자도 안 바뀌었다:
+
+```
+게이트 켬(그날)   AVOID    0틱   LANE@0.00 → WAYP@0.49 → LANE@22.51
+게이트 끔(복구)   AVOID 1200틱   LANE@0.00 → WAYP@0.49 → LANE@22.51 → AVOID@25.28 → WAYP@37.28
+```
+
+1200틱에서 나온 것은 `avoid_max_cycles`(12s) 상한이다 — 장애물이 계속 잡혀 있어
+`maneuver_done` 이 안 섰다는 뜻이니, 실차에서 회피를 다시 볼 때 확인할 항목이다.
+
+**아직 실차 미검증**: AVOID·PARKING 스테이트, 지정 구간 3종의 실차 동작,
+back-to-back parity(`parity_replay`).
 
 ---
 

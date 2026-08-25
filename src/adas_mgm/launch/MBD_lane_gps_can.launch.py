@@ -172,11 +172,16 @@ def validate(context):
 
     if LaunchConfiguration('avoid_zone_only').perform(context) == 'true':
         if not os.path.isfile(zones_file) or n_avoid == 0:
-            print('[launch] ⚠ avoid_zone_only=true + 회피 구간 없음 — AVOID 진입 차단')
+            print('[launch] ══════════════════════════════════════════════════')
+            print('[launch] ⚠⚠ 회피 전면 차단 — avoid_zone_only:=true 인데 회피 구간이 없다')
+            print('[launch]    장애물을 만나도 AVOID 로 안 가고 stack_estop 정지로만 대응한다')
+            print('[launch]    구간을 찍든지(mark_zone avoid_start/avoid_end)')
+            print('[launch]    인자를 빼든지(기본값이 false = 어디서나 회피) 하나를 고를 것')
+            print('[launch] ══════════════════════════════════════════════════')
         else:
-            print('[launch] AVOID는 구간 파일의 회피 구간 안에서만 허용')
+            print(f'[launch] AVOID 는 회피 구간 안에서만 허용 (구간 {n_avoid}개)')
     else:
-        print('[launch] avoid_zone_only=false — 어느 위치에서나 AVOID 진입 허용')
+        print('[launch] 회피 구간 제한 없음 (기본) — 어느 위치에서나 AVOID 진입 허용')
 
     print('[launch] stack_avoid 기동 — AVOID/TTC/narrow/v_avoid 입력을 v1.88에 연결')
     print('[launch] ⚠ v1.88 rear escape 미지원 — escape_after_cycles=0 고정')
@@ -236,9 +241,13 @@ def generate_launch_description():
         DeclareLaunchArgument('vehicle_csv_path',
                               default_value=os.path.join(LOG_DIR, 'vehicle_vector.csv')),
         DeclareLaunchArgument('stop_zone_span_m', default_value='1.0'),
+        # ★ 기본 **끔** (2026-08-25 복구) — CLAUDE.md §4 의 기본이 "어디서나 회피"다.
+        #   구간 제한이 필요한 코스에서만 명시적으로 켠다: avoid_zone_only:=true
         DeclareLaunchArgument(
-            'avoid_zone_only', default_value='true',
-            description='참이면 구간 파일의 avoid zone 안에서만 AVOID 진입'),
+            'avoid_zone_only', default_value='false',
+            description='참이면 구간 파일의 avoid zone 안에서만 AVOID 진입 '
+                        '(기본 끔 = 어디서나 회피). 원주 시험장처럼 구간 제한이 '
+                        '필요한 코스에서만 켠다'),
 
         # LANE 전이 차단 (임계 2.0 = confidence 최대 1.0 이라 도달 불가).
         # 생성 backend 의 adapter 도 이 2.0/2.0 을 "GPS 전용 sentinel" 로 인정한다.

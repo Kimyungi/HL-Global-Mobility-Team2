@@ -74,14 +74,15 @@ python3 ~/FMA_ws/src/stack_gps/tools/rtk_probe.py --seconds 120
 python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
     --port /dev/ttyRadio --tcp-port 2101
 
-# V2
+# V2   ← avoid_zone_only:=true 는 **이 코스(원주) 전용 선택**이다. 2026-08-25 부터
+#        launch 기본값이 아니므로 반드시 명시할 것 (없으면 어디서나 회피 = 구동작).
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
     waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_wonju_license_20260818_160511.csv \
-    usb_speed:=high camera_fps:=10
-    
+    avoid_zone_only:=true
+
 #  gps_only:=true
-    
+
     
 # M (내내 켜 둠)
 ros2 run adas_mgm state
@@ -106,11 +107,15 @@ ros2 run stack_gps mark_zone gps_only_start
 ros2 run stack_gps mark_zone gps_only_end
 
 
-> **`usb_speed:=high camera_fps:=10`은 GPS를 위한 필수 인자다 (2026-08-14).**
-> 빼면 OAK-D가 USB3(SuperSpeed)로 열거되고 그 방사 잡음이 GNSS L1을 덮어
-> **RTK FIXED가 아예 안 잡힌다** (같은 위치에서 C/N0 39dB↔22dB). USB2는 대역폭이
-> ~40MB/s라 `camera_fps:=10`을 반드시 동반해야 한다 (CLAUDE.md §6).
+> **`usb_speed:=high camera_fps:=10` 은 이제 launch 기본값이라 붙이지 않는다**
+> (2026-08-24 커밋 `8c251cb`). 손으로 붙여도 무해하지만 명령만 길어진다.
+> 왜 그게 기본이 됐나: OAK-D 가 USB3(SuperSpeed)로 열거되면 그 방사 잡음이 GNSS L1 을
+> 덮어 **RTK FIXED 가 아예 안 잡힌다** (같은 위치에서 C/N0 39dB↔22dB). USB2 는 대역폭이
+> ~40MB/s 라 `camera_fps:=10` 이 반드시 따라붙어야 한다 (CLAUDE.md §6). 인자를 한 번
+> 잊으면 위성 수·HDOP·RTCM 이 전부 정상으로 보이는 채 FIXED 만 안 잡혀 원인을 찾기
+> 어려워, 안전한 쪽을 기본으로 뒤집었다.
 > 기동 후 `stack_lane` 콘솔에 `USB 링크 속도 제한: HIGH` 경고가 떠야 적용된 것이다.
+> USB3 가 정말 필요하면 그때만 명시한다: `usb_speed:=super camera_fps:=30`.
 >
 > **⚠ `gps_only:=true`를 붙이면 차선 스테이트가 절대 안 뜬다 (2026-08-15 실측).**
 > 이 인자는 `lane_conf_exit`·`lane_conf_return`을 **둘 다 2.0**으로 덮어쓰는데
@@ -204,7 +209,7 @@ RTK FIXED 표본 30개(약 3초)의 중앙값을 쓰므로 3초간 차를 움직
 |---|---|---|
 | `zones_file` | (자동) | 빈 값이면 `waypoint_csv` 옆 `zones_*.yaml` (정지·회피·GPS전용 전부 여기) |
 | `stop_hold_sec` | `3.0` | 정차 시간. **완전히 멈춘 뒤부터** 잰다(감속 0.4s는 별도) |
-| `avoid_zone_only` | `true` | **회피 허용 구간 밖에서는 AVOID 전이 금지** |
+| `avoid_zone_only` | `false` | **회피 허용 구간 밖에서는 AVOID 전이 금지.** 기본이 끔이므로 이 시험에서는 `:=true` 를 **직접 붙인다** (2026-08-25 — 원주 전용 선택이 전 코스 기본이 돼 있던 것을 되돌렸다) |
 | `stop_points_latlon` / `avoid_zone_latlon` | (없음) | 파일 대신 인자로 직접 줄 때만 |
 
 기동 로그에 무엇을 읽었는지 그대로 찍힌다 — 이걸 보고 출발할 것:
@@ -242,10 +247,16 @@ RTK FIXED 표본 30개(약 3초)의 중앙값을 쓰므로 3초간 차를 움직
 
 M 터미널에서 그 구간 동안 `gps` 로 고정돼 있으면 정상이다.
 
-**회피 구간을 안 찍었으면 회피는 전면 차단이다** (`avoid_zone_only:=true` 기본).
+**`avoid_zone_only:=true` 를 붙였는데 회피 구간을 안 찍었으면 회피는 전면 차단이다.**
 그때 장애물을 만나면 회피가 아니라 **정지**한다 — MGM의 TTC 안전 바닥은 AVOID
 스테이트 안에서만 걸리므로 구간 밖 방어선은 stack_estop(정적 0.7m / 동적 1.2m)뿐이다.
-종전처럼 어디서나 회피하려면 `avoid_zone_only:=false`.
+launch 가 그 조합을 기동 시 큰 경고로 찍는다.
+
+> **이건 원주 코스의 운용 선택이지 시스템 기본이 아니다.** 2026-08-19 에 이 launch 의
+> 기본값을 `true` 로 두었다가 **원주 전용 선택이 전 코스 기본이 되어 버렸고**, 한라대
+> MBD 시험에서 그대로 터졌다 (run_mbd_0825_162752: stack_avoid 가 장애물을 잡고 회피
+> 경로까지 냈는데 구간 미지정이라 AVOID 진입이 막혀 그대로 직진 → estop 정지).
+> 2026-08-25 에 기본값을 `false`(CLAUDE.md §4·params.yaml 이 정한 값)로 되돌렸다.
 
 **정차는 지점당 한 번이다.** 언덕에서 밀려 구간을 다시 밟아도 재정지하지 않는다
 (정차를 마친 번호는 소진 처리 — 안 그러면 밀림→재진입→재정지 루프가 된다).
@@ -261,13 +272,13 @@ M 터미널에서 그 구간 동안 `gps` 로 고정돼 있으면 정상이다.
 ## 3. 변형 2가지
 
 1. **변수 축소 (gps_only)** — 차선 전이를 빼고 **avoid↔waypoint만** 보고 싶을 때
-   (야간 차선 오검출 등으로 §2가 재현이 안 될 때). **`usb_speed`·`camera_fps`는 유지**:
+   (야간 차선 오검출 등으로 §2가 재현이 안 될 때):
 
    ```bash
    ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
        REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
        waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_wonju_license_20260818_160511.csv \
-       gps_only:=true usb_speed:=high camera_fps:=10
+       gps_only:=true avoid_zone_only:=true
    ```
 
    이 모드에서는 **차선 스테이트가 절대 안 뜬다**(§2의 ⚠ 참조) — 정상이다.
@@ -311,7 +322,7 @@ M 터미널에서 그 구간 동안 `gps` 로 고정돼 있으면 정상이다.
 | 목표점이 프레임마다 튐 | rate limit | `avoid.target_rate_limit_mps` 3.0→2.0 |
 | AVOID 중 갑자기 정지 + "avoid 신선도 초과" 로그 | stack_avoid 사망 (watchdog 정상 동작) | V2 재시작 |
 | **RTK FIXED가 아예 안 잡힘 + `lateral.csv`가 아예 없음** | `stack_gps_node`가 기동 실패로 즉사 — waypoint_csv 경로 오타나 1~4점짜리 잔여 CSV. launch는 나머지 노드를 그대로 띄우고 계속 돌아 **카메라만 보고 주행**하게 된다 (2026-08-15 3연속 실사례) | **수정 완료** — launch가 CSV를 미리 읽어 검증하고 거부한다. 그래도 의심되면 `ros2 node list \| grep stack_gps` (안 나오면 죽은 것) |
-| **RTK FIXED가 아예 안 잡힘 (DGPS/FLOAT 고착)** | 카메라 USB3 방사 잡음 — 위성 수·HDOP·RTCM은 정상값 그대로라 상태줄로는 안 보인다 (2026-08-14 규명) | `usb_speed:=high camera_fps:=10` 인자 확인. 그래도 안 되면 launch 끄고 `python3 ~/FMA_ws/src/stack_gps/tools/rtk_probe.py --seconds 120` 로 **C/N0** 측정 — 38dB 미만이면 안테나를 하늘 트인 쪽으로 |
+| **RTK FIXED가 아예 안 잡힘 (DGPS/FLOAT 고착)** | 카메라 USB3 방사 잡음 — 위성 수·HDOP·RTCM은 정상값 그대로라 상태줄로는 안 보인다 (2026-08-14 규명) | 기본값이 USB2 라 보통은 아니다. `--show-args \| grep -A3 usb_speed` 로 `high`·`10` 확인(누가 `super` 로 덮었을 수 있다). 그래도 안 되면 launch 끄고 `python3 ~/FMA_ws/src/stack_gps/tools/rtk_probe.py --seconds 120` 로 **C/N0** 측정 — 38dB 미만이면 안테나를 하늘 트인 쪽으로 |
 | **avoid 복귀가 한 틱 만에 lane으로** | 히스테리시스 카운터 미리셋 (2026-08-14 수정) | 재빌드 여부 확인. 체류를 더 원하면 `avoid_return_hold_cycles`↑ (MGM 파라미터, 300틱=3s) |
 | **복귀 후 재합류 실패 — cross가 안 줄고 lane으로도 안 넘어감** | 게이트는 정상 동작(이탈 중엔 lane 금지). 문제는 재합류 자체. **원인 규명 완료 (2026-08-15, run_0815 4런)**: 재합류 목표점 거리가 이탈과 함께 커져(1.3m→5.4m) 조향 응답이 붕괴했다 — 목표 2.5m 초과 시 명령 곡률의 10%만 실현(CLAUDE.md §3 제약 ③). 이탈이 클수록 목표가 멀어지는 **양의 되먹임**이었다 | **수정 완료** — 재합류 목표를 1.27~1.8m로 클램프(`REJOIN_TARGET_MAX_M`) + avoid 20점 보간 첫 점을 1.2m로(`MGM_REF_FIRST_POINT_M`). 재발 시 AVOID·복귀 중 `ros2 topic echo /adas/target_ref --once`로 **`ref_points[0]`의 거리 `hypot(x,y)`가 0.8~1.8m인지** 확인(x>0은 기본). 밴드 밖이면 재빌드 여부 확인 |
 | **AVOID 중 헤딩이 한쪽으로 흐름 (복귀 시 cross 2m+)** | AVOID의 "전방 직진 유지"는 **헤딩 개루프**라 dSPACE 잔류 조향(`str`≈0.05)이 그대로 적분된다 — 실측 1~2°/s. run_0815_144142는 12초 AVOID에 헤딩 +26.7°·cross 0.08→1.88m, run_0815_142817은 14.8초에 −10.3°(방향이 반대 = 계통 오차 아닌 표류) | `avoid_max_cycles`↓ (기본 1200틱=12s → 500틱=5s 권장). 개루프 시간이 곧 이탈량이다. 단 조기 복귀는 측면 충돌 위험과 교환 — §4 표의 클리어런스와 함께 볼 것 |
