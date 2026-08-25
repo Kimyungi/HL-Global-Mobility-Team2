@@ -13,9 +13,9 @@
 // 550      기동 완료 → waypoint 복귀
 // 560~659  차선 신뢰도 0.9 복귀 → lane 복귀
 // 660~679  avoid 진입 후 TTC<임계 → 즉시 정지 (안전 바닥)
-// 680      기동 완료 → lane 복귀
-// 700~799  GPS 주차구간+주차공간 인식 → parking (v_suggest 0.3, 일부 경로 침범 정지)
-// 900      주차 완료 → lane
+// 680      기동 완료 → waypoint, 짧은 return hold 후 lane 복귀
+// 700~899  GPS 주차구간+주차공간 인식 → parking (v_suggest -0.3, 일부 경로 침범 정지)
+// 899      주차 완료 → lane
 // 950~999  긴급 정지 (estop)
 // 1000~1099 정상 lane 주행 복귀
 //
@@ -55,7 +55,7 @@ int main(int argc, char ** argv)
     return 1;
   }
 
-  // params.yaml 기본값과 동일
+  // 모든 상태를 11초 안에 통과하도록 hold를 짧게 둔 결정론적 샘플.
   CoreParams p{};
   p.lane_conf_exit = 0.4f;
   p.lane_conf_return = 0.6f;
@@ -67,6 +67,19 @@ int main(int argc, char ** argv)
   p.blend_cycles = 10;
   p.a_up = 0.5f;
   p.a_down = 1.5f;
+  p.wrongway_yaw = 2.1f;
+  p.wrongway_cycles = 50;
+  p.avoid_return_hold_cycles = 10;
+  p.lane_entry_max_cross = 0.5f;
+  p.avoid_max_cycles = 1200;
+  p.v_avoid = 0.6f;
+  p.stop_zone_hold_cycles = 300;
+  p.avoid_zone_only = 0;
+  // ADAS_MGR2 v1.88 was generated before rear escape was added to main.
+  p.escape_after_cycles = 0;
+  p.v_escape = -0.3f;
+  p.escape_max_cycles = 200;
+  p.escape_require_rear_clear = 1;
 
   std::ofstream out(argv[1], std::ios::binary | std::ios::trunc);
   if (!out) {
@@ -88,7 +101,7 @@ int main(int argc, char ** argv)
     s.avoid_ttc = 1e9f;
     s.avoid_v_suggest = 0.4f;
     s.parking_path = makePath(-0.3f, -0.2f);
-    s.parking_v_suggest = 0.3f;
+    s.parking_v_suggest = -0.3f;
 
     if (t >= 100 && t < 200) {
       s.gps_accel_zone = true;

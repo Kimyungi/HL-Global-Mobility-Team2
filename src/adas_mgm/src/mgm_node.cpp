@@ -218,7 +218,8 @@ public:
       backend_name, generated_scope_acknowledged, p);
     RCLCPP_INFO(
       get_logger(), "decision backend=%s%s", backend_->name().c_str(),
-      backend_->name() == "generated" ? " (ADAS_MGR2 v1.68 LANE/WAYPOINT bench only)" : "");
+      backend_->name() == "generated" ?
+      " (ADAS_MGR2 v1.88 four-state; rear escape disabled)" : "");
 
     // 스테이트 전이 이유 CSV — 빈 값이면 콘솔 로그만 (§4 전이 조건 관찰)
     transition_csv_path_ = declare_parameter<std::string>("transition_csv_path", "");
@@ -499,6 +500,8 @@ private:
     const uint8_t state_before = backend_->activeState();
     const int32_t low_before = backend_->laneLowCnt();
     const int32_t high_before = backend_->laneHighCnt();
+    const int32_t avoid_ticks_before = backend_->avoidTicks();
+    const int32_t return_hold_before = backend_->returnHoldLeft();
 
     const bool was_faulted = backend_->faulted();
     const CoreOutput out = backend_->step(s);  // 판단+실행은 선택된 backend 한 곳에서만
@@ -514,7 +517,8 @@ private:
     if (out.state != state_before) {
       const TransitionRecord tr = explainTransition(
         state_before, out.state, s, backend_->params(),
-        low_before, high_before, out.v_ref, tick_);
+        low_before, high_before, avoid_ticks_before, return_hold_before,
+        out.v_ref, tick_);
       RCLCPP_INFO(get_logger(), "전이 %s → %s @%.2fs | %s%s | %s",
         stateName(tr.from), stateName(tr.to), tr.tick * 0.01,
         tr.rule.c_str(), tr.spec_match ? "" : "  ★ 스펙 불일치",

@@ -23,10 +23,10 @@ adas_mgm/
 g++ -std=c++17 -Wall -Wextra -c core/mgm_step.cpp -I.   # 통과해야 정상
 ```
 
-## 실험용 generated backend (LANE/WAYPOINT, bench only)
+## 실험용 generated backend (4상태 v1.88, opt-in)
 
 ROS 노드의 기본 backend는 기존 4상태 C++ `core`이며, 기본 빌드에는 생성
-backend가 링크되지 않는다. `ADAS_MGR2` v1.68을 실행하려면 아래 두 단계를 모두
+backend가 링크되지 않는다. `ADAS_MGR2` v1.88을 실행하려면 아래 두 단계를 모두
 명시해야 한다.
 
 1. 지원 호스트에서 CMake opt-in:
@@ -41,7 +41,7 @@ backend가 링크되지 않는다. `ADAS_MGR2` v1.68을 실행하려면 아래 �
        -DBUILD_TESTING=ON
    ```
 
-2. **CAN을 실행하지 않는 bench에서만** backend와 제한 범위 확인을 함께 지정:
+2. 먼저 **CAN을 실행하지 않는 bench**에서 backend와 제한 범위 확인을 함께 지정:
 
    ```bash
    source install_generated/setup.bash
@@ -50,12 +50,11 @@ backend가 링크되지 않는다. `ADAS_MGR2` v1.68을 실행하려면 아래 �
      generated_backend_acknowledge_limited_scope:=true
    ```
 
-bench launch는 `mgm_node`만 실행하며 `bridge_dspace`, CAN 인터페이스 및
-`REAL_VEHICLE_lane_gps_can.launch.py`를 실행하지 않는다. 실제 차량 또는 CAN이
-연결된 환경에서 이 실험 backend를 사용하지 말 것. 기본 실행은 언제나
-`backend:=core`, `generated_backend_acknowledge_limited_scope:=false`이다.
-출력도 운영 `/adas/target_ref`가 아니라 격리된 `/bench/adas/target_ref`로 강제
-remap된다. bench 결과는 다음 토픽에서 확인한다.
+bench launch는 `mgm_node`만 실행하며 `bridge_dspace`, CAN 인터페이스 및 차량
+launch를 실행하지 않는다. 기본 실행은 언제나 `backend:=core`,
+`generated_backend_acknowledge_limited_scope:=false`이다. 출력도 운영
+`/adas/target_ref`가 아니라 격리된 `/bench/adas/target_ref`로 강제 remap된다.
+bench 결과는 다음 토픽에서 확인한다.
 
 ```bash
 ros2 topic echo /bench/adas/target_ref
@@ -69,20 +68,16 @@ ros2 topic hz /bench/adas/target_ref
 빌드될 수 있지만, `ADAS_MGM_ENABLE_GENERATED_BACKEND=OFF`인 `mgm_node`에는
 링크되지 않는다.
 
-v1.68은 `LANE`과 `WAYPOINT` 두 상태의 공통 동작만 검증한 실험 모델이다. 다음
-운영 4상태 기능은 포함하지 않는다.
+v1.88은 `LANE`, `WAYPOINT`, `AVOID`, `PARKING` 네 상태와 지정 구간 3종,
+TTC/narrow 처리, 회피 복귀·timeout, 종점·역방향 래치를 포함한다. 단, 모델 생성
+후 C++ core에 추가된 **후진 탈출(rear escape)** 은 포함하지 않는다. 생성 backend는
+`escape_after_cycles=0`일 때만 기동하며, 후진 탈출을 켠 구성은 시작 시 명확히
+거부해야 한다. 이 기능까지 필요하면 `estop_rear_clear` 입력과 escape 파라미터·상태를
+모델에 추가하여 다시 생성하고 패리티를 검증해야 한다.
 
-- `AVOID`/`PARKING` 상태와 해당 경로·속도 처리
-- TTC 즉시 정지와 좁은 통로 속도 제한
-- 역방향 및 종점 래치, `estop_latch_release`
-- 회피 복귀 hold와 회피 timeout
-
-생성 C 자체의 `gps_at_end`는 운영 core의 래치가 아니라 현재 입력값을 직접
-사용한다. 실험 runtime은 이 차이를 숨겨 운행하지 않고, `AVOID`/`PARKING`, TTC
-안전 바닥, `gps_at_end`, 신뢰 가능한 역방향 입력이 들어오면 지원 범위 이탈로
-판정해 비어 있지 않은 0속도 참조를 영구 래치한다. 다시 시험하려면 원인을 제거한
-뒤 노드를 재시작해야 한다. 생성 API는 전역 상태 기반이라 adapter도 프로세스당
-단일 인스턴스·단일 10ms 스레드 사용을 강제한다.
+생성 API는 전역 상태 기반이라 adapter도 프로세스당 단일 인스턴스·단일 10ms
+스레드 사용을 강제한다. CAN을 사용하는 현장 시험은 bench 검증과 패리티 테스트를
+먼저 통과한 뒤 `RUNBOOK_mbd_lane_gps.md`의 확인 토큰·종료 가드를 그대로 따른다.
 
 CMake cache는 이전 값을 유지한다. 한 번 ON으로 빌드한 디렉터리에서 옵션을
 생략해도 자동으로 OFF로 돌아가지 않으므로, 검증과 운영 빌드는 아래처럼 서로
@@ -126,12 +121,13 @@ ros2 run adas_mgm mgm_node --ros-args -p snapshot_dump_path:=/tmp/snap.bin
 
 # 2) 오프라인 재생 → CSV
 ros2 run adas_mgm core_replay /tmp/snap.bin ref.csv        # 레퍼런스 코어
-#    김재민 생성 코드 쪽 재생 결과 → gen.csv
-diff ref.csv gen.csv                                        # 불일치 없으면 합격
+ros2 run adas_mgm parity_replay /tmp/snap.bin /tmp/parity_diff.csv
+# rear escape 비활성 덤프에서 state/path/v_ref/ref_points 불일치 0이면 합격
 
 # 실차 없이 파이프라인 점검용 합성 시나리오
 ros2 run adas_mgm make_sample_dump /tmp/sample.bin
 ros2 run adas_mgm core_replay /tmp/sample.bin out.csv
+ros2 run adas_mgm parity_replay /tmp/sample.bin /tmp/sample_diff.csv
 ```
 
 같은 덤프를 레퍼런스 코어로 두 번 재생하면 diff가 0이어야 한다(결정론). 덤프는 같은 머신·같은 ABI에서만 호환.

@@ -1,32 +1,26 @@
-# ADAS_MGR2 LANE/WAYPOINT generated runtime
+# ADAS_MGR2 four-state generated runtime
 
-This directory contains only the C runtime needed to compile the two-state
-Simulink model `ADAS_MGR2` (model version 1.68, generated with Simulink Coder
-R2026a on 2026-08-18).
+This directory contains only the C runtime needed to compile the four-state
+Simulink model `ADAS_MGR2` (model version 1.88, generated with Simulink Coder
+R2026a on 2026-08-24).
 
-The experiment is intentionally limited to:
+The generated state machine covers:
 
-- `LANE` state and lane-path output
-- `WAYPOINT` state and GPS-path output
-- confidence hysteresis and cross-track return gating
+- `LANE`, `WAYPOINT`, `AVOID`, and `PARKING` states and their path sources
+- lane-confidence hysteresis and cross-track return gating
+- stop, avoid, and GPS-only zone inputs
+- avoid entry/exit, return hold, timeout, TTC stop, and narrow-path speed caps
+- parking completion, GPS end, and wrong-way latch/release behavior
 - acceleration-zone, traffic-stop, and E-stop longitudinal behavior
 - reference hold/blend, stale-frame compensation, and rate limiting
 
-`AVOID` and `PARKING` inputs remain in the shared bus ABI but are outside this
-model and test. The parity fixture keeps their transition inputs false. The
-production ROS 2 node and its existing `mgm_core` implementation are not
-changed or linked to this generated model.
-
-`gps_at_end` is also held false in the parity fixture. Version 1.68 treats it
-as a raw stop input, while the production core deliberately latches a valid
-track end until an explicit release. That policy difference is not part of the
-two-state switching experiment and must not be presented as verified parity.
-
-`gps_heading_valid` is held false as well. Version 1.68 does not implement the
-production core's WAYPOINT wrong-way counters or latch, so heading-valid and
-wrong-way behavior is outside this parity scope. "WAYPOINT parity" here covers
-the switching, path, and longitudinal items listed above, not every production
-WAYPOINT safety policy.
+Model version 1.88 does **not** contain the production core's rear-escape
+extension (`estop_rear_clear`, `escape_after_cycles`, `v_escape`, and related
+escape sequencing). That feature was added to the C++ core after this model was
+generated. The generated backend must therefore run with rear escape disabled
+(`escape_after_cycles=0`) and fail at startup rather than silently accepting an
+unsupported escape configuration. Regenerate the model with the rear-escape
+contract before claiming parity for that feature.
 
 Included:
 
@@ -36,9 +30,9 @@ Included:
 
 Excluded because they are not runtime inputs:
 
-- generated example `ert_main.c`
-- Visual Studio make/batch/response files
-- MATLAB build metadata and HTML trace output
+- Visual Studio make, batch, and response files
+- MATLAB build metadata, trace reports, and HTML assets
+- generated host/setup project files
 
 The generated files are **not MIT-licensed package code**. They retain the
 MathWorks Academic License notice that limits use to teaching, academic
@@ -53,13 +47,14 @@ confirming the applicable rights.
 See the current [MathWorks Program Offering Guide](https://www.mathworks.com/help/pdf_doc/offering/offering.pdf),
 Part Two, Section 3.2 (Coder Programs).
 
-The generated code is used by `GeneratedMgmAdapter` only for a two-state
-back-to-back test and is compiled only when `BUILD_TESTING` is enabled on Linux
-x86-64 with a GNU/Clang C compiler. Its global API is non-reentrant, so the
-test uses one instance on one thread.
+`GeneratedMgmAdapter` uses the generated code only in the explicitly enabled
+generated backend and in back-to-back tests. The runtime is compiled only on
+Linux x86-64 with a GNU/Clang C compiler. Its global API is non-reentrant, so
+the adapter uses one instance on one thread.
 
-To update this directory after regenerating the model, replace the same runtime
-file set and run `colcon test --packages-select adas_mgm` on a supported test
-host. The LANE/WAYPOINT parity test must report zero mismatched ticks. The
-generated header reports `Validation result: Not run`; this back-to-back test
-does not replace a MathWorks code-generation validation report.
+To update this directory after regenerating the model, replace exactly the
+twelve runtime files already present here, normalize them to LF, and run
+`colcon test --packages-select adas_mgm` on a supported test host. Four-state
+back-to-back parity must report zero mismatched supported ticks. The generated
+header reports `Validation result: Not run`; repository tests do not replace a
+MathWorks code-generation validation report.

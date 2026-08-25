@@ -46,7 +46,8 @@ const char * transitionCsvHeader()
 {
   return "tick,t_s,from,to,rule,spec_match,"
          "lane_conf,lane_low_cnt,lane_high_cnt,lane_n,"
-         "cross_track_m,gps_n,stop_zone,at_end,gps_only_zone,heading_valid,"
+         "cross_track_m,gps_n,avoid_ticks,return_hold_left,"
+         "stop_zone,at_end,gps_only_zone,heading_valid,"
          "estop,traffic_stop,obstacle,avoidable,ttc,narrow,maneuver_done,avoid_zone,"
          "parking_zone,parking_found,parking_done,v_ref\n";
 }
@@ -54,6 +55,7 @@ const char * transitionCsvHeader()
 TransitionRecord explainTransition(
   uint8_t from, uint8_t to, const CoreSnapshot & s, const CoreParams & p,
   int32_t lane_low_cnt_before, int32_t lane_high_cnt_before,
+  int32_t avoid_ticks_before, int32_t return_hold_left_before,
   float v_ref, int64_t tick)
 {
   TransitionRecord r;
@@ -66,7 +68,7 @@ TransitionRecord explainTransition(
   const int32_t n = p.n_cycles;
 
   if (from == MGM_STATE_LANE && to == MGM_STATE_WAYPOINT) {
-    if (s.gps_gps_only_zone) {
+    if (s.gps_gps_only_zone && s.gps_path.n > 0) {
       r.rule = "lane→waypoint: GPS 전용 구간 진입 (즉시, 히스테리시스 없음)";
       r.spec_match = true;
     } else {
@@ -78,16 +80,18 @@ TransitionRecord explainTransition(
     r.rule = "waypoint→lane: 신뢰도 > lane_conf_return 가 n_cycles 연속 "
       "+ 트랙 재합류(cross ≤ lane_entry_max_cross) + GPS 전용 구간 밖";
     const bool cross_ok = p.lane_entry_max_cross <= 0.0f ||
-      std::fabs(s.gps_cross_track) <= p.lane_entry_max_cross;
+      s.gps_cross_track <= p.lane_entry_max_cross;
     r.spec_match = s.lane_confidence > p.lane_conf_return &&
-      lane_high_cnt_before >= n - 1 && cross_ok && !s.gps_gps_only_zone;
+      lane_high_cnt_before >= n - 1 && cross_ok && !s.gps_gps_only_zone &&
+      return_hold_left_before <= 1;
   } else if (to == MGM_STATE_AVOID) {
     r.rule = "→avoid: 장애물 감지 + 회피 가능 (+ 회피 허용 구간)";
     r.spec_match = s.avoid_obstacle_detected && s.avoid_avoidable &&
       (p.avoid_zone_only == 0 || s.gps_avoid_zone);
   } else if (from == MGM_STATE_AVOID) {
     r.rule = "avoid→waypoint: 기동 완료 또는 avoid_max_cycles 초과";
-    r.spec_match = s.avoid_maneuver_done || p.avoid_max_cycles > 0;
+    r.spec_match = s.avoid_maneuver_done ||
+      (p.avoid_max_cycles > 0 && avoid_ticks_before >= p.avoid_max_cycles);
   } else if (to == MGM_STATE_PARKING) {
     r.rule = "lane→parking: GPS 주차구간 + 주차공간 인식";
     r.spec_match = s.gps_parking_zone && s.parking_space_found;
@@ -104,6 +108,8 @@ TransitionRecord explainTransition(
   d += f("lane_conf", s.lane_confidence) + " ";
   d += i("lane_low_cnt", lane_low_cnt_before) + "/" + std::to_string(n) + " ";
   d += i("lane_high_cnt", lane_high_cnt_before) + "/" + std::to_string(n) + " ";
+  d += i("avoid_ticks", avoid_ticks_before) + " ";
+  d += i("return_hold_left", return_hold_left_before) + " ";
   d += f("cross_track", s.gps_cross_track) + " ";
   d += i("gps_n", s.gps_path.n) + " ";
   d += b("gps_only_zone", s.gps_gps_only_zone) + " ";
@@ -118,17 +124,19 @@ TransitionRecord explainTransition(
   r.detail = d;
 
   char csv[768];
-  std::snprintf(csv, sizeof(csv),
+  std::snprintf(
+    csv, sizeof(csv),
     "%lld,%.2f,%s,%s,\"%s\",%d,"
     "%.4f,%d,%d,%d,"
-    "%.4f,%d,%u,%d,%d,%d,"
+    "%.4f,%d,%d,%d,%u,%d,%d,%d,"
     "%d,%d,%d,%d,%.3f,%d,%d,%d,"
     "%d,%d,%d,%.4f\n",
     static_cast<long long>(tick), tick * 0.01,
     stateName(from), stateName(to), r.rule.c_str(), r.spec_match ? 1 : 0,
     static_cast<double>(s.lane_confidence),
     lane_low_cnt_before, lane_high_cnt_before, s.lane_path.n,
-    static_cast<double>(s.gps_cross_track), s.gps_path.n, s.gps_stop_zone,
+    static_cast<double>(s.gps_cross_track), s.gps_path.n,
+    avoid_ticks_before, return_hold_left_before, s.gps_stop_zone,
     s.gps_at_end ? 1 : 0, s.gps_gps_only_zone ? 1 : 0, s.gps_heading_valid ? 1 : 0,
     s.estop ? 1 : 0, s.traffic_stop_required ? 1 : 0,
     s.avoid_obstacle_detected ? 1 : 0, s.avoid_avoidable ? 1 : 0,

@@ -34,8 +34,9 @@ void makePath(CorePath & path, float x, float y, int32_t count = MGM_NUM_POINTS)
 CoreParams makeParams()
 {
   CoreParams params{};
-  // Every parameter exported by the two-state ERT differs from its compiled
-  // default so an omitted adapter assignment cannot pass by coincidence.
+  // Preserve the original LANE/WAYPOINT regression with non-default values
+  // for every parameter it exercises. The dedicated four-state test covers
+  // all 18 parameters exported by ADAS_MGR2 v1.88.
   params.lane_conf_exit = 0.31f;
   params.lane_conf_return = 0.74f;
   params.n_cycles = 17;
@@ -46,12 +47,23 @@ CoreParams makeParams()
   params.a_down = 1.21f;
   params.lane_entry_max_cross = 0.42f;
 
-  // These belong to the production four-state CoreParams ABI but are outside
-  // this LANE/WAYPOINT experiment. Keep them neutral in the C++ reference.
+  // These are outside this focused LANE/WAYPOINT scenario. Keep them neutral
+  // while satisfying the generated adapter's production parameter contract.
   params.v_narrow = 0.2f;
   params.ttc_stop = 0.8f;
-  params.wrongway_yaw = 3.2f;
+  // Keep the four-state production ABI fields valid but unreachable in this
+  // focused two-state regression. The generated adapter requires yaw <= pi.
+  params.wrongway_yaw = 3.0f;
   params.wrongway_cycles = 1000;
+  params.avoid_return_hold_cycles = 0;
+  params.avoid_max_cycles = 0;
+  params.v_avoid = 0.0f;
+  params.stop_zone_hold_cycles = 0;
+  params.avoid_zone_only = 0;
+  params.escape_after_cycles = 0;
+  params.v_escape = -0.3f;
+  params.escape_max_cycles = 200;
+  params.escape_require_rear_clear = 1;
   return params;
 }
 
@@ -210,14 +222,14 @@ int main()
       seen_state[reference.state] = true;
     } else {
       ++mismatches;
-      std::fprintf(stderr, "out-of-scope reference state at tick=%d: %u\n", tick, reference.state);
+      std::fprintf(stderr, "unexpected reference state at tick=%d: %u\n", tick, reference.state);
     }
     if (reference.path_source < 2) {
       seen_source[reference.path_source] = true;
     } else {
       ++mismatches;
       std::fprintf(
-        stderr, "out-of-scope reference source at tick=%d: %u\n", tick, reference.path_source);
+        stderr, "unexpected reference source at tick=%d: %u\n", tick, reference.path_source);
     }
     if (reference.state < 2) {
       const auto state = reference.state;

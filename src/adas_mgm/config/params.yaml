@@ -1,7 +1,8 @@
 mgm_node:
   ros__parameters:
-    # 기본은 기존 4상태 C++ core. generated는 빌드 opt-in과 아래 명시적 확인을
-    # 모두 요구하는 LANE/WAYPOINT 2상태 bench 실험 전용이다.
+    # 기본은 최신 C++ core. generated는 빌드 opt-in과 아래 명시적 확인을 모두
+    # 요구하는 ADAS_MGR2 v1.88 4상태 실험 backend다. v1.88에는 main의 rear escape가
+    # 없으므로 generated 선택 시 escape_after_cycles는 반드시 0이어야 한다.
     backend: core
     generated_backend_acknowledge_limited_scope: false
 

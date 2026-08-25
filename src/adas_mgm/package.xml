@@ -16,8 +16,20 @@
   <depend>std_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
-  <!-- 통합 launch가 stack_avoid 노드 + launch_parts(can_zero 가드)를 쓴다 (2026-08-12) -->
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <!-- MBD/REAL_VEHICLE 통합 launch의 직접 런타임 의존성. -->
   <exec_depend>stack_avoid</exec_depend>
+  <exec_depend>stack_estop</exec_depend>
+  <exec_depend>stack_gps</exec_depend>
+  <exec_depend>stack_lane</exec_depend>
+  <exec_depend>bridge_dspace</exec_depend>
+  <exec_depend>ydlidar_ros2_driver</exec_depend>
+  <exec_depend>rosbag2</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

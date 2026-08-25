@@ -36,6 +36,7 @@ const char * stateName(uint8_t state);
 TransitionRecord explainTransition(
   uint8_t from, uint8_t to, const CoreSnapshot & s, const CoreParams & p,
   int32_t lane_low_cnt_before, int32_t lane_high_cnt_before,
+  int32_t avoid_ticks_before, int32_t return_hold_left_before,
   float v_ref, int64_t tick);
 
 const char * transitionCsvHeader();
