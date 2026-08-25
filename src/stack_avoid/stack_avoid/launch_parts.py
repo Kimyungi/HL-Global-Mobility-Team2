@@ -32,7 +32,7 @@ def ydlidar_driver(condition=None):
         emulate_tty=True, parameters=[params], condition=condition)
 
 
-def can_bridge_with_zero_guard(condition=None, can_interface='can0'):
+def can_bridge_with_zero_guard(condition=None, can_interface='can0', vehicle_csv_path=''):
     """CAN 브리지 + 종료 시 dSPACE 목표값 0 복귀. 실차를 움직이는 구성에서만 쓴다.
 
     dSPACE 에 watchdog 이 없다(2026-08-09 실측, J-6) — PC 송신이 끊겨도 마지막 v_ref 를
@@ -52,10 +52,16 @@ def can_bridge_with_zero_guard(condition=None, can_interface='can0'):
 
     ★ `ros2 run` 으로 감싸면 안 된다 — 래퍼가 SIGINT 를 삼켜 가드가 안 돈다(실측).
       Node 액션은 실행 파일을 직접 띄우므로 신호가 그대로 전달된다.
+
+    `vehicle_csv_path` 를 주면 dSPACE RX 피드백(/vehicle/vector)을 CSV 로도 남긴다
+    (2026-08-25). 토픽은 원래부터 rosbag 에 기록됐지만 RX 가 0건이라 늘 비어 있었고,
+    실차 분석은 run 폴더의 CSV 를 먼저 보므로 같은 자리에 둔다. 빈 값 = 끔.
     """
     bridge = Node(package='bridge_dspace', executable='can_bridge_node',
                   name='can_bridge_node', output='screen',
-                  parameters=[{'can_interface': can_interface}], condition=condition)
+                  parameters=[{'can_interface': can_interface,
+                               'vehicle_csv_path': vehicle_csv_path}],
+                  condition=condition)
     zero_exe = os.path.normpath(os.path.join(
         get_package_share_directory('stack_avoid'), '..', '..',
         'lib', 'stack_avoid', 'can_zero'))

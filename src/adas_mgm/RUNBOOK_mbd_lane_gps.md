@@ -262,6 +262,17 @@ V2 를 토큰과 함께 다시 띄운다 (§3). 콘솔에 이 줄이 떠야 한�
 - **트랙 종점에 닿으면 at_end 래치로 정지**한다. 해제는 실제 E-stop의
   `estop_latch_release` 계약을 따른다. watchdog 보정값으로는 래치가 풀리지 않는다.
 - rear escape는 이 모델에 없으므로 장시간 E-stop이 유지돼도 자동 후진하지 않는다.
+- **dSPACE RX 가 살아 있는지 콘솔에서 확인할 것** (2026-08-25 신설). `can_bridge_node`
+  가 5초마다 `tx=... rx=... cycles` 를 찍는다. `rx` 가 0 이면 경고로 올라온다:
+
+  ```
+  [WARN] [can_bridge_node]: tx=500 cycles rx=0 — dSPACE RX 무수신 (can0). ...
+  ```
+
+  RX 는 2026-08-25 이전 **전 구간에서 0건**이었다(옛 bag 의 `/vehicle/vector` Count: 0).
+  토픽·기록 설정은 처음부터 있었고 dSPACE 송신만 없었다. 이제 들어오면
+  `vehicle_vector.csv` 에 100Hz 로 쌓이고 bag 의 `/vehicle/vector` 도 함께 찬다.
+  **rx 가 0 이어도 주행 자체는 된다** — 그래서 지금까지 아무도 못 알아챘다.
 
 ---
 
@@ -305,6 +316,7 @@ V2 를 토큰과 함께 다시 띄운다 (§3). 콘솔에 이 줄이 떠야 한�
 ```bash
 RUN=~/FMA_ws/drive_logs/run_mbd_<시각>
 ls $RUN     # rosbag/  transitions.csv  mgm_snapshots.bin  mgm_jitter.csv  lateral.csv
+            # vehicle_vector.csv  ← dSPACE RX 피드백 (②실주행에서만)
 
 ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
 ```
@@ -339,6 +351,22 @@ ros2 run adas_mgm parity_replay $RUN/mgm_snapshots.bin $RUN/parity_diff.csv
   가 붙었으므로 **그 이전 run(예: `run_mbd_0819_*`)은 지금 빌드로 재생되지 않는다.**
   이번 시험 덤프는 같은 빌드로 뜨므로 문제없다. 옛 run 을 다시 보려면 그 시점
   커밋으로 `parity_replay` 를 빌드해야 한다.
+
+`vehicle_vector.csv` 는 **dSPACE 가 실제로 무엇을 했는지**의 기록이다 —
+`{stamp_s, counter, x, y, yaw, v, str}`. PC 가 시킨 것(`transitions.csv`·덤프의 v_ref·
+ref)과 나란히 놓으면 **명령 대 실현**을 볼 수 있다. CLAUDE.md §3 의 조향 실현율
+(`실제δ/명령δ`) 논의가 전부 이 비교다. `counter` 로 dSPACE 측 자체 로그와도
+틱 단위 정합이 된다 (`bag_index = counter − off`, `tools/dspace_merge.py`).
+
+```bash
+head -3 $RUN/vehicle_vector.csv
+python3 -c "import csv,sys; r=list(csv.DictReader(open(sys.argv[1]))); \
+  print(f'{len(r)}행, v {min(float(x[\"v\"]) for x in r):.2f}~{max(float(x[\"v\"]) for x in r):.2f} m/s')" \
+  $RUN/vehicle_vector.csv
+```
+
+⚠ 파일이 **비어 있으면**(헤더만) RX 가 안 들어온 것이다 — §5 의 `rx=0` 경고를 볼 것.
+bench(①)에는 `bridge_dspace` 자체가 안 떠서 이 파일이 아예 생기지 않는다.
 
 `transitions.csv` 는 그 run 에서 **실제로 무슨 이유로 바뀌었는지**의 기록이다.
 `parity_replay` 가 "두 구현이 같은가"를 보고, 이쪽은 "왜 바뀌었나"를 본다 — 둘을

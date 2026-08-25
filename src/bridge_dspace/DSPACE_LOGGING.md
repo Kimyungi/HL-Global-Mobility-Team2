@@ -75,18 +75,51 @@ python3 src/adas_mgm/tools/dspace_merge.py drive_logs/run_0816_203352 \
 | `3_per_state_summary.png` | 스테이트별 체류 시간·평균 조향·**실현 이득** |
 | `4_trajectory_by_state.png` | 궤적을 스테이트 색으로 |
 
-## 5. ⚠ 지금 PC는 dSPACE 상태를 하나도 못 받고 있다
+## 5. PC 측 RX — 오래 죽어 있다가 2026-08-25 살아났다
 
-2026-08-16 실차 run 16개 전부에서 `/vehicle/vector` 메시지가 **0개**다 — 즉 PC는
-`0x200`(VEH_POSE)·`0x201`(VEH_VEL)·`0x202`(VEH_COMMIT)를 한 프레임도 받지 못했다.
-그래서 지금은 **실제 str·v를 아는 곳이 dSPACE 로그밖에 없다**. 확인 요청:
+**옛 상태 (2026-08-16 ~ 08-19):** 실차 run 전부에서 `/vehicle/vector` 가 **0개**였다
+(bag `Count: 0`). PC 가 `0x200`(VEH_POSE)·`0x201`(VEH_VEL)·`0x202`(VEH_COMMIT)를 한
+프레임도 못 받아, **실제 str·v 를 아는 곳이 dSPACE 로그밖에 없었다.**
+
+**지금 (2026-08-25, 팀 확인):** dSPACE 송신이 붙어 RX 가 들어온다. 그래서 PC 단독으로도
+실제 str/v 가 로깅된다 — dSPACE 로그는 이제 **유일한 실측 경로가 아니라 교차 검증과
+MPC 내부 신호용**이다. 이 문서의 로깅은 그대로 유지한다 (5·6번 str 두 개는 dSPACE
+안에서만 볼 수 있고, 그 둘의 비가 곧 CLAUDE.md §3 의 조향 실현율이다).
+
+**PC 쪽에 생긴 것 (2026-08-25):**
+
+| 무엇 | 어디 |
+|---|---|
+| `vehicle_vector.csv` — `{stamp_s, counter, x, y, yaw, v, str}` 100Hz | run 폴더 (`lateral.csv` 와 같은 epoch 초 축) |
+| `/vehicle/vector` rosbag 기록 | 원래부터 `RECORD_TOPICS` 에 있었다 — 비어 있던 건 RX 가 없어서였다 |
+| RX 무수신 **경고** | `can_bridge_node` 5초 통계. TX 는 도는데 rx=0 이면 WARN 으로 올라온다 |
+
+마지막 항목이 중요하다. 예전엔 `tx=... rx=0` 이 INFO 한 줄로 흘러가 **프로젝트 내내
+아무도 못 알아챘다.** 주행 자체는 되기 때문이다(TTC 자차속도가 폴백으로 넘어갈 뿐).
+
+**다시 0 이 되면 확인할 것:**
 
 1. dSPACE 모델이 `0x200`~`0x202`를 실제로 **송신**하는가 (PROTOCOL.md RX 절).
 2. 송신한다면 주기·ID·바이트 배치가 PROTOCOL.md와 같은가 (little-endian, f32).
 3. `0x202`(커밋)까지 와야 PC가 퍼블리시한다 — 셋 중 하나만 빠져도 0개가 된다.
 
-이게 살아나면 PC 단독으로도 실제 str/v를 로깅하게 되고, dSPACE 로그는 **교차 검증**과
-MPC 내부 신호용으로 남는다. 그전까지는 이 문서의 로깅이 유일한 실측 경로다.
+### ⚠ RX 가 살아나면 회피 TTC 의 자차속도가 바뀐다
+
+`stack_avoid` 의 TTC 는 자차속도로 **`/vehicle/vector.v`(신선하면) → 없으면
+`target_speed_mps` 폴백** 순서를 쓴다(`node.py` `_ego_speed()`). 지금까지는 RX 가
+0건이라 **항상 폴백**이었다 — CLAUDE.md §4 가 "`target_speed_mps` 를 내리면 TTC 가
+1.67배 부푼다"고 적은 것이 그 전제 위의 이야기다.
+
+RX 가 살아나면 그 전제가 사라진다: TTC 가 **실제 속도**로 계산된다. 방향은 이렇다.
+
+- 달리는 중 실제 속도 ≈ 목표 속도 → TTC 거의 그대로.
+- **정지·저속에서는 크게 달라진다.** v→0 이면 TTC→∞ 라 `avoidable` 과 TTC 안전 바닥이
+  늦게 걸린다. 폴백(고정 목표속도)일 때는 서 있어도 TTC 가 유한했다.
+- `maneuver_done` 판정도 `_ego_speed()` 를 쓴다 — 정지 중엔 완료가 안 서는 게 올바른
+  동작이라고 `node.py` 주석이 적어 두었고, 실제 속도가 들어오면 그 의도대로 돈다.
+
+**실차에서 회피 진입/정지 시점이 예전 run 과 달라질 수 있다.** 회피 시험을 다시 할 때
+이 차이를 염두에 둘 것 (담당: 이기돈).
 
 ## 참조
 

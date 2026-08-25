@@ -50,6 +50,9 @@ usb_speed:=high / camera_fps:=10 은 2026-08-24 부터 **이 launch 의 기본�
                      **레퍼런스 C++ 코어와 back-to-back 비교**가 된다 (§5.5 검증)
   mgm_jitter.csv     10ms 루프 주기 실측 (§7)
   lateral.csv        GPS 횡오차
+  vehicle_vector.csv **dSPACE RX 피드백** {x,y,yaw,v,str,counter} — 실주행(토큰)에서만.
+                     bench 는 bridge 자체가 안 떠서 RX 가 없다. counter 로 dSPACE 측
+                     로그와 틱 단위 정합 (CLAUDE.md §3, tools/dspace_merge.py)
 """
 import csv
 import os
@@ -228,6 +231,10 @@ def generate_launch_description():
             description='구간 파일 경로 (빈 값 = waypoint_csv 옆 zones_*.yaml 자동). '
                         'v1.88의 지정 정지·회피·GPS 전용 구간 입력'),
         DeclareLaunchArgument('stop_hold_sec', default_value='3.0'),
+        # dSPACE RX 피드백(/vehicle/vector) CSV. 토픽은 rosbag 에도 들어가지만
+        # 실차 분석은 run 폴더 CSV 를 먼저 보므로 같은 자리에 둔다 (2026-08-25).
+        DeclareLaunchArgument('vehicle_csv_path',
+                              default_value=os.path.join(LOG_DIR, 'vehicle_vector.csv')),
         DeclareLaunchArgument('stop_zone_span_m', default_value='1.0'),
         DeclareLaunchArgument(
             'avoid_zone_only', default_value='true',
@@ -435,5 +442,7 @@ def generate_launch_description():
         # bridge/can_zero를 함께 활성화한다.
         *can_bridge_with_zero_guard(
             condition=IfCondition(CAN_ON),
-            can_interface=LaunchConfiguration('can_interface')),
+            can_interface=LaunchConfiguration('can_interface'),
+            # dSPACE RX 피드백 CSV. bench 에는 브리지 자체가 없어 RX 도 없다.
+            vehicle_csv_path=LaunchConfiguration('vehicle_csv_path')),
     ])

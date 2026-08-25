@@ -2,9 +2,18 @@
 // TX: /adas/target_ref 수신 즉시 REF_POINT×20 → TARGET_HEADER 순서로 송신 (자체 재송신 없음 —
 //     MGM이 죽으면 송신이 멈춰야 dSPACE watchdog이 동작한다).
 // RX: 수신 스레드에서 VEH_POSE/VEH_VEL을 모으고 VEH_COMMIT 시점에 /vehicle/vector 퍼블리시.
+//     `vehicle_csv_path`를 주면 같은 값을 CSV로도 남긴다 (빈 값 = 끔). 토픽은 이미
+//     rosbag RECORD_TOPICS에 들어 있지만, 실차 분석은 run 폴더의 CSV(lateral·transitions·
+//     jitter)를 먼저 보므로 dSPACE 피드백도 같은 자리에 같은 포맷(epoch 초)으로 둔다.
+//     ⚠ RX는 2026-08-25 이전 전 구간에서 **0건**이었다(bag Count: 0). 토픽·기록 설정은
+//     처음부터 있었고 dSPACE 송신만 없었다 — 그래서 5초 통계에서 rx=0을 **경고로**
+//     올린다. INFO 한 줄로는 프로젝트 내내 아무도 못 알아챘다.
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <memory>
 #include <string>
 #include <thread>
@@ -13,6 +22,7 @@
 #include "fma_interfaces/msg/target_ref.hpp"
 #include "fma_interfaces/msg/vehicle_vector.hpp"
 #include "can_protocol.hpp"
+#include "vehicle_csv.hpp"
 #include "socketcan.hpp"
 
 using fma_interfaces::msg::TargetRef;
@@ -28,6 +38,21 @@ public:
   : Node("can_bridge_node")
   {
     can_interface_ = declare_parameter<std::string>("can_interface", "can0");
+
+    // dSPACE RX 피드백 CSV — 빈 값이면 끔. lateral.csv 와 같은 epoch 초 타임스탬프라
+    // dspace_merge.py / 분석 스크립트가 두 파일을 그대로 겹칠 수 있다.
+    vehicle_csv_path_ = declare_parameter<std::string>("vehicle_csv_path", "");
+    if (!vehicle_csv_path_.empty()) {
+      vehicle_csv_.open(vehicle_csv_path_, std::ios::trunc);
+      if (vehicle_csv_.is_open()) {
+        vehicle_csv_ << vehicleCsvHeader();
+        vehicle_csv_.flush();
+        RCLCPP_INFO(get_logger(), "dSPACE RX CSV: %s", vehicle_csv_path_.c_str());
+      } else {
+        RCLCPP_WARN(
+          get_logger(), "dSPACE RX CSV를 열 수 없음: %s", vehicle_csv_path_.c_str());
+      }
+    }
 
     // 수신은 dSPACE→PC ID만 (자기 송신 프레임·잡음 배제)
     const std::vector<can_filter> rx_filters = {
@@ -46,9 +71,21 @@ public:
 
     stats_timer_ = create_wall_timer(
       std::chrono::seconds(5), [this] {
-        RCLCPP_INFO(
-          get_logger(), "tx=%lu cycles rx=%lu cycles (%s)",
-          tx_count_.load(), rx_count_.load(), can_interface_.c_str());
+        const uint64_t tx = tx_count_.load(), rx = rx_count_.load();
+        // TX 가 나가는데 RX 가 한 건도 없으면 dSPACE 송신이 없는 것이다. 이 상태로도
+        // 주행은 되지만 TTC 자차속도가 계속 폴백값을 쓰고(§stack_avoid) vehicle vector
+        // 로깅이 통째로 비므로, INFO 가 아니라 경고로 올린다.
+        if (tx > 0 && rx == 0) {
+          RCLCPP_WARN(
+            get_logger(),
+            "tx=%lu cycles rx=0 — dSPACE RX 무수신 (%s). "
+            "0x%03X~0x%03X 가 안 들어온다: dSPACE 송신 설정·배선·비트레이트 확인",
+            tx, can_interface_.c_str(), kIdVehPose, kIdVehCommit);
+        } else {
+          RCLCPP_INFO(
+            get_logger(), "tx=%lu cycles rx=%lu cycles (%s)",
+            tx, rx, can_interface_.c_str());
+        }
       });
 
     RCLCPP_INFO(
@@ -62,6 +99,10 @@ public:
     running_ = false;
     if (rx_thread_.joinable()) {
       rx_thread_.join();
+    }
+    if (vehicle_csv_.is_open()) {
+      vehicle_csv_.flush();          // join 뒤라 기록자가 없다
+      vehicle_csv_.close();
     }
     ::close(sock_);
   }
@@ -139,6 +180,15 @@ private:
           vv.counter = commit.counter;
           vv_pub_->publish(vv);
           ++rx_count_;
+          // CSV 는 이 rx 스레드가 유일한 기록자이고, 소멸자가 스레드를 join 한 뒤
+          // 닫으므로 잠금이 필요 없다. 타임스탬프는 header.stamp 와 같은 값이라
+          // bag 과 CSV 를 틱 단위로 겹칠 수 있다.
+          if (vehicle_csv_.is_open()) {
+            writeVehicleCsvRow(vehicle_csv_, vv);
+            if ((rx_count_.load() % 100) == 0) {
+              vehicle_csv_.flush();   // 1초마다 — 전원이 끊겨도 직전 1초만 잃는다
+            }
+          }
           break;
         }
         default:
@@ -148,6 +198,8 @@ private:
   }
 
   std::string can_interface_;
+  std::string vehicle_csv_path_;
+  std::ofstream vehicle_csv_;      // dSPACE RX 피드백 (기록자 = rx 스레드 하나)
   int sock_{-1};
   uint16_t tx_counter_{0};
   std::atomic<bool> running_{true};

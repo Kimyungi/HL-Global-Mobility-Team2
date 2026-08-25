@@ -21,6 +21,8 @@
   mgm_snapshots.bin  매 10ms CoreSnapshot 덤프 — core_replay로 판단 재현 (§5.5, 항상)
   mgm_jitter.csv     10ms 루프 주기 실측 (§7 판정 근거, 항상)
   lateral.csv        GPS 횡오차 (DRIVE_GUIDE와 동일 포맷, 항상)
+  vehicle_vector.csv dSPACE RX 피드백 {x,y,yaw,v,str,counter} (2026-08-25 신설).
+                     counter로 dSPACE 측 로그와 틱 단위 정합 (CLAUDE.md §3)
 
 사용:
   ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
@@ -248,6 +250,10 @@ def generate_launch_description():
             'stop_points_latlon', default_value='',
             description='구간 파일 외에 추가할 정지 지점 "lat,lon;lat,lon" (보통 비움)'),
         DeclareLaunchArgument('stop_hold_sec', default_value='3.0'),
+        # dSPACE RX 피드백(/vehicle/vector) CSV. 토픽은 rosbag 에도 들어가지만
+        # 실차 분석은 run 폴더 CSV 를 먼저 보므로 같은 자리에 둔다 (2026-08-25).
+        DeclareLaunchArgument('vehicle_csv_path',
+                              default_value=os.path.join(LOG_DIR, 'vehicle_vector.csv')),
         DeclareLaunchArgument('stop_zone_span_m', default_value='1.0',
                               description='정지 지점 구간 폭 [m] (진입 판정 여유)'),
 
@@ -592,5 +598,6 @@ def generate_launch_description():
         # CAN 브리지 + 종료 시 목표값 0 복귀 (2026-08-12 — 기존엔 브리지만 있어서
         # Ctrl-C 후 dSPACE가 마지막 v_ref를 latch한 채 계속 굴러갈 수 있었다)
         *can_bridge_with_zero_guard(
-            can_interface=LaunchConfiguration('can_interface')),
+            can_interface=LaunchConfiguration('can_interface'),
+            vehicle_csv_path=LaunchConfiguration('vehicle_csv_path')),
     ])

@@ -24,4 +24,13 @@ install(TARGETS can_bridge_node dummy_ref_publisher dspace_sim_node
 
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
+if(BUILD_TESTING)
+  # dSPACE RX 피드백 CSV 포맷 계약 (2026-08-25). 기록 경로 자체는 CAN 인터페이스가
+  # 있어야 돌므로, CAN 없이 검증 가능한 포맷만 고정한다.
+  add_executable(vehicle_csv_test test/vehicle_csv_test.cpp)
+  target_include_directories(vehicle_csv_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  ament_target_dependencies(vehicle_csv_test fma_interfaces)
+  add_test(NAME vehicle_csv_test COMMAND vehicle_csv_test)
+endif()
+
 ament_package()
