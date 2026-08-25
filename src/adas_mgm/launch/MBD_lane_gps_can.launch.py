@@ -22,8 +22,7 @@ PARKING 로직은 오프라인 패리티로 검증하되 이 런치에는 parkin
 
   ① 정지 상태 전이 확인 — CAN 없음 (기본값). 바퀴 안 움직인다.
        ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
-           waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
-           usb_speed:=high camera_fps:=10
+           waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv
        확인:  ros2 run adas_mgm state --ros-args \
                   -r /adas/target_ref:=/bench/adas/target_ref
               ros2 topic echo /bench/adas/target_ref
@@ -31,10 +30,14 @@ PARKING 로직은 오프라인 패리티로 검증하되 이 런치에는 parkin
   ② 실주행 — 확인 토큰을 주면 bridge_dspace + can_zero 가드가 붙는다.
        ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
            REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-           waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
-           usb_speed:=high camera_fps:=10
+           waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv
 
-출발 인가는 **`ros2 run adas_mgm go`** 다. stack_avoid도 함께 띄운다.
+usb_speed:=high / camera_fps:=10 은 2026-08-24 부터 **이 launch 의 기본값**이라
+따로 붙이지 않는다 (OAK-D USB3 가 RTK 를 죽인다 — CLAUDE.md §6).
+
+출발 인가는 **`ros2 run adas_mgm go`** 다. stack_avoid 도 함께 띄운다.
+단 ① bench 는 출력이 격리돼 있어 target_ref 점검에 remap 이 필요하다:
+    ros2 run adas_mgm go --ros-args -r /adas/target_ref:=/bench/adas/target_ref
 
 빌드는 별도 opt-in 이 필요하다 (생성 C 는 기본 빌드에 링크되지 않는다):
     colcon build --packages-up-to adas_mgm \
