@@ -319,6 +319,45 @@ ros2 run bridge_dspace dummy_ref_publisher
 
 ---
 
+## 6-2단계 — CAN 회생 검증 (2026-08-26 신설)
+
+6단계가 "PC가 송신을 멈췄을 때 dSPACE가 세우는가"를 본다면, 여기는 **"링크가 죽었을 때
+PC가 그 사실을 아는가"**를 본다. 두 고장은 다르다 — 6단계에서는 링크가 멀쩡하다.
+
+**① 헬스가 나오는지:**
+
+```bash
+ros2 topic echo /bridge/can_health --once
+```
+
+✅ `link_up: true`, `consecutive_tx_fail: 0`, `down_duration_s: 0.0`
+
+**② 링크를 죽여 본다** (브리지가 뜬 상태에서):
+
+```bash
+sudo ip link set can0 down
+```
+
+✅ 브리지 로그에 `CAN write 실패 N회 연속 — Network is down (치명 — 소켓 재오픈 대기)`
+✅ `link_up: false` 로 바뀜
+✅ MGM 로그에 `CAN 송신 불가 — estop 강제`, 1초 뒤 `CAN 고장 1.0s 지속 — 래치`
+✅ **`top`에서 브리지 CPU가 100%로 튀지 않는다** (예전에는 read가 회전했다)
+
+**③ 되살린다:**
+
+```bash
+sudo /usr/local/bin/can_up.sh can0
+```
+
+✅ 브리지 로그 `CAN 재오픈 성공 — can0`
+✅ MGM 은 **아직 정지 유지** (래치) → `ros2 run adas_mgm go` 로 재인가해야 재출발
+   (짧은 두절 1초 미만이면 래치 없이 자동 복귀한다 — `can_relatch_sec`)
+
+**하드웨어 없이 MGM 쪽만 보려면:** `python3 src/adas_mgm/tools/can_watchdog_check.py`
+(가짜 CanHealth 로 6단계 시퀀스를 재현하고 PASS/FAIL 을 찍는다).
+
+---
+
 ## 7단계 — (옵션) MGM 연계
 
 dummy 대신 실제 Decision 체인으로:

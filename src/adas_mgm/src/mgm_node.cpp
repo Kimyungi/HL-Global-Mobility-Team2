@@ -33,6 +33,7 @@
 #include "fma_interfaces/msg/parking_status.hpp"
 #include "fma_interfaces/msg/traffic_stop.hpp"
 #include "fma_interfaces/msg/estop_request.hpp"
+#include "fma_interfaces/msg/can_health.hpp"
 #include "fma_interfaces/msg/target_ref.hpp"
 
 #include "core/mgm_step.hpp"
@@ -56,6 +57,7 @@ struct LatestMsgs
   fma_interfaces::msg::ParkingStatus parking;
   fma_interfaces::msg::TrafficStop traffic;
   fma_interfaces::msg::EstopRequest estop;
+  fma_interfaces::msg::CanHealth can;   // 브리지 CAN 링크 건전성 (§5.7 ⑥)
 };
 
 // msg → CoreSnapshot 변환 (포맷 변환만 — 판단 금지)
@@ -256,21 +258,47 @@ public:
     avoid_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("avoid_stale_timeout_sec", 0.5) * 1e9);
 
+    // ── CAN 헬스 watchdog (§5.7 ⑥, 2026-08-26) ─────────────────────────────
+    // traffic(③)과 같은 규약: **수신 이력이 있은 뒤에만** 판정한다. 미수신을
+    // 보정하면 브리지 없이 도는 단독 스택 시험·재생이 전부 estop 이 된다.
+    can_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("can_stale_timeout_sec", 0.5) * 1e9);
+    // 몇 주기 연속 송신 실패를 고장으로 볼 것인가. 기본 3 = 30ms — §3 dSPACE
+    // counter watchdog 의 3주기와 같은 눈금이다. 프레임 하나 흘린 것으로 서지 않는다.
+    can_fail_ticks_ = static_cast<uint32_t>(
+      declare_parameter<int>("can_fail_ticks", 3));
+    // 이 시간 넘게 불건전이 지속되면 **래치**를 건다 — 링크가 살아나도 스스로
+    // 재출발하지 않고 /operator/go 재인가를 기다린다.
+    //   근거: PROTOCOL.md:78 은 "복구는 자동, 래치 없음"인데 그 규정이 전제한 두절은
+    //   프레임 몇 개(수십 ms) 수준이다. 어댑터 이탈 같은 초 단위 고장에서 자동
+    //   재출발하면, 그 사이 마지막 v_ref 로 굴러갔을 수 있는 차가 사람이 옆에 선
+    //   채로 다시 움직인다. 그래서 **짧은 두절은 그의 규정대로 자동 복귀**시키고
+    //   긴 고장만 래치한다 (INTEGRATION_TEST_0826.md §6 ①).
+    //   0 이하면 래치 없음 = PROTOCOL.md 규정 그대로.
+    can_relatch_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("can_relatch_sec", 1.0) * 1e9);
+
     // 출발 인가 게이트 (2026-08-11, 실차 launch 전용) — true면 /operator/go 수신
     // 전까지 estop 보정 유지(v_ref 0 대기). launch 직후 바로 출발해 출발 전
     // 점검이 불가능하던 문제 해결. 판단이 아니라 운용 입력 컨디셔닝 — §5.7의
     // estop 경로 재사용(코어에 새 정지 로직 없음). 인가는 tools/go 스크립트가
     // RTK FIXED 확인 후 발행한다.
     wait_go_ = declare_parameter<bool>("wait_go", false);
+    // 구독은 wait_go 와 무관하게 **항상** 만든다 — CAN 고장 래치(§5.7 ⑥)의 해제도
+    // 같은 인가를 쓰기 때문이다. wait_go 는 "출발 전에도 인가가 필요한가"만 정한다.
+    sub_go_ = create_subscription<std_msgs::msg::Bool>(
+      "/operator/go", rclcpp::QoS(1),
+      [this](std_msgs::msg::Bool::ConstSharedPtr m) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (m->data && !go_received_) {
+          RCLCPP_INFO(get_logger(), "출발 인가 수신 — 주행 시작");
+        }
+        if (m->data && can_latched_.load()) {
+          can_latched_ = false;
+          RCLCPP_WARN(get_logger(), "CAN 고장 래치 해제 — 재인가로 주행 재개");
+        }
+        go_received_ = m->data;});
     if (wait_go_) {
-      sub_go_ = create_subscription<std_msgs::msg::Bool>(
-        "/operator/go", rclcpp::QoS(1),
-        [this](std_msgs::msg::Bool::ConstSharedPtr m) {
-          std::lock_guard<std::mutex> lk(mtx_);
-          if (m->data && !go_received_) {
-            RCLCPP_INFO(get_logger(), "출발 인가 수신 — 주행 시작");
-          }
-          go_received_ = m->data;});
       RCLCPP_INFO(get_logger(),
         "출발 대기 모드 — 점검 후 `ros2 run adas_mgm go` 로 출발 인가");
     }
@@ -330,6 +358,14 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         msgs_.estop = *m;
         last_estop_rx_ns_ = monotonicNs();});
+    // CAN 링크 건전성 (§5.7 ⑥, 2026-08-26) — bridge_dspace 가 발행. 정지 명령이
+    // 실제로 버스에 나가고 있는지를 MGM 이 알 수 있는 유일한 경로다.
+    sub_can_ = create_subscription<fma_interfaces::msg::CanHealth>(
+      "/bridge/can_health", qos,
+      [this](fma_interfaces::msg::CanHealth::ConstSharedPtr m) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.can = *m;
+        last_can_rx_ns_ = monotonicNs();});
 
     msgs_.avoid.ttc = 1e9f;   // 인지 도착 전 TTC=0으로 오인해 정지하는 것 방지
     msgs_.estop.estop = true;  // 첫 EstopRequest 수신 전 fail-safe — 미수신 = 정지
@@ -390,6 +426,7 @@ private:
     int64_t gps_rx_ns;
     int64_t traffic_rx_ns;
     int64_t avoid_rx_ns;
+    int64_t can_rx_ns;
     bool go;
     {
       std::lock_guard<std::mutex> lk(mtx_);
@@ -399,6 +436,7 @@ private:
       gps_rx_ns = last_gps_rx_ns_;
       traffic_rx_ns = last_traffic_rx_ns_;
       avoid_rx_ns = last_avoid_rx_ns_;
+      can_rx_ns = last_can_rx_ns_;
       go = go_received_;
     }
     // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
@@ -478,6 +516,43 @@ private:
         m.estop.estop = true;
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
           "avoid 신선도 초과(state=avoid) — estop 강제 (stack_avoid 확인 필요)");
+      }
+    }
+    // CAN 헬스 watchdog (§5.7 ⑥, 2026-08-26). 다른 watchdog 이 "인지가 살아 있는가"를
+    // 보는 데 비해 이것은 **"우리 명령이 실제로 버스에 나가고 있는가"**를 본다.
+    // dSPACE counter watchdog 이 미구현인 동안(HANDOVER.md §3.6) PC 가 못 보내면
+    // dSPACE 는 마지막 v_ref 를 유지한다 — 그 구간에 차를 세울 방법은 PC 에 없다.
+    // 그래서 이 보정의 목적은 "지금 세우는 것"이 아니라 **링크가 살아난 뒤 나가는
+    // 첫 프레임이 정지값이 되게 하는 것**이다.
+    // traffic(③)과 같은 규약으로 **수신 이력이 있은 뒤에만** 판정한다 — 브리지 없이
+    // 도는 단독 스택 시험·재생을 깨지 않기 위해서다.
+    if (can_rx_ns >= 0) {
+      const bool can_stale = monotonicNs() - can_rx_ns > can_stale_ns_;
+      const bool can_bad = can_stale || !m.can.link_up ||
+        m.can.consecutive_tx_fail >= can_fail_ticks_;
+      if (!can_bad) {
+        can_bad_since_ns_ = -1;
+      } else if (can_bad_since_ns_ < 0) {
+        can_bad_since_ns_ = monotonicNs();
+      }
+      // 긴 고장이면 래치 — 링크가 살아나도 스스로 재출발하지 않는다 (§6 ① 절충).
+      if (can_relatch_ns_ > 0 && can_bad_since_ns_ >= 0 && !can_latched_.load() &&
+        monotonicNs() - can_bad_since_ns_ >= can_relatch_ns_)
+      {
+        can_latched_ = true;
+        RCLCPP_ERROR(
+          get_logger(),
+          "CAN 고장 %.1fs 지속 — 래치. 확인 후 `ros2 run adas_mgm go` 로 재인가할 것",
+          static_cast<double>(can_relatch_ns_) * 1e-9);
+      }
+      if ((can_bad || can_latched_.load()) && !estop_stale) {
+        m.estop.estop = true;
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "CAN %s — estop 강제 (link_up=%d tx_fail=%u errno=%d%s)",
+          can_stale ? "헬스 신선도 초과(브리지 확인 필요)" : "송신 불가",
+          static_cast<int>(m.can.link_up), m.can.consecutive_tx_fail, m.can.last_errno,
+          can_latched_.load() ? " · 래치" : "");
       }
     }
     CoreSnapshot s = toSnapshot(m);
@@ -610,6 +685,12 @@ private:
   int64_t last_gps_rx_used_{-1};
   int64_t last_avoid_rx_used_{-1};
   int64_t avoid_stale_ns_{500'000'000};
+  int64_t last_can_rx_ns_{-1};    // 마지막 CanHealth 수신 시각 (미수신 = -1)
+  int64_t can_stale_ns_{500'000'000};
+  uint32_t can_fail_ticks_{3};    // 연속 송신 실패 몇 주기부터 고장으로 볼 것인가
+  int64_t can_relatch_ns_{1'000'000'000};  // 이만큼 지속되면 래치 (0 이하 = 래치 없음)
+  int64_t can_bad_since_ns_{-1};  // CAN 불건전 시작 시각 (건전 = -1, 루프 스레드 전용)
+  std::atomic<bool> can_latched_{false};   // CAN 고장 래치 — /operator/go 재인가로만 해제
   bool stop_holding_prev_{false};   // 지정 지점 정차 로그용 (코어 상태의 직전 값)
   bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
   bool go_received_{false};         // /operator/go 마지막 수신값
@@ -621,6 +702,7 @@ private:
   rclcpp::Subscription<fma_interfaces::msg::ParkingStatus>::SharedPtr sub_parking_;
   rclcpp::Subscription<fma_interfaces::msg::TrafficStop>::SharedPtr sub_traffic_;
   rclcpp::Subscription<fma_interfaces::msg::EstopRequest>::SharedPtr sub_estop_;
+  rclcpp::Subscription<fma_interfaces::msg::CanHealth>::SharedPtr sub_can_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_go_;
 
   std::atomic<bool> running_{true};

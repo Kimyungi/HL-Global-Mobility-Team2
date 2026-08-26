@@ -32,12 +32,14 @@
 #include <thread>
 
 #include "rclcpp/rclcpp.hpp"
+#include "fma_interfaces/msg/can_health.hpp"
 #include "fma_interfaces/msg/target_ref.hpp"
 #include "fma_interfaces/msg/vehicle_vector.hpp"
 #include "can_protocol.hpp"
 #include "vehicle_csv.hpp"
 #include "socketcan.hpp"
 
+using fma_interfaces::msg::CanHealth;
 using fma_interfaces::msg::TargetRef;
 using fma_interfaces::msg::VehicleVector;
 
@@ -101,6 +103,7 @@ public:
     std::atomic_store(&sock_, openSocket(iface_fd));
 
     vv_pub_ = create_publisher<VehicleVector>("/vehicle/vector", rclcpp::SensorDataQoS());
+    health_pub_ = create_publisher<CanHealth>("/bridge/can_health", rclcpp::QoS(1));
     ref_sub_ = create_subscription<TargetRef>(
       "/adas/target_ref", rclcpp::QoS(1),
       [this](TargetRef::ConstSharedPtr msg) {sendFrames(*msg);});
@@ -129,6 +132,10 @@ public:
       });
     reconnect_timer_ = create_wall_timer(
       std::chrono::milliseconds(100), [this] {reconnectIfNeeded();});
+    // 헬스 발행 — **CAN 프레임을 하나도 유발하지 않는다** (ROS 토픽 전용).
+    // PROTOCOL.md 의 "브리지에 keep-alive 를 넣지 말 것" 을 지키기 위한 전제다.
+    health_timer_ = create_wall_timer(
+      std::chrono::milliseconds(100), [this] {publishHealth();});
 
     RCLCPP_INFO(
       get_logger(),
@@ -162,13 +169,55 @@ private:
       {kIdVehVel, CAN_SFF_MASK},
       {kIdVehCommit, CAN_SFF_MASK},
     };
-    const int fd = openCanSocket(can_interface_, rx_filters, 100, iface_fd);
+    // 에러 프레임도 받는다: dSPACE 가 꺼져 있으면 ACK 가 없어 error-passive→bus-off
+    // 로 가는데, 그 사실이 write 실패로 드러나는 것은 TX 큐가 다 찬 뒤(ENOBUFS)라 늦다.
+    const int fd = openCanSocket(can_interface_, rx_filters, 100, iface_fd, true);
     return SocketHandle(new int(fd), [](int * value) {
       if (value != nullptr) {
         ::close(*value);
         delete value;
       }
     });
+  }
+
+  // 송신 결과를 헬스 카운터에 반영한다. 판단은 하지 않는다 — 문턱 판정과 estop
+  // 보정은 MGM wrapper 의 몫이다 (CLAUDE.md §5.7 ⑥).
+  void noteTxResult(bool ok, int error_number)
+  {
+    if (ok) {
+      tx_ok_ = true;
+      consec_fail_ = 0;
+      unhealthy_since_ns_ = 0;
+      return;
+    }
+    tx_ok_ = false;
+    ++consec_fail_;
+    last_errno_ = error_number;
+    int64_t expected = 0;
+    unhealthy_since_ns_.compare_exchange_strong(expected, nowNs());
+  }
+
+  static int64_t nowNs()
+  {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  }
+
+  void publishHealth()
+  {
+    CanHealth h;
+    h.header.stamp = now();
+    h.header.frame_id = can_interface_;
+    h.link_up = static_cast<bool>(std::atomic_load(&sock_));
+    h.tx_ok = tx_ok_.load();
+    h.consecutive_tx_fail = consec_fail_.load();
+    h.last_errno = last_errno_.load();
+    h.last_err_class = last_err_class_.load();
+    h.bus_off = bus_off_.load();
+    const int64_t since = unhealthy_since_ns_.load();
+    h.down_duration_s = since == 0 ? 0.0f
+      : static_cast<float>(static_cast<double>(nowNs() - since) * 1e-9);
+    health_pub_->publish(h);
   }
 
   void invalidateSocket(const SocketHandle & failed_socket, int error_number, const char * path)
@@ -190,6 +239,16 @@ private:
     if (std::atomic_load(&sock_)) {
       return;
     }
+    // `ip link set can0 down` 은 인터페이스를 없애지 않아 bind·MTU 조회가 그대로
+    // 성공한다. 이걸 안 거르면 "재연결 성공" 이 100ms 마다 찍혀 사람이 복구된 줄
+    // 안다 (2026-08-26 실기 확인).
+    if (!isCanLinkUp(can_interface_)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "%s 링크가 내려가 있다 — 복구 대기 (sudo /usr/local/bin/can_up.sh %s)",
+        can_interface_.c_str(), can_interface_.c_str());
+      return;
+    }
     const int mtu = canIfaceMtu(can_interface_);
     const bool iface_fd = mtu >= static_cast<int>(CANFD_MTU);
     if (mtu < 0 || (can_fd_ && !iface_fd)) {
@@ -207,6 +266,9 @@ private:
       }
       last_wire_tx_ = readIfaceTxPackets(can_interface_);
       last_tx_frames_ = tx_frames_.load();
+      bus_off_ = false;
+      // tx_ok_ 는 여기서 올리지 않는다 — 링크가 올라온 것과 목표값이 실제로 나간
+      // 것은 다르다. 다음 송신이 성공해야 건전으로 돌아간다.
       ++reconnect_count_;
       RCLCPP_WARN(
         get_logger(),
@@ -227,6 +289,7 @@ private:
     }
     const SocketHandle socket = std::atomic_load(&sock_);
     if (!socket) {
+      noteTxResult(false, last_errno_.load());
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 1000, "CAN 재열거 중 — 목표 송신을 보류합니다");
       return;
@@ -250,6 +313,7 @@ private:
       if (!sendCanFrame(*socket, kIdRefPointBase + i, pt, can_fd_, can_fd_brs_)) {
         const int error_number = errno;
         tx_frames_ += i + 1;
+        noteTxResult(false, error_number);
         invalidateSocket(socket, error_number, "TX");
         RCLCPP_WARN_THROTTLE(
           get_logger(), *get_clock(), 1000, "CAN write failed: %s",
@@ -266,6 +330,7 @@ private:
     if (!sendCanFrame(*socket, kIdTargetHeader, hdr, can_fd_, can_fd_brs_)) {
       const int error_number = errno;
       tx_frames_ += n + 1;
+      noteTxResult(false, error_number);
       invalidateSocket(socket, error_number, "TX");
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 1000, "CAN write failed: %s",
@@ -275,6 +340,7 @@ private:
 
     tx_frames_ += n + 1;    // REF_POINT n개 + 헤더 1 — 와이어 대조 기준
     ++tx_count_;
+    noteTxResult(true, 0);
   }
 
   // write() 는 성공했는데 프레임이 버스에 안 나가는 침묵을 잡는다.
@@ -334,10 +400,23 @@ private:
       ssize_t raw_len = 0;
       if (!readCanFrame(*socket, f, &raw_len)) {
         const int error_number = errno;
-        if (raw_len < 0) {
+        if (raw_len < 0 && !isIdleCanErrno(error_number)) {
           invalidateSocket(socket, error_number, "RX");
         }
         continue;  // timeout — 종료 플래그 재확인
+      }
+      // 에러 프레임은 페이로드가 아니다 — 헬스에만 반영하고 파싱하지 않는다.
+      if (f.err) {
+        last_err_class_ = f.err_class;
+        if ((f.err_class & CAN_ERR_BUSOFF) != 0) {
+          bus_off_ = true;
+          int64_t expected = 0;
+          unhealthy_since_ns_.compare_exchange_strong(expected, nowNs());
+          RCLCPP_ERROR_THROTTLE(
+            get_logger(), *get_clock(), 1000,
+            "CAN bus-off (%s) — dSPACE 미응답·배선·비트레이트 확인", can_interface_.c_str());
+        }
+        continue;
       }
       // 길이가 포맷을 가른다: 64 = v5(PR #52), 8 = v3. 그 외는 설정 오류다.
       if (f.len != 64 && f.len != 8) {
@@ -430,12 +509,21 @@ private:
   uint16_t tx_counter_{0};
   std::atomic<bool> running_{true};
   std::atomic<uint64_t> reconnect_count_{0};
+  // ── CAN 헬스 (§5.7 ⑥) — 관측만 한다. 문턱 판정은 MGM wrapper 의 몫이다.
+  std::atomic<bool> tx_ok_{true};
+  std::atomic<bool> bus_off_{false};
+  std::atomic<uint32_t> consec_fail_{0};
+  std::atomic<int32_t> last_errno_{0};
+  std::atomic<uint32_t> last_err_class_{0};
+  std::atomic<int64_t> unhealthy_since_ns_{0};
   std::atomic<uint64_t> tx_count_{0}, rx_count_{0};
   std::thread rx_thread_;
   rclcpp::Publisher<VehicleVector>::SharedPtr vv_pub_;
   rclcpp::Subscription<TargetRef>::SharedPtr ref_sub_;
   rclcpp::TimerBase::SharedPtr stats_timer_;
   rclcpp::TimerBase::SharedPtr reconnect_timer_;
+  rclcpp::TimerBase::SharedPtr health_timer_;
+  rclcpp::Publisher<CanHealth>::SharedPtr health_pub_;
 };
 
 }  // namespace bridge_dspace

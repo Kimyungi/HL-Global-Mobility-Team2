@@ -14,6 +14,7 @@
 #define BRIDGE_DSPACE__SOCKETCAN_HPP_
 
 #include <linux/can.h>
+#include <linux/can/error.h>
 #include <linux/can/raw.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
@@ -40,6 +41,31 @@ inline bool isCanReconnectError(int error_number)
          error_number == ENETUNREACH || error_number == EBADF;
 }
 
+// read() 가 -1 을 준 것이 "할 일 없음"인가 (SO_RCVTIMEO 타임아웃 / 시그널).
+// 이걸 구분하지 않으면 인터페이스가 내려갔을 때 read 가 즉시 -1 을 반환해
+// 수신 루프가 100% CPU 로 회전한다 (2026-08-26 실측).
+inline bool isIdleCanErrno(int error_number)
+{
+  return error_number == EAGAIN || error_number == EWOULDBLOCK || error_number == EINTR;
+}
+
+// 인터페이스가 실제로 올라와 있는가 (IFF_UP).
+// **소켓이 열린다고 링크가 산 것이 아니다** — `ip link set can0 down` 은 인터페이스를
+// 없애지 않으므로 SIOCGIFINDEX·bind 가 그대로 성공한다. MTU 조회도 마찬가지다.
+// 그것만 보고 "재오픈 성공"이라 하면 사람이 복구된 줄 안다 (2026-08-26 실기 확인).
+inline bool isCanLinkUp(const std::string & ifname)
+{
+  const int probe = ::socket(PF_CAN, SOCK_RAW, CAN_RAW);
+  if (probe < 0) {
+    return false;
+  }
+  ifreq ifr{};
+  std::strncpy(ifr.ifr_name, ifname.c_str(), IFNAMSIZ - 1);
+  const bool ok = ::ioctl(probe, SIOCGIFFLAGS, &ifr) >= 0 && (ifr.ifr_flags & IFF_UP) != 0;
+  ::close(probe);
+  return ok;
+}
+
 // 인터페이스 MTU 조회 — CAN_MTU(16)=classic 전용, CANFD_MTU(72)=FD 가능.
 // 실패(장치 없음 등)면 -1.
 inline int canIfaceMtu(const std::string & ifname)
@@ -64,11 +90,16 @@ inline bool canIfaceSupportsFd(const std::string & ifname)
 // RAW CAN 소켓 생성·바인드. filters 지정 시 해당 ID만 수신 (빈 벡터 = 전부 수신).
 // rcv_timeout_ms: recv 타임아웃 — 수신 루프의 종료 플래그 확인 주기.
 // want_fd: CAN_RAW_FD_FRAMES 활성화 (classic·FD 양쪽 수신 + FD 송신 가능).
+// err_frames: CAN_RAW_ERR_FILTER 로 에러 프레임(bus-off·tx timeout·ack 등)도 수신.
+//   ID 필터와 별개 경로라 둘을 같이 쓸 수 있다. bus-off 는 드라이버가 restart-ms 로
+//   자동 복구하지만 **복구 여부와 무관하게 그 구간의 송신은 실패했다** — 그 사실을
+//   사람이 알게 하는 것이 목적이다 (2026-08-26).
 inline int openCanSocket(
   const std::string & ifname,
   const std::vector<can_filter> & filters,
   int rcv_timeout_ms = 100,
-  bool want_fd = false)
+  bool want_fd = false,
+  bool err_frames = false)
 {
   const int sock = ::socket(PF_CAN, SOCK_RAW, CAN_RAW);
   if (sock < 0) {
@@ -79,6 +110,11 @@ inline int openCanSocket(
     ::setsockopt(
       sock, SOL_CAN_RAW, CAN_RAW_FILTER,
       filters.data(), filters.size() * sizeof(can_filter));
+  }
+
+  if (err_frames) {
+    const can_err_mask_t mask = CAN_ERR_MASK;   // 전 클래스 (bus-off·tx timeout·ack 등)
+    ::setsockopt(sock, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &mask, sizeof(mask));
   }
 
   timeval tv{rcv_timeout_ms / 1000, (rcv_timeout_ms % 1000) * 1000};
@@ -125,6 +161,10 @@ struct CanRxFrame
   uint8_t len{};       // 페이로드 길이 (1단계 프로토콜은 전부 8)
   bool fd{};           // true = CAN FD 프레임으로 도착
   bool brs{};          // FD 프레임이 데이터 구간 비트레이트 전환을 썼는가
+  // 에러 프레임(CAN_RAW_ERR_FILTER)으로 도착했는가. true 면 data 는 페이로드가
+  // 아니라 커널의 에러 상세이고, err_class 가 CAN_ERR_* 비트를 담는다.
+  bool err{};
+  uint32_t err_class{};
   uint8_t data[CANFD_MAX_DLEN]{};
 };
 
@@ -140,6 +180,8 @@ inline bool readCanFrame(int sock, CanRxFrame & out, ssize_t * raw_len = nullptr
   if (n != static_cast<ssize_t>(CAN_MTU) && n != static_cast<ssize_t>(CANFD_MTU)) {
     return false;
   }
+  out.err = (f.can_id & CAN_ERR_FLAG) != 0;
+  out.err_class = out.err ? (f.can_id & CAN_ERR_MASK) : 0U;
   out.id = f.can_id & CAN_EFF_MASK;   // EFF/RTR/ERR 플래그 제거
   out.fd = (n == static_cast<ssize_t>(CANFD_MTU));
   out.brs = out.fd && ((f.flags & CANFD_BRS) != 0);
