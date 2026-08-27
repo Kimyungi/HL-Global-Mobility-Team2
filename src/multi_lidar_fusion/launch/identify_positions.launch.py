@@ -30,9 +30,20 @@ BY_PATH = '/dev/serial/by-path/'
 BY_ID = '/dev/serial/by-id/'
 
 # 2026-08-13 실측 기본값. 허브 자리를 옮기면 by-path 는 바뀐다.
+# ★ 2026-08-27: by-path 를 실측값으로 갱신 (…1.2.4/1.2.3 -> …3.4/3.3).
+#   옛 값은 2026-08-25 udev 슬롯 고정(tools/99-fma-lidars.rules) 시점에 이미
+#   낡아 있었고, 그대로면 YDLiDAR 두 대가 안 열린다.
+#
+#   ⚠ 이 파일은 **일부러 슬롯 심링크(/dev/lidar_front 등)를 쓰지 않는다.**
+#     여기의 목적이 "어느 물리 유닛이 어느 자리인가"를 알아내는 것이라,
+#     자리 이름이 붙은 링크를 쓰면 답을 미리 가정하는 꼴이 된다.
+#     드라이버 본 launch(multi_lidar_drivers.launch.py)만 심링크를 쓴다.
+#
+#   허브 자리를 옮겼으면 다시 확인할 것:
+#     udevadm info -q property -n /dev/ttyUSBx | grep ID_PATH
 DEFAULTS = {
-    'yd0': BY_PATH + 'pci-0000:00:14.0-usb-0:1.2.4:1.0-port0',
-    'yd1': BY_PATH + 'pci-0000:00:14.0-usb-0:1.2.3:1.0-port0',
+    'yd0': BY_PATH + 'pci-0000:00:14.0-usb-0:3.4:1.0-port0',
+    'yd1': BY_PATH + 'pci-0000:00:14.0-usb-0:3.3:1.0-port0',
     'rp0': BY_ID + ('usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
                     '76d341fd291ef1118e6dbee40f0f12f8-if00-port0'),
     'rp1': BY_ID + ('usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
