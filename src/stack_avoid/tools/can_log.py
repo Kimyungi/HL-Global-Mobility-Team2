@@ -8,8 +8,8 @@ GPS 팀 bag(`~/gps_bags/*/candump-*.log`)과 **동일한 형식**이라 같은 �
     (1786011840.126547) can0 101##13C161CFE96FC1400       ← CAN FD (## 뒤 1자리 = flags)
 
 왜 필요한가 — rosbag 은 "우리가 무엇을 publish 했나"까지만 남긴다. 버스에 실제로
-몇 프레임이 나갔는지, 드롭이 있었는지는 여기서만 보인다. ref 20점 송신은 주기당
-2 → 21 프레임으로 늘어(부하 7%→32%) 이 확인이 특히 중요하다.
+몇 프레임이 나갔는지, 드롭이 있었는지는 여기서만 보인다. v5(64B·1점)는 주기당
+TX 2 + RX 1 = 3 프레임이다(부하 ~3%). 구 v3 20점은 24 프레임·~32% 였다.
 
 classic·CAN FD 를 둘 다 받아 각각 candump 형식 그대로 남긴다 (2026-08-28 FD 이관).
 요약에 포맷별 프레임 수가 나오므로 "dSPACE 가 정말 FD 로 보내고 있나"를 여기서 센다.
@@ -140,7 +140,7 @@ def main():
             hdr = counts.get(0x100, 0)
             if hdr:
                 print(f'  TX 프레임/헤더 = {tx/hdr:.2f}  '
-                      f'(= 1 + n_points. 20점이면 21.00 이어야 한다)')
+                      f'(= 1 + n_points. v5 는 2.00, 구 v3 20점은 21.00)')
         if a.out and os.path.exists(a.out):
             print(f'저장: {a.out} ({os.path.getsize(a.out)/1e6:.1f} MB)')
     return 0

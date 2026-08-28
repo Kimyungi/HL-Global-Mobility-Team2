@@ -5,8 +5,9 @@
 // 바이트를 되읽어 검사하므로 write/read 경로 자체가 그대로 exercise 된다.
 //
 // 이 테스트가 지키는 것:
-//   ① FD 로 보내도 페이로드 8바이트·ID·레이아웃이 classic 과 **완전히 동일**하다
-//      (1단계 이관의 핵심 전제 — PROTOCOL.md 논리 계약 무변경)
+//   ① FD 로 보내도 8바이트 페이로드(0x100 헤더)는 classic 과 **완전히 동일**하다
+//   ①-b v5 (PR #52) 64바이트 페이로드의 바이트 오프셋이 DBC 와 일치한다
+//      (x@0 y@8 yaw@16 curvature@24 / str_ref@40 counter@48) — dSPACE 실물 프레임 기준
 //   ② BRS 플래그가 실제로 실린다 (끄면 FD 인데 속도 이득이 0이라 조용히 손해)
 //   ③ readCanFrame 이 16B·72B 를 모두 같은 형태로 돌려준다 (과도기 무수신 방지)
 #include <linux/can.h>
@@ -106,6 +107,50 @@ int main()
     std::memcpy(&back, rx.data, sizeof(back));
     check(back.x == pt.x && back.y == pt.y && back.yaw == pt.yaw &&
       back.curvature == pt.curvature, "REF_POINT 필드 보존");
+  }
+
+  // ── v5 (PR #52) 64바이트 페이로드 — 바이트 레이아웃이 DBC 와 맞아야 한다
+  {
+    MpcTargetFdPayload tgt{};
+    tgt.x = 1.8; tgt.y = -0.25; tgt.yaw = 0.12; tgt.curvature = 0.469;
+    // dx/dy/dyaw/update 는 0 (팀장 결정 2026-08-28)
+    check(sendCanFrame(sv[0], kIdRefPointBase, tgt, /*fd=*/true), "MPC_TARGET(64B) 송신");
+    CanRxFrame rx{};
+    check(readCanFrame(sv[1], rx), "MPC_TARGET(64B) 수신");
+    check(rx.fd && rx.len == 64, "0x101 은 FD 64바이트");
+    // DBC 오프셋: x@0 y@8 yaw@16 curvature@24 dx@32 dy@40 dyaw@48 update@56
+    double back[7];
+    std::memcpy(back, rx.data, sizeof(back));
+    check(back[0] == 1.8 && back[1] == -0.25 && back[2] == 0.12 && back[3] == 0.469,
+      "x/y/yaw/curvature 가 DBC 오프셋 0/8/16/24");
+    check(back[4] == 0.0 && back[5] == 0.0 && back[6] == 0.0, "dx/dy/dyaw = 0");
+    uint64_t upd = 1;
+    std::memcpy(&upd, rx.data + 56, sizeof(upd));
+    check(upd == 0, "update = 0 (오프셋 56)");
+  }
+  {
+    VehFeedbackFdPayload fb{};
+    fb.x = 6.6; fb.y = 0.5; fb.yaw = 0.3; fb.v = 0.949;
+    fb.str = -0.21; fb.str_ref = -0.34; fb.counter = 2057;
+    check(sendCanFrame(sv[0], kIdVehFeedback, fb, /*fd=*/true), "VEH_FEEDBACK(64B) 송신");
+    CanRxFrame rx{};
+    check(readCanFrame(sv[1], rx), "VEH_FEEDBACK(64B) 수신");
+    check(rx.fd && rx.len == 64, "0x200 은 FD 64바이트");
+    // DBC 오프셋: x@0 y@8 yaw@16 v@24 str@32 str_ref@40 counter@48 reserved@56
+    double d[6];
+    std::memcpy(d, rx.data, sizeof(d));
+    check(d[3] == 0.949, "v 가 오프셋 24");
+    check(d[5] == -0.34, "str_ref 가 오프셋 40 (v5 신규)");
+    uint64_t cnt = 0;
+    std::memcpy(&cnt, rx.data + 48, sizeof(cnt));
+    check(cnt == 2057, "counter 가 오프셋 48 — 실차 dSPACE 프레임과 같은 자리");
+  }
+
+  // 8바이트를 넘는 페이로드는 classic 프레임에 못 실린다 (조용히 잘리면 안 된다)
+  {
+    MpcTargetFdPayload tgt{};
+    check(!sendCanFrame(sv[0], kIdRefPointBase, tgt, /*fd=*/false),
+      "64B 페이로드는 classic 송신이 거부된다");
   }
 
   ::close(sv[0]);

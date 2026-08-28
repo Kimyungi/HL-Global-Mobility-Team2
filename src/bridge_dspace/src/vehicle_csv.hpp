@@ -19,7 +19,7 @@ namespace bridge_dspace
 
 inline const char * vehicleCsvHeader()
 {
-  return "stamp_s,counter,x,y,yaw,v,str\n";
+  return "stamp_s,counter,x,y,yaw,v,str,str_ref\n";
 }
 
 inline void writeVehicleCsvRow(
@@ -33,7 +33,7 @@ inline void writeVehicleCsvRow(
       << vv.counter << ','
       << std::setprecision(4)
       << vv.x << ',' << vv.y << ',' << vv.yaw << ','
-      << vv.v << ',' << vv.str << '\n';
+      << vv.v << ',' << vv.str << ',' << vv.str_ref << '\n';
   out.precision(prev);
 }
 

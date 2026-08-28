@@ -1,6 +1,7 @@
 // dspace_sim_node — dSPACE 에뮬레이터 (PC 단독 루프백 검증용).
-// 실제 dSPACE의 최소 동작을 재현: REF_POINT 버퍼링 → TARGET_HEADER에서 latch →
-// watchdog(30ms) → kinematic bicycle 적분(10ms) → VEH_* 3프레임 회신.
+// ★ v5 (2026-08-28, PR #52): MPC_TARGET(0x101, 64B) 버퍼링 → TARGET_HEADER(0x100)에서
+// latch → watchdog(30ms) → kinematic bicycle 적분(10ms) → VEH_FEEDBACK(0x200, 64B) **1프레임** 회신.
+// v3 의 3프레임 커밋 규칙이 사라졌으므로 여기서도 한 프레임만 보낸다.
 // ROS 토픽 인터페이스 없음 — 순수 CAN (실기와 같은 조건, vcan0 사용).
 #include <atomic>
 #include <chrono>
@@ -69,17 +70,20 @@ private:
     CanRxFrame f{};
     while (running_ && rclcpp::ok()) {
       // classic·FD 를 가리지 않고 받는다 (실기 브리지와 동일 — socketcan.hpp 주석)
-      if (!readCanFrame(sock_, f) || f.len != 8) {continue;}
+      // 0x101 은 64B(v5), 0x100 헤더는 8B — 길이가 프레임 종류를 가른다
+      if (!readCanFrame(sock_, f)) {continue;}
 
       if (f.id >= kIdRefPointBase &&
         f.id < kIdRefPointBase + kNumPoints)
       {
         // point 프레임은 스테이징 버퍼에만 — latch는 헤더 수신 시점 (PROTOCOL.md)
-        std::memcpy(&staged_points_[f.id - kIdRefPointBase], f.data,
-          sizeof(RefPointPayload));
+        if (f.len == sizeof(MpcTargetFdPayload)) {
+          std::memcpy(&staged_points_[f.id - kIdRefPointBase], f.data,
+            sizeof(MpcTargetFdPayload));
+        }
         continue;
       }
-      if (f.id != kIdTargetHeader) {continue;}
+      if (f.id != kIdTargetHeader || f.len != sizeof(TargetHeaderPayload)) {continue;}
 
       TargetHeaderPayload hdr{};
       std::memcpy(&hdr, f.data, sizeof(hdr));
@@ -89,9 +93,9 @@ private:
         last_rx_ = Clock::now();
       }
       v_ref_ = dequantize(hdr.v_ref, kVelScale);
-      // 조향 목표: 첫 ref point의 곡률로 근사 (실기는 quintic+MPC — 여기선 스모크 수준)
-      const double curv = dequantize(staged_points_[0].curvature, kCurvScale);
-      str_ref_ = std::atan(wheelbase_ * curv);
+      // 조향 목표: 첫 ref point의 곡률로 근사 (실기는 quintic+MPC — 여기선 스모크 수준).
+      // v5 는 float64 원값이라 역양자화가 없다.
+      str_ref_ = std::atan(wheelbase_ * staged_points_[0].curvature);
     }
   }
 
@@ -119,13 +123,11 @@ private:
     y_ += v_ * std::sin(yaw_) * dt;
     yaw_ += v_ / wheelbase_ * std::tan(str_) * dt;
 
-    // 회신 순서: POSE → VEL → COMMIT (PC는 COMMIT에서 퍼블리시)
-    VehPosePayload pose{static_cast<float>(x_), static_cast<float>(y_)};
-    VehVelPayload vel{static_cast<float>(yaw_), static_cast<float>(v_)};
-    VehCommitPayload commit{static_cast<float>(str_), ++tx_counter_, 0};
-    sendCanFrame(sock_, kIdVehPose, pose, can_fd_, can_fd_brs_);
-    sendCanFrame(sock_, kIdVehVel, vel, can_fd_, can_fd_brs_);
-    sendCanFrame(sock_, kIdVehCommit, commit, can_fd_, can_fd_brs_);
+    // v5: 한 프레임에 전부 (커밋 규칙 없음). str_ref 는 MPC 명령, str 은 실제 조향.
+    VehFeedbackFdPayload fb{};
+    fb.x = x_; fb.y = y_; fb.yaw = yaw_; fb.v = v_;
+    fb.str = str_; fb.str_ref = str_cmd; fb.counter = ++tx_counter_;
+    sendCanFrame(sock_, kIdVehFeedback, fb, can_fd_, can_fd_brs_);
   }
 
   std::string can_interface_;
@@ -134,8 +136,9 @@ private:
   bool can_fd_{true}, can_fd_brs_{true};
   int sock_{-1};
   std::mutex mtx_;
-  RefPointPayload staged_points_[kNumPoints]{};
-  uint16_t last_counter_{0}, tx_counter_{0};
+  MpcTargetFdPayload staged_points_[kNumPoints]{};
+  uint16_t last_counter_{0};
+  uint64_t tx_counter_{0};
   Clock::time_point last_rx_;
   bool timeout_latched_{false};
   double v_ref_{0.0}, str_ref_{0.0};

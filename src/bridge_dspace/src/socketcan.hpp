@@ -147,7 +147,7 @@ inline bool sendCanFrame(
   int sock, uint32_t id, const Payload & payload,
   bool fd = false, bool brs = true)
 {
-  static_assert(sizeof(Payload) <= CAN_MAX_DLEN, "payload exceeds classic CAN frame");
+  static_assert(sizeof(Payload) <= CANFD_MAX_DLEN, "payload exceeds CAN FD frame (64B)");
   if (fd) {
     canfd_frame f{};
     f.can_id = id;
@@ -156,11 +156,16 @@ inline bool sendCanFrame(
     std::memcpy(f.data, &payload, sizeof(Payload));
     return ::write(sock, &f, CANFD_MTU) == static_cast<ssize_t>(CANFD_MTU);
   }
-  can_frame f{};
-  f.can_id = id;
-  f.can_dlc = sizeof(Payload);
-  std::memcpy(f.data, &payload, sizeof(Payload));
-  return ::write(sock, &f, CAN_MTU) == static_cast<ssize_t>(CAN_MTU);
+  // 8바이트를 넘는 페이로드는 classic 프레임에 실을 수 없다 (v5 의 64B 가 그렇다).
+  if constexpr (sizeof(Payload) <= CAN_MAX_DLEN) {
+    can_frame f{};
+    f.can_id = id;
+    f.can_dlc = sizeof(Payload);
+    std::memcpy(f.data, &payload, sizeof(Payload));
+    return ::write(sock, &f, CAN_MTU) == static_cast<ssize_t>(CAN_MTU);
+  } else {
+    return false;
+  }
 }
 
 }  // namespace bridge_dspace

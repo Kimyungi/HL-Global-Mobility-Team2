@@ -17,8 +17,10 @@ import struct
 import time
 
 ID_TARGET_HEADER = 0x100
-ID_REF_POINT_BASE = 0x101   # 0x101..0x114
-NUM_POINTS = 20
+ID_REF_POINT_BASE = 0x101   # v5 — 0x101 한 개
+NUM_POINTS = 1
+ID_VEH_FEEDBACK = 0x200     # v5 — 64B 단일 프레임
+# v3 (8B ×3) 잔재 — dSPACE 가 되돌아가도 해석되게 남긴다
 ID_VEH_POSE = 0x200
 ID_VEH_VEL = 0x201
 ID_VEH_COMMIT = 0x202
@@ -37,6 +39,18 @@ VEL_SCALE = 1e-3
 
 
 def decode(can_id: int, d: bytes) -> str:
+    # ── v5 (PR #52) 64바이트 페이로드. 길이가 계약을 가른다.
+    if len(d) == 64:
+        if can_id == ID_REF_POINT_BASE:
+            x, y, yaw, k, dx, dy, dyaw, upd = struct.unpack("<7dQ", d)
+            return (f"MPC_TARGET x={x:.3f} y={y:.3f} yaw={yaw:.4f} k={k:.4f} "
+                    f"d=({dx:.3f},{dy:.3f},{dyaw:.4f}) upd={upd}")
+        if can_id == ID_VEH_FEEDBACK:
+            x, y, yaw, v, st, sr, cnt, rsv = struct.unpack("<6dQQ", d)
+            return (f"VEH_FB x={x:.3f} y={y:.3f} yaw={yaw:.4f} v={v:.3f} "
+                    f"str={st:.4f} str_ref={sr:.4f} counter={cnt}")
+        return f"64B (미등록 ID)"
+
     if can_id == ID_TARGET_HEADER:
         counter, state, n_points, v_ref, _ = struct.unpack("<HBBhH", d)
         return (f"HEADER counter={counter} state={STATES.get(state, state)} "

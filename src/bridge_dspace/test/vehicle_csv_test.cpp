@@ -24,7 +24,7 @@ static void check(bool ok, const std::string & what)
 int main()
 {
   // ── 헤더 열 이름과 개수는 dspace_merge.py / 분석 스크립트의 계약이다
-  check(std::string(vehicleCsvHeader()) == "stamp_s,counter,x,y,yaw,v,str\n",
+  check(std::string(vehicleCsvHeader()) == "stamp_s,counter,x,y,yaw,v,str,str_ref\n",
     "헤더 열 이름");
 
   VehicleVector vv;
@@ -36,6 +36,7 @@ int main()
   vv.yaw = 0.7853982f;    // 45deg
   vv.v = 0.9487f;
   vv.str = -0.2109f;
+  vv.str_ref = -0.3456f;   // v5 신규 — MPC 명령 조향각
 
   std::ostringstream out;
   writeVehicleCsvRow(out, vv);
@@ -49,12 +50,14 @@ int main()
   check(row.find("0.7854") != std::string::npos, "yaw 4자리");
   check(row.find("0.9487") != std::string::npos, "v 4자리");
   check(row.find("-0.2109") != std::string::npos, "str 음수 4자리 (부호는 PC ref y 와 반대 — CLAUDE.md §3)");
+  // str_ref 는 실현율 `명령δ / PC 기하δ` 를 직접 계산하는 열이다 (CLAUDE.md §3)
+  check(row.find("-0.3456") != std::string::npos, "str_ref 4자리");
   check(!row.empty() && row.back() == '\n', "줄바꿈으로 끝난다");
 
   // 열 개수가 헤더와 같아야 한다
   size_t commas = 0;
   for (char c : row) {if (c == ',') {++commas;}}
-  check(commas == 6, "열 7개 (쉼표 6개)");
+  check(commas == 7, "열 8개 (쉼표 7개) — v5 의 str_ref 포함");
 
   // ── 스트림 상태를 되돌려 놓는가 (뒤이어 쓰는 쪽이 fixed/precision 에 오염되면 안 됨)
   std::ostringstream mixed;

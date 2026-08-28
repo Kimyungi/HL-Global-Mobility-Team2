@@ -22,9 +22,9 @@ PC 가 송신을 멈춰도 dSPACE 는 마지막 목표값을 무기한 유지한
     죽은 뒤** `--once` 를 한 번 더 실행한다. 가드 모드는 그 폴백으로 남긴다
     (같은 0 을 쓰므로 두 번 겹쳐도 무해하고, 이벤트가 안 걸리는 경우를 대비한다).
 
-송신 내용 (PROTOCOL.md):
-  0x100 TARGET_HEADER = counter++ · state 0 · n_points 1 · v_ref 0
-  0x101 REF_POINT_0   = 전부 0   ← `--keep-steer` 면 **보내지 않는다**
+송신 내용 (PROTOCOL.md v5 / PR #52):
+  0x100 TARGET_HEADER = counter++ · state 0 · n_points 1 · v_ref 0   (8 B, v3 와 동일)
+  0x101 MPC_TARGET    = 전부 0 (64 B)   ← `--keep-steer` 면 **보내지 않는다**
   헤더가 커밋이므로 점 프레임을 보낼 때는 **점 → 헤더** 순서로 쓴다.
 
 ★ CAN FD (2026-08-28) — 와이어 포맷은 **인터페이스 MTU 로 자동 판정**한다.
@@ -48,6 +48,7 @@ import struct
 import sys
 import time
 
+MPC_TARGET_LEN = 64              # v5 0x101 페이로드 길이 (PR #52)
 CAN_FRAME_FMT = '<IB3x8s'        # classic can_frame (16 B)
 CANFD_FRAME_FMT = '<IBB2x64s'    # canfd_frame (72 B) — can_id, len, flags, pad, data
 CANFD_MTU = 72
@@ -83,10 +84,17 @@ def iface_is_fd(iface):
 
 
 def _pack(can_id, data, use_fd):
-    """한 프레임을 와이어 포맷으로. use_fd 면 canfd_frame(72 B, BRS)."""
+    """한 프레임을 와이어 포맷으로. use_fd 면 canfd_frame(72 B, BRS).
+
+    v5 의 0x101(64 B)은 classic 프레임에 실을 수 없다 — 그 조합은 호출자가 막는다.
+    """
     if use_fd:
         return struct.pack(CANFD_FRAME_FMT, can_id, len(data), CANFD_BRS,
                            data.ljust(64, b'\x00'))
+    if len(data) > 8:
+        raise ValueError(
+            f'{len(data)}B 페이로드는 classic 프레임에 실을 수 없다 '
+            f'(v5 0x101 은 64B) — --classic 대신 FD 로 보낼 것')
     return struct.pack(CAN_FRAME_FMT, can_id, len(data), data)
 
 
@@ -99,8 +107,10 @@ def _send_zero(sock, counter, keep_steer, use_fd):
         "정지 시 조향은 직전 값 유지, 급조향 금지" 에 부합).
     """
     header = struct.pack('<HBBhH', counter & 0xFFFF, 0, 1, 0, 0)
+    # v5 의 0x101 은 64바이트다. 헤더(0x100)는 v3 와 같은 8바이트 그대로.
     frames = ([(ID_TARGET_HEADER, header)] if keep_steer
-              else [(ID_REF_POINT_0, bytes(8)), (ID_TARGET_HEADER, header)])
+              else [(ID_REF_POINT_0, bytes(MPC_TARGET_LEN)),
+                    (ID_TARGET_HEADER, header)])
     for can_id, data in frames:
         sock.send(_pack(can_id, data, use_fd))
     return counter + 1
