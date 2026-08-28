@@ -8,6 +8,11 @@
 //     ⚠ RX는 2026-08-25 이전 전 구간에서 **0건**이었다(bag Count: 0). 토픽·기록 설정은
 //     처음부터 있었고 dSPACE 송신만 없었다 — 그래서 5초 통계에서 rx=0을 **경고로**
 //     올린다. INFO 한 줄로는 프로젝트 내내 아무도 못 알아챘다.
+// TX 도 같은 침묵이 가능하다 (2026-08-28 실측): write() 는 프레임을 **커널 큐에 넣는
+//     것**까지만 성공을 뜻한다. 상대가 ACK 하지 않으면 와이어에 한 프레임도 못 나가는데
+//     write() 는 계속 성공한다 — dSPACE 가 아직 classic 인 버스에 FD 프레임을 보냈을 때
+//     30/30 write 성공 · tx_packets 0 · bus-errors +16 · ERROR-PASSIVE 였다. 그래서
+//     커널이 세는 실제 송신 수(sysfs tx_packets)를 매 5초 대조한다.
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -30,6 +35,18 @@ using fma_interfaces::msg::VehicleVector;
 
 namespace bridge_dspace
 {
+
+// 커널이 **실제로 버스에 올린** 프레임 수. write() 성공과 별개다 — 상대가 ACK 하지
+// 않으면 write 는 성공해도 이 값은 늘지 않는다. vcan 도 정상 카운트하므로 루프백에서
+// 오탐이 나지 않는다(2026-08-28 확인: vcan0·can0 모두 수용 30/30, 거부 0/30).
+constexpr uint64_t kTxPacketsUnavailable = ~0ULL;
+
+inline uint64_t readIfaceTxPackets(const std::string & ifname)
+{
+  std::ifstream f("/sys/class/net/" + ifname + "/statistics/tx_packets");
+  uint64_t v = 0;
+  return (f >> v) ? v : kTxPacketsUnavailable;
+}
 
 class CanBridgeNode : public rclcpp::Node
 {
@@ -88,9 +105,11 @@ public:
 
     rx_thread_ = std::thread([this] {rxLoop();});
 
+    last_wire_tx_ = readIfaceTxPackets(can_interface_);
     stats_timer_ = create_wall_timer(
       std::chrono::seconds(5), [this] {
         const uint64_t tx = tx_count_.load(), rx = rx_count_.load();
+        checkWireTx();
         // TX 가 나가는데 RX 가 한 건도 없으면 dSPACE 송신이 없는 것이다. 이 상태로도
         // 주행은 되지만 TTC 자차속도가 계속 폴백값을 쓰고(§stack_avoid) vehicle vector
         // 로깅이 통째로 비므로, INFO 가 아니라 경고로 올린다.
@@ -158,11 +177,50 @@ private:
     hdr.v_ref = quantize(msg.v_ref, kVelScale);
     ok &= sendCanFrame(sock_, kIdTargetHeader, hdr, can_fd_, can_fd_brs_);
 
+    tx_frames_ += n + 1;    // REF_POINT n개 + 헤더 1 — 와이어 대조 기준
     if (ok) {
       ++tx_count_;
     } else {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "CAN write failed: %s",
         std::strerror(errno));
+    }
+  }
+
+  // write() 는 성공했는데 프레임이 버스에 안 나가는 침묵을 잡는다.
+  // 가장 흔한 원인은 **양쪽 와이어 포맷 불일치**(우리 FD ↔ 상대 classic)이고,
+  // 그 다음이 비트레이트·샘플포인트 불일치다. 둘 다 조용히 진행되므로 경고로 올린다.
+  void checkWireTx()
+  {
+    const uint64_t wire = readIfaceTxPackets(can_interface_);
+    const uint64_t frames = tx_frames_.load();
+    if (wire == kTxPacketsUnavailable || last_wire_tx_ == kTxPacketsUnavailable) {
+      last_wire_tx_ = wire;
+      last_tx_frames_ = frames;
+      return;   // sysfs 를 못 읽는 환경 — 대조를 건너뛴다 (판단 아님)
+    }
+    const uint64_t d_frames = frames - last_tx_frames_;
+    const uint64_t d_wire = wire - last_wire_tx_;
+    last_wire_tx_ = wire;
+    last_tx_frames_ = frames;
+
+    if (d_frames == 0) {
+      return;   // 보낸 게 없으면 대조할 것도 없다
+    }
+    if (d_wire == 0) {
+      RCLCPP_ERROR(
+        get_logger(),
+        "★ CAN TX 가 버스에 안 나간다 — write %lu 프레임 성공, 실제 송신 0 (%s, TX %s). "
+        "dSPACE 가 우리 프레임을 ACK 하지 않는다: 와이어 포맷 불일치(상대가 classic 이면 "
+        "can_fd:=false)나 비트레이트 불일치를 의심할 것. "
+        "'ip -details -statistics link show %s' 로 bus-errors·ERROR-PASSIVE 확인",
+        d_frames, can_interface_.c_str(),
+        can_fd_ ? "CAN FD" : "classic", can_interface_.c_str());
+    } else if (d_wire * 2 < d_frames) {
+      RCLCPP_WARN(
+        get_logger(),
+        "CAN TX 유실 — write %lu 프레임 중 실제 송신 %lu (%s). "
+        "데이터 구간 비트레이트·샘플포인트 불일치 또는 배선 품질을 의심할 것",
+        d_frames, d_wire, can_interface_.c_str());
     }
   }
 
@@ -235,6 +293,8 @@ private:
   std::ofstream vehicle_csv_;      // dSPACE RX 피드백 (기록자 = rx 스레드 하나)
   bool can_fd_{true}, can_fd_brs_{true};
   bool rx_fmt_logged_{false};   // 첫 수신 프레임의 포맷을 1회만 로깅 (rx 스레드 전용)
+  std::atomic<uint64_t> tx_frames_{0};          // write() 에 넘긴 누적 프레임 수
+  uint64_t last_tx_frames_{0}, last_wire_tx_{0};  // 5초 대조용 (타이머 스레드 전용)
   int sock_{-1};
   uint16_t tx_counter_{0};
   std::atomic<bool> running_{true};

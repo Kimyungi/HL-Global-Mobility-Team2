@@ -59,6 +59,21 @@ REPEAT = 30
 PERIOD_S = 0.01
 
 
+def iface_tx_packets(iface):
+    """커널이 **실제로 버스에 올린** 누적 프레임 수. 못 읽으면 None.
+
+    write() 성공과 별개다 — 상대가 ACK 하지 않으면 write 는 성공해도 이 값은 안 는다.
+    2026-08-28 실측: dSPACE 가 classic 인 버스에 FD 프레임 30회 → send() 30회 성공,
+    tx_packets 0, bus-errors +16. 이 가드에서는 그 침묵이 곧 **목표값이 0 이 아닌 채로
+    세션이 끝나는 것**이므로 반드시 확인한다.
+    """
+    try:
+        return int(pathlib.Path(
+            f'/sys/class/net/{iface}/statistics/tx_packets').read_text())
+    except (OSError, ValueError):
+        return None
+
+
 def iface_is_fd(iface):
     """인터페이스가 CAN FD 로 올라와 있는가 (MTU 72). 못 읽으면 False = classic."""
     try:
@@ -104,6 +119,7 @@ def zero_out(iface, keep_steer=False, force_classic=False):
               file=sys.stderr, flush=True)
         return False
     counter = 0
+    wire_before = iface_tx_packets(iface)
     try:
         for _ in range(REPEAT):
             counter = _send_zero(s, counter, keep_steer, use_fd)
@@ -115,6 +131,23 @@ def zero_out(iface, keep_steer=False, force_classic=False):
         s.close()
     what = 'v_ref=0 (헤더만 — 조향 유지)' if keep_steer else 'v_ref=0 · ref_point 0'
     fmt = 'CAN FD' if use_fd else 'classic CAN'
+
+    # ★ write() 성공만으로는 0 이 dSPACE 에 닿았다고 말할 수 없다 (위 docstring).
+    wire_after = iface_tx_packets(iface)
+    if wire_before is not None and wire_after is not None:
+        sent = wire_after - wire_before
+        if sent == 0:
+            print(f'✗ can_zero: {iface} 에 {REPEAT}회 write 했지만 '
+                  f'**버스에 나간 프레임이 0** ({fmt}) — dSPACE 가 ACK 하지 않는다.\n'
+                  f'  ★목표값이 0 이 아닐 수 있다★  와이어 포맷 불일치를 의심할 것: '
+                  f'상대가 classic 이면 --classic 으로 재시도.\n'
+                  f'  확인:  ip -details -statistics link show {iface}',
+                  file=sys.stderr, flush=True)
+            return False
+        if sent < REPEAT:
+            print(f'⚠ can_zero: {REPEAT}회 중 {sent}회만 버스에 나갔다 ({fmt}) — '
+                  f'비트레이트·배선 확인 필요', file=sys.stderr, flush=True)
+
     print(f'can_zero: {iface} 에 {what} 을 {REPEAT}회 송신 완료 '
           f'({fmt}, dSPACE watchdog 없음 대응)', flush=True)
     return True
