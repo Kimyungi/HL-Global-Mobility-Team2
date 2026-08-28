@@ -113,7 +113,10 @@ struct VehFeedbackFdPayload  // 0x200 VEH_FEEDBACK_FD — 64 B
   double str_ref;  // [rad] MPC 명령 조향각 — v5 신규.
                    // CLAUDE.md §3 의 실현율 `명령δ / PC 기하δ`(43~59%)를 간접 추정이 아니라
                    // 직접 측정할 수 있게 해 준다.
-  uint64_t counter;   // dSPACE 송신 카운터 (매 주기 +1 이어야 함)
+  uint64_t counter;   // PC 0x100 헤더 counter 의 **에코** (dSPACE 자체 카운터 아님).
+                      // PC 송신 중이면 매 주기 +1, PC 가 멈추면 고정된다 — 그래서
+                      // 이 값만으론 dSPACE 사망과 PC 무송신을 구분 못 한다.
+                      // 같은 시점 (PC TX counter − 이 값) = 왕복 틱 수 (실측 2틱/20ms).
   uint64_t reserved;
 };
 

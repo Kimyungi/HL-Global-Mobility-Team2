@@ -65,7 +65,8 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 | vehicle_vector | **v5: `0x200` 1프레임 64B (f64, 커밋 규칙 소멸 — 수신 즉시 퍼블리시)** (구 v3: `0x200`~`0x202` f32, `0x202`가 커밋) | 상태 추정 결과 {x, y, yaw, v, str, **str_ref**} — PC의 localization 보정에 사용. `str_ref`(v5 신규)로 실현율을 직접 측정할 수 있다. **모든 스테이트에서 상시 송신 (parking 중에도 유지** — 주차 로컬맵·경로 추종의 입력**)** |
 
 **watchdog (dSPACE):** `0x100` 헤더의 counter가 30ms(TX 3주기) 동안 미갱신 → v_ref = 0 (감속 정지), 조향은 직전 값 유지(급조향 금지). 타임아웃 값은 §7 검증 결과에 따라 조정 가능(예: 50ms). point 프레임 수신 여부는 watchdog 판정에 쓰지 않는다.
-**dSPACE 로그 정합 (2026-08-17 확립):** dSPACE가 `Out1.counter`를 로깅하면 `bag_index = counter − off` 로 **틱 단위 정확 정합**이 된다 (run_0817_020112: off=42, `target_speed`(km/h) vs PC `v_ref` 21300/21300 일치, CAN 유실 0). dSPACE 단위는 **속도 km/h · 조향 deg**, 조향 **부호는 PC ref y와 반대**(규약, 손상민 확인 필요). 도구는 `adas_mgm/tools/dspace_merge.py`, 측정 변수 목록은 `bridge_dspace/DSPACE_LOGGING.md`.
+**dSPACE 로그 정합 (2026-08-17 확립, 2026-08-28 근거 규명):** dSPACE의 counter는 **PC 헤더 counter의 에코**라서(손상민 확인+실측) dSPACE가 `Out1.counter`를 로깅하면 `bag_index = counter − off` 로 **틱 단위 정확 정합**이 된다 (run_0817_020112: off=42, `target_speed`(km/h) vs PC `v_ref` 21300/21300 일치, CAN 유실 0). dSPACE 단위는 **속도 km/h · 조향 deg**, 조향 **부호는 PC ref y와 반대**(규약, 손상민 확인 필요). 도구는 `adas_mgm/tools/dspace_merge.py`, 측정 변수 목록은 `bridge_dspace/DSPACE_LOGGING.md`.
+**왕복 지연 = 2틱(20ms), 지터 0 (2026-08-28 실측, 500샘플):** 같은 시점의 `PC TX counter − dSPACE RX counter`가 왕복 틱 수다. §7 실시간성 판정과 watchdog 타임아웃(30ms) 선택의 실측 근거. ⚠ 에코이므로 PC가 송신을 멈추면 이 값이 고정된다 — dSPACE 생존 판정에 쓰지 말 것(그건 프레임 도착 여부로).
 
 **⚠ 미구현 (2026-08-09 실측, 손상민 측 J-6):** 이 watchdog은 dSPACE에 아직 없다 — PC 송신이 끊겨도 마지막 v_ref를 무기한 유지한다. 구현 전까지 실차 launch는 종료 시 `can_zero`로 목표값 0 복귀를 보장할 것 (stack_avoid `launch_parts.can_bridge_with_zero_guard` — 2026-08-12부터 lane+GPS 통합 launch에도 적용).
 
