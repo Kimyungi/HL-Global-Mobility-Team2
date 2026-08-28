@@ -55,9 +55,13 @@ classic 시절엔 "1 Mbps / Intel" 두 줄이면 끝이었다. FD 는 아래가 
 | 4 | ISO CAN FD vs non-ISO(Bosch) | **ISO** | `ip link ... fd on` (기본 ISO. non-ISO 면 `fd-non-iso on`) | CRC 불일치 — **전 프레임 에러** |
 | 5 | sample point (nominal / data) | **80% / 80%** | `tools/can_up.sh` `*_SAMPLE_POINT` | 케이블이 길어질수록 간헐 에러. 짧은 배선에선 안 드러나다가 실차에서 터진다 |
 
-> PC 측 1·2·5 는 `tools/can_up.sh` 한 파일에 모여 있고, systemd-networkd 경로
-> (`tools/can_setup/80-can0.network`)에도 **같은 값이 중복**돼 있다 — networkd 가
-> udev 를 이기기 때문이다(2026-08-03 실사례). **바꿀 때 두 파일을 함께 고칠 것.**
+> PC 측 1·2·5 의 **단일 진실 원천은 `tools/can_setup/can_params.sh`** 하나다.
+> udev(`can_up.sh`)·systemd(`can-iface@.service`)·networkd(`80-can0.network`) 세 경로가
+> 같은 값을 써야 하는데, 예전엔 세 파일에 각각 적어 놔서 한쪽만 갱신되는 사고가
+> 반복됐다(2026-08-03 networkd 500k 잔재, 2026-08-28 can_up.sh classic 잔재).
+> 이제 `install.sh` 가 `can_params.sh` 로부터 나머지를 **생성**하므로 어긋날 수 없다.
+> **값은 `can_params.sh` 에서만 고치고 `sudo install.sh` 재실행.**
+> 드리프트 점검: `install.sh --check`
 
 ### 와이어 포맷 전환 스위치 (A/B 진단용)
 
@@ -221,7 +225,8 @@ TX 에는 폴백이 없다 — 페이로드 계약은 양쪽이 같아야 하므
 
 ## PC 측 CAN 인터페이스 설정
 
-**최초 1회 자동 셋업 설치 (권장)** — 이후로는 어댑터를 꽂기만 하면 can0이 CAN FD 로 자동 up:
+**새 PC 셋업 — 이 명령 하나.** 이후로는 어댑터를 **뺐다 꽂아도** can0 가 CAN FD 로 자동 up
+(2026-08-28 실물 재삽입 검증). 점검은 `install.sh --check` (sudo 불필요):
 
 ```bash
 sudo src/bridge_dspace/tools/can_setup/install.sh          # 실차 PC

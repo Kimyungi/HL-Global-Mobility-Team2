@@ -344,24 +344,46 @@ python3 ~/FMA_ws/src/bridge_dspace/tools/protocol_selftest.py       # 프로토�
 journalctl -t can_up -n 20                                   # 인터페이스 자동 up 로그
 ```
 
-## 자동 활성화 (설치하면 이 문서의 수동 bringup 불필요)
-
-어댑터를 꽂기만 하면 udev가 CAN FD(1M/2M) + 자동 BUS-OFF 복구(restart-ms 100)로 올려준다:
+## 새 PC 셋업 — 이 명령 하나
 
 ```bash
-cd ~/FMA_ws/src/bridge_dspace/tools
-sudo cp can_up.sh /usr/local/bin/ && sudo chmod +x /usr/local/bin/can_up.sh
-sudo cp 70-can-auto.rules /etc/udev/rules.d/
-sudo udevadm control --reload
-# 이미 꽂혀 있으면 1회: sudo /usr/local/bin/can_up.sh can0
+cd ~/FMA_ws
+sudo src/bridge_dspace/tools/can_setup/install.sh          # 실차 PC
+sudo src/bridge_dspace/tools/can_setup/install.sh --vcan   # 개발 PC (+ 루프백용 vcan0)
 ```
 
-확인: `ip -details link show can0` → `state ERROR-ACTIVE` + `bitrate 1000000` + `dbitrate 2000000` + `<FD>`,
-그리고 `cat /sys/class/net/can0/mtu` → `72`.
+이걸로 끝이다. 이후 **어댑터를 뺐다 꽂아도 can0 가 CAN FD 로 자동으로 올라온다**
+(2026-08-28 실물 재삽입으로 검증 — 손 안 대고 MTU 72 · 1M/2M · ERROR-ACTIVE 복귀).
+
+점검 (sudo 불필요, 아무것도 바꾸지 않는다):
+
+```bash
+src/bridge_dspace/tools/can_setup/install.sh --check
+```
+
+`✔ 점검 통과 — 어댑터를 뺐다 꽂아도 자동으로 올라온다` 가 나오면 된 것이다.
+
+### 설치되는 것과 우선순위
+
+같은 일을 하는 경로가 셋인데, **뒤에 오는 것이 앞을 덮어쓴다**:
+
+| # | 경로 | 언제 도는가 |
+|---|---|---|
+| ① | udev `70-can-auto.rules` → `/usr/local/bin/can_up.sh` | 어댑터 삽입 (핫플러그 주 경로) |
+| ② | `can-iface@can0.service` | 부팅·장치 유닛 등장 |
+| ③ | systemd-networkd `80-can0.network` | networkd 활성이면 **마지막에 이긴다** |
+
+셋을 다 두는 이유는 어느 하나가 안 걸리는 머신이 있기 때문이고, 셋이 어긋나면
+증상이 "설정이 매 삽입마다 되돌아감"으로 나타난다. 그래서:
+
+> ★ **값은 `tools/can_setup/can_params.sh` 한 곳에만 있다.**
+> install.sh 가 그 값으로 ①②③을 **생성**하므로 어긋날 수가 없다.
+> 값을 바꾸려면 `can_params.sh` 만 고치고 install.sh 를 다시 돌린다.
+> `--check` 가 설치본과 저장소 값을 대조해 드리프트를 잡는다.
+
+과거 사고 둘 다 이 드리프트였다:
+- 2026-08-03: networkd 에 500k 잔재 → udev 의 1Mbps 를 매 삽입마다 뒤집어 ERROR-PASSIVE
+- 2026-08-28: `/usr/local/bin/can_up.sh` 만 classic 시절 버전으로 남아 재삽입 시 FD 실패
 
 참고: dSPACE 미연결(버스에 혼자) 상태에서 송신하면 BUS-OFF가 정상이며,
-restart-ms 덕에 상대가 나타나면 자동 복구된다. (2026-08-01, 차량 PC 적용 완료)
-
-> ★ 비트레이트·샘플포인트는 **두 곳에 중복**돼 있다 — `tools/can_up.sh`(udev·서비스 경로)와
-> `tools/can_setup/80-can0.network`(systemd-networkd 경로). networkd가 udev를 이기므로
-> **바꿀 때 반드시 둘 다** 고칠 것 (2026-08-03 500k 잔재 실사례).
+restart-ms 덕에 상대가 나타나면 자동 복구된다.

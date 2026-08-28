@@ -1,34 +1,39 @@
 #!/bin/sh
-# CAN 인터페이스 자동 활성화 — udev가 호출 (70-can-auto.rules)
-# 팀 표준: CAN FD, nominal 1 Mbps / data 2 Mbps (PROTOCOL.md / CAN_BRINGUP.md)
+# CAN 인터페이스 활성화 — udev(70-can-auto.rules)가 어댑터 삽입 시 호출한다.
 # 수동 실행도 가능:  sudo /usr/local/bin/can_up.sh can0
 #
-# ★ 아래 4개 값은 dSPACE 측(RTI CAN FD 블록셋)과 **반드시 같아야 한다**.
-#   한쪽만 바꾸면 버스가 ERROR-PASSIVE/BUS-OFF 로 떨어진다. 변경 시 PROTOCOL.md
-#   §공통의 FD 파라미터 표도 함께 갱신할 것.
-#   - data 를 2 Mbps 로 잡은 이유: 배선·종단이 1 Mbps classic 으로만 검증돼 있고,
-#     8바이트 페이로드에서는 그 이상 올려도 얻는 게 없다 (PROTOCOL.md 버스 부하).
+# ★ 값은 여기 없다. can_params.sh 가 단일 진실 원천이다 (PROTOCOL.md §공통).
+#   설치본은 /usr/local/lib/fma-can/can_params.sh, 저장소에서는 can_setup/can_params.sh.
 IFACE="${1:-can0}"
-NOM_BITRATE=1000000
-NOM_SAMPLE_POINT=0.8
-DATA_BITRATE=2000000
-DATA_SAMPLE_POINT=0.8
+
+for P in /usr/local/lib/fma-can/can_params.sh \
+         "$(dirname "$0")/can_setup/can_params.sh" \
+         "$(dirname "$0")/can_params.sh"; do
+  if [ -r "$P" ]; then . "$P"; PARAMS="$P"; break; fi
+done
+if [ -z "${PARAMS:-}" ]; then
+  logger -t can_up "can_params.sh 를 못 찾음 — 설치 확인: sudo .../can_setup/install.sh"
+  echo "can_params.sh 를 못 찾았다. sudo src/bridge_dspace/tools/can_setup/install.sh 실행할 것" >&2
+  exit 1
+fi
 
 ip link set "$IFACE" down 2>/dev/null
-# fd on = CAN FD 활성화 (인터페이스 MTU 16 → 72). PC 코드는 이 MTU 로 FD 가능 여부를 판정한다.
+# fd on = CAN FD 활성화 (MTU 16 → 72). PC 코드는 이 MTU 로 FD 가능 여부를 판정한다.
 if ip link set "$IFACE" type can \
-     bitrate "$NOM_BITRATE" sample-point "$NOM_SAMPLE_POINT" \
-     dbitrate "$DATA_BITRATE" dsample-point "$DATA_SAMPLE_POINT" \
-     fd on restart-ms 100
+     bitrate "$CAN_NOM_BITRATE" sample-point "$CAN_NOM_SAMPLE_POINT" \
+     dbitrate "$CAN_DATA_BITRATE" dsample-point "$CAN_DATA_SAMPLE_POINT" \
+     fd on restart-ms "$CAN_RESTART_MS"
 then
+  ip link set "$IFACE" txqueuelen "$CAN_TXQUEUELEN" 2>/dev/null
   ip link set "$IFACE" up
-  logger -t can_up "$IFACE up @ CAN FD ${NOM_BITRATE}/${DATA_BITRATE} (restart-ms 100)"
+  logger -t can_up "$IFACE up @ CAN FD ${CAN_NOM_BITRATE}/${CAN_DATA_BITRATE} (params: $PARAMS)"
 else
-  # sample-point 를 컨트롤러가 정확히 못 맞추면 여기로 온다 — 샘플포인트 없이 재시도.
+  # 컨트롤러가 샘플포인트를 정확히 못 맞추면 여기로 온다 — 샘플포인트 없이 재시도.
   # 이 경로로 올라오면 dSPACE 와 샘플포인트가 어긋날 수 있으니 CAN_BRINGUP.md §1 확인.
   logger -t can_up "$IFACE: sample-point 지정 실패 — 기본 샘플포인트로 재시도"
-  ip link set "$IFACE" type can \
-     bitrate "$NOM_BITRATE" dbitrate "$DATA_BITRATE" fd on restart-ms 100
+  ip link set "$IFACE" type can bitrate "$CAN_NOM_BITRATE" \
+     dbitrate "$CAN_DATA_BITRATE" fd on restart-ms "$CAN_RESTART_MS"
+  ip link set "$IFACE" txqueuelen "$CAN_TXQUEUELEN" 2>/dev/null
   ip link set "$IFACE" up
-  logger -t can_up "$IFACE up @ CAN FD ${NOM_BITRATE}/${DATA_BITRATE} (기본 샘플포인트)"
+  logger -t can_up "$IFACE up @ CAN FD ${CAN_NOM_BITRATE}/${CAN_DATA_BITRATE} (기본 샘플포인트)"
 fi

@@ -142,9 +142,12 @@ sudo udevadm control --reload && sudo udevadm trigger
 확인:
 
 ```bash
-ip link show can0                    # state UP
-ls -l /dev/ttyRover /dev/ttyRadio    # 심볼릭 링크 존재
+src/bridge_dspace/tools/can_setup/install.sh --check   # CAN 셋업 전체 점검 (sudo 불필요)
+ls -l /dev/ttyRover /dev/ttyRadio                      # 심볼릭 링크 존재
 ```
+
+`--check` 가 `✔ 점검 통과 — 어댑터를 뺐다 꽂아도 자동으로 올라온다` 를 내면 CAN 은 끝이다.
+✘ 가 하나라도 있으면 `sudo .../install.sh` 를 다시 돌린다.
 
 ### 2.6 빌드
 

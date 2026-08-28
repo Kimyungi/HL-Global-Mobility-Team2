@@ -1,0 +1,20 @@
+# CAN 인터페이스 자동 셋업 (FMA) — ★ 생성 파일. 직접 고치지 말 것 ★
+# 값의 원본은 can_params.sh 이고 install.sh 가 이 템플릿을 채워 설치한다.
+# 어댑터를 꽂으면(부팅 포함) 커널이 장치 유닛을 올리고, 이 서비스가 설정 후 up.
+[Unit]
+Description=Bring up CAN interface %i as CAN FD @NOM_BITRATE@/@DATA_BITRATE@ (FMA)
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# 이미 up이면 비트레이트 변경이 EBUSY로 실패한다 — 먼저 내린다('-' = 실패 무시)
+ExecStart=-/usr/sbin/ip link set %i down
+ExecStart=/usr/sbin/ip link set %i type can bitrate @NOM_BITRATE@ sample-point @NOM_SAMPLE_POINT@ dbitrate @DATA_BITRATE@ dsample-point @DATA_SAMPLE_POINT@ fd on restart-ms @RESTART_MS@
+ExecStart=/usr/sbin/ip link set %i txqueuelen @TXQUEUELEN@
+ExecStart=/usr/sbin/ip link set %i up
+ExecStop=/usr/sbin/ip link set %i down
+
+[Install]
+WantedBy=sys-subsystem-net-devices-%i.device

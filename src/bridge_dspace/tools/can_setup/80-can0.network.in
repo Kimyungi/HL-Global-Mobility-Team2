@@ -1,0 +1,17 @@
+# systemd-networkd용 can0 설정 (FMA) — ★ 생성 파일. 직접 고치지 말 것 ★
+# 값의 원본은 can_params.sh 이고 install.sh 가 이 템플릿을 채워 설치한다.
+#
+# networkd가 활성인 머신에서는 udev(can_up.sh)·can-iface@ 서비스가 올린 설정을
+# networkd가 마지막에 덮어쓴다 — 그래서 이 경로도 반드시 같은 값이어야 한다.
+# ⚠ FDMode=yes 가 빠지면 MTU 가 16 으로 남아 브리지가 기동에서 죽는다
+#   (조용히 classic 으로 강등되지 않는 것은 의도다).
+[Match]
+Name=can0
+
+[CAN]
+BitRate=@NOM_BITRATE@
+SamplePoint=@NOM_SAMPLE_POINT_PCT@
+FDMode=yes
+DataBitRate=@DATA_BITRATE@
+DataSamplePoint=@DATA_SAMPLE_POINT_PCT@
+RestartSec=@RESTART_MS@ms

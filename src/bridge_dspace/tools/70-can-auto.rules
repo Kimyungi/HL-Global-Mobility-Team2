@@ -1,5 +1,6 @@
-# Kvaser Leaf v3(및 모든 SocketCAN 어댑터) 꽂으면 자동으로 CAN FD 1M/2M 활성화
-# 설치: sudo cp 70-can-auto.rules /etc/udev/rules.d/
-#       sudo cp can_up.sh /usr/local/bin/ && sudo chmod +x /usr/local/bin/can_up.sh
-#       sudo udevadm control --reload
+# CAN 어댑터(Kvaser Leaf v3 등)를 꽂으면 자동으로 CAN FD 활성화.
+# ★ install.sh 가 설치한다 — 손으로 복사하지 말 것 (설치본이 낡는 사고의 원인이었다).
+#   설치: sudo src/bridge_dspace/tools/can_setup/install.sh
+#
+# 값은 /usr/local/lib/fma-can/can_params.sh 하나에만 있다 (PROTOCOL.md §공통).
 ACTION=="add", SUBSYSTEM=="net", KERNEL=="can[0-9]*", RUN+="/usr/local/bin/can_up.sh %k"
