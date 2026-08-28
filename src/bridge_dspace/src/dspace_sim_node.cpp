@@ -25,6 +25,10 @@ public:
     can_interface_ = declare_parameter<std::string>("can_interface", "vcan0");
     wheelbase_ = declare_parameter<double>("wheelbase", 0.32);      // WHEELTEC 근사
     timeout_ms_ = declare_parameter<int>("watchdog_timeout_ms", 30);
+    // 실기와 같은 와이어 포맷으로 돌린다 (PROTOCOL.md §공통). vcan0 는 MTU 72 필요 —
+    // install.sh --vcan 이 설정한다. can_fd:=false 로 classic 대조도 가능.
+    can_fd_ = declare_parameter<bool>("can_fd", true);
+    can_fd_brs_ = declare_parameter<bool>("can_fd_brs", true);
 
     // 수신은 PC→dSPACE ID만 (0x100 헤더 + 0x101..0x114 포인트)
     const std::vector<can_filter> rx_filters = {
@@ -32,14 +36,24 @@ public:
       // 0x101..0x114를 하나의 mask 필터로: 0x100~0x11F 대역에서 헤더 제외 상위 매칭
       {kIdRefPointBase, static_cast<canid_t>(CAN_SFF_MASK & ~0x01F)},
     };
-    sock_ = openCanSocket(can_interface_, rx_filters);
+    const bool iface_fd = canIfaceSupportsFd(can_interface_);
+    if (can_fd_ && !iface_fd) {
+      throw std::runtime_error(
+              "can_fd:=true 인데 " + can_interface_ + " 가 classic 전용이다 (MTU " +
+              std::to_string(canIfaceMtu(can_interface_)) + "). vcan 이면: "
+              "sudo ip link set " + can_interface_ + " down && sudo ip link set " +
+              can_interface_ + " mtu 72 && sudo ip link set " + can_interface_ + " up "
+              "(또는 sudo src/bridge_dspace/tools/can_setup/install.sh --vcan)");
+    }
+    sock_ = openCanSocket(can_interface_, rx_filters, 100, iface_fd);
 
     last_rx_ = Clock::now();  // 부팅 직후는 정상 취급 — 30ms 내 첫 헤더 미도착 시 자연히 타임아웃
     rx_thread_ = std::thread([this] {rxLoop();});
     // 10ms 태스크 — 실 dSPACE의 Vehicle MGM 주기에 대응
     timer_ = create_wall_timer(std::chrono::milliseconds(10), [this] {step();});
-    RCLCPP_INFO(get_logger(), "dSPACE sim: %s, watchdog %dms",
-      can_interface_.c_str(), timeout_ms_);
+    RCLCPP_INFO(get_logger(), "dSPACE sim: %s, watchdog %dms, TX %s",
+      can_interface_.c_str(), timeout_ms_,
+      can_fd_ ? (can_fd_brs_ ? "CAN FD (BRS on)" : "CAN FD (BRS off)") : "classic CAN 2.0A");
   }
 
   ~DspaceSimNode() override
@@ -52,20 +66,20 @@ public:
 private:
   void rxLoop()
   {
-    can_frame f{};
+    CanRxFrame f{};
     while (running_ && rclcpp::ok()) {
-      const ssize_t len = ::read(sock_, &f, sizeof(f));
-      if (len != sizeof(can_frame) || f.can_dlc != 8) {continue;}
+      // classic·FD 를 가리지 않고 받는다 (실기 브리지와 동일 — socketcan.hpp 주석)
+      if (!readCanFrame(sock_, f) || f.len != 8) {continue;}
 
-      if (f.can_id >= kIdRefPointBase &&
-        f.can_id < kIdRefPointBase + kNumPoints)
+      if (f.id >= kIdRefPointBase &&
+        f.id < kIdRefPointBase + kNumPoints)
       {
         // point 프레임은 스테이징 버퍼에만 — latch는 헤더 수신 시점 (PROTOCOL.md)
-        std::memcpy(&staged_points_[f.can_id - kIdRefPointBase], f.data,
+        std::memcpy(&staged_points_[f.id - kIdRefPointBase], f.data,
           sizeof(RefPointPayload));
         continue;
       }
-      if (f.can_id != kIdTargetHeader) {continue;}
+      if (f.id != kIdTargetHeader) {continue;}
 
       TargetHeaderPayload hdr{};
       std::memcpy(&hdr, f.data, sizeof(hdr));
@@ -109,14 +123,15 @@ private:
     VehPosePayload pose{static_cast<float>(x_), static_cast<float>(y_)};
     VehVelPayload vel{static_cast<float>(yaw_), static_cast<float>(v_)};
     VehCommitPayload commit{static_cast<float>(str_), ++tx_counter_, 0};
-    sendCanFrame(sock_, kIdVehPose, pose);
-    sendCanFrame(sock_, kIdVehVel, vel);
-    sendCanFrame(sock_, kIdVehCommit, commit);
+    sendCanFrame(sock_, kIdVehPose, pose, can_fd_, can_fd_brs_);
+    sendCanFrame(sock_, kIdVehVel, vel, can_fd_, can_fd_brs_);
+    sendCanFrame(sock_, kIdVehCommit, commit, can_fd_, can_fd_brs_);
   }
 
   std::string can_interface_;
   double wheelbase_{};
   int timeout_ms_{};
+  bool can_fd_{true}, can_fd_brs_{true};
   int sock_{-1};
   std::mutex mtx_;
   RefPointPayload staged_points_[kNumPoints]{};

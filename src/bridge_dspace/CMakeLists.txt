@@ -31,6 +31,12 @@ if(BUILD_TESTING)
   target_include_directories(vehicle_csv_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   ament_target_dependencies(vehicle_csv_test fma_interfaces)
   add_test(NAME vehicle_csv_test COMMAND vehicle_csv_test)
+
+  # classic / CAN FD 와이어 포맷 계약 (2026-08-28 FD 이관). socketpair 를 쓰므로
+  # CAN 인터페이스 없이 돌고, "FD 로 바꿔도 페이로드는 그대로"를 고정한다.
+  add_executable(socketcan_fd_test test/socketcan_fd_test.cpp)
+  target_include_directories(socketcan_fd_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME socketcan_fd_test COMMAND socketcan_fd_test)
 endif()
 
 ament_package()

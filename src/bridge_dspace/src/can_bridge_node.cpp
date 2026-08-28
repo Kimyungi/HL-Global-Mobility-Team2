@@ -39,6 +39,15 @@ public:
   {
     can_interface_ = declare_parameter<std::string>("can_interface", "can0");
 
+    // CAN FD (PROTOCOL.md §공통 — 2026-08-28 Kvaser Leaf v3 이관과 함께 팀 표준).
+    // 프레임 레이아웃·ID·스케일은 classic 과 동일하다. 바뀌는 건 와이어 포맷뿐.
+    //   can_fd:=false  → classic 프레임으로 송신 (A/B 진단용. 인터페이스 설정은 그대로
+    //                    둬도 된다 — FD 인터페이스는 classic 프레임을 그대로 실어 보낸다)
+    //   can_fd_brs     → 데이터 구간 비트레이트 전환. dSPACE 설정과 **반드시 일치**.
+    //                    끄면 FD 프레임이지만 전 구간 nominal 이라 속도 이득이 0이다.
+    can_fd_ = declare_parameter<bool>("can_fd", true);
+    can_fd_brs_ = declare_parameter<bool>("can_fd_brs", true);
+
     // dSPACE RX 피드백 CSV — 빈 값이면 끔. lateral.csv 와 같은 epoch 초 타임스탬프라
     // dspace_merge.py / 분석 스크립트가 두 파일을 그대로 겹칠 수 있다.
     vehicle_csv_path_ = declare_parameter<std::string>("vehicle_csv_path", "");
@@ -60,7 +69,17 @@ public:
       {kIdVehVel, CAN_SFF_MASK},
       {kIdVehCommit, CAN_SFF_MASK},
     };
-    sock_ = openCanSocket(can_interface_, rx_filters);
+    // RX 는 인터페이스가 FD 를 지원하면 **무조건** FD 수신을 켠다 (can_fd 와 무관).
+    // 그래야 dSPACE 만 먼저 FD 로 넘어간 과도기에도 프레임이 보인다 — socketcan.hpp 주석 참조.
+    const bool iface_fd = canIfaceSupportsFd(can_interface_);
+    if (can_fd_ && !iface_fd) {
+      throw std::runtime_error(
+              "can_fd:=true 인데 " + can_interface_ +
+              " 가 classic 전용이다 (MTU " + std::to_string(canIfaceMtu(can_interface_)) +
+              "). 인터페이스를 FD 로 올리거나(sudo /usr/local/bin/can_up.sh " +
+              can_interface_ + ") can_fd:=false 로 실행할 것");
+    }
+    sock_ = openCanSocket(can_interface_, rx_filters, 100, iface_fd);
 
     vv_pub_ = create_publisher<VehicleVector>("/vehicle/vector", rclcpp::SensorDataQoS());
     ref_sub_ = create_subscription<TargetRef>(
@@ -89,8 +108,12 @@ public:
       });
 
     RCLCPP_INFO(
-      get_logger(), "bridge up — %s, TX 0x%03X+0x%03X..0x%03X, RX 0x%03X..0x%03X",
-      can_interface_.c_str(), kIdTargetHeader, kIdRefPointBase,
+      get_logger(),
+      "bridge up — %s, TX %s, RX classic+FD(%s), 0x%03X+0x%03X..0x%03X → 0x%03X..0x%03X",
+      can_interface_.c_str(),
+      can_fd_ ? (can_fd_brs_ ? "CAN FD (BRS on)" : "CAN FD (BRS off)") : "classic CAN 2.0A",
+      iface_fd ? "iface FD" : "iface classic 전용",
+      kIdTargetHeader, kIdRefPointBase,
       kIdRefPointBase + kNumPoints - 1, kIdVehPose, kIdVehCommit);
   }
 
@@ -125,7 +148,7 @@ private:
         quantize(p.y, kPosScale),
         quantize(p.yaw, kYawScale),
         quantize(p.curvature, kCurvScale)};
-      ok &= sendCanFrame(sock_, kIdRefPointBase + i, pt);
+      ok &= sendCanFrame(sock_, kIdRefPointBase + i, pt, can_fd_, can_fd_brs_);
     }
     // 헤더는 반드시 마지막 — dSPACE는 이 프레임에서 n_points개 세트를 latch
     TargetHeaderPayload hdr{};
@@ -133,7 +156,7 @@ private:
     hdr.state = msg.state;
     hdr.n_points = static_cast<uint8_t>(n);
     hdr.v_ref = quantize(msg.v_ref, kVelScale);
-    ok &= sendCanFrame(sock_, kIdTargetHeader, hdr);
+    ok &= sendCanFrame(sock_, kIdTargetHeader, hdr, can_fd_, can_fd_brs_);
 
     if (ok) {
       ++tx_count_;
@@ -145,20 +168,30 @@ private:
 
   void rxLoop()
   {
-    can_frame f{};
+    CanRxFrame f{};
     VehPosePayload pose{};
     VehVelPayload vel{};
     while (running_ && rclcpp::ok()) {
-      const ssize_t len = ::read(sock_, &f, sizeof(f));
-      if (len < 0) {
+      if (!readCanFrame(sock_, f)) {
         continue;  // timeout — 종료 플래그 재확인
       }
-      if (len != sizeof(can_frame) || f.can_dlc != 8) {
+      // 1단계 프로토콜은 classic·FD 어느 쪽으로 와도 페이로드가 8바이트다.
+      // 길이가 다르면 dSPACE 가 FD 로 넘어오며 DLC 를 12/16/… 로 패딩했을 가능성이
+      // 크다 (FD 는 9~11 바이트가 없어 RTI 가 위로 올려붙인다) — 그 경우 dSPACE
+      // 메시지 길이를 8 로 맞춰야 한다.
+      if (f.len != 8) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-          "bad CAN frame: len=%zd id=0x%03X dlc=%u", len, f.can_id, f.can_dlc);
+          "bad CAN frame: id=0x%03X len=%u (8 이어야 함, %s 프레임) — "
+          "dSPACE 메시지 길이(DLC) 확인", f.id, f.len, f.fd ? "FD" : "classic");
         continue;
       }
-      switch (f.can_id) {
+      // 상대가 어느 포맷으로 보내고 있는지 한 번은 남긴다 (FD 전환 확인용).
+      if (!rx_fmt_logged_) {
+        rx_fmt_logged_ = true;
+        RCLCPP_INFO(get_logger(), "dSPACE RX 포맷: %s%s",
+          f.fd ? "CAN FD" : "classic CAN 2.0A", (f.fd && f.brs) ? " (BRS)" : "");
+      }
+      switch (f.id) {
         case kIdVehPose:
           std::memcpy(&pose, f.data, sizeof(pose));
           break;
@@ -200,6 +233,8 @@ private:
   std::string can_interface_;
   std::string vehicle_csv_path_;
   std::ofstream vehicle_csv_;      // dSPACE RX 피드백 (기록자 = rx 스레드 하나)
+  bool can_fd_{true}, can_fd_brs_{true};
+  bool rx_fmt_logged_{false};   // 첫 수신 프레임의 포맷을 1회만 로깅 (rx 스레드 전용)
   int sock_{-1};
   uint16_t tx_counter_{0};
   std::atomic<bool> running_{true};

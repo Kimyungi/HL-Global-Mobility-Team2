@@ -19,7 +19,10 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 
 - 상위: 산업용 PC, **Ubuntu 22.04 + ROS 2 Humble** — 인지(Signal processing) + 판단(Decision)
 - 하위: dSPACE — 제어(Control) + 구동(Actuation)
-- 통신: **CAN (classic 2.0A, 1 Mbps 권장, PC 측 PCAN 어댑터)**, 10ms 주기 — dSPACE 측 Ethernet 사용 불가로 UDP에서 전환 (2026-07-29)
+- 통신: **CAN FD (ISO, nominal 1 Mbps / data 2 Mbps, BRS on, PC 측 Kvaser Leaf v3)**, 10ms 주기
+  — dSPACE 측 Ethernet 사용 불가로 UDP에서 CAN 전환 (2026-07-29), classic 2.0A + PCAN 에서 CAN FD + Kvaser 로 재전환 (2026-08-28).
+  **논리 계약(§3)은 두 전환 모두에서 불변** — ID 맵·8바이트 페이로드 레이아웃·양자화 스케일·커밋 규칙·watchdog 이 그대로다.
+  FD 의 64바이트를 실제로 쓰는 프레임 재포장은 **2단계로 분리**했고 아직 미착수 (`bridge_dspace/PROTOCOL.md` "2단계" 절).
 
 ## 2. 아키텍처 (v1 — 현재 기준)
 

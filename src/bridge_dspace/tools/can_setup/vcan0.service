@@ -1,4 +1,6 @@
 # 가상 CAN vcan0 상시 준비 (FMA — 루프백 테스트용, 개발 머신에만 설치)
+# MTU 72 = CAN FD 프레임을 실을 수 있는 상태. 실기가 FD 이므로 루프백도 FD 로 돌린다
+# (MTU 16 이면 dspace_sim_node·can_bridge_node 가 "CAN FD 활성화 실패" 로 죽는다).
 [Unit]
 Description=Virtual CAN vcan0 (FMA loopback test)
 
@@ -8,6 +10,9 @@ RemainAfterExit=yes
 ExecStart=/usr/sbin/modprobe vcan
 # 이미 존재하면 무시 (- 접두)
 ExecStart=-/usr/sbin/ip link add dev vcan0 type vcan
+# vcan 은 up 상태에서 MTU 변경이 EBUSY 다 — 내려서 바꾸고 올린다
+ExecStart=-/usr/sbin/ip link set vcan0 down
+ExecStart=/usr/sbin/ip link set vcan0 mtu 72
 ExecStart=/usr/sbin/ip link set vcan0 up
 ExecStop=-/usr/sbin/ip link del dev vcan0
 

@@ -32,7 +32,8 @@ def ydlidar_driver(condition=None):
         emulate_tty=True, parameters=[params], condition=condition)
 
 
-def can_bridge_with_zero_guard(condition=None, can_interface='can0', vehicle_csv_path=''):
+def can_bridge_with_zero_guard(condition=None, can_interface='can0', vehicle_csv_path='',
+                               can_fd=True):
     """CAN 브리지 + 종료 시 dSPACE 목표값 0 복귀. 실차를 움직이는 구성에서만 쓴다.
 
     dSPACE 에 watchdog 이 없다(2026-08-09 실측, J-6) — PC 송신이 끊겨도 마지막 v_ref 를
@@ -56,11 +57,17 @@ def can_bridge_with_zero_guard(condition=None, can_interface='can0', vehicle_csv
     `vehicle_csv_path` 를 주면 dSPACE RX 피드백(/vehicle/vector)을 CSV 로도 남긴다
     (2026-08-25). 토픽은 원래부터 rosbag 에 기록됐지만 RX 가 0건이라 늘 비어 있었고,
     실차 분석은 run 폴더의 CSV 를 먼저 보므로 같은 자리에 둔다. 빈 값 = 끔.
+
+    `can_fd` (2026-08-28 Kvaser Leaf v3 이관) — 팀 표준은 CAN FD 다. False 면 classic
+    프레임으로 송신한다(A/B 대조용). 프레임 레이아웃·ID·스케일은 양쪽이 동일하므로
+    이 값은 **와이어 포맷만** 고른다. can_zero 가드는 인터페이스 MTU 로 자동 판정하니
+    별도 인자가 없다 — 종료 안전 경로에서 인자를 빠뜨리는 사고를 만들지 않기 위해서다.
     """
     bridge = Node(package='bridge_dspace', executable='can_bridge_node',
                   name='can_bridge_node', output='screen',
                   parameters=[{'can_interface': can_interface,
-                               'vehicle_csv_path': vehicle_csv_path}],
+                               'vehicle_csv_path': vehicle_csv_path,
+                               'can_fd': can_fd}],
                   condition=condition)
     zero_exe = os.path.normpath(os.path.join(
         get_package_share_directory('stack_avoid'), '..', '..',

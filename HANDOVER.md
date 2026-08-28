@@ -124,7 +124,7 @@ ls -l ~/FMA_ws/src/stack_lane/models/yolopv2.pt
 ```bash
 cd ~/FMA_ws
 
-# ① CAN 자동 셋업 — PCAN 꽂으면 can0 이 1Mbps 로 자동 up
+# ① CAN 자동 셋업 — Kvaser Leaf v3 꽂으면 can0 이 CAN FD(1M/2M) 로 자동 up
 sudo src/bridge_dspace/tools/can_setup/install.sh          # 개발 PC는 --vcan 추가 (루프백용)
 
 # ② GPS 수신기 명명 (/dev/ttyRover, /dev/ttyRadio, /dev/ttyF9P_uart2)
@@ -251,8 +251,8 @@ ros2 run adas_mgm go          # RTK FIXED·lane·scan·avoid·target_ref 수신 
 
 ### 3.7 USB 허브
 
-허브가 간헐적으로 전체 재열거를 일으켜 라디오 노드가 바뀌고(RTCM 중계 죽음) PCAN 이 순간
-끊긴다. 증상이 반복되면 **PCAN 을 PC 직결 포트로** 옮긴다.
+허브가 간헐적으로 전체 재열거를 일으켜 라디오 노드가 바뀌고(RTCM 중계 죽음) CAN 어댑터가 순간
+끊긴다. 증상이 반복되면 **CAN 어댑터를 PC 직결 포트로** 옮긴다.
 
 ### 3.8 RTK 워밍업
 
@@ -389,7 +389,7 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 | `PackageNotFoundError: stack_gps` | **§3.2** — 빌드 방식 혼용. `rm -rf build install log` 후 재빌드 |
 | launch 는 떴는데 차가 안 움직임 | **§3.5** — 정상이다. `ros2 run adas_mgm go` |
 | 차가 트랙과 나란히 어긋난 채로 감 | **§3.3** — 베이스 좌표 ↔ 웨이포인트 CSV 짝 |
-| CAN 안 올라옴 (`can0` 없음) | udev ①(§2.5) 설치 여부 → PCAN 재삽입 → **§3.7** 허브 |
+| CAN 안 올라옴 (`can0` 없음) | udev ①(§2.5) 설치 여부 → 어댑터 재삽입 → **§3.7** 허브. dmesg 에 `kvaser_usb` 가 없으면 커널이 Leaf v3 를 모르는 것 → CAN_BRINGUP.md §1 |
 | estop/조향이 이상하게 겹침 | **§3.4** — launch 중복 실행 |
 | PC 껐는데 차가 계속 굴러감 | **§3.6** — dSPACE watchdog 미구현. `can_zero` 가드 포함된 launch 를 쓸 것 |
 | stack_lane 기동 실패 | **§2.4** — `yolopv2.pt` 없음 |

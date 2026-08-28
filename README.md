@@ -23,7 +23,7 @@ source install/setup.bash
 
 ### ① PC↔dSPACE 왕복 검증 (최우선)
 
-최초 1회 — CAN 자동 셋업 설치 (이후 PCAN을 꽂으면 can0 자동 up, `--vcan`은 루프백용):
+최초 1회 — CAN 자동 셋업 설치 (이후 Kvaser Leaf v3을 꽂으면 can0이 CAN FD로 자동 up, `--vcan`은 루프백용):
 
 ```bash
 sudo src/bridge_dspace/tools/can_setup/install.sh --vcan

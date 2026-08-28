@@ -29,7 +29,8 @@ TTC < 임계면 즉시 정지. `ros2 run adas_mgm state`에 `AVOID(회피)`로 �
 
 ```bash
 # CAN — udev가 자동으로 1Mbps up. UP인지 만 확인
-ip link show can0          # state UP 이면 OK. 없으면 PCAN USB 재삽입
+ip link show can0          # state UP 이면 OK. 없으면 CAN 어댑터 USB 재삽입
+cat /sys/class/net/can0/mtu   # 72 = CAN FD ✔ (16 이면 브리지가 기동에서 죽는다)
 
 # 장치 노드 — 라디오·로버 심볼릭 링크 확인
 ls -l /dev/ttyRadio /dev/ttyRover
@@ -39,8 +40,8 @@ candump -n 3 can0          # 0x200/0x201/0x202 프레임 보이면 OK
 ```
 
 ⚠ **USB 허브 주의 (2026-08-11~12 실측):** 허브가 간헐적으로 전체 재열거를 일으켜
-라디오 노드가 바뀌고(V1 서버 죽음) PCAN이 순간 끊긴다. 증상이 반복되면
-**PCAN부터 PC 직결 포트로 이동.** 라디오 끊김 여부는 V1의 B/s 로그로 감시:
+라디오 노드가 바뀌고(V1 서버 죽음) CAN 어댑터가 순간 끊긴다. 증상이 반복되면
+**CAN 어댑터부터 PC 직결 포트로 이동.** 라디오 끊김 여부는 V1의 B/s 로그로 감시:
 `RTCM 없음`이 뜨면 V1을 재시작한다 (심볼릭 링크가 새 노드를 따라가므로 명령은 동일).
 
 ⚠ **RTK 워밍업:** 보정 주입 시작 후 첫 FIXED까지 **5~10분** 걸릴 수 있다
@@ -155,7 +156,7 @@ ros2 run adas_mgm go
 | fix_quality 5(FLOAT)에서 안 올라감 | V1 B/s 정상? 위성 시야? | 워밍업 5~10분 대기, 안테나 시야 확보 |
 | fix_quality 0 + 빈 points | FST 안테나·케이블 | MGM watchdog이 estop 보정 (안전 동작 정상) |
 | `go`에서 lane FAIL | 차선 카메라 MxID(`14442C105157D3D200`) 연결? | 카메라 재삽입, `lane_device:=cpu` 폴백 시험 |
-| `/vehicle/vector` 안 옴 | dSPACE 전원? `candump can0`? | dSPACE 기동 확인, PCAN 재삽입(§0) |
+| `/vehicle/vector` 안 옴 | dSPACE 전원? `candump can0`? MTU 72? | dSPACE 기동 확인, 어댑터 재삽입(§0). candump 엔 보이는데 토픽이 없으면 브리지 로그의 `bad CAN frame`(DLC≠8) 확인 |
 | `go`에서 avoid FAIL | `ros2 topic hz /perception/avoid` (~10Hz) | stack_avoid 로그 확인 — 라이다(/scan) 죽으면 avoid도 침묵 |
 | AVOID 중 정지 + "avoid 신선도 초과" 로그 | stack_avoid 사망 (MGM watchdog 정상 동작) | V2 재시작 |
 | 차선 인식 5.8Hz 미만 | V2 로그에 XPU 에러? | `lane_device:=cpu`로 재실행 |
