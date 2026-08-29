@@ -1,2 +1,2 @@
-ultralytics
-depthai>=2.30,<3.0
+ultralytics==8.4.61
+depthai==3.6.1

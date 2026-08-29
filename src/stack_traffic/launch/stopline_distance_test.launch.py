@@ -7,16 +7,31 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
-def generate_launch_description():
+DEFAULT_TRAFFIC_OAK_MXID = "14442C10B167CFD200"
+
+
+def build_node_parameters():
+    """launch와 테스트가 공유하는 stack_traffic 파라미터를 만든다."""
+    oak_mxid = LaunchConfiguration("oak_mxid")
+    oak_usb_speed = LaunchConfiguration("oak_usb_speed")
+    oak_width = LaunchConfiguration("oak_width")
+    oak_height = LaunchConfiguration("oak_height")
+    oak_fps = LaunchConfiguration("oak_fps")
     oak_depth_enabled = LaunchConfiguration("oak_depth_enabled")
     stop_distance = LaunchConfiguration("stopline_stop_distance_m")
     stop_y_ratio = LaunchConfiguration("stopline_stop_y_ratio")
     resume_on_green = LaunchConfiguration("resume_on_green")
-    parameters = {
+    show_debug = LaunchConfiguration("show_debug")
+    return {
         "camera_backend": "oak",
-        "oak_width": 1280,
-        "oak_height": 720,
-        "oak_fps": 30.0,
+        "oak_width": ParameterValue(oak_width, value_type=int),
+        "oak_height": ParameterValue(oak_height, value_type=int),
+        "oak_fps": ParameterValue(oak_fps, value_type=float),
+        "oak_mxid": ParameterValue(oak_mxid, value_type=str),
+        "oak_usb_speed": ParameterValue(
+            oak_usb_speed,
+            value_type=str,
+        ),
         "oak_depth_enabled": ParameterValue(
             oak_depth_enabled,
             value_type=bool,
@@ -48,7 +63,8 @@ def generate_launch_description():
         "tracking_minimum_size_similarity": 0.40,
         "bbox_smoothing_current_weight": 0.65,
         "template_tracking_enabled": True,
-        # fresh YOLO가 흔들려도 고득점 고정-template은 약 4~5초 유지한다.
+        # 현장 검증값을 유지한다. 실제 유효 시간은 처리 FPS에 비례하므로
+        # USB2/10fps 통합 후 별도 A/B 없이 프레임 수를 함께 바꾸지 않는다.
         "template_tracking_max_age_frames": 120,
         "template_tracking_max_consecutive_failures": 3,
         "template_tracking_context_scale": 1.8,
@@ -112,16 +128,54 @@ def generate_launch_description():
         "resume_on_red_clear": False,
         # interval=2와 로그 주기가 겹쳐 YOLO 프레임만 빠지지 않게 홀수 사용.
         "print_every": 9,
-        "show_debug": True,
+        "show_debug": ParameterValue(show_debug, value_type=bool),
         "show_auxiliary_debug": False,
     }
+
+
+def generate_launch_description():
+    parameters = build_node_parameters()
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "oak_depth_enabled",
-                default_value="true",
+                "oak_mxid",
+                default_value=DEFAULT_TRAFFIC_OAK_MXID,
                 description=(
-                    "true=RGB 정렬 depth 측정, false=y 기준 경량 실행"
+                    "교통용 OAK-D MxID. 기본값은 현재 차량의 교통 카메라; "
+                    "다른 장치로 시험할 때만 명시적으로 재정의"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "oak_usb_speed",
+                default_value="high",
+                description=(
+                    "high=USB2(480M) 강제, super=USB3 상한. "
+                    "차량에서는 GNSS 간섭 완화를 위해 high 사용"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "oak_width",
+                default_value="1280",
+                description="OAK RGB 출력 폭(px)",
+            ),
+            DeclareLaunchArgument(
+                "oak_height",
+                default_value="720",
+                description="OAK RGB 출력 높이(px)",
+            ),
+            DeclareLaunchArgument(
+                "oak_fps",
+                default_value="10.0",
+                description=(
+                    "USB2 차량 프로필은 10fps. 30fps는 USB2 대역폭 초과"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "oak_depth_enabled",
+                default_value="false",
+                description=(
+                    "false=검증된 RGB 정지선 y 기준 차량 실행. "
+                    "true=저해상도 depth 진단용"
                 ),
             ),
             DeclareLaunchArgument(
@@ -135,7 +189,9 @@ def generate_launch_description():
                 description=(
                     "0이면 y 조건 비활성, 0~1.10이면 화면 높이 대비 "
                     "정지선 최하단 끝점의 시간 중앙값 임계값"
-                    "(1 초과는 화면 아래 외삽)"
+                    "(1 초과는 화면 아래 외삽). 현장값 0.98은 현재 ROI·"
+                    "고정 장착·0.28m/s 이하에서만 검증됐으며 카메라 장착, "
+                    "ROI 또는 속도 변경 시 재보정"
                 ),
             ),
             DeclareLaunchArgument(
@@ -144,6 +200,13 @@ def generate_launch_description():
                 description=(
                     "true=fresh YOLO 초록 3/5에서 재출발, "
                     "false=정지 래치 자동 해제 없음"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "show_debug",
+                default_value="false",
+                description=(
+                    "true=OpenCV 진단 창 표시, false=headless 실차 실행"
                 ),
             ),
             Node(
