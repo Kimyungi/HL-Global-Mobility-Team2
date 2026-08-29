@@ -186,6 +186,12 @@ ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
     waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv
 ```
 
+ros2 launch adas_mgm MBD_lane_gps_can.launch.py \
+    REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv \
+    ydlidar_params:=$HOME/ydlidar_ros2_ws/src/ydlidar_ros2_driver/params/Tmini-Plus-SH.yaml
+
+
 **② 실주행** — ①을 통과한 뒤에만. 토큰을 주면 `bridge_dspace` + `can_zero` 가드가 붙는다.
 
 ```bash

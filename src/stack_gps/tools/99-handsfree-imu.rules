@@ -1,0 +1,11 @@
+# HandsFree HFI-A9 IMU → /dev/ttyUSB_IMU  (stack_gps node.py 의 imu_port 기본값)
+#
+# 왜 product 로 거르나: IMU 도 라이다도 전부 Silicon Labs 10c4:ea60 이라
+# vid/pid 만으로는 구분이 안 된다. 실제로 99-ydlidar.rules 가 vid/pid 만 보고
+# 매칭해서 IMU 에까지 /dev/ydlidar 를 붙이고 있다 (2026-08-25 확인).
+# product 문자열은 IMU 만 "HandsFree IMU ..." 라 이것으로 유일하게 갈린다.
+#
+# 설치: sudo cp 99-handsfree-imu.rules /etc/udev/rules.d/
+#       sudo udevadm control --reload-rules && sudo udevadm trigger
+# 확인: ls -l /dev/ttyUSB_IMU
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{product}=="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="ttyUSB_IMU"

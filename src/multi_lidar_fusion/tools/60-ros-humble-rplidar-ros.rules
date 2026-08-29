@@ -1,0 +1,8 @@
+# rplidar_ros 패키지 규칙의 덮어쓰기본 — 무력화 (2026-08-25)
+#
+# 같은 이름으로 /etc/udev/rules.d/ 에 두면 /lib/udev/rules.d/ 의 원본보다 우선하고,
+# 패키지를 업그레이드해도 되돌아가지 않는다.
+# 원본은 vid/pid 만 보고 매칭해 IMU 에까지 /dev/rplidar 를 붙였다.
+# /dev/rplidar 는 이제 99-fma-lidars.rules 가 좌측 C1M1 하나에만 붙인다.
+#
+# 설치: sudo cp 60-ros-humble-rplidar-ros.rules /etc/udev/rules.d/
