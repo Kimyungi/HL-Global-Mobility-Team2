@@ -174,8 +174,15 @@ adas_ws/src/
   | 용도 | MxID | 핀닝 위치 |
   |---|---|---|
   | 차선 (stack_lane) | `14442C105157D3D200` | `stack_lane/node.py` `camera_mxid` 기본값 (main 반영 완료) |
-  | 신호등·정지선 (stack_traffic) | `14442C10B167CFD200` | `stack_traffic` launch `oak_mxid` 기본값 (PR #29, draft) |
+  | 신호등·정지선 (stack_traffic) | `14442C10B167CFD200` | `stack_traffic/node.py` `oak_mxid` 기본값 + `stack_traffic` launch·통합 실차 launch `traffic_mxid` (main 반영 완료) |
   MxID는 18자리다 — PR #29 본문 메모의 차선용 19자리 표기는 오타(잘못된 `C` 삽입)이며 이 표가 정본.
+- **⚠ depthai v3 에서 인자 없는 `dai.Pipeline()` 을 부르지 말 것 (2026-08-29):** v3 는
+  이때 **기본 장치를 암묵적으로 연다**(실측: `getDefaultDevice()` 가 Device 반환).
+  즉 MxID 핀닝이 적용되기도 전에 아무 카메라나 잡는다 — 위 표의 핀닝이 무력화된다.
+  세대 판별은 반드시 **클래스 속성**으로 한다(`hasattr(dai.Pipeline, 'start')` /
+  `hasattr(dai.Pipeline, 'createColorCamera')`) — 하드웨어를 건드리지 않는다.
+  stack_lane 은 2026-08-25(PR #48), stack_traffic 은 2026-08-29(PR #53)에 각각 고쳤다.
+  v3 에는 `dai.node.XLinkOut` 도 없다(실측 `hasattr` = False) — v2 경로 전용이다.
 - **⚠ OAK-D USB3가 GPS RTK를 죽인다 — 카메라는 반드시 USB2로 (2026-08-14 실측 확정):**
   OAK-D는 부팅되면 SuperSpeed(5Gbps)로 재열거되는데, 그 광대역 방사 잡음이 GNSS
   L1(1575MHz)을 덮어 **로버 C/N0를 최대 16.5dB 떨어뜨린다**. 같은 안테나 위치에서
