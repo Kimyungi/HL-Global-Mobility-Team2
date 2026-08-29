@@ -1,5 +1,7 @@
 import os
 
+from ament_index_python.packages import (
+    PackageNotFoundError, get_package_share_directory)
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
@@ -8,6 +10,27 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 CONFIRM_TOKEN = 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX'
+
+
+def ydlidar_file(*parts):
+    """`ydlidar_ros2_driver` 안의 파일 경로 — **저장소 설치본이 1순위**.
+
+    2026-08-29: 기본값이 `~/ydlidar_ws/src/...` 로 박혀 있었는데 이 PC 의 실제
+    워크스페이스는 `~/ydlidar_ros2_ws` 라 파일이 없었다. 없으면 드라이버가 뜨자마자
+    죽고 `/scan` 이 0Hz 가 되는데 증상은 "go 가 안 통과한다"로만 보인다.
+    저장소가 드라이버를 직접 갖고 있으므로 설치본을 기본값으로 쓰고, 외부
+    워크스페이스는 옛 세팅 호환용 폴백으로만 남긴다.
+    """
+    cands = []
+    try:
+        cands.append(os.path.join(
+            get_package_share_directory('ydlidar_ros2_driver'), *parts))
+    except PackageNotFoundError:
+        pass
+    home = os.path.expanduser('~')
+    cands += [os.path.join(home, ws, 'src', 'ydlidar_ros2_driver', *parts)
+              for ws in ('ydlidar_ros2_ws', 'ydlidar_ws')]
+    return next((p for p in cands if os.path.isfile(p)), cands[0])
 
 
 def validate_real_vehicle_confirmation(context):
@@ -21,12 +44,22 @@ def validate_real_vehicle_confirmation(context):
             'Set REAL_VEHICLE_CONFIRM:=' + CONFIRM_TOKEN
         )
 
+    # 라이다 파라미터 파일은 여기서 반드시 확인한다. 없으면 드라이버가 뜨자마자
+    # 죽고 respawn=True 로 2초마다 되살아나기만 해 /scan 이 영영 0Hz 인데, 화면에는
+    # "go 가 안 통과한다"로만 보여 원인이 라이다로 안 보인다 (2026-08-29: 기본값이
+    # 없는 워크스페이스를 가리키고 있었다 — ydlidar_file() 주석 참조).
+    ydlidar_params = LaunchConfiguration('ydlidar_params').perform(context)
+    if not os.path.isfile(ydlidar_params):
+        raise RuntimeError(
+            f'라이다 파라미터 파일 없음: {ydlidar_params}\n'
+            '  ydlidar_ros2_driver 를 빌드했는지 확인하거나 '
+            'ydlidar_params:=<경로> 로 직접 지정하세요.')
+
     return []
 
 
 def generate_launch_description():
-    default_ydlidar_params = os.path.join(
-        os.path.expanduser('~'), 'ydlidar_ws', 'src', 'ydlidar_ros2_driver',
+    default_ydlidar_params = ydlidar_file(
         'params', 'Tmini-Plus-SH.yaml')
 
     return LaunchDescription([

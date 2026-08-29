@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""전 센서 일괄 점검 — 확정된 USB 배치가 그대로인지 한 번에 본다.  (2026-08-27)
+"""전 센서 일괄 점검 — 확정된 USB 배치가 그대로인지 한 번에 본다.  (2026-08-29)
 
 왜 필요한가
   센서가 7종(라이다 4 · 카메라 2 · IMU · GPS · CAN)이고, 고장이 대개
@@ -63,8 +63,14 @@ def check_links():
 
 
 def check_hub_split():
-    """카메라가 라이다와 다른 허브에 있는지 (HANDOVER §3.7)."""
-    print('\n== 허브 분리 (카메라 ↔ 라이다) ==')
+    """카메라와 라이다의 허브 동거 여부 (HANDOVER §3.7).
+
+    2026-08-29 에 **판정에서 경고로 내렸다.** 카메라에 전원·통신을 별도 라인으로
+    빼면서 전류 경합의 원인 자체가 사라졌고, 앞으로는 허브 하나로 운용한다.
+    그래도 지우지 않는 이유는 이 동거가 **고장처럼 안 보이는 증상**을 만들기
+    때문이다 — RPLiDAR 가 `health OK` 인데 `/scan` 0Hz 면 여기부터 의심한다.
+    """
+    print('\n== 허브 배치 (카메라 ↔ 라이다) ==')
 
     def id_path(dev):
         try:
@@ -111,12 +117,13 @@ def check_hub_split():
         return
     shared = lidar_hubs & cam_hubs
     if shared:
-        report(False, '허브 분리',
-               f'★ 카메라와 라이다가 같은 허브({",".join(sorted(shared))}) — '
-               f'RPLiDAR 모터가 안 돌 수 있다 (HANDOVER §3.7)')
+        report(False, '허브 배치',
+               f'카메라와 라이다가 같은 허브({",".join(sorted(shared))}) — '
+               '카메라 전원이 별도 라인일 때만 무해하다. RPLiDAR 가 health OK 인데 '
+               '/scan 0Hz 면 여기부터 의심 (HANDOVER §3.7)', warn=True)
     else:
-        report(True, '허브 분리',
-               f'라이다 {sorted(lidar_hubs)} ↔ 카메라 {sorted(cam_hubs)}')
+        report(True, '허브 배치',
+               f'라이다 {sorted(lidar_hubs)} ↔ 카메라 {sorted(cam_hubs)} (분리)')
 
 
 def check_imu():
@@ -307,7 +314,7 @@ def main():
                     help='카메라 부팅 생략 (GPS 측정 중이면 권장)')
     args = ap.parse_args()
 
-    print('전 센서 점검 — 확정 배치(2026-08-27)와 대조')
+    print('전 센서 점검 — 확정 배치(2026-08-29)와 대조')
     check_links()
     check_hub_split()
     check_imu()
