@@ -499,6 +499,8 @@ back-to-back parity(`parity_replay`).
 
 ## 참조
 
+- `RUNBOOK_full_no_parking.md` — 운영 C++ 코어로 주차를 뺀 전 시나리오(신호등 포함)를
+  한 번에 돌리는 런북. **이 문서의 launch 와 동시에 띄우지 말 것** (estop·mgm·bridge 중복)
 - [`base_station/BASE_SURVEY.md`](../stack_gps/tools/base_station/BASE_SURVEY.md) — 베이스 좌표 측량
 - [`base_station/BASE_MOVE.md`](../stack_gps/tools/base_station/BASE_MOVE.md) — 지점 이동
 - [`base_station/BASE_LOCATIONS.md`](../stack_gps/tools/base_station/BASE_LOCATIONS.md) — 좌표·코스 레지스트리

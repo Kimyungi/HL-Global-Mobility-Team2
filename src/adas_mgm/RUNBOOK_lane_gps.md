@@ -164,6 +164,9 @@ ros2 run adas_mgm go
 
 ## 참조
 
+- **신호등까지 한 번에(주차 제외 전 시나리오): `RUNBOOK_full_no_parking.md`**
+  — 이 문서의 상위집합이다. `traffic_enabled:=true` 로 신호등·정지선이 추가되고,
+  그때만 필요한 준비(ML 사전점검·2카메라 USB2 대역폭)와 진단이 거기 있다.
 - **회피 통합 실차 시험 (첫 검증 절차·판정 기준·튜닝 노브): `RUNBOOK_avoid_field_test.md`**
 - GPS 단독 주행·코스 기록·현장 검증 절차: `src/stack_gps/DRIVE_GUIDE.md` (PART A)
 - 차선 캘리브레이션: `src/stack_lane/CALIBRATION_GUIDE.md`
