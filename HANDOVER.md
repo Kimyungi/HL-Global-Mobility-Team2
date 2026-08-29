@@ -90,18 +90,45 @@ NVIDIA 가 없고 인텔 Arc iGPU 라 XPU 빌드를 썼다.
 > 차선을 안 쓸 거면 PyTorch 없이도 된다 — launch 에 `lane_enabled:=false`,
 > 출발 인가는 `ros2 run adas_mgm go --skip-lane`.
 
-**⚠ 신호등(stack_traffic)은 이 PC 조합에서 기동 불가 상태다 (2026-08-24 실측).**
-`ultralytics` → `torchvision` 을 끌어오는데 `import torchvision` 자체가 실패한다:
+**신호등(stack_traffic)에는 `torchvision` 과 `ultralytics` 가 더 필요하다.**
+2026-08-24 에는 이 PC 에서 기동 불가였다 — `import torchvision` 이
+`RuntimeError: operator torchvision::nms does not exist` 로 죽었다. **2026-08-29 에
+해결했다.** 원인은 torchvision 이 지금 깔린 torch 와 다른 빌드였던 것이고, 뒤에는
+아예 없는 상태였다.
 
-```
-RuntimeError: operator torchvision::nms does not exist
+핵심은 **torch 와 torchvision 을 같은 채널·같은 세대로 맞추는 것**이다
+(torch 2.12 ↔ torchvision 0.27). XPU 빌드 torch 에 일반 torchvision 을 섞으면
+native op 가 안 붙어 위 오류가 난다.
+
+```bash
+# ① torchvision — torch 와 같은 XPU 채널에서, 같은 세대로.
+#    --no-deps 필수: 빼면 numpy·Pillow 를 끌어올려 시스템/ROS 쪽을 흔든다.
+python3 -m pip install --no-deps --index-url https://download.pytorch.org/whl/xpu \
+    "torchvision==0.27.1+xpu"
+
+# ② ultralytics — 마찬가지로 --no-deps. 빼면 opencv-python 이 딸려 들어와
+#    ROS 의 python3-opencv(cv2 4.5.4)를 가린다.
+python3 -m pip install --no-deps "ultralytics==8.4.61"
+
+# ③ 확인 — 8개 항목이 전부 PASS 여야 한다
+ros2 run stack_traffic stack_traffic_ml_preflight
+#   -> ML_RUNTIME_READY (exit 0)
+#   실패하면 어느 항목인지 그대로 찍는다. 설치·삭제·업데이트는 하지 않는다.
 ```
 
-torchvision 이 지금 깔린 torch 와 다른 버전에 맞춰 빌드된 것이다(XPU 빌드 torch 와
-일반 torchvision 을 섞은 결과로 보인다). stack_lane 은 torchvision 을 안 쓰므로 멀쩡하고,
-**stack_traffic 만 막힌다.** 신호등을 쓰려면 torch/torchvision 을 **짝이 맞는 조합으로**
-다시 설치해야 한다 — 그때 stack_lane 의 XPU 동작이 유지되는지 함께 확인할 것.
-담당자(김재민)가 떠났으므로 이 문제를 아는 사람이 없다.
+ultralytics 의 나머지 의존(yaml·requests·matplotlib·scipy·psutil·PIL)은 22.04 의
+시스템 패키지로 이미 충족된다. `pandas`·`tqdm` 은 없지만 신호등 경로에서 쓰지 않는다.
+
+**설치 후 stack_lane 회귀를 반드시 확인할 것** — 이 조합에서 실측했다:
+
+| 항목 | 값 |
+|---|---|
+| torch / torchvision | `2.12.1+xpu` / `0.27.1+xpu` |
+| ultralytics / depthai | `8.4.61` / `3.6.1` |
+| YOLOPv2 640² fp16 XPU (stack_lane) | **35.8 ms/frame (28.0Hz)** — 8/25 실측 35ms 와 동일, 회귀 없음 |
+| YOLOv8n 640 CPU (stack_traffic) | 25 ms/frame, class 9 = traffic light |
+
+담당자(김재민)가 떠났으므로 이 절차가 유일한 기록이다.
 
 ### 2.4 저장소에 **없는** 파일 — 수동으로 채워야 한다
 

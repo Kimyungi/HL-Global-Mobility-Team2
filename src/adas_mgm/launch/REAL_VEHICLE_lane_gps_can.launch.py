@@ -7,6 +7,9 @@
                  laser_static_tf는 제거 (같은 TF 2중 발행 시 비결정적, PR #23·2026-08-09 규명)
   stack_gps    — waypoint_csv 필수 인자
   stack_lane   — 실측 호모그래피·MxID 핀닝·오실레이션 잠정 튜닝(TESTING_LOG §7.3) 기본 적용
+  stack_traffic — 신호등·정지선 (2026-08-29 통합). **기본 꺼짐** — traffic_enabled:=true
+                 로 켠다. 2번째 OAK-D 를 쓰므로 USB2 대역폭을 차선과 나눠 쓴다
+                 (traffic_width/height 주석 참조). 끄면 거동은 통합 전과 동일하다.
   adas_mgm     — config/params.yaml 적용 (기존 REAL_VEHICLE launch는 params 누락이었음)
   bridge_dspace — 실제 CAN TX + 종료 시 can_zero로 목표값 0 복귀
                  (dSPACE watchdog 미구현 실측 2026-08-09 — CLAUDE.md §3 주의 참조)
@@ -28,6 +31,14 @@
   ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
       REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv
+
+  신호등까지 함께 (카메라 2대):
+  ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
+      REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+      waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
+      traffic_enabled:=true
+  ★ 켜기 전에 `ros2 run stack_traffic stack_traffic_ml_preflight` 가
+    ML_RUNTIME_READY 인지 확인할 것 (HANDOVER §2.3).
 """
 import csv
 import os
@@ -335,6 +346,36 @@ def generate_launch_description():
         #   봐야 보인다. 안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 올린다:
         #     ros2 launch ... usb_speed:=super camera_fps:=30
         DeclareLaunchArgument('usb_speed', default_value='high'),
+
+        # ── 신호등·정지선 (stack_traffic, OAK-D 2번째 대) ─────────────────────
+        # ★ 기본 꺼짐이다. 켜면 두 가지가 바뀐다:
+        #   ① 카메라가 2대가 되어 USB2 대역폭을 나눠 쓴다 (아래 대역폭 주석)
+        #   ② 적색+정지선에서 v_ref 0 이 걸린다 (MGM §5.7 ③ traffic watchdog 도
+        #      "수신 이력이 있은 뒤" 활성화되므로, 안 띄우면 지금과 완전히 같다)
+        # 회피 구간 게이트가 원주 전용 선택인 채 전 코스 기본이 돼 한라대에서
+        # 회피를 통째로 막았던 사고(2026-08-25, CLAUDE.md §4)와 같은 계열이라,
+        # 시나리오 기능은 인자로 켠다.
+        #   ros2 launch ... traffic_enabled:=true
+        DeclareLaunchArgument('traffic_enabled', default_value='false'),
+        # 신호등용 OAK-D MxID (CLAUDE.md §6 정본표). 차선용과 반드시 달라야 한다 —
+        # 핀닝이 없거나 겹치면 어느 노드가 어느 카메라를 잡을지 부팅 순서에 좌우된다.
+        DeclareLaunchArgument('traffic_mxid', default_value='14442C10B167CFD200'),
+        # ⚠ USB2 공유 대역폭 — 두 카메라가 같은 허브(2026-08-27 확정 배치의 허브 A)에
+        #   물려 있고 둘 다 USB2(480Mbps, 실효 ~40MB/s)다. 비압축 BGR 3B/px 기준:
+        #     차선   1280x720@10 = 27.65 MB/s
+        #     신호등 1280x720@10 = 27.65 MB/s   → 합계 55.3 MB/s  ★ 실효치 초과
+        #     신호등  640x360@10 =  6.91 MB/s   → 합계 34.6 MB/s  (여유 있음)
+        #   stack_traffic 의 대역폭 검사는 **카메라 한 대씩만** 본다(36MB/s 상한)
+        #   → 각각은 통과하지만 합계는 못 본다. 2대 동시 fps 는 실차 미검증이므로
+        #   기본을 640x360 으로 둔다. 신호등이 멀어 안 잡히면 그때 올리고
+        #   (traffic_width:=1280 traffic_height:=720) 양쪽 fps 를 실측할 것.
+        DeclareLaunchArgument('traffic_width', default_value='640'),
+        DeclareLaunchArgument('traffic_height', default_value='360'),
+        # 정지 게이트. 0 = **측정 전용**(정지 요구를 만들지 않는다). 첫 실차 세션은
+        # 이 상태로 돌려 로그의 y_ratio 분포를 보고 값을 정한다 — 현장값 0.98 은
+        # 옛 ROI·고정 장착·0.28m/s 이하에서만 검증됐고, 카메라 장착·ROI·속도가
+        # 바뀌면 재보정 대상이다 (stack_traffic/REQUIREMENTS.md).
+        DeclareLaunchArgument('traffic_stop_y_ratio', default_value='0.0'),
         # NVIDIA 없음 — 인텔 iGPU를 XPU 백엔드로 쓴다.
         #   산업용 PC (Arc 140V)      fp16 172ms/frame ≈ 5.8Hz   (2026-08-11)
         #   Xanadu-book5 (Lunar Lake) fp16  35ms/frame ≈ 28.7Hz  (2026-08-25)
@@ -548,6 +589,41 @@ def generate_launch_description():
                      "' if '", LaunchConfiguration('lane_debug'), "' == 'true' else ''"]),
                 'coeff_smoothing_alpha': ParameterValue(
                     LaunchConfiguration('coeff_smoothing_alpha'), value_type=float),
+            }],
+            output='screen',
+        ),
+
+        # 신호등·정지선 — 2번째 OAK-D. traffic_enabled:=true 일 때만 뜬다.
+        # MGM 은 /perception/traffic_stop 을 구독만 하고(§5.7 ③), 이 노드가
+        # 없으면 watchdog 도 잠들어 있으므로 껐을 때 거동은 지금과 동일하다.
+        Node(
+            package='stack_traffic',
+            executable='stack_traffic_node',
+            name='stack_traffic_node',
+            condition=IfCondition(LaunchConfiguration('traffic_enabled')),
+            parameters=[{
+                # 노드 기본은 'opencv'(USB 웹캠) — 실차는 반드시 oak 로 바꾼다.
+                'camera_backend': 'oak',
+                'oak_mxid': LaunchConfiguration('traffic_mxid'),
+                # 차선 카메라와 같은 대책을 공유한다 — USB3 로 열거되면 GNSS L1 이
+                # 덮여 RTK 가 죽는다 (CLAUDE.md §6). 두 카메라가 따로 놀면 안 된다.
+                'oak_usb_speed': LaunchConfiguration('usb_speed'),
+                'oak_fps': ParameterValue(
+                    LaunchConfiguration('camera_fps'), value_type=float),
+                'oak_width': ParameterValue(
+                    LaunchConfiguration('traffic_width'), value_type=int),
+                'oak_height': ParameterValue(
+                    LaunchConfiguration('traffic_height'), value_type=int),
+                # RGB-only. depth 는 진단용이고 USB2 에서 2B/px 를 더 얹는다.
+                'oak_depth_enabled': False,
+                # y gate 를 쓰려면 정지선 검출이 켜져 있어야 한다(노드가 검증).
+                'stopline_detection_enabled': True,
+                'stopline_stop_y_ratio': ParameterValue(
+                    LaunchConfiguration('traffic_stop_y_ratio'), value_type=float),
+                # 시연 신호등은 적색=정지 / 초록=재출발 타입 (2026-08-09 팀장 결정,
+                # CLAUDE.md §6). 패키지 기본은 자동 해제 없음이라 실차에서 켠다.
+                'resume_on_green': True,
+                'resume_on_red_clear': False,
             }],
             output='screen',
         ),
