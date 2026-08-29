@@ -17,6 +17,10 @@ stop_required를 v_ref=0으로 병합하고 bridge_dspace가 CAN으로 전송한
 
 from __future__ import annotations
 
+# ★ 반드시 torch/ultralytics(아래 cv2·YOLO) 보다 **먼저** — OpenMP 워커가 놀 때
+#   도는 것을 막는다. 이유·실측은 omp_runtime 모듈 docstring 참조.
+from stack_traffic import omp_runtime  # noqa: F401  (import 만으로 동작)
+
 import math
 import time
 import traceback
