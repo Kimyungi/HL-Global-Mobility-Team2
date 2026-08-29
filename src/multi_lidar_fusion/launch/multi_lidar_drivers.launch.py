@@ -45,18 +45,42 @@ BY_PATH = '/dev/serial/by-path/'
 #
 #   ★ by-path 는 "허브의 그 구멍"이 주소다. 케이블을 다른 포트에 옮겨 꽂으면
 #     앞/뒤가 조용히 뒤바뀐다. 옮겼으면 view_one_lidar 로 다시 확인할 것.
+#
+# ★★ 2026-08-27: 기본값을 **udev 심링크**로 바꿨다.
+#
+#   왜 — 여기 적혀 있던 by-path(...1.2.4 / ...1.2.3)는 2026-08-25 에 이미 낡아
+#   있었다. 그날 udev 슬롯 고정(tools/99-fma-lidars.rules)을 넣으면서 이 표를
+#   같이 안 고쳤고, 실제 경로는 ...3.4 / ...3.3 이라 **launch 가 인자 없이는
+#   YDLiDAR 두 대를 못 연다.** 값이 두 곳에 갈라져 있는 한 같은 일이 또 난다.
+#
+#   심링크는 그 갈라짐을 없앤다 — 슬롯의 단일 원천이 udev 규칙 한 곳이 되고,
+#   규칙이 ID_PATH(YD)·시리얼(RP)로 매칭하므로 **ttyUSB 번호가 바뀌어도,
+#   RPLiDAR 는 구멍을 옮겨 꽂아도 따라간다.**
+#
+#   ⚠ 전제: 규칙이 설치돼 있어야 한다. 없으면 네 링크가 아예 없어서
+#     "포트를 못 연다"로 나타난다 — 증상만 보면 라이다 고장과 구분이 안 된다.
+#       ls -l /dev/lidar_front /dev/lidar_rear /dev/lidar_left /dev/lidar_right
+#       sudo cp ../tools/99-fma-lidars.rules /etc/udev/rules.d/
+#       sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+#   ⚠ YD 두 대는 시리얼이 **둘 다 "0001"** 이라 규칙이 ID_PATH(허브 구멍)로
+#     가른다. 즉 **YD 를 다른 구멍에 옮겨 꽂으면 앞/뒤가 뒤바뀐다** — by-path
+#     시절과 같은 함정이고, 옮겼으면 규칙의 ID_PATH 를 고쳐야 한다:
+#       udevadm info -q property -n /dev/ttyUSBx | grep ID_PATH
+#
+#   되돌리려면 인자로 넘기면 된다 — 예: a1_port:=/dev/serial/by-path/...
 DEFAULT_PORTS = {
     # YDLiDAR T-mini Plus — 각분해능 0.839deg, range 12m
-    'a1': BY_PATH + 'pci-0000:00:14.0-usb-0:1.2.4:1.0-port0',   # 전방 (unit yd0)
-    'a2': BY_PATH + 'pci-0000:00:14.0-usb-0:1.2.3:1.0-port0',   # 후방 (unit yd1)
+    # 규칙이 허브 구멍(ID_PATH)으로 가른다: 전방 3.4 / 후방 3.3
+    'a1': '/dev/lidar_front',   # 전방 (unit yd0) — /dev/ttyUSB_LIDAR 와 같은 장치
+    'a2': '/dev/lidar_rear',    # 후방 (unit yd1)
     # SLAMTEC RPLiDAR C1M1 — 각분해능 0.499deg, range 16m
+    # 규칙이 시리얼로 가른다 (좌 f2ee467b… / 우 76d341fd…) — 구멍을 옮겨도 따라간다.
     # 2026-08-13 현장 식별값(view_one_lidar 로 한 대씩 확인). 8/14 에 한 번 맞바꿨다가
     # 되돌렸다 — "좌우가 서로의 자리"로 보이던 증상의 원인은 포트가 아니라 **각도 반전**
     # (아래 inverted 주석 참조)이었다.
-    'b1': BY_ID + ('usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
-                   'f2ee467bfb1df111a7b6c4e40f0f12f8-if00-port0'),   # 좌측 (unit rp1)
-    'b2': BY_ID + ('usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
-                   '76d341fd291ef1118e6dbee40f0f12f8-if00-port0'),   # 우측 (unit rp0)
+    'b1': '/dev/lidar_left',    # 좌측 (unit rp1)
+    'b2': '/dev/lidar_right',   # 우측 (unit rp0)
 }
 
 
@@ -147,7 +171,7 @@ def generate_launch_description():
         args.append(
             DeclareLaunchArgument(
                 sid + '_port', default_value=port,
-                description=sid + ' 시리얼 포트 (/dev/serial/by-id/ 권장)'))
+                description=sid + ' 시리얼 포트 (기본 = udev 슬롯 심링크 /dev/lidar_*)'))
         args.append(
             DeclareLaunchArgument(
                 'enable_' + sid, default_value='true',

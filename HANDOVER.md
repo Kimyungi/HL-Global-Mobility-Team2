@@ -252,10 +252,35 @@ ros2 run adas_mgm go          # RTK FIXED·lane·scan·avoid·target_ref 수신 
 (`can_zero`). 통합 launch 에는 이미 들어 있으니 그걸 쓰면 된다. 직접 노드를 조합해 돌릴 때는
 반드시 챙길 것.
 
-### 3.7 USB 허브
+### 3.7 USB 허브 — 카메라는 라이다와 **다른 허브**에 (2026-08-27 확정)
 
 허브가 간헐적으로 전체 재열거를 일으켜 라디오 노드가 바뀌고(RTCM 중계 죽음) CAN 어댑터가 순간
 끊긴다. 증상이 반복되면 **CAN 어댑터를 PC 직결 포트로** 옮긴다.
+
+**그리고 전류를 갈라라.** OAK-D 2대(각 500mA 신고)를 라이다와 같은 허브에 꽂으면
+**RPLiDAR C1M1 의 모터가 돌지 않는다.** 이게 고장처럼 안 보여서 반나절을 태웠다:
+
+```
+[rplidar_b1] RPLidar health status : OK.                    ← 정상
+[rplidar_b1] current scan mode: Standard, 5 KHz, 10.0 Hz    ← 정상
+ros2 service call /start_motor  → 정상 응답                  ← 정상
+ros2 topic hz /lidar/b1/scan    → 0 Hz                       ← ★ 여기만 이상
+```
+
+컨트롤러는 소비가 작아 멀쩡히 답하고 **모터 전류만 모자란** 상태다. 재기동·재연결·
+모터 서비스 호출 중 무엇으로도 안 풀린다. 허브를 갈라 카메라 1,000mA 를 덜어내자
+4대가 즉시 10Hz 로 살아났다. (좌측이 `SL_RESULT_OPERATION_TIMEOUT` 으로 죽는 형태로
+나타나기도 한다.)
+
+> **판정법**: RPLiDAR 가 health OK 인데 `/scan` 이 0Hz 면 소프트웨어를 뒤지지 말고
+> 같은 허브의 소비 전류부터 덜어낼 것.
+
+§3.1 과 헷갈리지 말 것 — 그건 카메라의 **전자기 잡음**이 GPS C/N0 를 깎는 것이고,
+이건 **전류**가 라이다 모터를 죽이는 것이다. 원인이 다르고 증상도 다르지만,
+대책은 같다: **카메라를 따로 둔다.**
+
+확정된 배치와 전체 점검 명령은 `src/multi_lidar_fusion/tools/99-fma-lidars.rules`
+머리주석과 `check_sensors.py` 에 있다.
 
 ### 3.8 RTK 워밍업
 

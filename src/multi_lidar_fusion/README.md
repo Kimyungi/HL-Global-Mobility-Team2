@@ -2,12 +2,29 @@
 
 2D LiDAR **4대를 하나의 가상 360° LiDAR로 추상화**하는 ROS 2 Humble 패키지.
 
-| 슬롯 | 위치 | 모델 | 포트 (2026-08-13 실차 확정) | 실측 |
-|---|---|---|---|---|
-| `a1` | 전방 | YDLiDAR T-mini Plus | by-path `…usb-0:1.2.4:1.0-port0` | 10.2 Hz, 0.839°, 12 m |
-| `a2` | 후방 | YDLiDAR T-mini Plus | by-path `…usb-0:1.2.3:1.0-port0` | 10.1 Hz, 0.839°, 12 m |
-| `b1` | 좌측 | SLAMTEC RPLiDAR C1M1 | by-id `…f2ee467b…` | 10 Hz, 0.499°, 16 m |
-| `b2` | 우측 | SLAMTEC RPLiDAR C1M1 | by-id `…76d341fd…` | 10 Hz, 0.499°, 16 m |
+| 슬롯 | 위치 | 모델 | 포트 (launch 기본값) | 규칙이 무엇으로 가르나 | 실측 |
+|---|---|---|---|---|---|
+| `a1` | 전방 | YDLiDAR T-mini Plus | `/dev/lidar_front` | 허브 구멍 `ID_PATH …3.4` | 10.2 Hz, 0.839°, 12 m |
+| `a2` | 후방 | YDLiDAR T-mini Plus | `/dev/lidar_rear` | 허브 구멍 `ID_PATH …3.3` | 10.1 Hz, 0.839°, 12 m |
+| `b1` | 좌측 | SLAMTEC RPLiDAR C1M1 | `/dev/lidar_left` | 시리얼 `f2ee467b…` | 10 Hz, 0.499°, 16 m |
+| `b2` | 우측 | SLAMTEC RPLiDAR C1M1 | `/dev/lidar_right` | 시리얼 `76d341fd…` | 10 Hz, 0.499°, 16 m |
+
+심링크는 `tools/99-fma-lidars.rules` 가 만든다. **설치돼 있어야 launch 가 돈다:**
+
+```bash
+ls -l /dev/lidar_front /dev/lidar_rear /dev/lidar_left /dev/lidar_right
+# 없으면
+sudo cp tools/99-fma-lidars.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+> 2026-08-27 에 기본값을 by-path 에서 심링크로 바꿨다. by-path 는 2026-08-25 udev
+> 규칙을 넣은 시점에 이미 낡아 있었고(`…1.2.4/1.2.3` → 실제 `…3.4/3.3`),
+> 값이 두 곳에 갈라져 있어서 생긴 일이다. 이제 슬롯의 단일 원천은 udev 규칙이다.
+>
+> ⚠ RPLiDAR 는 시리얼로 가르니 구멍을 옮겨도 따라가지만, **YDLiDAR 두 대는
+> 시리얼이 둘 다 `0001` 이라 허브 구멍으로만 갈린다** — 옮겨 꽂으면 앞/뒤가
+> 뒤바뀌므로 규칙의 `ID_PATH` 를 고쳐야 한다.
 
 회피 로직(`stack_avoid`)은 라이다가 4대라는 사실을 알 필요가 없다. **`/lidar/merged_scan` 하나만 구독**하면 된다.
 
