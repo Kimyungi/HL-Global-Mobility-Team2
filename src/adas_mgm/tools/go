@@ -9,6 +9,8 @@
   ③ scan 수신 (돌발정지 라이다)                 ④ target_ref 수신 (MGM 체인)
   ⑤ avoid 수신 (회피 인지 — 2026-08-12 통합)
 
+신호등 통합 런북에서는 `--require-traffic`을 붙여 ⑥ traffic_stop 수신도 필수로 한다.
+
 개별 점검을 건너뛰려면: --skip-lane (GPS 단독 시험 등), --skip-avoid,
 --force (전부 무시하고 인가).
 
@@ -26,7 +28,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Bool
 from sensor_msgs.msg import LaserScan
-from fma_interfaces.msg import AvoidStatus, GpsPath, LanePath, TargetRef
+from fma_interfaces.msg import AvoidStatus, GpsPath, LanePath, TargetRef, TrafficStop
 
 QUALITY_NAMES = {0: 'INVALID', 1: 'GPS', 2: 'DGPS', 4: 'RTK FIXED', 5: 'RTK FLOAT'}
 
@@ -35,6 +37,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--skip-lane', action='store_true', help='차선 점검 생략 (GPS 단독 시험)')
     ap.add_argument('--skip-avoid', action='store_true', help='회피 점검 생략 (구 launch 등)')
+    ap.add_argument('--require-traffic', action='store_true',
+                    help='신호등 인지 traffic_stop 수신을 출발 필수 조건으로 검사')
     ap.add_argument('--force', action='store_true', help='점검 전부 생략하고 인가 (비상용)')
     ap.add_argument('--timeout', type=float, default=8.0, help='토픽별 대기 시간 [s]')
     # `--ros-args` 뒤는 argparse 가 아니라 rclpy 몫이다. 안 잘라 내면
@@ -59,10 +63,13 @@ def main():
                              qos_profile_sensor_data)
     node.create_subscription(TargetRef, '/adas/target_ref', lambda m: latest.__setitem__('ref', m), 1)
     node.create_subscription(AvoidStatus, '/perception/avoid', lambda m: latest.__setitem__('avoid', m), 1)
+    node.create_subscription(TrafficStop, '/perception/traffic_stop',
+                             lambda m: latest.__setitem__('traffic', m), 1)
 
     if not args.force:
         need = ['gps', 'scan', 'ref'] + ([] if args.skip_lane else ['lane']) \
-            + ([] if args.skip_avoid else ['avoid'])
+            + ([] if args.skip_avoid else ['avoid']) \
+            + (['traffic'] if args.require_traffic else [])
         deadline = time.monotonic() + args.timeout
         while time.monotonic() < deadline and not all(k in latest for k in need):
             rclpy.spin_once(node, timeout_sec=0.2)
@@ -70,12 +77,15 @@ def main():
         ok = True
         for key, label in [('gps', 'GPS 경로'), ('lane', '차선 경로'),
                            ('scan', '라이다'), ('ref', 'MGM target_ref'),
-                           ('avoid', '회피 인지')]:
+                           ('avoid', '회피 인지'), ('traffic', '신호등 인지')]:
             if key == 'lane' and args.skip_lane:
                 print('  [skip] 차선 경로 (--skip-lane)')
                 continue
             if key == 'avoid' and args.skip_avoid:
                 print('  [skip] 회피 인지 (--skip-avoid)')
+                continue
+            if key == 'traffic' and not args.require_traffic:
+                print('  [skip] 신호등 인지 (--require-traffic 미지정)')
                 continue
             if key in latest:
                 print(f'  [OK]   {label}')
