@@ -5,6 +5,27 @@
 > **처음 세팅하는 PC라면 [HANDOVER.md](HANDOVER.md) 부터.** 새 PC 세팅 순서, 운용 함정
 > (카메라 USB3 가 RTK 를 죽이는 건 등), 남긴 미완 작업이 정리돼 있다.
 
+## 실차 운영 문서
+
+- 처음 측정하거나 카메라·신호등 위치가 바뀐 경우:
+  [통합 실차 측정 런북](src/adas_mgm/RUNBOOK_full_measurement_20260830.md)
+- 측정이 끝나고 `traffic_stop_y_ratio.txt`가 준비된 경우:
+  [통합 실차 운영 런북](src/adas_mgm/RUNBOOK_full_operation_20260830.md)
+- CAN FD 설치·복구·점검:
+  [CAN 실차 연결 가이드](src/bridge_dspace/CAN_BRINGUP.md)
+
+운영 런북의 명령은 저장소 루트가 `$HOME/FMA_ws`인 표준 설치를 기준으로 그대로
+복사해 실행할 수 있다. 다른 PC에서는 측정 런북을 먼저 수행해야 하며, 이 PC에서
+측정한 `traffic_stop_y_ratio.txt`를 복사해 사용하면 안 된다.
+
+현재 실차 표준은 `REAL_VEHICLE_lane_gps_can.launch.py` 하나다. 신호등 운영에서는
+`traffic_enabled:=true`, `traffic_require_stop_gate:=true`, 검증된
+`traffic_stop_y_ratio`를 함께 전달한다. `stack_traffic_node`는 두 OAK-D 동시 초기화
+경쟁으로 시작 실패하면 2초 뒤 자동 재기동한다. 출발 전 `/stack_traffic_node`와
+`red_phase=1 stopline=1 stable=1 y_ok=1 FINAL_STOP=1`, 초록에서 `FINAL_STOP=0`을
+확인한다. 정지선은 주간 흰색, 야간 국소 대비, 평행한 위·아래 에지 쌍을 동일한
+기하·3/5 안정성 조건으로 판정한다.
+
 ## 빌드
 
 ```bash

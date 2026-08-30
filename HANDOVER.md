@@ -251,7 +251,8 @@ rm -rf build install log && colcon build
 ### 3.4 launch 끼리 동시 실행 금지
 
 `REAL_VEHICLE_lane_gps_can.launch.py` 는 ydlidar + stack_estop + stack_avoid + stack_gps +
-stack_lane + adas_mgm + bridge_dspace + rosbag 을 **전부** 띄운다. 아래와 같이 켜면 estop·mgm·
+stack_lane + 선택적 stack_traffic + adas_mgm + bridge_dspace + rosbag 을 **전부** 띄운다.
+아래와 같이 켜면 estop·mgm·
 bridge·scan 이 중복돼 서로 싸운다:
 
 - `stack_estop/launch/REAL_VEHICLE_stack_estop_mgm_can.launch.py`
@@ -337,9 +338,16 @@ ros2 topic hz /lidar/b1/scan    → 0 Hz                       ← ★ 여기만
 | **V3** | 차량 PC | `ros2 run adas_mgm go` — 매 출발 직전 |
 
 ```bash
+source /opt/ros/humble/setup.bash
+source "$HOME/FMA_ws/install/setup.bash"
+COURSE="$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv"
+FMA_TRAFFIC_STOP_Y_RATIO="$(tr -d '[:space:]' < "$HOME/FMA_ws/traffic_stop_y_ratio.txt")"
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv
+    waypoint_csv:="$COURSE" \
+    traffic_enabled:=true \
+    traffic_require_stop_gate:=true \
+    traffic_stop_y_ratio:="$FMA_TRAFFIC_STOP_Y_RATIO"
 ```
 
 - `REAL_VEHICLE_CONFIRM` 토큰 없이는 거부된다 (실제 CAN TX 가 나가므로).
@@ -347,6 +355,10 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 - `usb_speed`·`camera_fps` 는 이제 기본값이 안전한 쪽이라 안 붙여도 된다 (§3.1).
 - 로그는 run 마다 `~/FMA_ws/drive_logs/run_<시각>/` 에 자동 저장(rosbag + 스냅샷 덤프 +
   지터 CSV + lateral CSV). 사후 분석의 재료이므로 지우지 말 것.
+- 두 OAK-D 동시 시작 경쟁으로 `stack_traffic_node`가 즉사하면 2초 뒤 자동 respawn한다.
+  출발 전 `ros2 node list | grep stack_traffic`에서 `/stack_traffic_node`를 확인한다.
+- 정지 상태에서 적색+정지선을 보여 `red_phase=1 stopline=1 stable=1 y_ok=1
+  FINAL_STOP=1`, 초록에서 `FINAL_STOP=0`을 확인하기 전에는 `go`를 실행하지 않는다.
 
 상태 관찰: `ros2 run adas_mgm state` (전이할 때마다 한 줄) / `--all` (매 초).
 
