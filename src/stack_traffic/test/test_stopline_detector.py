@@ -29,6 +29,54 @@ class TestStopLineDetector(unittest.TestCase):
         self.assertAlmostEqual(result.maximum_edge_y_px, 390, delta=2)
         self.assertLess(abs(result.angle_deg), 2.0)
 
+    def test_detects_dim_stop_bar_by_local_contrast_at_night(self):
+        frame = np.full((480, 640, 3), 35, dtype=np.uint8)
+        cv2.rectangle(frame, (45, 370), (595, 390), (90, 90, 90), -1)
+
+        result = detect_stop_line(frame)
+
+        self.assertTrue(result.detected)
+        self.assertGreater(result.width_ratio, 0.9)
+        self.assertAlmostEqual(result.maximum_edge_y_px, 390, delta=3)
+
+    def test_rejects_uniform_dim_road_at_night(self):
+        frame = np.full((480, 640, 3), 80, dtype=np.uint8)
+
+        result = detect_stop_line(frame)
+
+        self.assertFalse(result.detected)
+
+    def test_detects_stop_bar_from_horizontal_edge_pair_only(self):
+        frame = np.full((480, 640, 3), 55, dtype=np.uint8)
+        cv2.rectangle(frame, (45, 370), (595, 390), (85, 85, 85), -1)
+
+        result = detect_stop_line(
+            frame,
+            minimum_value=255,
+            local_contrast_enabled=False,
+            edge_pair_enabled=True,
+            edge_pair_canny_low=10,
+            edge_pair_canny_high=30,
+        )
+
+        self.assertTrue(result.detected)
+        self.assertGreater(result.width_ratio, 0.9)
+
+    def test_rejects_single_horizontal_edge(self):
+        frame = np.full((480, 640, 3), 55, dtype=np.uint8)
+        frame[380:, :] = 90
+
+        result = detect_stop_line(
+            frame,
+            minimum_value=255,
+            local_contrast_enabled=False,
+            edge_pair_enabled=True,
+            edge_pair_canny_low=10,
+            edge_pair_canny_high=30,
+        )
+
+        self.assertFalse(result.detected)
+
     def test_rejects_separated_zebra_stripes(self):
         for x in range(90, 570, 95):
             polygon = np.array(
