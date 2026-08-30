@@ -51,6 +51,10 @@ def can_bridge_with_zero_guard(condition=None, can_interface='can0', vehicle_csv
       ⓑ 상주 가드는 폴백으로 남긴다. 이벤트가 안 걸리는 경우(강제 종료 등) 대비이고,
          같은 0 을 쓰므로 ⓐ 와 겹쳐도 무해하다.
 
+    브리지 프로세스 자체가 예외 종료하면 ⓐ의 0 버스트(약 0.3초)가 끝난 뒤가 되도록
+    1초 지연 후 자동 respawn한다. USB 재열거는 노드 내부에서 소켓만 다시 열기 때문에
+    보통 respawn까지 가지 않으며, 프로세스 장애까지 사람 개입 없이 복구하는 2차 경로다.
+
     ★ `ros2 run` 으로 감싸면 안 된다 — 래퍼가 SIGINT 를 삼켜 가드가 안 돈다(실측).
       Node 액션은 실행 파일을 직접 띄우므로 신호가 그대로 전달된다.
 
@@ -65,6 +69,7 @@ def can_bridge_with_zero_guard(condition=None, can_interface='can0', vehicle_csv
     """
     bridge = Node(package='bridge_dspace', executable='can_bridge_node',
                   name='can_bridge_node', output='screen',
+                  respawn=True, respawn_delay=1.0,
                   parameters=[{'can_interface': can_interface,
                                'vehicle_csv_path': vehicle_csv_path,
                                'can_fd': can_fd}],
