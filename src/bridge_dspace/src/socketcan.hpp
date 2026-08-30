@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -29,6 +30,15 @@
 
 namespace bridge_dspace
 {
+
+// USB CAN 어댑터 재열거·인터페이스 down 때 소켓을 다시 열어야 하는 오류.
+// EAGAIN/EWOULDBLOCK 은 정상 수신 timeout 이므로 포함하지 않는다.
+inline bool isCanReconnectError(int error_number)
+{
+  return error_number == ENODEV || error_number == ENXIO ||
+         error_number == ENETDOWN || error_number == ENETRESET ||
+         error_number == ENETUNREACH || error_number == EBADF;
+}
 
 // 인터페이스 MTU 조회 — CAN_MTU(16)=classic 전용, CANFD_MTU(72)=FD 가능.
 // 실패(장치 없음 등)면 -1.
@@ -164,6 +174,7 @@ inline bool sendCanFrame(
     std::memcpy(f.data, &payload, sizeof(Payload));
     return ::write(sock, &f, CAN_MTU) == static_cast<ssize_t>(CAN_MTU);
   } else {
+    errno = EMSGSIZE;
     return false;
   }
 }
