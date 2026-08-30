@@ -32,6 +32,14 @@ uint8 HEADING_COG = 1
 uint8 HEADING_FUSED = 2
 uint8 heading_source
 
+# Consecutive valid GNSS-fix motion, expressed in the previous vehicle frame.
+# These values change only when a new valid GNSS sample is consumed.  The first
+# valid sample establishes the origin and therefore carries a zero delta.
+float64 dx
+float64 dy
+float64 dyaw
+uint64 update
+
 # ── 트랙 위 지정 구간 (2026-08-18 신설). 둘 다 "어디에 있나"라는 **측정값**이고,
 # 무엇을 할지(정지·회피 허용)는 MGM 스테이트 머신이 판단한다 (CLAUDE.md §5.1).
 #

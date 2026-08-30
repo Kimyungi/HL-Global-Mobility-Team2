@@ -579,6 +579,9 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     }
     --st.blend_left;
   } else if (is_stale_repeat) {
+    /* Hold the last ref until a new perception/GNSS sample arrives.  The old
+     * x -= commanded_velocity * 10ms pose estimate was intentionally removed. */
+#if 0
     // 새 인지 값이 아직 안 옴 → 직전 출력을 그대로 반복 송신하지 않고, 그동안
     // 차량이 이동했을 거리만큼 x(전방 거리)를 깎아서 내보낸다. 실제 속도 피드백
     // (dSPACE 0x202 vehicle_vector.v) 배선 없이, 우리가 직전 틱에 명령한 st.v를
@@ -617,6 +620,7 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
           ? st.ref_out[i].x - dx : MGM_MIN_REF_X;
       }
     }
+#endif
   } else {
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.ref_out[i] = target[i];

@@ -113,7 +113,7 @@ int main()
   {
     MpcTargetFdPayload tgt{};
     tgt.x = 1.8; tgt.y = -0.25; tgt.yaw = 0.12; tgt.curvature = 0.469;
-    // dx/dy/dyaw/update 는 0 (팀장 결정 2026-08-28)
+    tgt.dx = 0.06; tgt.dy = -0.01; tgt.dyaw = 0.005; tgt.update = 42;
     check(sendCanFrame(sv[0], kIdRefPointBase, tgt, /*fd=*/true), "MPC_TARGET(64B) 송신");
     CanRxFrame rx{};
     check(readCanFrame(sv[1], rx), "MPC_TARGET(64B) 수신");
@@ -123,10 +123,11 @@ int main()
     std::memcpy(back, rx.data, sizeof(back));
     check(back[0] == 1.8 && back[1] == -0.25 && back[2] == 0.12 && back[3] == 0.469,
       "x/y/yaw/curvature 가 DBC 오프셋 0/8/16/24");
-    check(back[4] == 0.0 && back[5] == 0.0 && back[6] == 0.0, "dx/dy/dyaw = 0");
+    check(back[4] == 0.06 && back[5] == -0.01 && back[6] == 0.005,
+      "dx/dy/dyaw 필드 보존");
     uint64_t upd = 1;
     std::memcpy(&upd, rx.data + 56, sizeof(upd));
-    check(upd == 0, "update = 0 (오프셋 56)");
+    check(upd == 42, "update 필드 보존 (오프셋 56)");
   }
   {
     VehFeedbackFdPayload fb{};

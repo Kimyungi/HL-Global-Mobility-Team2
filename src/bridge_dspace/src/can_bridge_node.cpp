@@ -164,7 +164,7 @@ private:
     bool ok = true;
     // v5: 0x101 한 프레임에 참조점 1개(float64 ×4). MGM 이 20점을 만들어도 **첫 점**만
     // 싣는다 — v3 의 REF_POINT_0 와 같은 점이라 의미가 바뀌지 않는다.
-    // dx/dy/dyaw/update 는 PR #52 에서 의미 미정이라 0 으로 채운다(팀장 결정).
+    // GNSS 갱신 사이에는 MGM이 같은 delta/update를 10ms마다 hold해서 보낸다.
     for (size_t i = 0; i < n; ++i) {
       const auto & p = msg.ref_points[i];
       MpcTargetFdPayload pt{};
@@ -172,6 +172,10 @@ private:
       pt.y = p.y;
       pt.yaw = p.yaw;
       pt.curvature = p.curvature;
+      pt.dx = msg.dx;
+      pt.dy = msg.dy;
+      pt.dyaw = msg.dyaw;
+      pt.update = msg.update;
       ok &= sendCanFrame(sock_, kIdRefPointBase + i, pt, can_fd_, can_fd_brs_);
     }
     // 헤더는 반드시 마지막 — dSPACE는 이 프레임에서 n_points개 세트를 latch

@@ -95,8 +95,8 @@ struct MpcTargetFdPayload  // 0x101 MPC_TARGET_FD — 64 B
   double y;          // [m]
   double yaw;        // [rad]
   double curvature;  // [1/m]
-  // dx/dy/dyaw/update: PR #52 에서 의미 미정. **0 으로 채운다** (팀장 결정 2026-08-28).
-  // 의미가 정해지면 여기와 PROTOCOL.md 를 함께 갱신할 것.
+  // Consecutive valid GNSS poses: translation in the previous vehicle frame,
+  // wrapped yaw difference, and the GNSS sample sequence number.
   double dx;
   double dy;
   double dyaw;

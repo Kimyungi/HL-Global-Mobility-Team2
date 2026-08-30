@@ -933,6 +933,8 @@ void mgm_step(void)
 
       ADAS_MGR2_DW.blend_left--;
     } else if (is_stale_repeat) {
+      /* Hold the last reference until a new perception/GNSS sample arrives. */
+#if 0
       ADAS_MGR2_B.v_min = ADAS_MGR2_DW.UnitDelay_DSTATE * 0.01F;
       if (ADAS_MGR2_B.n_valid == 1) {
         ADAS_MGR2_B.v_max = ADAS_MGR2_DW.ref_y[19];
@@ -961,6 +963,7 @@ void mgm_step(void)
           }
         }
       }
+#endif
     } else {
       memcpy(&ADAS_MGR2_DW.ref_x[0], &ADAS_MGR2_B.target_x[0], 20U * sizeof
              (real32_T));

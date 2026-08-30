@@ -27,6 +27,17 @@ def wrap_angle(a):
     return (a + math.pi) % (2.0 * math.pi) - math.pi
 
 
+def pose_delta(previous, current):
+    """Return consecutive ENU poses' motion in the previous vehicle frame."""
+    pe, pn, pyaw = previous
+    ce, cn, cyaw = current
+    de, dn = ce - pe, cn - pn
+    c, s = math.cos(pyaw), math.sin(pyaw)
+    return (c * de + s * dn,
+            -s * de + c * dn,
+            wrap_angle(cyaw - pyaw))
+
+
 def load_waypoints_csv(path, log=None):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 

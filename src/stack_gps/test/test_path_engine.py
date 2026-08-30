@@ -11,7 +11,7 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from stack_gps.path_engine import (M_PER_DEG_LAT, PathEngine,
-                                   load_waypoints_csv, wrap_angle)
+                                   load_waypoints_csv, pose_delta, wrap_angle)
 
 LAT0, LON0 = 37.5, 127.0
 M_PER_DEG_LON = M_PER_DEG_LAT * math.cos(math.radians(LAT0))
@@ -23,6 +23,15 @@ def en_to_latlon(e, n):
 
 def make_track(en_pts):
     return [en_to_latlon(e, n) for e, n in en_pts]
+
+
+def test_pose_delta_uses_previous_vehicle_frame_and_wraps_yaw():
+    dx, dy, dyaw = pose_delta(
+        (10.0, 20.0, math.pi / 2.0),
+        (10.0, 21.0, -math.pi + 0.1))
+    assert math.isclose(dx, 1.0, abs_tol=1e-12)
+    assert math.isclose(dy, 0.0, abs_tol=1e-12)
+    assert math.isclose(dyaw, math.pi / 2.0 + 0.1, abs_tol=1e-12)
 
 
 def test_straight_east():
