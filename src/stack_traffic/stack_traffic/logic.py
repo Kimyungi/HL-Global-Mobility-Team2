@@ -264,6 +264,39 @@ def update_stop_latch(
     return current
 
 
+def update_red_phase_latch(
+    current: bool,
+    red_active: bool,
+    green_active: bool,
+) -> bool:
+    """확정 적색을 fresh 초록 확정 전까지 기억한다.
+
+    신호등과 정지선은 같은 영상에서도 서로 다른 프레임에 안정 검출될 수 있다.
+    적색 3/5를 한 번 확정했다면 짧은 bbox 소실로 그 사실을 버리지 않고, fresh
+    초록 3/5만 새로운 신호 페이즈의 근거로 인정한다. 두 색이 동시에 활성화된
+    비정상 투표창에서는 안전측인 적색이 이긴다.
+    """
+    if red_active:
+        return True
+    if current and green_active:
+        return False
+    return current
+
+
+def should_accept_anchored_green(
+    red_phase_latched: bool,
+    anchor_available: bool,
+    green_raw: bool,
+) -> bool:
+    """확정 적색 bbox의 최신 영상에서 본 초록을 해제 투표로 허용한다.
+
+    YOLO가 초록 화살표/비원형 점등 뒤 housing을 놓쳐도, 적색으로 확정했던 같은
+    화면 위치만 재검사한다. 적색 페이즈나 anchor가 없으면 화면의 임의 초록색을
+    해제 근거로 사용할 수 없다.
+    """
+    return bool(red_phase_latched and anchor_available and green_raw)
+
+
 def classify_color_ratios(
     red_ratio: float,
     green_ratio: float,
