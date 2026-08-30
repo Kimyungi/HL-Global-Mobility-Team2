@@ -160,10 +160,20 @@ adas_ws/src/
 - 각 스택의 출력은 `common_interfaces`에 정의된 토픽/메시지로만 — MGM은 그 토픽들만 구독.
 - **신호등·정지선 (2026-08-08 개정, PR #21·#28 — 구 stack_lane→stack_traffic 정지선 전달은 폐기):**
   stack_traffic(김재민)이 OAK-D RGB 한 대에서 신호등(YOLOv8n 상단 ROI + HSV 적/녹)과
-  정지선(하단 ROI 흰색 띠 + y비율 게이트)을 **모두 자체 검출**한다. stack_lane은 정지선을
+  정지선(하단 ROI의 주간 흰색 + 야간 국소 대비 + 평행 에지 쌍, 이후 공통 기하·3/5
+  안정성 검사와 y비율 게이트)을 **모두 자체 검출**한다. stack_lane은 정지선을
   발행하지 않는다. `StopLine.msg`는 발행자·구독자 모두 소멸 — 삭제 여부 미결.
-  정지 래치: 진입 = 적색 3/5 AND 정지선 근접. 해제 = **fresh YOLO 초록 3/5로만**(실차 launch
-  기준; 패키지 기본은 자동 해제 없음). 카메라 사망·정지선 소실·bbox 소실은 해제 조건이 아님.
+  신호 페이즈 래치: 적색 3/5 확정 시 `red_phase_latched=true`와 해당 bbox anchor를
+  저장하고, **fresh YOLO bbox 또는 저장된 적색 anchor 안의 초록 3/5에서만 false**.
+  초록 원·좌회전 화살표 등 점등 모양은 제한하지 않되 anchor 밖 초록색은 무시한다.
+  적색과 정지선이 서로 다른 프레임에 검출되는 실차 패턴을 허용한다
+  (2026-08-30 run_0830_181646에서 적색과 정지선이 교대로 검출돼 미정지한 문제 수정).
+  정지 래치 진입 = `red_phase_latched AND 정지선 근접`. 해제 = **위 target 내부의
+  초록 3/5로만**(실차 launch 기준; 패키지 기본은 자동 해제 없음). 카메라 사망·정지선
+  소실·bbox 소실은 신호 페이즈나 정지 래치의 해제 조건이 아님.
+  두 OAK-D 동시 초기화 경쟁으로 traffic 프로세스가 즉사할 수 있어 통합 실차 launch는
+  `stack_traffic_node`를 2초 간격으로 자동 respawn한다. 시작부터 traffic 토픽이 한 번도
+  오지 않으면 MGM freshness watchdog은 아직 활성되지 않으므로 출발 전 노드 확인은 필수다.
   **해제 정책 확정(2026-08-09, 팀장):** 시연 신호등은 적색=정지 / 초록=재출발 타입 —
   `resume_on_green`이 실차 표준, `resume_on_red_clear`는 불필요.
   **OAK-D 배분 확정 (2026-08-09, 팀장):** OAK-D Pro **2대** — stack_lane(이현준) 1대(차선용
