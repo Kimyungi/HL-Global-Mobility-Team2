@@ -143,7 +143,49 @@ def _ydlidar(sensor_id):
 
 
 def _rplidar(sensor_id):
-    """SLAMTEC RPLiDAR C1M1 1대."""
+    """SLAMTEC RPLiDAR C1M1 1대.
+
+    ⚠ 부트 배너가 `RP S2 LIDAR System.` 으로 나온다 — **모델명이 아니라 펌웨어
+      플랫폼 배너다. C1M1 이 맞다.** 2026-08-30 에 실측으로 확정했다:
+
+          모델 바이트 0x41 · FW 1.02 · HW 18 · 보드 460800
+          샘플레이트 5 kHz · 10 Hz · 물리 분해능 0.72°(511점/회전)
+          지원 모드  Standard(16.0m) / DenseBoost(40.0m)
+
+      S2 라면 0.12° · 32 kHz · 1 Mbps 여야 하므로 하나도 맞지 않는다.
+      배너만 보고 모델을 바꿔 잡지 말 것 (아래 `serial_baudrate` 도 그래서 460800).
+
+      참고: 아래 `angle_compensate=True` 때문에 드라이버가 내는 `angle_increment` 는
+      0.499°(720 bin)로 보간된 값이다. 물리 분해능 0.72° 와 다른 수치인 게 정상이며,
+      융합의 `scan.angle_increment` 하한(1.0°) 근거는 **성긴 쪽인 T-mini 0.839°** 다.
+
+    ⚠ **먹통 상태는 드라이버가 못 푼다 — `RESET(0xA5 0x40)` 이 필요하다.**
+      이 노드는 STOP → GET_INFO → GET_HEALTH → SCAN 만 보내고 RESET 을 보내지 않는다.
+      그래서 한 번 걸리면 재기동·재연결·`/start_motor` 무엇으로도 안 풀린다.
+      증상: **health OK 인데 `/scan` 0 Hz** (SCAN 을 걸면 디스크립터 7바이트만 오고
+      측정 데이터가 0 = 모터가 안 돈다).
+
+          python3 - <<'PY'
+          import serial, time
+          for d in ['/dev/lidar_left', '/dev/lidar_right']:
+              s = serial.Serial(d, 460800, timeout=1)
+              s.write(b'\\xA5\\x25'); time.sleep(0.3); s.reset_input_buffer()
+              s.write(b'\\xA5\\x40'); time.sleep(2.5)   # RESET
+              print(d, b'LIDAR System' in s.read(s.in_waiting or 1)); s.close()
+          PY
+
+      한 번 풀리면 드라이버를 SIGTERM/SIGKILL 어느 쪽으로 죽여도 재발하지 않는다
+      (2026-08-30, 재기동 4회 연속 확인). 들어가는 원인은 전원으로 보인다 —
+      스캔 도중 전압이 끊기면 컨트롤러는 살아남고 모터만 latch-off 된다.
+      HANDOVER §3.7 의 "전류를 갈라라"와 **같은 고장의 앞뒤**다: 전류 분리는 재발을
+      막고, 이 RESET 은 이미 걸린 것을 푼다.
+
+      ※ 위 스크립트가 `False` 를 내도 그 자체로 고장은 아니다 — 배너는 읽기 창을
+        놓치면 안 잡히고, **다른 프로세스가 포트를 잡고 있으면 반드시 실패한다.**
+        최종 판정은 `/lidar/*/scan` 이 도느냐로 한다. 특히 **이 launch 를 두 번
+        띄우면** 포트마다 프로세스가 둘씩 붙어 서로를 죽이므로, 새로 띄우기 전에
+        `fuser $(readlink -f /dev/lidar_left)` 로 비었는지 볼 것.
+    """
     return Node(
         package='rplidar_ros',
         executable='rplidar_node',
