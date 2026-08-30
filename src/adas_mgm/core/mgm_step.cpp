@@ -581,46 +581,6 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   } else if (is_stale_repeat) {
     /* Hold the last ref until a new perception/GNSS sample arrives.  The old
      * x -= commanded_velocity * 10ms pose estimate was intentionally removed. */
-#if 0
-    // 새 인지 값이 아직 안 옴 → 직전 출력을 그대로 반복 송신하지 않고, 그동안
-    // 차량이 이동했을 거리만큼 x(전방 거리)를 깎아서 내보낸다. 실제 속도 피드백
-    // (dSPACE 0x202 vehicle_vector.v) 배선 없이, 우리가 직전 틱에 명령한 st.v를
-    // 등속 근사로 사용 — 10ms 구간·저속 주행에서는 근사 오차가 무시할 수준.
-    // y/yaw/curvature는 보정하지 않음(차로 진행방향 유지 가정) — 이 근사가 틀리는
-    // 급커브 등은 어차피 다음 실제 인지값(21Hz)이 금방 덮어써서 누적되지 않음.
-    const float dx = st.v * MGM_PERIOD_S;
-    if (n == 1) {
-      // ── 단일점 소스(avoid)는 **원본 목표에 감쇠하고 다시 보간**한다 (2026-08-16).
-      // 보간된 20점을 각각 깎으면 방위가 쓸린다: 첫 점이 목표의 1/20(1.5m 목표 →
-      // 7.5cm)이라 틱당 dx(0.6cm @0.6m/s)가 상대적으로 8%씩 먹어, dSPACE가 보는
-      // κ=2y/L² 과 방위가 매 인지 주기마다 톱니로 요동친다.
-      //   실측 run_0816_175102 정상 회피 중(det=1, 목표 |y|>0.05m):
-      //     틱 간 방위 점프 중앙값 0.28° · p90 1.00° · **최대 9.0°**
-      //     (t=40.38~40.41: −20.6→−21.6→−22.6→−23.7° 로 쓸리다 새 인지에 −14.7° 로 리셋)
-      //   같은 결함이 y를 키우면 폭주한다 — 2026-08-16에 통과 대기 유지점을
-      //   트랙 헤딩만큼 회전시켰더니 y가 0이 아니게 되면서 방위 점프가 41~55°까지
-      //   갔고 회피가 성립하지 못해 TTC 바닥에 걸렸다(run_0816_180531, 즉시 복구).
-      // 물리적으로도 이쪽이 맞다 — 차가 전진하면 목표까지 **거리**가 줄지 방위가
-      // 휘지 않는다. 보간점은 실제 웨이포인트가 아니라 목표 방위를 싣는 대리점이다.
-      // 다점 소스(gps/lane 20점)는 실제 경로점이므로 종전대로 x만 깎는다.
-      CorePoint tgt = st.ref_out[MGM_NUM_POINTS - 1];   // 보간 규약상 마지막 점 = 원본 목표
-      constexpr float kMinTargetX = MGM_MIN_REF_X * static_cast<float>(MGM_NUM_POINTS);
-      tgt.x = (tgt.x - dx > kMinTargetX) ? tgt.x - dx : kMinTargetX;
-      for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-        const float t = static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
-        st.ref_out[i].x = tgt.x * t;
-        st.ref_out[i].y = tgt.y * t;
-      }
-    } else {
-      for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-        // 하한: 첫 점이 차 뒤로 가면 전진밖에 못 하는 차에게 도달 불가능한 목표가
-        // 된다. 감쇠는 "인지가 잠깐 늦은 동안의 보정"이지 목표를 뒤로 보내는
-        // 수단이 아니다 — 안전 불변식으로 고정한다 (2026-08-14).
-        st.ref_out[i].x = (st.ref_out[i].x - dx > MGM_MIN_REF_X)
-          ? st.ref_out[i].x - dx : MGM_MIN_REF_X;
-      }
-    }
-#endif
   } else {
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.ref_out[i] = target[i];

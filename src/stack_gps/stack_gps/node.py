@@ -39,7 +39,7 @@ from tf2_ros import TransformBroadcaster
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
 from stack_gps.imu_link import ImuLink
-from stack_gps.path_engine import PathEngine, load_waypoints_csv, pose_delta, wrap_angle
+from stack_gps.path_engine import PathEngine, PoseDeltaTracker, load_waypoints_csv, wrap_angle
 
 
 def _pair_ranges(flat, name, logger):
@@ -274,10 +274,7 @@ class StackGpsNode(Node):
             self.get_logger().warn(
                 "IMU 꺼짐 — 헤딩은 COG/접선만 사용 (정지 시 절대 헤딩 없음)")
         self._heading_src = '접선'
-        self._previous_pose = None
-        self._last_delta_fix_t = None
-        self._pose_delta = (0.0, 0.0, 0.0)
-        self._pose_update = 0
+        self._pose_delta_tracker = PoseDeltaTracker()
         self._imu_gen = 0
         self._cog_ok = False
         self._was_aligned = False
@@ -327,16 +324,15 @@ class StackGpsNode(Node):
         msg = GpsPath()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
-        msg.dx, msg.dy, msg.dyaw = self._pose_delta
-        msg.update = self._pose_update
+        msg.dx, msg.dy, msg.dyaw = self._pose_delta_tracker.delta
+        msg.update = self._pose_delta_tracker.update
 
         fix = self.link.latest_fix()
         if fix is None or fix[4] > self.stale_timeout or fix[3] == 0:
             # Do not bridge an unknown outage with one large delta on recovery.
             # The last valid delta/update stays visible while the next valid fix
             # will establish a fresh zero-displacement baseline.
-            self._previous_pose = None
-            self._last_delta_fix_t = None
+            self._pose_delta_tracker.invalidate()
             msg.fix_quality = 0
             msg.heading_source = GpsPath.HEADING_TANGENT   # fix 없음 → 헤딩도 신뢰 불가
             self.pub.publish(msg)
@@ -393,20 +389,17 @@ class StackGpsNode(Node):
 
         snap = self.engine.snapshot(lat, lon, heading)
         yaw = heading if heading is not None else self.engine.yaw[snap['idx']]
+        msg.heading_source = (
+            GpsPath.HEADING_FUSED if self._heading_src == '융합'
+            else GpsPath.HEADING_COG if self._heading_src == 'COG'
+            else GpsPath.HEADING_TANGENT)
         # The GGA link can return the same latest sample on more than one timer
         # tick.  Count and calculate motion only once per actual GNSS sample.
-        if fix_t != self._last_delta_fix_t:
-            east, north = self.engine.to_enu(lat, lon)
-            current_pose = (east, north, yaw)
-            if self._previous_pose is None:
-                self._pose_delta = (0.0, 0.0, 0.0)
-            else:
-                self._pose_delta = pose_delta(self._previous_pose, current_pose)
-            self._previous_pose = current_pose
-            self._last_delta_fix_t = fix_t
-            self._pose_update = (self._pose_update + 1) & 0xFFFFFFFFFFFFFFFF
-        msg.dx, msg.dy, msg.dyaw = self._pose_delta
-        msg.update = self._pose_update
+        east, north = self.engine.to_enu(lat, lon)
+        delta, update = self._pose_delta_tracker.consume(
+            fix_t, (east, north, yaw), msg.heading_source)
+        msg.dx, msg.dy, msg.dyaw = delta
+        msg.update = update
         for x, y, pt_yaw, curv in snap['points']:
             rp = RefPoint()
             rp.x, rp.y, rp.yaw, rp.curvature = (float(x), float(y),
@@ -424,10 +417,6 @@ class StackGpsNode(Node):
         # MGM이 "이 헤딩을 믿어도 되는가"를 알아야 역방향 가드·재합류를 안전하게
         # 판단할 수 있다 — 접선 폴백은 이탈 상태에서 가정이 깨지고, COG는 저속에서
         # 무작위가 된다.
-        msg.heading_source = (
-            GpsPath.HEADING_FUSED if self._heading_src == '융합'
-            else GpsPath.HEADING_COG if self._heading_src == 'COG'
-            else GpsPath.HEADING_TANGENT)
         self.pub.publish(msg)
         self._last_snap = snap
 

@@ -172,10 +172,12 @@ private:
       pt.y = p.y;
       pt.yaw = p.yaw;
       pt.curvature = p.curvature;
-      pt.dx = msg.dx;
-      pt.dy = msg.dy;
-      pt.dyaw = msg.dyaw;
-      pt.update = msg.update;
+      if (stateUsesGpsDelta(msg.state)) {
+        pt.dx = msg.dx;
+        pt.dy = msg.dy;
+        pt.dyaw = msg.dyaw;
+        pt.update = msg.update;
+      }
       ok &= sendCanFrame(sock_, kIdRefPointBase + i, pt, can_fd_, can_fd_brs_);
     }
     // 헤더는 반드시 마지막 — dSPACE는 이 프레임에서 n_points개 세트를 latch

@@ -10,7 +10,7 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from stack_gps.path_engine import (M_PER_DEG_LAT, PathEngine,
+from stack_gps.path_engine import (M_PER_DEG_LAT, PathEngine, PoseDeltaTracker,
                                    load_waypoints_csv, pose_delta, wrap_angle)
 
 LAT0, LON0 = 37.5, 127.0
@@ -32,6 +32,38 @@ def test_pose_delta_uses_previous_vehicle_frame_and_wraps_yaw():
     assert math.isclose(dx, 1.0, abs_tol=1e-12)
     assert math.isclose(dy, 0.0, abs_tol=1e-12)
     assert math.isclose(dyaw, math.pi / 2.0 + 0.1, abs_tol=1e-12)
+
+
+def test_pose_delta_tracker_ignores_duplicate_timestamp():
+    tracker = PoseDeltaTracker()
+    assert tracker.consume(1.0, (0.0, 0.0, 0.0), 1) == ((0.0, 0.0, 0.0), 1)
+    assert tracker.consume(1.0, (9.0, 9.0, 1.0), 1) == ((0.0, 0.0, 0.0), 1)
+
+
+def test_pose_delta_tracker_recovery_starts_zero_baseline():
+    tracker = PoseDeltaTracker()
+    tracker.consume(1.0, (0.0, 0.0, 0.0), 1)
+    tracker.consume(2.0, (1.0, 0.0, 0.0), 1)
+    tracker.invalidate()
+    delta, update = tracker.consume(10.0, (20.0, 30.0, 2.0), 1)
+    assert delta == (0.0, 0.0, 0.0)
+    assert update == 3
+
+
+def test_pose_delta_tracker_heading_source_change_resets_delta():
+    tracker = PoseDeltaTracker()
+    tracker.consume(1.0, (0.0, 0.0, 0.0), 1)  # COG
+    delta, update = tracker.consume(2.0, (1.0, 0.0, 0.2), 2)  # fused
+    assert delta == (0.0, 0.0, 0.0)
+    assert update == 2
+
+
+def test_pose_delta_tracker_uint64_wrap():
+    tracker = PoseDeltaTracker()
+    tracker.update = 0xFFFFFFFFFFFFFFFF
+    delta, update = tracker.consume(1.0, (0.0, 0.0, 0.0), 1)
+    assert delta == (0.0, 0.0, 0.0)
+    assert update == 0
 
 
 def test_straight_east():

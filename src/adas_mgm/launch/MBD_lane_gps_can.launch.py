@@ -60,7 +60,8 @@ from datetime import datetime
 
 import yaml
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import (
+    PackageNotFoundError, get_package_share_directory)
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
                             OpaqueFunction, SetLaunchConfiguration, Shutdown)
@@ -102,9 +103,32 @@ RECORD_TOPICS = [
 DEFAULT_HOMOGRAPHY = os.path.expanduser(
     '~/FMA_ws/src/stack_lane/config/homography.json')
 
-DEFAULT_YDLIDAR_PARAMS = os.path.join(
-    os.path.expanduser('~'), 'ydlidar_ws', 'src', 'ydlidar_ros2_driver',
-    'params', 'Tmini-Plus-SH.yaml')
+
+def ydlidar_file(*parts):
+    """`ydlidar_ros2_driver` 안의 파일 경로 — **저장소 설치본이 1순위**.
+
+    2026-08-29: 기본값이 `~/ydlidar_ws/src/...` 로 박혀 있었는데 이 PC 의 실제
+    워크스페이스는 `~/ydlidar_ros2_ws` 라 파일이 없었다. 파일이 없으면 드라이버가
+    뜨자마자 죽고 `respawn` 으로 2초마다 되살아나기만 해 `/scan` 이 영영 0Hz 인데,
+    화면에는 "go 가 안 통과한다"로만 보인다 (원인이 라이다로 안 보인다).
+
+    저장소가 드라이버를 직접 갖고 있으므로(`src/ydlidar_ros2_driver`, 설치본의
+    params 는 외부 워크스페이스본과 바이트 동일) **설치본을 기본값으로 쓴다.**
+    외부 워크스페이스는 옛 세팅 호환용 폴백으로만 남긴다.
+    """
+    cands = []
+    try:
+        cands.append(os.path.join(
+            get_package_share_directory('ydlidar_ros2_driver'), *parts))
+    except PackageNotFoundError:
+        pass
+    home = os.path.expanduser('~')
+    cands += [os.path.join(home, ws, 'src', 'ydlidar_ros2_driver', *parts)
+              for ws in ('ydlidar_ros2_ws', 'ydlidar_ws')]
+    return next((p for p in cands if os.path.isfile(p)), cands[0])
+
+
+DEFAULT_YDLIDAR_PARAMS = ydlidar_file('params', 'Tmini-Plus-SH.yaml')
 
 
 def zones_path_for(waypoint_csv):
@@ -196,6 +220,16 @@ def validate(context):
         print('[launch] ⚠ stack_lane 미기동 — LANE 전이 없음, '
               '`ros2 run adas_mgm go --skip-lane`')
 
+    # 라이다 파라미터 파일은 여기서 반드시 확인한다. 없으면 드라이버가 뜨자마자
+    # 죽고 respawn=True 로 2초마다 되살아나기만 해 /scan 이 영영 0Hz 인데, 화면에는
+    # "go 가 안 통과한다"로만 보여 원인이 라이다로 안 보인다 (2026-08-29: 기본값이
+    # 없는 워크스페이스를 가리키고 있었다 — ydlidar_file() 주석 참조).
+    ydlidar_params = LaunchConfiguration('ydlidar_params').perform(context)
+    if not os.path.isfile(ydlidar_params):
+        raise RuntimeError(
+            f'라이다 파라미터 파일 없음: {ydlidar_params}\n'
+            '  ydlidar_ros2_driver 를 빌드했는지 확인하거나 '
+            'ydlidar_params:=<경로> 로 직접 지정하세요.')
     os.makedirs(LOG_DIR, exist_ok=True)
     print(f'[record] 로그 디렉터리: {LOG_DIR}')
     return [

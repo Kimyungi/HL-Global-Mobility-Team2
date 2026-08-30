@@ -42,6 +42,13 @@ producer 가 없어 `/perception/parking` 발행자가 0 이고, PARKING 스테�
 
 네 가지가 다 초록이어야 현장에 나간다. 하나라도 빠지면 **증상이 엉뚱한 곳에서 터진다.**
 
+> **경로는 전부 `$HOME/FMA_ws/...` 절대경로로 적는다.** 이 문서 초판은 `src/...` 상대
+> 경로로 적어 두어 **워크스페이스 루트 밖에서 치면 셸이 "그런 파일이나 디렉터리가
+> 없습니다" 로 거부한다** (2026-08-30 현장에서 실제로 걸렸다). 스크립트가 없는 게
+> 아니라 **cwd 가 다른 것**이고, 그렇게 말한 것도 스크립트가 아니라 셸이다 —
+> `/bin/bash: 줄 1: src/...: 그런 파일이나 디렉터리가 없습니다`. 현장에서는 터미널
+> 5개가 각자 다른 위치에서 열리므로 cwd 를 전제하지 않는다.
+
 ### 1-1. 신호등 실행 의존성 — `torchvision` · `ultralytics`
 
 신호등만 `ultralytics`(→`torchvision`)를 쓴다. 차선은 안 쓰므로 **차선이 멀쩡한데
@@ -61,10 +68,10 @@ torch 와 torchvision 은 **같은 채널·같은 세대**여야 하고(2.12 ↔
 ### 1-2. CAN FD
 
 ```bash
-src/bridge_dspace/tools/can_setup/install.sh --check     # sudo 불필요
+$HOME/FMA_ws/src/bridge_dspace/tools/can_setup/install.sh --check   # sudo 불필요
 ```
 
-`✔ 점검 통과` 가 아니면 `sudo src/bridge_dspace/tools/can_setup/install.sh` 한 번.
+`✔ 점검 통과` 가 아니면 `sudo $HOME/FMA_ws/src/bridge_dspace/tools/can_setup/install.sh` 한 번.
 **MTU 16 = classic 이면 브리지가 dSPACE 의 64B 프레임을 못 받는다** — 값의 단일
 진실 원천은 `can_setup/can_params.sh` 하나이고, `install.sh` 가 udev·systemd·networkd
 세 경로를 거기서 생성한다(손으로 복사하면 한쪽만 낡는 사고가 반복됐다).
@@ -77,7 +84,7 @@ src/bridge_dspace/tools/can_setup/install.sh --check     # sudo 불필요
 ### 1-4. 센서 배치 전수 점검
 
 ```bash
-python3 src/multi_lidar_fusion/tools/check_sensors.py
+python3 $HOME/FMA_ws/src/multi_lidar_fusion/tools/check_sensors.py
 ```
 
 "무엇이 살아 있나"가 아니라 **확정 배치와 같은가**를 본다. 심링크 7종·IMU·GPS·CAN·
@@ -114,15 +121,8 @@ B1·V1·M·V3 는 `RUNBOOK_lane_gps.md` 와 **완전히 같다.** V2 만 인자�
 
 ### V2 [차량 PC] — 두 단계
 
-**① CAN 없는 정지 점검** (바퀴가 안 움직인다 — §4 필수 게이트)
-
-```bash
-ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
-    traffic_enabled:=true
-```
-
-**② 실주행** — ①을 통과한 뒤에만.
+**launch 는 한 번만 띄운다.** 두 단계를 가르는 것은 launch 인자가 아니라
+`ros2 run adas_mgm go` 다.
 
 ```bash
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
@@ -130,6 +130,27 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
     waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
     traffic_enabled:=true
 ```
+
+**한 번만 띄운다** — 이 블록에 launch 를 두 줄 적어 두면 복사할 때 두 번 떠서
+estop·mgm·bridge·scan 이 중복되고 CAN TX 가 두 배로 나간다(§0 동시 실행 금지).
+
+- **① 정지 점검** — 기동 직후 `go` 를 주기 전까지. §4 의 확인을 여기서 한다.
+- **② 실주행** — ①을 통과한 뒤 `ros2 run adas_mgm go`.
+
+> **⚠ 2026-08-30 정정 — 토큰을 빼고 띄우는 "CAN 없는 점검"은 존재하지 않는다.**
+> `REAL_VEHICLE_CONFIRM` 없이 띄우면 정지 점검이 되는 게 아니라 **launch 가 통째로
+> 거부된다** (`REAL VEHICLE launch refused`). 이 게이트는 2026-08-11 `9dc3693` 부터
+> 있었고, 이 런북 초판(2026-08-29)이 적어 둔 무토큰 명령은 **한 번도 실행된 적이 없다.**
+>
+> **`go` 전이 안전한 근거는 인자가 아니라 코드다.** 이 launch 는 `wait_go: True` 를
+> 강제로 켜고(launch 678행), MGM 은 `/operator/go` 를 받기 전까지 매 틱
+> `estop = true` 로 덮는다(`mgm_node.cpp:419`). estop 이면 v_ref 0 이므로
+> (CLAUDE.md §4 "정지는 스테이트가 아니다") **바퀴는 안 움직인다.** 콘솔에 5초마다
+> `출발 대기 중 — 점검 완료 후 ros2 run adas_mgm go 로 출발` 이 뜨는 것이 그 증거다.
+>
+> 이 방식이 무토큰 방식보다 오히려 낫다: CAN TX 가 실제로 나가므로 §5 의 **CAN 왕복
+> 확인(`can_log.py`)을 출발 전에** 끝낼 수 있다. 대신 **물리 비상정지에 손을 올린
+> 상태로** 점검할 것 — 버스는 이미 살아 있다.
 
 > `usb_speed:=high camera_fps:=10` 은 **붙이지 않는다** — 2026-08-24(`8c251cb`)부터
 > launch 기본값이다. 손으로 붙이는 걸 한 번 잊으면 OAK-D 가 USB3 로 열거돼 GNSS L1 을
@@ -153,9 +174,10 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 
 ---
 
-## 4. ① CAN 없는 정지 점검 — 필수 게이트
+## 4. ① 정지 점검 (`go` 전) — 필수 게이트
 
-바퀴가 안 움직인다. **여기서 신호등이 안 서면 주행으로 넘어가지 말 것.**
+`go` 를 주기 전까지 MGM 이 estop 을 물고 있어 v_ref 0 이다 — 바퀴가 안 움직인다
+(근거는 §3 의 정정 상자). **여기서 신호등이 안 서면 주행으로 넘어가지 말 것.**
 
 기동 직후 콘솔에서:
 
@@ -228,7 +250,7 @@ frame=000310 | yolo_run=1 yolo=1 yolo_ms=25.0 conf=0.83 bbox_src=yolo
 ### CAN 왕복 확인
 
 ```bash
-python3 src/stack_avoid/tools/can_log.py --iface can0 --duration 30 --out /tmp/can.log
+python3 $HOME/FMA_ws/src/stack_avoid/tools/can_log.py --iface can0 --duration 30 --out /tmp/can.log
 ```
 
 ```
@@ -278,9 +300,11 @@ TX 프레임/헤더 = 2.00          ← v5. 21.00 이면 옛 v3 코드가 도는
 (estop 아닌 일반 감속). 안 띄우면 감시 자체가 잠들어 있어 지금까지와 동일하다.
 → 주행 중 신호등 노드만 죽이는 실험은 하지 말 것. 차가 선다.
 
-**② 카메라가 2대가 된다.** USB2 대역폭·전류를 나눠 쓴다. `check_sensors.py` 의
-**허브 분리** 항목이 여기서 의미를 갖는다 — 카메라를 라이다와 같은 허브에 두면
-RPLiDAR 가 `health OK` 인데 `/scan` 0Hz 가 되는 함정이 있다(전류 부족, HANDOVER §3.7).
+**② 카메라가 2대가 된다.** USB2 대역폭을 나눠 쓴다(대역폭은 §3 의 계산). 전류는
+2026-08-29 에 **카메라 전원을 별도 라인으로 분리**해서 갈라 놓았으므로 허브 하나로
+운용한다 — `check_sensors.py` 의 허브 항목은 그날부터 경고다. 다만 카메라를 다시
+버스 전원으로 물리면 RPLiDAR 가 `health OK` 인데 `/scan` 0Hz 가 되는 함정이 그대로
+돌아온다(HANDOVER §3.7).
 
 **③ CPU 여유가 준다.** §5 표의 값이 기준이다. 나머지 스택까지 붙였을 때 모자라면
 `taskset -c 4,5,6` 으로 신호등을 코어에 묶는 카드가 있다(487→140% 실측). 지금은

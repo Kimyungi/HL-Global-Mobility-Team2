@@ -135,6 +135,12 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 - `dx`/`dy`는 두 연속 GPS pose의 ENU 이동량을 **이전 pose의 vehicle frame**으로
   회전한 값이다. 첫 유효 sample은 `dx=dy=dyaw=0`, `update=1`이다. GPS sample 사이의
   10ms CAN 주기에는 네 필드를 직전 값으로 유지한다.
+- 이 네 필드는 **LANE(카메라)와 WAYPOINT(GPS) 주행에서만** 유효하다. AVOID/PARKING은
+  `dx=dy=dyaw=0`, `update=0`을 송신해 서로 다른 경로 출처가 섞이지 않게 한다.
+- dSPACE는 10ms마다 반복되는 동일 delta를 매번 적분하면 안 된다. 보관한 `last_update`와
+  다른 `update`를 받았을 때만 `dx/dy/dyaw`를 정확히 한 번 적용하고 `last_update`를 갱신한다.
+  단, 이 비교·적용은 LANE/WAYPOINT 상태에서만 수행한다. 이 규칙은 DBC의 `update`
+  u64/Intel 정의와 한 세트다.
 
 ### TARGET_HEADER (`0x100`) — 8 bytes
 

@@ -103,6 +103,33 @@ struct MpcTargetFdPayload  // 0x101 MPC_TARGET_FD — 64 B
   uint64_t update;
 };
 
+inline bool stateUsesGpsDelta(uint8_t state)
+{
+  // TargetRef constants: 0=LANE(camera), 1=WAYPOINT(GPS).
+  return state == 0U || state == 1U;
+}
+
+class GpsDeltaUpdateGate
+{
+public:
+  bool shouldApply(uint8_t state, uint64_t update)
+  {
+    if (!stateUsesGpsDelta(state)) {
+      return false;
+    }
+    if (initialized_ && update == last_update_) {
+      return false;
+    }
+    initialized_ = true;
+    last_update_ = update;
+    return true;
+  }
+
+private:
+  bool initialized_{false};
+  uint64_t last_update_{0};
+};
+
 struct VehFeedbackFdPayload  // 0x200 VEH_FEEDBACK_FD — 64 B
 {
   double x;        // [m]

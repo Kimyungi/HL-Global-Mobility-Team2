@@ -38,6 +38,43 @@ def pose_delta(previous, current):
             wrap_angle(cyaw - pyaw))
 
 
+class PoseDeltaTracker:
+    """Track one delta per distinct valid GNSS sample.
+
+    A fix outage or heading-source transition starts a fresh zero-delta
+    baseline, preventing an outage jump or a COG/fused/tangent datum jump from
+    being reported as vehicle motion.  The public counter is retained across
+    resets and wraps naturally as uint64.
+    """
+
+    def __init__(self):
+        self.previous = None
+        self.last_timestamp = None
+        self.heading_source = None
+        self.delta = (0.0, 0.0, 0.0)
+        self.update = 0
+
+    def invalidate(self):
+        self.previous = None
+        self.last_timestamp = None
+        self.heading_source = None
+
+    def consume(self, timestamp, pose, heading_source):
+        if timestamp == self.last_timestamp:
+            return self.delta, self.update
+        source_changed = (self.heading_source is not None and
+                          heading_source != self.heading_source)
+        if self.previous is None or source_changed:
+            self.delta = (0.0, 0.0, 0.0)
+        else:
+            self.delta = pose_delta(self.previous, pose)
+        self.previous = pose
+        self.last_timestamp = timestamp
+        self.heading_source = heading_source
+        self.update = (self.update + 1) & 0xFFFFFFFFFFFFFFFF
+        return self.delta, self.update
+
+
 def load_waypoints_csv(path, log=None):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 

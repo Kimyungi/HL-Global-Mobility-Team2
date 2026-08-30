@@ -147,6 +147,11 @@ if(BUILD_TESTING)
     NAME escape_reverse_test
     COMMAND escape_reverse_test)
 
+  add_executable(reference_hold_test test/reference_hold_test.cpp)
+  target_include_directories(reference_hold_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(reference_hold_test mgm_core)
+  add_test(NAME reference_hold_test COMMAND reference_hold_test)
+
   add_executable(
     transition_log_test
     test/transition_log_test.cpp

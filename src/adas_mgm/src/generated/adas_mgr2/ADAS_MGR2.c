@@ -646,8 +646,6 @@ void mgm_step(void)
   boolean_T immediate_stop;
   boolean_T is_stale_repeat;
   boolean_T rtb_path_valid;
-  static const int32_T offsets[4] = { 0, 1, 2, 3 };
-
   __m128 tmp;
   static const int32_T offsets_0[4] = { 0, 1, 2, 3 };
 
@@ -934,36 +932,6 @@ void mgm_step(void)
       ADAS_MGR2_DW.blend_left--;
     } else if (is_stale_repeat) {
       /* Hold the last reference until a new perception/GNSS sample arrives. */
-#if 0
-      ADAS_MGR2_B.v_min = ADAS_MGR2_DW.UnitDelay_DSTATE * 0.01F;
-      if (ADAS_MGR2_B.n_valid == 1) {
-        ADAS_MGR2_B.v_max = ADAS_MGR2_DW.ref_y[19];
-        ADAS_MGR2_B.v_min = ADAS_MGR2_DW.ref_x[19] - ADAS_MGR2_B.v_min;
-        if (!(ADAS_MGR2_B.v_min > 0.19999999F)) {
-          ADAS_MGR2_B.v_min = 0.19999999F;
-        }
-
-        for (ADAS_MGR2_B.i = 0; ADAS_MGR2_B.i <= 16; ADAS_MGR2_B.i += 4) {
-          tmp_0 = _mm_div_ps(_mm_add_ps(_mm_cvtepi32_ps(_mm_add_epi32
-            (_mm_set1_epi32(ADAS_MGR2_B.i), _mm_loadu_si128((const __m128i *)
-            &offsets[0]))), _mm_set1_ps(1.0F)), _mm_set1_ps(20.0F));
-          _mm_storeu_ps(&ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i], _mm_mul_ps
-                        (_mm_set1_ps(ADAS_MGR2_B.v_min), tmp_0));
-          _mm_storeu_ps(&ADAS_MGR2_DW.ref_y[ADAS_MGR2_B.i], _mm_mul_ps
-                        (_mm_set1_ps(ADAS_MGR2_B.v_max), tmp_0));
-        }
-      } else {
-        for (ADAS_MGR2_B.i = 0; ADAS_MGR2_B.i < 20; ADAS_MGR2_B.i++) {
-          ADAS_MGR2_B.v_max = ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i] -
-            ADAS_MGR2_B.v_min;
-          if (ADAS_MGR2_B.v_max > 0.01F) {
-            ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i] = ADAS_MGR2_B.v_max;
-          } else {
-            ADAS_MGR2_DW.ref_x[ADAS_MGR2_B.i] = 0.01F;
-          }
-        }
-      }
-#endif
     } else {
       memcpy(&ADAS_MGR2_DW.ref_x[0], &ADAS_MGR2_B.target_x[0], 20U * sizeof
              (real32_T));

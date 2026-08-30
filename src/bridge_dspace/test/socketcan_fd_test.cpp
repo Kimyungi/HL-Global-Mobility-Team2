@@ -129,6 +129,18 @@ int main()
     std::memcpy(&upd, rx.data + 56, sizeof(upd));
     check(upd == 42, "update 필드 보존 (오프셋 56)");
   }
+  check(stateUsesGpsDelta(0), "LANE(camera)는 GPS delta 사용");
+  check(stateUsesGpsDelta(1), "WAYPOINT(GPS)는 GPS delta 사용");
+  check(!stateUsesGpsDelta(2), "AVOID는 GPS delta 미사용");
+  check(!stateUsesGpsDelta(3), "PARKING은 GPS delta 미사용");
+  {
+    GpsDeltaUpdateGate gate;
+    check(gate.shouldApply(0, 42), "LANE의 새 update는 1회 적용");
+    check(!gate.shouldApply(0, 42), "LANE의 반복 update는 재적용 금지");
+    check(gate.shouldApply(1, 43), "WAYPOINT의 다음 update는 적용");
+    check(!gate.shouldApply(2, 44), "AVOID update는 적용 금지");
+    check(!gate.shouldApply(3, 44), "PARKING update는 적용 금지");
+  }
   {
     VehFeedbackFdPayload fb{};
     fb.x = 6.6; fb.y = 0.5; fb.yaw = 0.3; fb.v = 0.949;
