@@ -18,6 +18,9 @@
 //     write() 는 계속 성공한다 — dSPACE 가 아직 classic 인 버스에 FD 프레임을 보냈을 때
 //     30/30 write 성공 · tx_packets 0 · bus-errors +16 · ERROR-PASSIVE 였다. 그래서
 //     커널이 세는 실제 송신 수(sysfs tx_packets)를 매 5초 대조한다.
+// USB 재열거: Kvaser가 순간 분리되면 옛 SocketCAN fd는 ENODEV/ENXIO/ENETDOWN이 된다.
+//     노드는 종료하지 않고 fd만 폐기한 뒤 100ms마다 같은 이름의 새 인터페이스를 찾아
+//     재바인드한다. 복구 뒤 별도 저장 명령을 재생하지 않고 다음 MGM 최신 목표부터 보낸다.
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -85,12 +88,6 @@ public:
       }
     }
 
-    // 수신은 dSPACE→PC ID만 (자기 송신 프레임·잡음 배제)
-    const std::vector<can_filter> rx_filters = {
-      {kIdVehPose, CAN_SFF_MASK},
-      {kIdVehVel, CAN_SFF_MASK},
-      {kIdVehCommit, CAN_SFF_MASK},
-    };
     // RX 는 인터페이스가 FD 를 지원하면 **무조건** FD 수신을 켠다 (can_fd 와 무관).
     // 그래야 dSPACE 만 먼저 FD 로 넘어간 과도기에도 프레임이 보인다 — socketcan.hpp 주석 참조.
     const bool iface_fd = canIfaceSupportsFd(can_interface_);
@@ -101,7 +98,7 @@ public:
               "). 인터페이스를 FD 로 올리거나(sudo /usr/local/bin/can_up.sh " +
               can_interface_ + ") can_fd:=false 로 실행할 것");
     }
-    sock_ = openCanSocket(can_interface_, rx_filters, 100, iface_fd);
+    std::atomic_store(&sock_, openSocket(iface_fd));
 
     vv_pub_ = create_publisher<VehicleVector>("/vehicle/vector", rclcpp::SensorDataQoS());
     ref_sub_ = create_subscription<TargetRef>(
@@ -130,6 +127,8 @@ public:
             tx, rx, can_interface_.c_str());
         }
       });
+    reconnect_timer_ = create_wall_timer(
+      std::chrono::milliseconds(100), [this] {reconnectIfNeeded();});
 
     RCLCPP_INFO(
       get_logger(),
@@ -150,10 +149,75 @@ public:
       vehicle_csv_.flush();          // join 뒤라 기록자가 없다
       vehicle_csv_.close();
     }
-    ::close(sock_);
+    std::atomic_store(&sock_, SocketHandle{});
   }
 
 private:
+  using SocketHandle = std::shared_ptr<int>;
+
+  SocketHandle openSocket(bool iface_fd)
+  {
+    const std::vector<can_filter> rx_filters = {
+      {kIdVehPose, CAN_SFF_MASK},
+      {kIdVehVel, CAN_SFF_MASK},
+      {kIdVehCommit, CAN_SFF_MASK},
+    };
+    const int fd = openCanSocket(can_interface_, rx_filters, 100, iface_fd);
+    return SocketHandle(new int(fd), [](int * value) {
+      if (value != nullptr) {
+        ::close(*value);
+        delete value;
+      }
+    });
+  }
+
+  void invalidateSocket(const SocketHandle & failed_socket, int error_number, const char * path)
+  {
+    if (!isCanReconnectError(error_number)) {
+      return;
+    }
+    SocketHandle expected = failed_socket;
+    if (std::atomic_compare_exchange_strong(&sock_, &expected, SocketHandle{})) {
+      RCLCPP_ERROR(
+        get_logger(),
+        "CAN %s 단절 감지: %s (%d) — %s 재열거 후 소켓을 자동 재연결합니다",
+        path, std::strerror(error_number), error_number, can_interface_.c_str());
+    }
+  }
+
+  void reconnectIfNeeded()
+  {
+    if (std::atomic_load(&sock_)) {
+      return;
+    }
+    const int mtu = canIfaceMtu(can_interface_);
+    const bool iface_fd = mtu >= static_cast<int>(CANFD_MTU);
+    if (mtu < 0 || (can_fd_ && !iface_fd)) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "CAN 자동 복구 대기 — %s가 아직 없거나 FD 준비 전입니다 (MTU=%d)",
+        can_interface_.c_str(), mtu);
+      return;
+    }
+    try {
+      SocketHandle replacement = openSocket(iface_fd);
+      SocketHandle expected;
+      if (!std::atomic_compare_exchange_strong(&sock_, &expected, replacement)) {
+        return;
+      }
+      last_wire_tx_ = readIfaceTxPackets(can_interface_);
+      last_tx_frames_ = tx_frames_.load();
+      ++reconnect_count_;
+      RCLCPP_WARN(
+        get_logger(),
+        "CAN 소켓 자동 재연결 성공 #%lu — 다음 MGM 주기부터 최신 목표를 자동 송신합니다",
+        reconnect_count_.load());
+    } catch (const std::exception & e) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000, "CAN 자동 재연결 대기: %s", e.what());
+    }
+  }
+
   void sendFrames(const TargetRef & msg)
   {
     const size_t n = std::min<size_t>(msg.ref_points.size(), kNumPoints);
@@ -161,7 +225,12 @@ private:
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "empty ref_points — skip");
       return;
     }
-    bool ok = true;
+    const SocketHandle socket = std::atomic_load(&sock_);
+    if (!socket) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000, "CAN 재열거 중 — 목표 송신을 보류합니다");
+      return;
+    }
     // v5: 0x101 한 프레임에 참조점 1개(float64 ×4). MGM 이 20점을 만들어도 **첫 점**만
     // 싣는다 — v3 의 REF_POINT_0 와 같은 점이라 의미가 바뀌지 않는다.
     // dx/dy/dyaw/update 는 PR #52 에서 의미 미정이라 0 으로 채운다(팀장 결정).
@@ -172,7 +241,15 @@ private:
       pt.y = p.y;
       pt.yaw = p.yaw;
       pt.curvature = p.curvature;
-      ok &= sendCanFrame(sock_, kIdRefPointBase + i, pt, can_fd_, can_fd_brs_);
+      if (!sendCanFrame(*socket, kIdRefPointBase + i, pt, can_fd_, can_fd_brs_)) {
+        const int error_number = errno;
+        tx_frames_ += i + 1;
+        invalidateSocket(socket, error_number, "TX");
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 1000, "CAN write failed: %s",
+          std::strerror(error_number));
+        return;  // 헤더를 보내지 않아 dSPACE가 불완전 세트를 latch하지 않게 한다.
+      }
     }
     // 헤더는 반드시 마지막 — dSPACE는 이 프레임에서 n_points개 세트를 latch
     TargetHeaderPayload hdr{};
@@ -180,15 +257,18 @@ private:
     hdr.state = msg.state;
     hdr.n_points = static_cast<uint8_t>(n);
     hdr.v_ref = quantize(msg.v_ref, kVelScale);
-    ok &= sendCanFrame(sock_, kIdTargetHeader, hdr, can_fd_, can_fd_brs_);
+    if (!sendCanFrame(*socket, kIdTargetHeader, hdr, can_fd_, can_fd_brs_)) {
+      const int error_number = errno;
+      tx_frames_ += n + 1;
+      invalidateSocket(socket, error_number, "TX");
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000, "CAN write failed: %s",
+        std::strerror(error_number));
+      return;
+    }
 
     tx_frames_ += n + 1;    // REF_POINT n개 + 헤더 1 — 와이어 대조 기준
-    if (ok) {
-      ++tx_count_;
-    } else {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "CAN write failed: %s",
-        std::strerror(errno));
-    }
+    ++tx_count_;
   }
 
   // write() 는 성공했는데 프레임이 버스에 안 나가는 침묵을 잡는다.
@@ -196,6 +276,11 @@ private:
   // 그 다음이 비트레이트·샘플포인트 불일치다. 둘 다 조용히 진행되므로 경고로 올린다.
   void checkWireTx()
   {
+    if (!std::atomic_load(&sock_)) {
+      // 재열거로 sysfs 카운터가 0부터 다시 시작할 수 있다. 끊긴 동안 옛 값과 새 값을
+      // 빼면 unsigned underflow로 거대한 송신량이 만들어지므로 재연결 측에서 기준을 리셋한다.
+      return;
+    }
     const uint64_t wire = readIfaceTxPackets(can_interface_);
     const uint64_t frames = tx_frames_.load();
     if (wire == kTxPacketsUnavailable || last_wire_tx_ == kTxPacketsUnavailable) {
@@ -235,7 +320,17 @@ private:
     VehPosePayload pose{};
     VehVelPayload vel{};
     while (running_ && rclcpp::ok()) {
-      if (!readCanFrame(sock_, f)) {
+      const SocketHandle socket = std::atomic_load(&sock_);
+      if (!socket) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        continue;
+      }
+      ssize_t raw_len = 0;
+      if (!readCanFrame(*socket, f, &raw_len)) {
+        const int error_number = errno;
+        if (raw_len < 0) {
+          invalidateSocket(socket, error_number, "RX");
+        }
         continue;  // timeout — 종료 플래그 재확인
       }
       // 길이가 포맷을 가른다: 64 = v5(PR #52), 8 = v3. 그 외는 설정 오류다.
@@ -323,14 +418,18 @@ private:
   bool rx_fmt_logged_{false};   // 첫 수신 프레임의 포맷을 1회만 로깅 (rx 스레드 전용)
   std::atomic<uint64_t> tx_frames_{0};          // write() 에 넘긴 누적 프레임 수
   uint64_t last_tx_frames_{0}, last_wire_tx_{0};  // 5초 대조용 (타이머 스레드 전용)
-  int sock_{-1};
+  // atomic shared_ptr로 TX callback·RX thread가 교체 중인 닫힌 fd를 재사용하지 않게 한다.
+  // 각 작업이 잡은 handle이 끝난 뒤에만 옛 fd가 close된다.
+  SocketHandle sock_;
   uint16_t tx_counter_{0};
   std::atomic<bool> running_{true};
+  std::atomic<uint64_t> reconnect_count_{0};
   std::atomic<uint64_t> tx_count_{0}, rx_count_{0};
   std::thread rx_thread_;
   rclcpp::Publisher<VehicleVector>::SharedPtr vv_pub_;
   rclcpp::Subscription<TargetRef>::SharedPtr ref_sub_;
   rclcpp::TimerBase::SharedPtr stats_timer_;
+  rclcpp::TimerBase::SharedPtr reconnect_timer_;
 };
 
 }  // namespace bridge_dspace

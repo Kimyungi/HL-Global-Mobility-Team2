@@ -35,6 +35,12 @@ static void check(bool ok, const std::string & what)
 
 int main()
 {
+  check(isCanReconnectError(ENODEV), "USB 장치 소멸은 재연결 대상");
+  check(isCanReconnectError(ENXIO), "재열거 전 소켓 ENXIO는 재연결 대상");
+  check(isCanReconnectError(ENETDOWN), "인터페이스 down은 재연결 대상");
+  check(!isCanReconnectError(EAGAIN), "수신 timeout은 재연결 대상이 아님");
+  check(!isCanReconnectError(EMSGSIZE), "프로토콜 길이 오류는 재연결 대상이 아님");
+
   // ── 구조체 크기 = 커널이 포맷을 가르는 기준 (read/write 반환 바이트 수)
   check(sizeof(can_frame) == CAN_MTU, "can_frame == CAN_MTU(16)");
   check(sizeof(canfd_frame) == CANFD_MTU, "canfd_frame == CANFD_MTU(72)");

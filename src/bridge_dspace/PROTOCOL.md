@@ -68,6 +68,10 @@ classic 시절엔 "1 Mbps / Intel" 두 줄이면 끝이었다. FD 는 아래가 
 - **PC TX**: `can_fd` 파라미터 (기본 `true`). `ros2 launch bridge_dspace bridge.launch.py can_fd:=false`
   로 classic 프레임 송신으로 되돌린다 — 인터페이스 설정은 그대로 둬도 된다
   (FD 인터페이스는 classic 프레임을 그대로 실어 보낸다).
+- **USB 순간 분리 자동 복구**: 브리지는 `ENODEV`·`ENXIO`·`ENETDOWN` 등을 감지하면
+  프로세스를 종료하지 않고 옛 소켓만 폐기한다. udev가 같은 이름의 `can0`를 다시
+  CAN FD로 올리면 100ms 재시도에서 새 소켓을 열고, 다음 MGM 주기의 최신 목표부터
+  자동 송신한다. 단절 전에 받은 목표를 저장해 재생하지 않는다.
 - **PC RX**: 스위치가 없다. 인터페이스가 FD 면 **항상** classic·FD 를 모두 받는다.
   RX 를 파라미터로 묶으면 dSPACE 만 먼저 FD 로 넘어간 순간 커널이 프레임을 **에러 없이
   통째로 버려** "배선은 멀쩡한데 무수신"이 된다 — 2026-08-25 RX 0건 사고와 같은 침묵이다.
