@@ -163,7 +163,8 @@ if(BUILD_TESTING)
 endif()
 
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS tools/go tools/state DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS tools/go tools/state tools/can_watchdog_check.py
+  DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_package()

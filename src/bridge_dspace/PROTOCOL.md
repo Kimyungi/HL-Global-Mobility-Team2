@@ -159,6 +159,29 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 - **브리지는 수신한 TargetRef를 즉시 송신한다 (자체 재송신 없음).** MGM이 죽으면 송신도 멈춰야
   dSPACE watchdog이 동작한다 — 브리지에 keep-alive를 넣지 말 것.
 - **watchdog은 TARGET_HEADER의 counter만 본다.** point 프레임 수신 여부는 판정에 쓰지 않는다.
+- **세트 원자성 (2026-08-26).** 점 프레임이 하나라도 송신 실패하면 브리지는 **헤더를 보내지
+  않는다.** 헤더가 커밋이므로, 반쯤 갱신된 세트를 dSPACE가 latch 하는 것을 막기 위해서다.
+  counter도 그만큼 멈추므로 watchdog이 자연히 발동한다 — 위 "송신이 멈춰야 한다"와 같은 방향이다.
+
+### PC 측 CAN 회생 — `/bridge/can_health` (2026-08-26, 담당: 이기돈)
+
+브리지가 `CanHealth.msg`를 10Hz로 발행한다. **CAN 프레임은 하나도 유발하지 않는다** —
+ROS 토픽일 뿐이며, 위 "keep-alive를 넣지 말 것"은 그대로 지킨다. 송신은 여전히
+`/adas/target_ref`를 받은 순간에만 일어난다.
+
+| 필드 | 뜻 |
+|---|---|
+| `link_up` | 소켓이 살아 있는가 (치명 errno 로 닫고 재오픈 대기 중이면 false) |
+| `tx_ok` · `consecutive_tx_fail` | 마지막 송신 시도의 성패 · 연속 실패 주기 수 |
+| `last_errno` | 치명 = ENETDOWN·ENODEV·ENXIO·EBADF (소켓 재오픈) / 일시 = ENOBUFS·EAGAIN (버스 혼잡, 재오픈 안 함) |
+| `bus_off` · `last_err_class` | `CAN_RAW_ERR_FILTER`로 받은 에러 프레임. bus-off 자체는 드라이버가 `restart-ms 100`으로 복구하지만, **그 구간의 송신은 실패했다** |
+| `down_duration_s` | 불건전 지속 시간 — MGM의 재인가 문턱 입력 |
+
+- 치명 errno면 **수신 스레드가** 소켓을 닫고 `reopen_interval_sec`(기본 1.0) 간격으로
+  재오픈한다. 닫는 주체를 한 곳으로 묶어 TX가 쓰는 도중 fd가 사라지는 경우를 없앤다.
+- **재오픈은 소켓만 되살린다.** 실패한 프레임을 다시 쓰지 않고 주기 송신도 하지 않는다.
+- MGM 측 대응은 `CLAUDE.md` §5.7 ⑥. 짧은 두절은 위 "복구는 자동 · 래치 없음" 규정대로
+  자동 복귀하고, `can_relatch_sec`(기본 1.0s)를 넘는 고장만 재인가를 요구한다.
 
 ### watchdog 상세 (dSPACE 측 구현 규정 — 담당: 손상민)
 
