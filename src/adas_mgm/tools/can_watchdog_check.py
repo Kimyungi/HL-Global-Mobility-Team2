@@ -114,6 +114,10 @@ def main():
 
     rclpy.shutdown()
     print('\n--- 판정 ---')
+    if any(v is None for _, v in out):
+        print('FAIL — /adas/target_ref 무수신. mgm_node 가 안 떠 있다:')
+        print('  ros2 run adas_mgm mgm_node --ros-args -p wait_go:=false')
+        raise SystemExit(1)
     ok = (out[0][1] > 0 and out[1][1] == 0.0 and out[2][1] > 0 and
           out[3][1] == 0.0 and out[4][1] == 0.0 and out[5][1] > 0)
     print('PASS' if ok else 'FAIL')
