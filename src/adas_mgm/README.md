@@ -2,6 +2,17 @@
 
 구조·규칙의 단일 소스는 워크스페이스 루트 `CLAUDE.md` (§2, §4, §5, §5.5). 이 문서는 실행·측정 절차만 다룬다.
 
+실차 통합 실행은 다음 두 문서를 순서대로 사용한다.
+
+1. [`RUNBOOK_full_measurement_20260830.md`](RUNBOOK_full_measurement_20260830.md) —
+   처음 설치하거나 장착 위치가 바뀐 경우의 임계값 측정
+2. [`RUNBOOK_full_operation_20260830.md`](RUNBOOK_full_operation_20260830.md) —
+   측정 완료 후 차선·GPS·회피·긴급정지·신호등을 함께 실행
+
+신호등 실차 정지의 표준 실행은 운영 런북의
+`REAL_VEHICLE_lane_gps_can.launch.py` 명령 블록 하나다. 야간 국소 대비·평행
+에지 쌍 정지선 검출과 `stack_traffic_node` 2초 자동 재시작도 이 구성에 포함된다.
+
 ## 구조 (§5.5 이중 트랙)
 
 ```

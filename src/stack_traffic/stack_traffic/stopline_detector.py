@@ -115,6 +115,17 @@ def detect_stop_line(
     maximum_saturation: int = 90,
     adaptive_percentile: float = 65.0,
     adaptive_margin: float = 12.0,
+    local_contrast_enabled: bool = True,
+    local_contrast_minimum_value: int = 60,
+    local_contrast_delta: float = 25.0,
+    local_contrast_background_ratio: float = 0.12,
+    local_contrast_clahe_clip_limit: float = 2.0,
+    edge_pair_enabled: bool = True,
+    edge_pair_canny_low: int = 35,
+    edge_pair_canny_high: int = 110,
+    edge_pair_minimum_length_ratio: float = 0.35,
+    edge_pair_maximum_angle_difference_deg: float = 4.0,
+    edge_pair_minimum_interior_contrast: float = 8.0,
     horizontal_close_ratio: float = 0.015,
     minimum_width_ratio: float = 0.45,
     minimum_aspect_ratio: float = 6.0,
@@ -157,11 +168,152 @@ def detect_stop_line(
     value_threshold = int(
         round(max(minimum_value, min(235.0, adaptive_value + adaptive_margin)))
     )
-    white_mask = np.where(
+    absolute_white_mask = np.where(
         (saturation <= maximum_saturation) & (value >= value_threshold),
         255,
         0,
     ).astype(np.uint8)
+
+    # 야간에는 흰색 도색도 절대 밝기 145에 못 미친다. 단순히 그 하한을
+    # 낮추면 헤드라이트 얼룩과 노면 전체가 흰색이 되므로, LAB 명도 CLAHE와
+    # 넓은 배경 블러의 차이로 "주변 노면보다 밝은 부분"만 보조 후보로 쓴다.
+    # 이후의 폭·각도·중앙 통과·연속 프레임 조건은 낮 후보와 동일하게 적용된다.
+    local_contrast_mask = np.zeros_like(absolute_white_mask)
+    if local_contrast_enabled:
+        lightness = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)[:, :, 0]
+        clahe = cv2.createCLAHE(
+            clipLimit=float(local_contrast_clahe_clip_limit),
+            tileGridSize=(8, 8),
+        )
+        enhanced = clahe.apply(lightness)
+        background_kernel = max(
+            9,
+            int(round(roi_height * local_contrast_background_ratio)),
+        )
+        if background_kernel % 2 == 0:
+            background_kernel += 1
+        # 세로 방향 opening은 긴 가로선도 두께가 창보다 얇으면 제거해
+        # 주변 노면 밝기를 복원한다. Gaussian blur는 선 중앙에서 배경이
+        # 선 밝기에 가까워져 두꺼운 야간 도색을 두 조각으로 만들 수 있다.
+        background = cv2.morphologyEx(
+            enhanced,
+            cv2.MORPH_OPEN,
+            np.ones((background_kernel, 3), dtype=np.uint8),
+        )
+        contrast = cv2.subtract(enhanced, background)
+        local_contrast_mask = np.where(
+            (saturation <= maximum_saturation)
+            & (lightness >= local_contrast_minimum_value)
+            & (contrast >= local_contrast_delta),
+            255,
+            0,
+        ).astype(np.uint8)
+
+    white_mask = cv2.bitwise_or(absolute_white_mask, local_contrast_mask)
+
+    # 색/명도 마스크가 약한 경우 정지선의 위·아래 경계 두 개를 보조 후보로
+    # 만든다. 한 개짜리 그림자·차선은 제외하고, 서로 평행하며 충분히 길고
+    # 그 사이가 위·아래 노면보다 밝은 쌍만 채운 마스크로 변환한다.
+    if edge_pair_enabled:
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        edge_gray = cv2.createCLAHE(
+            clipLimit=float(local_contrast_clahe_clip_limit),
+            tileGridSize=(8, 8),
+        ).apply(gray)
+        edges = cv2.Canny(
+            edge_gray,
+            threshold1=int(edge_pair_canny_low),
+            threshold2=int(edge_pair_canny_high),
+        )
+        minimum_edge_length = max(
+            10,
+            int(round(roi_width * edge_pair_minimum_length_ratio)),
+        )
+        lines = cv2.HoughLinesP(
+            edges,
+            rho=1.0,
+            theta=np.pi / 180.0,
+            threshold=max(20, minimum_edge_length // 4),
+            minLineLength=minimum_edge_length,
+            maxLineGap=max(8, int(round(roi_width * 0.04))),
+        )
+        edge_pair_mask = np.zeros_like(white_mask)
+        normalized_lines = []
+        if lines is not None:
+            for raw_line in lines[:, 0, :]:
+                x1, y1, x2, y2 = (float(v) for v in raw_line)
+                if x2 < x1:
+                    x1, x2, y1, y2 = x2, x1, y2, y1
+                dx = x2 - x1
+                if dx < minimum_edge_length:
+                    continue
+                angle = math.degrees(math.atan2(y2 - y1, dx))
+                if abs(angle) > maximum_angle_deg:
+                    continue
+                normalized_lines.append((x1, y1, x2, y2, angle))
+
+        maximum_pair_gap = max(
+            minimum_thickness_px,
+            int(round(roi_height * maximum_thickness_ratio)),
+        )
+        for first_index, first in enumerate(normalized_lines):
+            for second in normalized_lines[first_index + 1:]:
+                if abs(first[4] - second[4]) > edge_pair_maximum_angle_difference_deg:
+                    continue
+                overlap_x1 = max(first[0], second[0])
+                overlap_x2 = min(first[2], second[2])
+                if overlap_x2 - overlap_x1 < minimum_edge_length:
+                    continue
+                center_x = 0.5 * (overlap_x1 + overlap_x2)
+
+                def y_at(line, x_value):
+                    return line[1] + (
+                        (x_value - line[0])
+                        * (line[3] - line[1])
+                        / max(1.0, line[2] - line[0])
+                    )
+
+                first_y = y_at(first, center_x)
+                second_y = y_at(second, center_x)
+                top, bottom = (
+                    (first, second) if first_y <= second_y else (second, first)
+                )
+                gap = abs(second_y - first_y)
+                if not minimum_thickness_px <= gap <= maximum_pair_gap:
+                    continue
+                xs = np.arange(
+                    max(0, int(math.floor(overlap_x1))),
+                    min(roi_width, int(math.ceil(overlap_x2)) + 1),
+                )
+                if xs.size < minimum_edge_length:
+                    continue
+                top_y = np.asarray([y_at(top, float(x)) for x in xs])
+                bottom_y = np.asarray([y_at(bottom, float(x)) for x in xs])
+                middle_y = np.clip(
+                    np.rint(0.5 * (top_y + bottom_y)).astype(int),
+                    0,
+                    roi_height - 1,
+                )
+                band_offset = max(2, int(round(gap)))
+                above_y = np.clip(np.rint(top_y).astype(int) - band_offset, 0, roi_height - 1)
+                below_y = np.clip(np.rint(bottom_y).astype(int) + band_offset, 0, roi_height - 1)
+                interior_mean = float(np.mean(gray[middle_y, xs]))
+                exterior_mean = 0.5 * float(
+                    np.mean(gray[above_y, xs]) + np.mean(gray[below_y, xs])
+                )
+                if interior_mean - exterior_mean < edge_pair_minimum_interior_contrast:
+                    continue
+                polygon = np.array(
+                    [
+                        [overlap_x1, y_at(top, overlap_x1)],
+                        [overlap_x2, y_at(top, overlap_x2)],
+                        [overlap_x2, y_at(bottom, overlap_x2)],
+                        [overlap_x1, y_at(bottom, overlap_x1)],
+                    ],
+                    dtype=np.int32,
+                )
+                cv2.fillConvexPoly(edge_pair_mask, polygon, 255)
+        white_mask = cv2.bitwise_or(white_mask, edge_pair_mask)
 
     white_mask = cv2.morphologyEx(
         white_mask,

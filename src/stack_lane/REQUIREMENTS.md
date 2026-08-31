@@ -4,7 +4,8 @@
 
 ## 역할
 
-차선 검출(YOLO) → 차선 ref (camera 100ms) + 정지선 검출 → stack_traffic 전달
+차선 검출(YOLO) → 차선 ref (camera 100ms). 정지선은 stack_traffic의 전용 OAK-D가
+주간 흰색·야간 국소 대비·평행 에지 쌍으로 직접 검출한다.
 
 ## 계약 (이것만 지키면 나머지는 자유)
 
@@ -16,8 +17,10 @@
 - ~~출력 ②: `/perception/stopline`~~ **폐기 (2026-08-08, PR #21·#28)** — 정지선 검출은
   stack_traffic(김재민)이 자체 OAK-D에서 수행하는 것으로 재배정됨. stack_lane은
   정지선을 발행하지 않는다. 상세: CLAUDE.md §6.
-- 금지: v_ref·정지 판단·모드 판단을 이 스택에서 하지 말 것 (CLAUDE.md §5.1). 정지선도 거리 보고만 — 정지 요구는 stack_traffic이, 적용은 MGM이 한다.
-- 검증 시나리오: 차선 신뢰도가 떨어질 때 confidence가 실제로 떨어지는지 (MGM 히스테리시스가 이 값에 의존). 정지선 접근~정차 직전까지 distance가 연속적으로 줄어드는지 (특히 **0.5m 이내 근거리에서 시야 이탈 전까지 유지되는지** — stack_traffic 정지 트리거가 0.5m).
+- 금지: v_ref·정지 판단·모드 판단을 이 스택에서 하지 말 것 (CLAUDE.md §5.1).
+  정지 요구는 stack_traffic이 만들고 적용은 MGM이 한다.
+- 검증 시나리오: 차선 신뢰도가 떨어질 때 confidence가 실제로 떨어지는지
+  (MGM 히스테리시스가 이 값에 의존). 정지선 검증은 stack_traffic 문서에서 수행한다.
 
 ## 공통 규칙 (CLAUDE.md)
 

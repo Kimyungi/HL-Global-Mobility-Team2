@@ -15,8 +15,10 @@ from stack_traffic.logic import (
     roi_bbox_to_frame,
     select_horizontal_roi_tile,
     select_tracking_candidate,
+    should_accept_anchored_green,
     should_clear_visual_track,
     should_record_color_vote,
+    update_red_phase_latch,
     update_stop_latch,
 )
 
@@ -317,6 +319,30 @@ class TestTrafficStopLogic(unittest.TestCase):
 
     def test_red_wins_if_both_votes_are_active(self):
         self.assertTrue(update_stop_latch(True, True, True, True, True))
+
+    def test_red_phase_survives_bbox_loss_until_fresh_green(self):
+        phase = update_red_phase_latch(False, True, False)
+        self.assertTrue(phase)
+        for _ in range(50):
+            phase = update_red_phase_latch(phase, False, False)
+        self.assertTrue(phase)
+        self.assertTrue(
+            update_stop_latch(False, phase, True, False, True)
+        )
+        phase = update_red_phase_latch(phase, False, True)
+        self.assertFalse(phase)
+
+    def test_unconfirmed_red_never_arms_red_phase(self):
+        self.assertFalse(update_red_phase_latch(False, False, False))
+
+    def test_red_wins_over_simultaneous_green_for_phase(self):
+        self.assertTrue(update_red_phase_latch(True, True, True))
+
+    def test_anchored_green_requires_red_phase_and_saved_bbox(self):
+        self.assertTrue(should_accept_anchored_green(True, True, True))
+        self.assertFalse(should_accept_anchored_green(False, True, True))
+        self.assertFalse(should_accept_anchored_green(True, False, True))
+        self.assertFalse(should_accept_anchored_green(True, True, False))
 
     def test_color_ratios_are_mutually_exclusive(self):
         self.assertEqual(
