@@ -36,9 +36,10 @@ g++ -std=c++17 -Wall -Wextra -c core/mgm_step.cpp -I.   # 통과해야 정상
 
 ## 실험용 generated backend (4상태 v1.88, opt-in)
 
-ROS 노드의 기본 backend는 기존 4상태 C++ `core`이며, 기본 빌드에는 생성
+ROS 노드의 기본 backend는 TRAFFIC을 포함한 5상태 C++ `core`이며, 기본 빌드에는 생성
 backend가 링크되지 않는다. `ADAS_MGR2` v1.88을 실행하려면 아래 두 단계를 모두
-명시해야 한다.
+명시해야 한다. v1.88은 TRAFFIC 상태가 없으므로 generated backend는
+`traffic_state_enabled=false`일 때만 기동한다.
 
 1. 지원 호스트에서 CMake opt-in:
 

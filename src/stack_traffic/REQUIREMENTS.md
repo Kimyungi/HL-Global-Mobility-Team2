@@ -8,13 +8,14 @@
 
 1. RGB 상단 ROI에서 YOLOv8n으로 주행 대상 신호등 bbox 검출
 2. bbox 내부 HSV 비율로 적색·초록색 판정
-3. RGB 하단 ROI에서 주간 흰색·야간 국소 대비·평행 에지 쌍으로 횡방향 정지선 검출
+3. 적색 확정 뒤 RGB 하단 ROI에서 주간 흰색·야간 국소 대비·평행 에지 쌍으로 횡방향 정지선 검출
 4. 선택적 저해상도 depth 진단에서 정지선 인접 노면의 optical-Z 측정
-5. 적색과 RGB y gate(선택적으로 depth)를 결합해 `/perception/traffic_stop` 발행
+5. 적색/초록 상태와 최초 래치용 metric 정지선 거리를 `/perception/traffic_stop`으로 발행
 
 외부 `/perception/stopline`은 구독하지 않는다. CAN과 `v_ref`도 직접 만들지
-않는다. MGM이 `TrafficStop.stop_required`를 `v_ref=0`으로 병합하고
-`bridge_dspace`가 CAN으로 전송한다.
+않는다. MGM은 적색에서 TRAFFIC 상태에 진입하고, 최초 유효 정지선 거리를 래치한
+뒤 `/vehicle/vector.v`를 적분해 정지선 소실 이후의 남은 거리를 계산한다.
+`bridge_dspace`가 목표속도를 CAN으로 전송하고 dSPACE 실차속도를 다시 돌려준다.
 
 ## 신호등 판정
 
@@ -36,9 +37,8 @@
 - unknown·미검출은 색상 투표창을 진행시키지 않는다. template 적색 투표는
   동일 target에서 fresh YOLO 적색을 먼저 확인한 뒤에만 허용한다. 초록 해제는
   fresh YOLO bbox 또는 확정 적색 anchor 안의 최신 프레임에서만 허용한다.
-- 패키지 기본은 자동 해제를 끄고, 실차·실험 launch는 위 조건의 초록 3/5로만
-  해제하는 `resume_on_green=true`를 기본으로 둔다
-  (CLAUDE.md §6, 2026-08-09 팀장 결정). `resume_on_red_clear`는 끈다.
+- 패키지와 실차·실험 launch 모두 위 조건의 초록 3/5에서 즉시 해제하는
+  `resume_on_green=true`를 기본으로 둔다. `resume_on_red_clear`는 끈다.
 
 ## 정지선 판정
 
@@ -68,13 +68,16 @@
 조기 정지를 막기 위해 두 조건을 모두 만족해야 한다. 둘 다 `0`이면 측정
 전용 모드라서 정지 요구를 만들지 않는다.
 
-최종 진입 조건은 다음과 같다.
+TRAFFIC 상태 진입은 정지선과 무관하게 다음 조건 하나다.
 
 ```text
 red_phase_latched
-AND stable_stopline
-AND enabled_stopline_gates
 ```
+
+진입 뒤에만 정지선 검출을 수행한다. 최초 `stable_stopline`과 유효 depth 거리가
+확정되면 MGM이 그 거리를 한 번 래치한다. 약 1m 안쪽에서 정지선이 검출되지 않아도
+정상이며, 그 뒤에는 영상 거리 대신 실차속도 적분값을 사용한다. 확정 초록은
+TRAFFIC을 즉시 해제한다.
 
 `TrafficStop.stop_distance`에는 유효한 optical-Z 미터 값만 넣고 frame id를
 `oak_rgb_optical_frame`으로 표시한다. depth가 무효하면 `-1.0`이다. y ratio를
@@ -154,14 +157,15 @@ y_raw, y_ratio, y_med, line_z, z_med, stable, accepted
 
 ## 안전 조건
 
-- MGM은 `/perception/traffic_stop` 미수신/시간 초과 0.5초 후
-  `traffic_stop_required=true`로 보정해야 한다(LANE/WAYPOINT).
+- MGM은 `/perception/traffic_stop` 미수신/시간 초과 0.5초 후 fail-safe 정지한다.
+- TRAFFIC 중 `/vehicle/vector`가 0.2초 이상 stale이면 거리 적분을 신뢰하지 않고
+  fail-safe 정지한다.
 - 카메라·모델·프로세스 장애와 무관하게 물리 E-stop 담당자가 즉시
   제어할 수 있어야 한다.
 - dSPACE의 CAN counter watchdog이 실제로 동작하는지 먼저 확인한다.
 - 실제 주행은 유효한 E-stop heartbeat와 경로 입력이 있어야 한다.
 - `dummy_ref_publisher`와 MGM을 동시에 실행하지 않는다.
-- 신호등 정지는 MGM의 LANE/WAYPOINT 상태에서만 적용된다.
+- 적색은 LANE/WAYPOINT에서 TRAFFIC으로 전이하며, 초록은 LANE으로 복귀한다.
 
 실행 명령과 터미널 배치는
 `src/adas_mgm/RUNBOOK_full_operation_20260830.md`를 따른다.

@@ -38,6 +38,7 @@ const char * stateName(uint8_t state)
     case MGM_STATE_WAYPOINT: return "WAYPOINT";
     case MGM_STATE_AVOID: return "AVOID";
     case MGM_STATE_PARKING: return "PARKING";
+    case MGM_STATE_TRAFFIC: return "TRAFFIC";
     default: return "?";
   }
 }
@@ -48,7 +49,9 @@ const char * transitionCsvHeader()
          "lane_conf,lane_low_cnt,lane_high_cnt,lane_n,"
          "cross_track_m,gps_n,avoid_ticks,return_hold_left,"
          "stop_zone,at_end,gps_only_zone,heading_valid,"
-         "estop,traffic_stop,obstacle,avoidable,ttc,narrow,maneuver_done,avoid_zone,"
+         "estop,traffic_stop,traffic_red,traffic_green,stopline_detected,"
+         "stopline_distance_m,vehicle_speed_mps,vehicle_speed_valid,"
+         "obstacle,avoidable,ttc,narrow,maneuver_done,avoid_zone,"
          "parking_zone,parking_found,parking_done,v_ref\n";
 }
 
@@ -84,6 +87,12 @@ TransitionRecord explainTransition(
     r.spec_match = s.lane_confidence > p.lane_conf_return &&
       lane_high_cnt_before >= n - 1 && cross_ok && !s.gps_gps_only_zone &&
       return_hold_left_before <= 1;
+  } else if (to == MGM_STATE_TRAFFIC) {
+    r.rule = "lane/waypoint→traffic: 확정 적색";
+    r.spec_match = s.traffic_red_active;
+  } else if (from == MGM_STATE_TRAFFIC && to == MGM_STATE_LANE) {
+    r.rule = "traffic→lane: 확정 초록";
+    r.spec_match = s.traffic_green_active;
   } else if (to == MGM_STATE_AVOID) {
     r.rule = "→avoid: 장애물 감지 + 회피 가능 (+ 회피 허용 구간)";
     r.spec_match = s.avoid_obstacle_detected && s.avoid_avoidable &&
@@ -116,6 +125,11 @@ TransitionRecord explainTransition(
   d += b("at_end", s.gps_at_end) + " ";
   d += b("estop", s.estop) + " ";
   d += b("traffic_stop", s.traffic_stop_required) + " ";
+  d += b("traffic_red", s.traffic_red_active) + " ";
+  d += b("traffic_green", s.traffic_green_active) + " ";
+  d += b("stopline", s.traffic_stopline_detected) + " ";
+  d += f("stopline_m", s.traffic_stop_distance, 2) + " ";
+  d += f("v_actual", s.vehicle_speed, 2) + " ";
   d += b("obstacle", s.avoid_obstacle_detected) + " ";
   d += b("avoidable", s.avoid_avoidable) + " ";
   d += f("ttc", s.avoid_ttc, 2) + " ";
@@ -129,7 +143,7 @@ TransitionRecord explainTransition(
     "%lld,%.2f,%s,%s,\"%s\",%d,"
     "%.4f,%d,%d,%d,"
     "%.4f,%d,%d,%d,%u,%d,%d,%d,"
-    "%d,%d,%d,%d,%.3f,%d,%d,%d,"
+    "%d,%d,%d,%d,%d,%.3f,%.3f,%d,%d,%d,%.3f,%d,%d,%d,"
     "%d,%d,%d,%.4f\n",
     static_cast<long long>(tick), tick * 0.01,
     stateName(from), stateName(to), r.rule.c_str(), r.spec_match ? 1 : 0,
@@ -139,6 +153,10 @@ TransitionRecord explainTransition(
     avoid_ticks_before, return_hold_left_before, s.gps_stop_zone,
     s.gps_at_end ? 1 : 0, s.gps_gps_only_zone ? 1 : 0, s.gps_heading_valid ? 1 : 0,
     s.estop ? 1 : 0, s.traffic_stop_required ? 1 : 0,
+    s.traffic_red_active ? 1 : 0, s.traffic_green_active ? 1 : 0,
+    s.traffic_stopline_detected ? 1 : 0,
+    static_cast<double>(s.traffic_stop_distance),
+    static_cast<double>(s.vehicle_speed), s.vehicle_speed_valid ? 1 : 0,
     s.avoid_obstacle_detected ? 1 : 0, s.avoid_avoidable ? 1 : 0,
     static_cast<double>(s.avoid_ttc), s.avoid_narrow_gap ? 1 : 0,
     s.avoid_maneuver_done ? 1 : 0, s.gps_avoid_zone ? 1 : 0,

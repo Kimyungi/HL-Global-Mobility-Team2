@@ -138,6 +138,10 @@ mgm_node:
     # stack_estop 하트비트 50ms 기준 5주기.
     estop_stale_timeout_sec: 0.25
     traffic_stale_timeout_sec: 0.5   # 수신 이력 후 끊김만 보정 (§5.7 ③) — 미수신은 단독 스택 시험 허용
+    vehicle_stale_timeout_sec: 0.2   # TRAFFIC 거리 적분용 dSPACE 실차속도 freshness
+    traffic_state_enabled: true      # 적색 즉시 TRAFFIC 진입 (generated v1.88에서는 false만 허용)
+    traffic_stop_offset_m: 0.0       # 정지선 앞 목표 여유거리(카메라 장착 오프셋 포함)
+    traffic_min_decel_mps2: 0.05     # 장거리에서도 감속곡선이 0에 가까워지지 않게 하는 하한
     # lane/gps 경로 신선도 (§5.7 ②) — 해당 소스를 쓰는 스테이트에서만 적용.
     # gps는 staleness 외에 fix_quality=0/빈 경로(신선하지만 무효)도 동일 보정.
     # lane 1.0s: 산업용 PC는 GPU 없어 CPU 추론 2.5Hz(프레임 간격 최대 0.45s 실측,

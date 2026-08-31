@@ -139,11 +139,11 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 - `dx`/`dy`는 두 연속 GPS pose의 ENU 이동량을 **이전 pose의 vehicle frame**으로
   회전한 값이다. 첫 유효 sample은 `dx=dy=dyaw=0`, `update=1`이다. GPS sample 사이의
   10ms CAN 주기에는 네 필드를 직전 값으로 유지한다.
-- 이 네 필드는 **LANE(카메라)와 WAYPOINT(GPS) 주행에서만** 유효하다. AVOID/PARKING은
+- 이 네 필드는 **LANE(카메라), WAYPOINT(GPS), TRAFFIC(차선 유지)에서만** 유효하다. AVOID/PARKING은
   `dx=dy=dyaw=0`, `update=0`을 송신해 서로 다른 경로 출처가 섞이지 않게 한다.
 - dSPACE는 10ms마다 반복되는 동일 delta를 매번 적분하면 안 된다. 보관한 `last_update`와
   다른 `update`를 받았을 때만 `dx/dy/dyaw`를 정확히 한 번 적용하고 `last_update`를 갱신한다.
-  단, 이 비교·적용은 LANE/WAYPOINT 상태에서만 수행한다. 이 규칙은 DBC의 `update`
+  단, 이 비교·적용은 LANE/WAYPOINT/TRAFFIC 상태에서만 수행한다. 이 규칙은 DBC의 `update`
   u64/Intel 정의와 한 세트다.
 
 ### TARGET_HEADER (`0x100`) — 8 bytes
@@ -151,7 +151,7 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 | offset | 형식 | 필드 | 설명 |
 |---|---|---|---|
 | 0 | u16 | counter | 송신마다 +1 (wrap). **watchdog 판정 입력** — 30ms(3주기) 미갱신 시 v_ref=0, 조향 유지 |
-| 2 | u8 | state | 0=lane, 1=waypoint, 2=avoid, 3=parking |
+| 2 | u8 | state | 0=lane, 1=waypoint, 2=avoid, 3=parking, 4=traffic |
 | 3 | u8 | n_points | 유효 포인트 수 (1~20) — 이번 주기에 송신된 REF_POINT 프레임 수 |
 | 4 | i16 | v_ref | 1 mm/s LSB. [±32.767 m/s] 최종 목표 속도. 정지 = 0. **음수 = 후진** (2026-08-24: MGM §4 후진 탈출이 처음으로 음수를 낸다 — 그전까지 PC는 0 이상만 보냈다. dSPACE MPC·하위 PI 가 음수 목표속도를 그대로 후진으로 처리한다는 팀 확인을 받았으나 **실차 재확인 권장**) |
 | 6 | u16 | reserved | 0 |

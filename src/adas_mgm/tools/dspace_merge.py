@@ -47,16 +47,18 @@ np.seterr(invalid="ignore", divide="ignore")
 TICK = 0.01           # MGM 루프 주기 [s] — 병합 격자
 L_WB = 0.595          # 휠베이스 [m] (조향각 ↔ 곡률 변환)
 MAX_STEER_DEG = 27.3  # 조향 물리 한계
-STATE_NAME = {0: "차선", 1: "GPS", 2: "회피", 3: "주차"}
+STATE_NAME = {0: "차선", 1: "GPS", 2: "회피", 3: "주차", 4: "신호등"}
 
 # dataviz 검증 팔레트(light) — 슬롯 1~3 all-pairs 통과. 스테이트 색은 프로젝트 공용:
 # 차선=파랑 / GPS=주황 / 회피=초록 (drive_logs 기존 분석 그림과 동일하게 유지할 것)
-C_LANE, C_GPS, C_AVOID, C_PARK = "#2a78d6", "#eb6834", "#1baf7a", "#8a63d2"
+C_LANE, C_GPS, C_AVOID, C_PARK, C_TRAFFIC = (
+    "#2a78d6", "#eb6834", "#1baf7a", "#8a63d2", "#d59b00"
+)
 C_CMD, C_ACT, C_GEOM = "#2a78d6", "#eb6834", "#a9a89f"
 C_TRACK, C_CRIT, C_WARN = "#a9a89f", "#e34948", "#eda100"
 INK, INK2, INK3 = "#0b0b0b", "#52514e", "#87857d"
-SCOL = {0: C_LANE, 1: C_GPS, 2: C_AVOID, 3: C_PARK}
-SBG = {0: "#eaf2fc", 1: "#fdeee7", 2: "#e6f6f0", 3: "#f0ebfa"}
+SCOL = {0: C_LANE, 1: C_GPS, 2: C_AVOID, 3: C_PARK, 4: C_TRAFFIC}
+SBG = {0: "#eaf2fc", 1: "#fdeee7", 2: "#e6f6f0", 3: "#f0ebfa", 4: "#fff4d6"}
 
 
 # ─────────────────────────────────────────────────────────────── rosbag 읽기 ──

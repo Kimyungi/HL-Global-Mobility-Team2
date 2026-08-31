@@ -18,13 +18,14 @@ constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
 // 20점으로 보간하면 첫 점이 목표의 1/20(1.5m 목표 → 0.075m)이라 정상값도 작다.
 constexpr float MGM_MIN_REF_X = 0.01f;
 
-// CLAUDE.md §4 스테이트 4개 — TargetRef.msg의 STATE_* 상수와 값 일치
+// CLAUDE.md §4 스테이트 5개 — TargetRef.msg의 STATE_* 상수와 값 일치
 enum : uint8_t
 {
   MGM_STATE_LANE = 0,
   MGM_STATE_WAYPOINT = 1,
   MGM_STATE_AVOID = 2,
   MGM_STATE_PARKING = 3,
+  MGM_STATE_TRAFFIC = 4,
 };
 
 // 스테이트가 고른 횡방향 경로 소스
@@ -111,6 +112,14 @@ struct CoreSnapshot
   float parking_v_suggest;      // [m/s] 후진 = 음수
   // stack_traffic
   bool traffic_stop_required;
+  bool traffic_red_active;
+  bool traffic_green_active;
+  bool traffic_stopline_detected;
+  float traffic_stop_distance;  // [m], 유효하지 않으면 음수
+  bool traffic_fail_safe_stop;
+  // bridge_dspace /vehicle/vector (dSPACE→PC CAN feedback)
+  float vehicle_speed;           // [m/s], 전진 +
+  bool vehicle_speed_valid;
   // stack_estop
   bool estop;                // 정지 판단 입력 — wrapper의 §5.7 staleness 보정 포함
   bool estop_latch_release;  // at_end 래치 해제 전용 — **실제 EstopRequest 수신값만**
@@ -225,6 +234,13 @@ struct CoreParams
   // 후방 센서가 붙기 전에는 이 값이 항상 false 라 기능이 자연히 잠긴다.
   // 끄면 후방을 보지 않고 시간 상한만으로 후진한다 — 관측자를 세운 시험에서만 쓸 것.
   int32_t escape_require_rear_clear;
+
+  // ── 신호등 정지 상태. 0이면 생성 v1.88 호환을 위해 기능을 끈다.
+  int32_t traffic_state_enabled;
+  // 정지선 앞에서 남길 거리 [m]. 카메라 기준 거리의 장착 오프셋 보정에도 사용한다.
+  float traffic_stop_offset;
+  // 너무 긴 거리/저속에서 제동률이 0에 가까워지지 않게 하는 최소 감속도 [m/s^2].
+  float traffic_min_decel;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -273,6 +289,12 @@ struct CoreState
   // 10초 뒤 차가 스스로 뒤로 물러난다. 한 번이라도 굴러간 뒤에만 "갇혔다"고
   // 말할 수 있다.
   bool escape_armed;
+  // TRAFFIC 진입 전 주행 상태. 현재 계약은 green에서 LANE으로 복귀하지만 로그와
+  // 향후 정책 검증을 위해 보존한다.
+  uint8_t traffic_entry_state;
+  bool traffic_distance_latched;
+  float traffic_stopline_distance;  // [m] 적분 갱신되는 차량→정지선 거리
+  float traffic_brake_decel;        // [m/s^2] 최초 거리/속도로 고정한 제동 곡선
 };
 
 // 매 틱의 출력 — wrapper가 TargetRef로 변환·발행

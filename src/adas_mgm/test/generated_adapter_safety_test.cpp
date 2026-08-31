@@ -133,6 +133,9 @@ int main()
   expectInvalidParams(
     [](CoreParams & p) {p.escape_after_cycles = 1;},
     "escape_after_cycles");
+  expectInvalidParams(
+    [](CoreParams & p) {p.traffic_state_enabled = 1;},
+    "traffic_state_enabled");
 
   const CoreParams params = validParams();
   const CoreSnapshot snapshot = validSnapshot();

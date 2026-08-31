@@ -751,7 +751,7 @@ class StackTrafficNode(Node):
         self.declare_parameter("stopline_maximum_fit_residual_m", 0.25)
         self.declare_parameter("stopline_stop_distance_m", 0.0)
         self.declare_parameter("stopline_stop_y_ratio", 0.0)
-        self.declare_parameter("resume_on_green", False)
+        self.declare_parameter("resume_on_green", True)
         self.declare_parameter("resume_on_red_clear", False)
         self.declare_parameter("show_debug", False)
         self.declare_parameter("show_auxiliary_debug", False)
@@ -1620,27 +1620,30 @@ class StackTrafficNode(Node):
             sample_bbox=sample_bbox,
         )
 
+    def _empty_stopline_runtime(self) -> StopLineRuntime:
+        return StopLineRuntime(
+            detection=None,
+            depth=self._empty_stopline_depth(),
+            current_camera_z_m=math.nan,
+            median_camera_z_m=math.nan,
+            valid_distance_samples=0,
+            median_y_px=math.nan,
+            current_y_ratio=math.nan,
+            median_y_ratio=math.nan,
+            valid_y_samples=0,
+            stable=False,
+            depth_near=False,
+            y_near=False,
+            near=False,
+        )
+
     def _process_stopline(
         self,
         frame: np.ndarray,
         depth_mm: Optional[np.ndarray],
     ) -> StopLineRuntime:
         if not self.stopline_detection_enabled:
-            return StopLineRuntime(
-                detection=None,
-                depth=self._empty_stopline_depth(),
-                current_camera_z_m=math.nan,
-                median_camera_z_m=math.nan,
-                valid_distance_samples=0,
-                median_y_px=math.nan,
-                current_y_ratio=math.nan,
-                median_y_ratio=math.nan,
-                valid_y_samples=0,
-                stable=False,
-                depth_near=False,
-                y_near=False,
-                near=False,
-            )
+            return self._empty_stopline_runtime()
 
         detection = detect_stop_line(
             frame=frame,
@@ -1997,7 +2000,21 @@ class StackTrafficNode(Node):
                 else 0.9 * self.filtered_fps + 0.1 * instant_fps
             )
 
-        stopline_runtime = self._process_stopline(frame, depth_mm)
+        # 정지선 인지는 확정 적색 이후에만 시작한다. 적색과 같은 프레임에서는 아직
+        # latch가 갱신되기 전이므로 다음 카메라 프레임(통상 100ms 뒤)부터 시작한다.
+        # 비적색 동안의 흰 선 이력은 적색 진입에 섞이지 않도록 비운다.
+        if self.red_phase_latched:
+            stopline_runtime = self._process_stopline(frame, depth_mm)
+        else:
+            self.stopline_y_history.clear()
+            self.stopline_y_history.extend(
+                [math.nan] * self.stopline_detection_window
+            )
+            self.stopline_distance_history.clear()
+            self.stopline_distance_history.extend(
+                [math.nan] * self.stopline_depth_window
+            )
+            stopline_runtime = self._empty_stopline_runtime()
 
         # CPU 환경에서는 YOLO가 가장 비싸다. 첫 프레임과 지정 간격의
         # 프레임에서만 추론하고, 사이 프레임은 아래 template 추적기로
@@ -2347,7 +2364,21 @@ class StackTrafficNode(Node):
             )
             else -1.0
         )
-        self._publish(bool(final_stop), published_stopline_distance)
+        metric_stopline_detected = bool(
+            stopline_runtime.stable
+            and stopline_runtime.depth.accepted
+            and math.isfinite(published_stopline_distance)
+        )
+        self._publish(
+            bool(final_stop),
+            published_stopline_distance,
+            red_active=bool(self.red_phase_latched),
+            green_active=bool(green_active and not self.red_phase_latched),
+            stopline_detected=metric_stopline_detected,
+            fail_safe_stop=bool(
+                self.camera_fault_latched or self.startup_hold_latched
+            ),
+        )
 
         if self.frame_index % self.print_every == 0:
             processing_ms = (
@@ -2430,6 +2461,10 @@ class StackTrafficNode(Node):
         self,
         stop_required: bool,
         stop_distance_m: float,
+        red_active: bool = False,
+        green_active: bool = False,
+        stopline_detected: bool = False,
+        fail_safe_stop: bool = True,
     ) -> None:
         msg = TrafficStop()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -2440,6 +2475,10 @@ class StackTrafficNode(Node):
         )
         msg.stop_required = stop_required
         msg.stop_distance = float(stop_distance_m)
+        msg.red_active = red_active
+        msg.green_active = green_active
+        msg.stopline_detected = stopline_detected
+        msg.fail_safe_stop = fail_safe_stop
         self.publisher.publish(msg)
 
     def _show_debug(

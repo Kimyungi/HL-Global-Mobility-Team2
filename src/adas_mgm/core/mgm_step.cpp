@@ -212,6 +212,7 @@ void transition(const CoreSnapshot & s, CoreState & st)
     escape_usable && st.escape_armed && rear_ok &&
     st.escape_phase == MGM_ESCAPE_NONE &&
     st.state != MGM_STATE_PARKING &&
+    st.state != MGM_STATE_TRAFFIC &&
     st.estop_hold_cnt >= st.params.escape_after_cycles;
 
   // avoid 복귀 보류 카운터 — waypoint에서 GPS 트랙에 재합류할 시간을 벌어준다
@@ -241,6 +242,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // 되레 멈춰 세운다. 래치하지 않는다 — 위치로 정해지는 값이라 구간을 벗어나면
   // 평소 히스테리시스(신뢰도 N주기 + 트랙 재합류)로 자연 복귀한다.
   const bool gps_only_zone = s.gps_gps_only_zone && s.gps_path.n > 0;
+  const bool traffic_entry = st.params.traffic_state_enabled != 0 &&
+    s.traffic_red_active;
   // ★ 구간 안에서는 LANE 복귀 카운터를 **세지 않는다**(0으로 묶는다).
   //   안 그러면 구간을 지나는 내내 쌓인 값으로 **벗어나는 순간 한 틱 만에** LANE이
   //   된다 — 차선을 못 믿겠다고 지정한 구간을 막 빠져나온 참에, 그 구간 동안의
@@ -274,7 +277,9 @@ void transition(const CoreSnapshot & s, CoreState & st)
 
   switch (st.state) {
     case MGM_STATE_LANE:
-      if (s.gps_parking_zone && s.parking_space_found) {
+      if (traffic_entry) {
+        st.state = MGM_STATE_TRAFFIC;
+      } else if (s.gps_parking_zone && s.parking_space_found) {
         st.state = MGM_STATE_PARKING;
       } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
@@ -287,7 +292,9 @@ void transition(const CoreSnapshot & s, CoreState & st)
       break;
 
     case MGM_STATE_WAYPOINT:
-      if (avoid_entry) {
+      if (traffic_entry) {
+        st.state = MGM_STATE_TRAFFIC;
+      } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
       } else if (!gps_only_zone && st.return_hold_left == 0 &&
         st.lane_high_cnt >= st.params.n_cycles && rejoined)
@@ -327,9 +334,63 @@ void transition(const CoreSnapshot & s, CoreState & st)
       }
       break;
 
+    case MGM_STATE_TRAFFIC:
+      // 적색/미검출은 해제 근거가 아니다. 확정 초록만 즉시 LANE으로 복귀시킨다.
+      // estop/fail-safe가 동시에 참이어도 상태 전이는 수행하고 LANE 우선권에서
+      // 계속 정지한다. 즉 "초록이면 상태 탈출"과 "고장 중 출발 금지"가 양립한다.
+      if (s.traffic_green_active && !s.traffic_red_active) {
+        st.state = MGM_STATE_LANE;
+      }
+      break;
+
     default:
       st.state = MGM_STATE_LANE;
       break;
+  }
+
+  // TRAFFIC 거리 메모리. 카메라는 약 2.5~1m 구간에서만 정지선을 볼 수 있으므로
+  // 최초 유효 거리만 래치하고 이후 검출값은 사용하지 않는다. 그 다음부터는
+  // dSPACE가 CAN으로 돌려준 실차속도를 10ms마다 적분해 차량→정지선 거리를 줄인다.
+  if (st.state == MGM_STATE_TRAFFIC) {
+    const bool just_entered = prev_state != MGM_STATE_TRAFFIC;
+    if (just_entered) {
+      st.traffic_entry_state = prev_state;
+      st.traffic_distance_latched = false;
+      st.traffic_stopline_distance = 0.0f;
+      st.traffic_brake_decel = 0.0f;
+    }
+    const bool valid_line = s.traffic_stopline_detected &&
+      std::isfinite(s.traffic_stop_distance) &&
+      s.traffic_stop_distance > st.params.traffic_stop_offset;
+    bool captured = false;
+    if (!st.traffic_distance_latched && valid_line) {
+      st.traffic_distance_latched = true;
+      st.traffic_stopline_distance = s.traffic_stop_distance;
+      const float distance_to_target =
+        s.traffic_stop_distance - st.params.traffic_stop_offset;
+      const float measured_speed = s.vehicle_speed_valid && s.vehicle_speed > 0.0f ?
+        s.vehicle_speed : (st.v > 0.0f ? st.v : 0.0f);
+      const float required_decel = distance_to_target > 0.0f ?
+        measured_speed * measured_speed / (2.0f * distance_to_target) : st.params.a_down;
+      st.traffic_brake_decel =
+        required_decel > st.params.traffic_min_decel ?
+        required_decel : st.params.traffic_min_decel;
+      if (st.params.a_down > 0.0f && st.traffic_brake_decel > st.params.a_down) {
+        st.traffic_brake_decel = st.params.a_down;
+      }
+      captured = true;
+    }
+    if (st.traffic_distance_latched && !captured && s.vehicle_speed_valid) {
+      // 부호를 보존한다: 전진(+v)은 거리를 줄이고 뒤로 밀림(-v)은 거리를 늘린다.
+      st.traffic_stopline_distance -= s.vehicle_speed * MGM_PERIOD_S;
+      if (st.traffic_stopline_distance < 0.0f) {
+        st.traffic_stopline_distance = 0.0f;
+      }
+    }
+  } else if (prev_state == MGM_STATE_TRAFFIC) {
+    st.traffic_distance_latched = false;
+    st.traffic_stopline_distance = 0.0f;
+    st.traffic_brake_decel = 0.0f;
   }
 
   // 스테이트가 바뀌면 히스테리시스 카운터를 리셋한다 — "N주기 연속"은 **새
@@ -441,6 +502,27 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.v_ref = s.parking_v_suggest;
       }
       break;
+
+    case MGM_STATE_TRAFFIC: {
+      // 횡방향은 계속 카메라 차선을 따른다. 종방향만 정지선 거리 프로파일이 맡는다.
+      out.path_source = MGM_SRC_LANE;
+      if (s.estop || s.traffic_fail_safe_stop || !s.vehicle_speed_valid) {
+        out.v_ref = 0.0f;
+        out.immediate_stop = true;
+      } else if (!st.traffic_distance_latched) {
+        // 적색을 먼저 보고 정지선을 찾는 구간. 영상에서 정지선이 들어올 때까지
+        // 차선 주행을 유지하되 traffic/vehicle watchdog이 죽으면 위에서 즉시 선다.
+        out.v_ref = st.params.v_base;
+      } else {
+        const float remaining =
+          st.traffic_stopline_distance - st.params.traffic_stop_offset;
+        const float profile = remaining > 0.0f ?
+          std::sqrt(2.0f * st.traffic_brake_decel * remaining) : 0.0f;
+        // 적색 제동 중 목표속도가 직전 명령보다 커지는 일은 금지한다.
+        out.v_ref = min_f(profile, st.v > 0.0f ? st.v : 0.0f);
+      }
+      break;
+    }
 
     default:
       out.path_source = MGM_SRC_LANE;
