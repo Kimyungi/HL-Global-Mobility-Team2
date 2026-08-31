@@ -170,6 +170,90 @@ void copySnapshot(const CoreSnapshot & source, CoreSnapshotBus & target)
   target.gps_gps_only_zone = source.gps_gps_only_zone;
 }
 
+bool sourceWasUpdated(uint8_t source, const CoreSnapshot & input)
+{
+  switch (source) {
+    case MGM_SRC_LANE:
+      return input.lane_updated;
+    case MGM_SRC_GPS:
+      return input.gps_updated;
+    case MGM_SRC_AVOID:
+      return input.avoid_updated;
+    default:
+      return false;
+  }
+}
+
+const CorePath * selectedPath(uint8_t source, const CoreSnapshot & input)
+{
+  switch (source) {
+    case MGM_SRC_LANE:
+      return &input.lane_path;
+    case MGM_SRC_GPS:
+      return &input.gps_path;
+    case MGM_SRC_AVOID:
+      return &input.avoid_path;
+    case MGM_SRC_PARKING:
+      return &input.parking_path;
+    default:
+      return nullptr;
+  }
+}
+
+bool matchesPreviousRawTarget(
+  uint8_t source,
+  const CoreSnapshot & input,
+  bool had_raw_target,
+  int32_t previous_raw_n,
+  const float previous_raw_x[MGM_NUM_POINTS],
+  const float previous_raw_y[MGM_NUM_POINTS],
+  const float previous_raw_yaw[MGM_NUM_POINTS],
+  const float previous_raw_curvature[MGM_NUM_POINTS])
+{
+  const CorePath * path = selectedPath(source, input);
+  if (sourceWasUpdated(source, input) || !had_raw_target || path == nullptr || path->n <= 0) {
+    return false;
+  }
+
+  const int32_t n = path->n < MGM_NUM_POINTS ? path->n : MGM_NUM_POINTS;
+  if (previous_raw_n != n) {
+    return false;
+  }
+
+  for (int32_t i = 0; i < n; ++i) {
+    if (std::fabs(ADAS_MGR2_B.target_x[i] - previous_raw_x[i]) > 1.0e-6f ||
+      std::fabs(ADAS_MGR2_B.target_y[i] - previous_raw_y[i]) > 1.0e-6f ||
+      std::fabs(ADAS_MGR2_B.target_yaw[i] - previous_raw_yaw[i]) > 1.0e-6f ||
+      std::fabs(ADAS_MGR2_B.target_curvature[i] - previous_raw_curvature[i]) > 1.0e-6f)
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+void restoreHeldReference(
+  const float previous_ref_x[MGM_NUM_POINTS],
+  const float previous_ref_y[MGM_NUM_POINTS],
+  const float previous_ref_yaw[MGM_NUM_POINTS],
+  const float previous_ref_curvature[MGM_NUM_POINTS])
+{
+  std::memcpy(ADAS_MGR2_DW.ref_x, previous_ref_x, sizeof(ADAS_MGR2_DW.ref_x));
+  std::memcpy(ADAS_MGR2_DW.ref_y, previous_ref_y, sizeof(ADAS_MGR2_DW.ref_y));
+  std::memcpy(ADAS_MGR2_DW.ref_yaw, previous_ref_yaw, sizeof(ADAS_MGR2_DW.ref_yaw));
+  std::memcpy(
+    ADAS_MGR2_DW.ref_curvature,
+    previous_ref_curvature,
+    sizeof(ADAS_MGR2_DW.ref_curvature));
+
+  for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
+    ADAS_MGR2_Y.core_output.ref_points[i].x = previous_ref_x[i];
+    ADAS_MGR2_Y.core_output.ref_points[i].y = previous_ref_y[i];
+    ADAS_MGR2_Y.core_output.ref_points[i].yaw = previous_ref_yaw[i];
+    ADAS_MGR2_Y.core_output.ref_points[i].curvature = previous_ref_curvature[i];
+  }
+}
+
 }  // namespace
 
 GeneratedMgmAdapter::GeneratedMgmAdapter(const CoreParams & params)
@@ -302,9 +386,58 @@ CoreOutput GeneratedMgmAdapter::step(const CoreSnapshot & input)
 {
   requireOwningThread("step");
   throwIfModelError("before step");
+
+  // ADAS_MGR2 v1.88 still contains the legacy v_cmd-based 10 ms reference
+  // extrapolation. Keep the generated artifact byte-for-byte reproducible and
+  // apply the current 100 ms hold contract in this maintained adapter instead.
+  float previous_ref_x[MGM_NUM_POINTS];
+  float previous_ref_y[MGM_NUM_POINTS];
+  float previous_ref_yaw[MGM_NUM_POINTS];
+  float previous_ref_curvature[MGM_NUM_POINTS];
+  float previous_raw_x[MGM_NUM_POINTS];
+  float previous_raw_y[MGM_NUM_POINTS];
+  float previous_raw_yaw[MGM_NUM_POINTS];
+  float previous_raw_curvature[MGM_NUM_POINTS];
+  std::memcpy(previous_ref_x, ADAS_MGR2_DW.ref_x, sizeof(previous_ref_x));
+  std::memcpy(previous_ref_y, ADAS_MGR2_DW.ref_y, sizeof(previous_ref_y));
+  std::memcpy(previous_ref_yaw, ADAS_MGR2_DW.ref_yaw, sizeof(previous_ref_yaw));
+  std::memcpy(
+    previous_ref_curvature,
+    ADAS_MGR2_DW.ref_curvature,
+    sizeof(previous_ref_curvature));
+  std::memcpy(previous_raw_x, ADAS_MGR2_DW.last_raw_x, sizeof(previous_raw_x));
+  std::memcpy(previous_raw_y, ADAS_MGR2_DW.last_raw_y, sizeof(previous_raw_y));
+  std::memcpy(previous_raw_yaw, ADAS_MGR2_DW.last_raw_yaw, sizeof(previous_raw_yaw));
+  std::memcpy(
+    previous_raw_curvature,
+    ADAS_MGR2_DW.last_raw_curvature,
+    sizeof(previous_raw_curvature));
+  const int32_t previous_blend_left = ADAS_MGR2_DW.blend_left;
+  const int32_t previous_raw_n = ADAS_MGR2_DW.raw_n;
+  const uint8_t previous_source = ADAS_MGR2_DW.last_src;
+  const bool had_raw_target = ADAS_MGR2_DW.has_raw_target;
+
   copySnapshot(input, ADAS_MGR2_U.core_snapshot);
   ::mgm_step();
   throwIfModelError("step");
+
+  const uint8_t path_source = ADAS_MGR2_Y.core_output.path_source;
+  const bool stale_repeat = matchesPreviousRawTarget(
+    path_source,
+    input,
+    had_raw_target,
+    previous_raw_n,
+    previous_raw_x,
+    previous_raw_y,
+    previous_raw_yaw,
+    previous_raw_curvature);
+  if (stale_repeat && previous_blend_left <= 0 && previous_source == path_source) {
+    restoreHeldReference(
+      previous_ref_x,
+      previous_ref_y,
+      previous_ref_yaw,
+      previous_ref_curvature);
+  }
 
   const CoreOutputBus & source = ADAS_MGR2_Y.core_output;
   CoreOutput output{};
