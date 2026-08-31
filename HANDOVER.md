@@ -271,14 +271,21 @@ ros2 run adas_mgm go          # RTK FIXED·lane·scan·avoid·target_ref 수신 
 
 이게 없던 시절 launch 직후 무점검으로 차가 출발하던 문제가 있었다.
 
-### 3.6 dSPACE watchdog 이 아직 없다
+### 3.6 dSPACE watchdog — 구현됨, 다만 실차 미검증 (2026-08-31 갱신)
 
-`CLAUDE.md` §3 이 규정한 "counter 30ms 미갱신 → v_ref 0" 이 **dSPACE 측에 미구현**이다
-(2026-08-09 확인, 손상민 담당). 즉 **PC 송신이 끊겨도 dSPACE 는 마지막 v_ref 를 무기한 유지한다.**
+`CLAUDE.md` §3 이 규정한 "counter 미갱신 → v_ref 0" 이 **dSPACE 에 들어갔다**
+(2026-08-31, 손상민 — 이슈 #49). counter 가 3회 이상 동일하면 v_ref 와 MPC 를 정지하고,
+v_ref 가 0 일 때도 MPC 가 정지하도록 함께 설정됐다. 구 상태(2026-08-09)는 "미구현이라
+PC 송신이 끊겨도 마지막 v_ref 를 무기한 유지" 였다.
 
-그래서 실차 launch 는 종료 시 목표값 0 복귀를 보장하는 가드를 끼고 돈다
-(`can_zero`). 통합 launch 에는 이미 들어 있으니 그걸 쓰면 된다. 직접 노드를 조합해 돌릴 때는
-반드시 챙길 것.
+**`can_zero` 가드는 그대로 쓴다.** 아래 세 가지를 실차에서 아직 못 봤기 때문이다:
+
+- 발동 시 `str_ref` 가 **직전 값을 유지**하는가 (0 중립으로 풀면 코너에서 이탈한다)
+- **부팅 직후 첫 수신 전 상태가 fault** 인가 (PC 없이 부팅한 차가 잔류 목표값으로 움직이는 것 방지)
+- 타임아웃이 하드코딩이 아니라 튜너블인가
+
+가드는 watchdog 과 독립이고 겹쳐도 무해하다. 통합 launch 에는 이미 들어 있으니 그걸 쓰면 되고,
+직접 노드를 조합해 돌릴 때는 반드시 챙길 것.
 
 ### 3.7 USB 허브 — 카메라 전원을 라이다에서 떼어낼 것 (2026-08-29 갱신)
 
@@ -409,9 +416,10 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 `PROTOCOL.md` 도 "정지 = 0" 까지만 규정했었다. MPC·하위 PI 가 음수를 그대로 후진으로
 처리한다는 확인은 받았지만 **실차에서 바퀴 방향을 눈으로 한 번 보는 것**이 남았다.
 
-### 6-3. dSPACE watchdog — **손상민**
+### 6-3. dSPACE watchdog — **손상민** · 구현 완료, 실차 확인 남음
 
-§3.6. `CLAUDE.md` §3 이 규정한 대로 구현되면 §3.6 의 `can_zero` 가드 의존을 덜 수 있다.
+§3.6. 2026-08-31 에 구현됐다(이슈 #49). 남은 것은 **실차에서 세 가지를 눈으로 보는 것**이다 —
+`str_ref` 직전 값 유지 · 부팅 직후 fault · 타임아웃 튜너블. 그때까지 `can_zero` 가드는 유지한다.
 
 ### 6-4. 실차 미검증인 채로 main 에 있는 것들
 
@@ -466,6 +474,6 @@ ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
 | 차가 트랙과 나란히 어긋난 채로 감 | **§3.3** — 베이스 좌표 ↔ 웨이포인트 CSV 짝 |
 | CAN 안 올라옴 (`can0` 없음) | udev ①(§2.5) 설치 여부 → 어댑터 재삽입 → **§3.7** 허브. dmesg 에 `kvaser_usb` 가 없으면 커널이 Leaf v3 를 모르는 것 → CAN_BRINGUP.md §1 |
 | estop/조향이 이상하게 겹침 | **§3.4** — launch 중복 실행 |
-| PC 껐는데 차가 계속 굴러감 | **§3.6** — dSPACE watchdog 미구현. `can_zero` 가드 포함된 launch 를 쓸 것 |
+| PC 껐는데 차가 계속 굴러감 | **§3.6** — dSPACE watchdog 이 30ms 뒤 세워야 한다(2026-08-31 구현, 실차 미검증). 안 서면 그 사실을 이슈 #49 에 남길 것. `can_zero` 가드 포함된 launch 를 쓸 것 |
 | stack_lane 기동 실패 | **§2.4** — `yolopv2.pt` 없음 |
 | stack_traffic 기동 실패 (`torchvision::nms does not exist`) | **§2.3** — torch/torchvision 짝 불일치. 이 PC 의 기존 문제이며 신호등만 영향 |
