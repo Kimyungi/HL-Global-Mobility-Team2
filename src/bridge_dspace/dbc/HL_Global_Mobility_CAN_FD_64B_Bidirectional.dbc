@@ -47,7 +47,7 @@ CM_ "CAN FD protocol using standard 11-bit identifiers with bit-rate switching e
 CM_ BO_ 256 "PC-to-dSPACE header at CAN ID 0x100. Integer fields retain the prior layout; v_ref remains signed 16-bit fixed-point with 0.001 m/s resolution.";
 CM_ BO_ 257 "PC-to-dSPACE frame at CAN ID 0x101. Payload bytes 0 through 55 contain seven IEEE-754 float64 values; bytes 56 through 63 contain uint64 update.";
 CM_ BO_ 512 "dSPACE-to-PC frame at CAN ID 0x200. Payload bytes 0 through 47 contain six IEEE-754 float64 values; bytes 48 through 63 contain uint64 counter and uint64 reserved.";
-CM_ SG_ 257 update "Unsigned 64-bit update value in payload bytes 56 through 63, little-endian.";
+CM_ SG_ 257 update "Unsigned 64-bit GNSS sample sequence in payload bytes 56 through 63, little-endian. Valid only in LANE(0)/WAYPOINT(1); AVOID/PARKING send zero. In valid states, consumer applies dx/dy/dyaw once only when update differs from last_update.";
 CM_ SG_ 512 counter "Unsigned 64-bit validation counter in payload bytes 48 through 55, little-endian.";
 CM_ SG_ 512 reserved "Unsigned 64-bit reserved validation field in payload bytes 56 through 63, little-endian. Transmitter should set zero unless otherwise defined.";
 

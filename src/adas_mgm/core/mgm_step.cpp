@@ -535,21 +535,10 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     n_wire = MGM_NUM_POINTS;
   }
 
-  // 인지 소스가 이전 틱과 완전히 같은 값을 냈는지(= 아직 새 추론이 안 나와
-  // wrapper가 같은 스냅샷을 또 읽어준 것) 판정. 2026-08-08 조향 미반영 진단:
-  // dSPACE가 완전 동일한 CAN 페이로드 반복 수신 시 이를 무시하는 것으로 실측
-  // 확인됨(실카메라 로그에서 78.7%가 직전 틱과 동일값이었고 그 구간 str 무반응,
-  // 명시적으로 매틱 값이 바뀌게 한 진단 스크립트는 45도 반응). stack_lane 추론이
-  // ~21Hz로 CAN 주기(100Hz)보다 느려 구조적으로 발생.
-  // "새 추론 미도착" 판정은 **메시지 도착 여부**로 한다 (s.*_updated).
-  // 값 동일성으로 판정하던 것을 2026-08-14에 교체: 인지가 의도적으로 상수를 내는
-  // 경우(회피 통과 유지점 (1.5,0))를 영원히 낡은 값으로 오판해 x를 무한 감쇠시켰다.
-  // wrapper가 소스를 못 알려주는 경우(_updated 전부 false인 옛 스냅샷)를 대비해
-  // 값 동일성을 보조 조건으로 남긴다.
-  // MGM_SRC_ESCAPE 는 **항상 최신**이다 — 인지가 주는 값이 아니라 이 함수가 매 틱
-  // 다시 만드는 고정 기하이므로 "새 추론 미도착" 자체가 성립하지 않는다. true 로
-  // 두지 않으면 값이 매 틱 동일하다는 이유로 낡은 것으로 오판되어 x 가 계속 깎이고,
-  // 직선 ref 가 MGM_MIN_REF_X 까지 쪼그라들어 조향 기준이 무너진다.
+  // 새 인지/GNSS 표본이 아직 오지 않아 wrapper가 같은 스냅샷을 다시 준 틱을 판정한다.
+  // 10 ms CAN 송신 주기는 유지하되 ref는 다음 표본까지 그대로 hold한다. 새 표본 여부는
+  // s.*_updated가 정본이고, 값 비교는 갱신 플래그가 없는 옛 스냅샷의 호환 경로다.
+  // MGM_SRC_ESCAPE는 인지 입력이 아니라 이 함수가 매 틱 만드는 경로이므로 항상 최신이다.
   const bool src_updated =
     (src == MGM_SRC_LANE) ? s.lane_updated :
     (src == MGM_SRC_GPS) ? s.gps_updated :
@@ -579,44 +568,8 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     }
     --st.blend_left;
   } else if (is_stale_repeat) {
-    // 새 인지 값이 아직 안 옴 → 직전 출력을 그대로 반복 송신하지 않고, 그동안
-    // 차량이 이동했을 거리만큼 x(전방 거리)를 깎아서 내보낸다. 실제 속도 피드백
-    // (dSPACE 0x202 vehicle_vector.v) 배선 없이, 우리가 직전 틱에 명령한 st.v를
-    // 등속 근사로 사용 — 10ms 구간·저속 주행에서는 근사 오차가 무시할 수준.
-    // y/yaw/curvature는 보정하지 않음(차로 진행방향 유지 가정) — 이 근사가 틀리는
-    // 급커브 등은 어차피 다음 실제 인지값(21Hz)이 금방 덮어써서 누적되지 않음.
-    const float dx = st.v * MGM_PERIOD_S;
-    if (n == 1) {
-      // ── 단일점 소스(avoid)는 **원본 목표에 감쇠하고 다시 보간**한다 (2026-08-16).
-      // 보간된 20점을 각각 깎으면 방위가 쓸린다: 첫 점이 목표의 1/20(1.5m 목표 →
-      // 7.5cm)이라 틱당 dx(0.6cm @0.6m/s)가 상대적으로 8%씩 먹어, dSPACE가 보는
-      // κ=2y/L² 과 방위가 매 인지 주기마다 톱니로 요동친다.
-      //   실측 run_0816_175102 정상 회피 중(det=1, 목표 |y|>0.05m):
-      //     틱 간 방위 점프 중앙값 0.28° · p90 1.00° · **최대 9.0°**
-      //     (t=40.38~40.41: −20.6→−21.6→−22.6→−23.7° 로 쓸리다 새 인지에 −14.7° 로 리셋)
-      //   같은 결함이 y를 키우면 폭주한다 — 2026-08-16에 통과 대기 유지점을
-      //   트랙 헤딩만큼 회전시켰더니 y가 0이 아니게 되면서 방위 점프가 41~55°까지
-      //   갔고 회피가 성립하지 못해 TTC 바닥에 걸렸다(run_0816_180531, 즉시 복구).
-      // 물리적으로도 이쪽이 맞다 — 차가 전진하면 목표까지 **거리**가 줄지 방위가
-      // 휘지 않는다. 보간점은 실제 웨이포인트가 아니라 목표 방위를 싣는 대리점이다.
-      // 다점 소스(gps/lane 20점)는 실제 경로점이므로 종전대로 x만 깎는다.
-      CorePoint tgt = st.ref_out[MGM_NUM_POINTS - 1];   // 보간 규약상 마지막 점 = 원본 목표
-      constexpr float kMinTargetX = MGM_MIN_REF_X * static_cast<float>(MGM_NUM_POINTS);
-      tgt.x = (tgt.x - dx > kMinTargetX) ? tgt.x - dx : kMinTargetX;
-      for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-        const float t = static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
-        st.ref_out[i].x = tgt.x * t;
-        st.ref_out[i].y = tgt.y * t;
-      }
-    } else {
-      for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-        // 하한: 첫 점이 차 뒤로 가면 전진밖에 못 하는 차에게 도달 불가능한 목표가
-        // 된다. 감쇠는 "인지가 잠깐 늦은 동안의 보정"이지 목표를 뒤로 보내는
-        // 수단이 아니다 — 안전 불변식으로 고정한다 (2026-08-14).
-        st.ref_out[i].x = (st.ref_out[i].x - dx > MGM_MIN_REF_X)
-          ? st.ref_out[i].x - dx : MGM_MIN_REF_X;
-      }
-    }
+    // Hold the last ref until the next perception/GNSS sample. The previous
+    // v_cmd-based 10 ms extrapolation was not a measured pose correction.
   } else {
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.ref_out[i] = target[i];

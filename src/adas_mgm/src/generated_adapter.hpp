@@ -14,7 +14,9 @@ namespace adas_mgm
 // binds an owning thread and all later calls must use that thread. Construction
 // does not bind so a ROS executor may construct it before a dedicated 10 ms
 // loop thread starts. ADAS_MGR2 v1.88 covers LANE/WAYPOINT/AVOID/PARKING, but
-// does not contain the newer production rear-escape extension.
+// does not contain the newer production rear-escape extension. The adapter
+// also normalizes v1.88's legacy stale-frame extrapolation to the current
+// sample-to-sample reference hold contract without modifying generated files.
 class GeneratedMgmAdapter
 {
 public:

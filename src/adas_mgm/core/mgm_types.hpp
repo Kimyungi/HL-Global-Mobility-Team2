@@ -14,11 +14,8 @@ namespace adas_mgm
 constexpr int32_t MGM_NUM_POINTS = 20;   // ref points 최대치 (CAN ID 예약 폭, PROTOCOL.md)
                                          // 실제 점 수는 현재 모든 소스 1 (n은 확장 대비 가변)
 constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
-// §5.8 이동 보정이 ref x를 깎을 수 있는 하한 [m]. 전진밖에 못 하는 차에게
-// 차 뒤(x<0) 목표는 도달 불가능하므로 감쇠로 여기를 넘지 않는다 (2026-08-14).
-// 값이 작은 이유: avoid 1점 계약을 20점으로 보간하면 첫 점이 목표의 1/20
-// (1.5m 목표 → 0.075m)이라 정상값이 원래 작다. 하한을 크게 잡으면 그 정상값을
-// 왜곡한다 — 여기서는 "뒤로 넘어가지 않는다"만 보장한다.
+// 안전 폴백이 내보내는 최소 전방 ref 거리 [m]. 값이 작은 이유: avoid 1점 계약을
+// 20점으로 보간하면 첫 점이 목표의 1/20(1.5m 목표 → 0.075m)이라 정상값도 작다.
 constexpr float MGM_MIN_REF_X = 0.01f;
 
 // CLAUDE.md §4 스테이트 4개 — TargetRef.msg의 STATE_* 상수와 값 일치

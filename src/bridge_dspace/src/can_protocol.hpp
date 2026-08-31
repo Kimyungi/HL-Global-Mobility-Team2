@@ -95,17 +95,39 @@ struct MpcTargetFdPayload  // 0x101 MPC_TARGET_FD — 64 B
   double y;          // [m]
   double yaw;        // [rad]
   double curvature;  // [1/m]
-  // dx/dy/dyaw/update: PR #52 에서 의미 미정. **0 으로 채운다** (팀장 결정 2026-08-28).
-  // 의미가 정해지면 여기와 PROTOCOL.md 를 함께 갱신할 것.
-  //
-  // 2026-08-29: `update` 를 u64 → **double** 로 맞췄다. 이 프레임은 dSPACE 쪽에서
-  // **float64 8칸**으로 읽는 것이 계약이다(팀장 확인). 값이 0 인 동안은 두 자료형의
-  // 바이트가 같아 지금 당장은 와이어가 안 바뀌지만, `update` 에 정수를 넣는 순간
-  // 상대가 double 로 읽어 엉뚱한 값이 된다 — 그 사고를 자료형으로 막는다.
+  // Consecutive valid GNSS poses: translation in the previous vehicle frame,
+  // wrapped yaw difference, and the GNSS sample sequence number.
   double dx;
   double dy;
   double dyaw;
-  double update;
+  uint64_t update;
+};
+
+inline bool stateUsesGpsDelta(uint8_t state)
+{
+  // TargetRef constants: 0=LANE(camera), 1=WAYPOINT(GPS).
+  return state == 0U || state == 1U;
+}
+
+class GpsDeltaUpdateGate
+{
+public:
+  bool shouldApply(uint8_t state, uint64_t update)
+  {
+    if (!stateUsesGpsDelta(state)) {
+      return false;
+    }
+    if (initialized_ && update == last_update_) {
+      return false;
+    }
+    initialized_ = true;
+    last_update_ = update;
+    return true;
+  }
+
+private:
+  bool initialized_{false};
+  uint64_t last_update_{0};
 };
 
 struct VehFeedbackFdPayload  // 0x200 VEH_FEEDBACK_FD — 64 B

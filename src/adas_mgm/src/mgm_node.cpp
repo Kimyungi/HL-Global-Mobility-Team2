@@ -553,6 +553,10 @@ private:
     msg.header.frame_id = "base_link";
     msg.state = out.state;
     msg.v_ref = out.v_ref;
+    msg.dx = m.gps.dx;
+    msg.dy = m.gps.dy;
+    msg.dyaw = m.gps.dyaw;
+    msg.update = m.gps.update;
     msg.ref_points.resize(out.n_points);
     for (int32_t i = 0; i < out.n_points; ++i) {
       msg.ref_points[i].x = out.ref_points[i].x;

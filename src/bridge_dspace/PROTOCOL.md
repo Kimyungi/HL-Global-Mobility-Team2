@@ -112,7 +112,8 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 > → **콘 회피 실패·estop** (run_0815_153633, 당일 즉시 복구).
 >
 > 1점에서는 그 보상이 구조적으로 존재할 수 없다. **회피 거동을 실차에서 반드시 재확인할 것.**
-> `dx`/`dy`/`dyaw` 가 그 정보를 대신 나르도록 정의되면 재검토 대상이다 (현재 의미 미정).
+> `dx`/`dy`/`dyaw` 는 이제 연속 GPS pose의 실측 이동량을 나른다. 이 정보로 1점
+> 계약의 회피 거동이 충분한지는 실차에서 재검토 대상이다.
 > 되돌리려면 `can_protocol.hpp` 의 `kNumPoints` 와 이 절을 함께 되돌린다.
 
 주의: 조향이 제대로 반응하려면 **v_ref ≥ 0.5 m/s** 필요 (CLAUDE.md §3 ①).
@@ -125,17 +126,21 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 | 8 | f64 | y | m |
 | 16 | f64 | yaw | rad |
 | 24 | f64 | curvature | 1/m |
-| 32 | f64 | dx | **의미 미정 — 0 송신** |
-| 40 | f64 | dy | **의미 미정 — 0 송신** |
-| 48 | f64 | dyaw | **의미 미정 — 0 송신** |
-| 56 | f64 | update | **의미 미정 — 0 송신** |
+| 32 | f64 | dx | 직전 유효 GPS pose 기준 전방 이동량 [m] |
+| 40 | f64 | dy | 직전 유효 GPS pose 기준 좌측 이동량 [m] |
+| 48 | f64 | dyaw | 직전→현재 GPS yaw 변화량, `[-π,π)` [rad] |
+| 56 | u64 | update | 새 유효 GPS sample마다 +1 (wrap) |
 
 - vehicle frame (생성 시점 차량 = 0,0,0). **양자화 없음** — v3 의 int16 스케일은 v5 에서 안 쓴다.
-- **8칸 전부 float64 다** (2026-08-29 정정). 그전에는 마지막 `update` 만 u64 로 선언돼
-  있었다 — 값이 0 인 동안은 바이트가 같아 드러나지 않지만, 정수를 넣는 순간 dSPACE 가
-  double 로 읽어 엉뚱한 값이 된다. dSPACE RTI CAN 쪽도 8칸 모두 float64/Intel 로 둘 것.
-- `dx`/`dy`/`dyaw`/`update` 는 PR #52 에서 의미가 정해지지 않았다. 팀장 결정(2026-08-28)에
-  따라 **0 으로 채운다.** 의미가 정해지면 이 표와 `can_protocol.hpp` 를 함께 갱신할 것.
+- `dx`/`dy`는 두 연속 GPS pose의 ENU 이동량을 **이전 pose의 vehicle frame**으로
+  회전한 값이다. 첫 유효 sample은 `dx=dy=dyaw=0`, `update=1`이다. GPS sample 사이의
+  10ms CAN 주기에는 네 필드를 직전 값으로 유지한다.
+- 이 네 필드는 **LANE(카메라)와 WAYPOINT(GPS) 주행에서만** 유효하다. AVOID/PARKING은
+  `dx=dy=dyaw=0`, `update=0`을 송신해 서로 다른 경로 출처가 섞이지 않게 한다.
+- dSPACE는 10ms마다 반복되는 동일 delta를 매번 적분하면 안 된다. 보관한 `last_update`와
+  다른 `update`를 받았을 때만 `dx/dy/dyaw`를 정확히 한 번 적용하고 `last_update`를 갱신한다.
+  단, 이 비교·적용은 LANE/WAYPOINT 상태에서만 수행한다. 이 규칙은 DBC의 `update`
+  u64/Intel 정의와 한 세트다.
 
 ### TARGET_HEADER (`0x100`) — 8 bytes
 

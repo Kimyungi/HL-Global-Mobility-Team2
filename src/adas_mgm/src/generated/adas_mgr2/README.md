@@ -52,6 +52,14 @@ generated backend and in back-to-back tests. The runtime is compiled only on
 Linux x86-64 with a GNU/Clang C compiler. Its global API is non-reentrant, so
 the adapter uses one instance on one thread.
 
+Model version 1.88 still contains the legacy commanded-velocity stale-frame
+compensation. The repository keeps these generated files unchanged from the
+model output; `GeneratedMgmAdapter` restores the pre-step reference on a stale
+repeat so the deployed contract is a 100 ms perception/GNSS hold. Keeping the
+compatibility rule in maintained adapter code prevents a future model
+regeneration from silently restoring the legacy behavior. Back-to-back tests
+cover this override.
+
 To update this directory after regenerating the model, replace exactly the
 twelve runtime files already present here, normalize them to LF, and run
 `colcon test --packages-select adas_mgm` on a supported test host. Four-state
