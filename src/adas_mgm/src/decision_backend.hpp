@@ -40,6 +40,8 @@ public:
   int32_t laneHighCnt() const;
   int32_t avoidTicks() const;
   int32_t returnHoldLeft() const;
+  bool trafficDistanceLatched() const;
+  float trafficStoplineDistance() const;
   const CoreParams & params() const {return params_;}
   const std::string & name() const;
   bool faulted() const;

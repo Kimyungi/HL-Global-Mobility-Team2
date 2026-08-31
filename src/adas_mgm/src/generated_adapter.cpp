@@ -106,6 +106,11 @@ void validateParams(const CoreParams & params)
             "GeneratedMgmAdapter: escape_after_cycles must be zero because "
             "ADAS_MGR2 v1.88 does not implement rear escape");
   }
+  if (params.traffic_state_enabled != 0) {
+    throw std::invalid_argument(
+            "GeneratedMgmAdapter: traffic_state_enabled must be zero because "
+            "ADAS_MGR2 v1.88 does not implement TRAFFIC");
+  }
 }
 
 void throwIfModelError(const char * operation)

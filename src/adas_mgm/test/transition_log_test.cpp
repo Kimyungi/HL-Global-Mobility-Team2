@@ -7,6 +7,7 @@ using adas_mgm::CoreParams;
 using adas_mgm::CoreSnapshot;
 using adas_mgm::MGM_STATE_AVOID;
 using adas_mgm::MGM_STATE_LANE;
+using adas_mgm::MGM_STATE_TRAFFIC;
 using adas_mgm::MGM_STATE_WAYPOINT;
 using adas_mgm::explainTransition;
 using adas_mgm::transitionCsvHeader;
@@ -95,12 +96,25 @@ int main()
     0, 0, 0, 0, 0.4f, 301);
   check(record.spec_match, "AVOID must match inside the configured zone");
 
+  s = CoreSnapshot{};
+  s.traffic_red_active = true;
+  record = explainTransition(
+    MGM_STATE_LANE, MGM_STATE_TRAFFIC, s, p,
+    0, 0, 0, 0, 0.5f, 400);
+  check(record.spec_match, "확정 적색은 TRAFFIC 진입을 설명해야 한다");
+  s.traffic_red_active = false;
+  s.traffic_green_active = true;
+  record = explainTransition(
+    MGM_STATE_TRAFFIC, MGM_STATE_LANE, s, p,
+    0, 0, 0, 0, 0.0f, 401);
+  check(record.spec_match, "확정 초록은 TRAFFIC 탈출을 설명해야 한다");
+
   const std::string header = transitionCsvHeader();
   check(
     header.find("avoid_ticks,return_hold_left") != std::string::npos,
     "CSV must preserve the counters needed to audit transition timing");
   check(
-    record.csv.find("LANE,AVOID") != std::string::npos,
+    record.csv.find("TRAFFIC,LANE") != std::string::npos,
     "CSV row must contain the observed transition");
 
   std::printf("transition log: failures=%d\n", failures);

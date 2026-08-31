@@ -139,6 +139,7 @@ int main()
   check(stateUsesGpsDelta(1), "WAYPOINT(GPS)는 GPS delta 사용");
   check(!stateUsesGpsDelta(2), "AVOID는 GPS delta 미사용");
   check(!stateUsesGpsDelta(3), "PARKING은 GPS delta 미사용");
+  check(stateUsesGpsDelta(4), "TRAFFIC은 lane 경로이므로 GPS delta 사용");
   {
     GpsDeltaUpdateGate gate;
     check(gate.shouldApply(0, 42), "LANE의 새 update는 1회 적용");

@@ -61,7 +61,7 @@ struct RefPointPayload  // 0x101 + i
 struct TargetHeaderPayload  // 0x100 — point 프레임들 뒤에 마지막으로 송신 (latch 트리거)
 {
   uint16_t counter;   // watchdog 판정 입력, wrap
-  uint8_t state;      // 0=lane 1=waypoint 2=avoid 3=parking
+  uint8_t state;      // 0=lane 1=waypoint 2=avoid 3=parking 4=traffic
   uint8_t n_points;
   int16_t v_ref;      // kVelScale
   uint16_t reserved;
@@ -105,8 +105,8 @@ struct MpcTargetFdPayload  // 0x101 MPC_TARGET_FD — 64 B
 
 inline bool stateUsesGpsDelta(uint8_t state)
 {
-  // TargetRef constants: 0=LANE(camera), 1=WAYPOINT(GPS).
-  return state == 0U || state == 1U;
+  // TargetRef constants: 0=LANE(camera), 1=WAYPOINT(GPS), 4=TRAFFIC(lane path).
+  return state == 0U || state == 1U || state == 4U;
 }
 
 class GpsDeltaUpdateGate

@@ -112,7 +112,8 @@ def print_chain(bag, t_from, t_to):
         rm, vm = at(tr, t), at(vv, t)
         gx, gy = (m.points[0].x, m.points[0].y) if m.points else (float('nan'),) * 2
         p = rm.ref_points[0] if (rm and rm.ref_points) else None
-        state = {0: 'LANE', 1: 'WP', 2: 'AVOID', 3: 'PARK'}.get(rm.state if rm else -1, '?')
+        state = {0: 'LANE', 1: 'WP', 2: 'AVOID', 3: 'PARK', 4: 'TRAFFIC'}.get(
+            rm.state if rm else -1, '?')
         sent = (f'{p.x:5.2f},{p.y:+.3f},{p.curvature:+.3f}' if p else '   (없음)      ')
         drive = (f'{math.degrees(vm.str):+6.2f} | {rm.v_ref:5.2f} | {vm.v:+.2f}'
                  if vm and rm else '  (없음)')

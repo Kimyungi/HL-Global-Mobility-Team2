@@ -4,3 +4,14 @@ std_msgs/Header header
 bool stop_required
 float32 stop_distance   # [m] 정지선까지 거리 (모르면 음수). PR #21부터 카메라
                         # optical-Z 기준 — MGM은 stop_required만 사용하므로 무해.
+
+# 신호등 상태 머신 입력. red_active가 true가 되는 즉시 MGM은 TRAFFIC에 진입하고,
+# stopline_detected의 최초 유효 거리를 래치한다. 이후 정지선이 영상에서 사라져도
+# dSPACE 실차속도 적분으로 남은 거리를 추정한다. green_active는 TRAFFIC 즉시 해제.
+bool red_active
+bool green_active
+bool stopline_detected
+
+# 카메라/노드 고장 및 startup hold. 기존 stop_required는 구버전 소비자를 위해
+# 이 값과 적색 정지 래치의 OR를 유지한다. 새 MGM은 적색 제동과 고장 정지를 구분한다.
+bool fail_safe_stop

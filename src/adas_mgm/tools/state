@@ -9,7 +9,10 @@ import rclpy
 from rclpy.node import Node
 from fma_interfaces.msg import TargetRef
 
-NAMES = {0: 'LANE(차선)', 1: 'WAYPOINT(GPS)', 2: 'AVOID(회피)', 3: 'PARKING(주차)'}
+NAMES = {
+    0: 'LANE(차선)', 1: 'WAYPOINT(GPS)', 2: 'AVOID(회피)',
+    3: 'PARKING(주차)', 4: 'TRAFFIC(신호등)',
+}
 
 
 def main():
