@@ -257,6 +257,12 @@ public:
     // 무효화, AVOID 스테이트 중이면 estop 보정 (낡은 회피 경로 주행 차단)
     avoid_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("avoid_stale_timeout_sec", 0.5) * 1e9);
+    // parking 신선도 watchdog (§5.7 ⑦, 2026-08-31 — PR #45 통합 검토 P0 ③).
+    // avoid(⑤)와 같은 규약이다. **CoreSnapshot 은 건드리지 않는다** — parking_updated
+    // 를 넣으면 덤프 포맷이 v6→v7 이 되어 drive_logs 의 기존 스냅샷이 전부 재생
+    // 불가가 된다. 수신 시각만으로 판정하면 코어도 덤프도 그대로다.
+    parking_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("parking_stale_timeout_sec", 0.5) * 1e9);
 
     // ── CAN 헬스 watchdog (§5.7 ⑥, 2026-08-26) ─────────────────────────────
     // traffic(③)과 같은 규약: **수신 이력이 있은 뒤에만** 판정한다. 미수신을
@@ -345,7 +351,8 @@ public:
     sub_parking_ = create_subscription<fma_interfaces::msg::ParkingStatus>(
       "/perception/parking", qos,
       [this](fma_interfaces::msg::ParkingStatus::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); msgs_.parking = *m;});
+        std::lock_guard<std::mutex> lk(mtx_); msgs_.parking = *m;
+        last_parking_rx_ns_ = monotonicNs();});
     sub_traffic_ = create_subscription<fma_interfaces::msg::TrafficStop>(
       "/perception/traffic_stop", qos,
       [this](fma_interfaces::msg::TrafficStop::ConstSharedPtr m) {
@@ -426,6 +433,7 @@ private:
     int64_t gps_rx_ns;
     int64_t traffic_rx_ns;
     int64_t avoid_rx_ns;
+    int64_t parking_rx_ns;
     int64_t can_rx_ns;
     bool go;
     {
@@ -436,6 +444,7 @@ private:
       gps_rx_ns = last_gps_rx_ns_;
       traffic_rx_ns = last_traffic_rx_ns_;
       avoid_rx_ns = last_avoid_rx_ns_;
+      parking_rx_ns = last_parking_rx_ns_;
       can_rx_ns = last_can_rx_ns_;
       go = go_received_;
     }
@@ -516,6 +525,30 @@ private:
         m.estop.estop = true;
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
           "avoid 신선도 초과(state=avoid) — estop 강제 (stack_avoid 확인 필요)");
+      }
+    }
+    // parking 신선도 watchdog (§5.7 ⑦, 2026-08-31) — avoid(⑤)와 같은 구조다.
+    // 미수신/staleness 시 **진입 재료**(space_found)를 무효화해 죽은 stack_parking 의
+    // 마지막 메시지로 PARKING 에 진입하는 것을 막고, 이미 PARKING 이면 estop 을
+    // 보정한다 — 낡은 주차 경로로 계속 움직이는 것을 막기 위해서다. 주차는 후진이
+    // 섞이므로(parking_v_suggest 음수) 낡은 값으로 굴러가는 것이 특히 위험하다.
+    //
+    // done 도 함께 무효화한다: 죽기 직전 메시지의 done 으로 PARKING 을 빠져나가면
+    // 차가 어디에 서 있는지 모르는 채 주행 스테이트로 올라간다. estop 이 걸린 채
+    // PARKING 에 머무는 쪽이 안전하다.
+    //
+    // 미수신(-1)도 stale 로 본다. stack_parking 없이 도는 단독 스택 시험과 양립한다 —
+    // space_found 기본값이 false 라 PARKING 에 못 들어가고, PARKING 이 아니면
+    // estop 보정도 걸리지 않기 때문이다.
+    const bool parking_stale =
+      parking_rx_ns < 0 || monotonicNs() - parking_rx_ns > parking_stale_ns_;
+    if (parking_stale) {
+      m.parking.space_found = false;
+      m.parking.done = false;
+      if (backend_->activeState() == MGM_STATE_PARKING && !estop_stale) {
+        m.estop.estop = true;
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+          "parking 신선도 초과(state=parking) — estop 강제 (stack_parking 확인 필요)");
       }
     }
     // CAN 헬스 watchdog (§5.7 ⑥, 2026-08-26). 다른 watchdog 이 "인지가 살아 있는가"를
@@ -680,11 +713,13 @@ private:
   int64_t last_traffic_rx_ns_{-1};  // 마지막 TrafficStop 수신 시각 (미수신 = -1)
   int64_t traffic_stale_ns_{500'000'000};
   int64_t last_avoid_rx_ns_{-1};  // 마지막 AvoidStatus 수신 시각 (미수신 = -1)
+  int64_t last_parking_rx_ns_{-1};  // 마지막 ParkingStatus 수신 시각 (미수신 = -1)
   // 직전 틱에 사용한 수신 시각 — 비교해서 "이번 틱에 새 메시지" 판정 (§5.8)
   int64_t last_lane_rx_used_{-1};
   int64_t last_gps_rx_used_{-1};
   int64_t last_avoid_rx_used_{-1};
   int64_t avoid_stale_ns_{500'000'000};
+  int64_t parking_stale_ns_{500'000'000};
   int64_t last_can_rx_ns_{-1};    // 마지막 CanHealth 수신 시각 (미수신 = -1)
   int64_t can_stale_ns_{500'000'000};
   uint32_t can_fail_ticks_{3};    // 연속 송신 실패 몇 주기부터 고장으로 볼 것인가
