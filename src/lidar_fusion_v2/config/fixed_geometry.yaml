@@ -1,0 +1,55 @@
+/**:
+  ros__parameters:
+    base_frame: base_link
+    sensor_ids: [a1, a2, b1, b2]
+    publish_rate_hz: 10.0
+    # 10 Hz 센서가 일시적으로 한두 프레임 늦어져도 시야가 깜빡이지 않게 유지한다.
+    max_age_s: 0.50
+    scan:
+      angle_increment_deg: 1.0
+      range_min: 0.15
+      range_max: 12.0
+    sensors:
+      # 앞/뒤를 기준으로 고정. 좌우 보정 결과는 b1/b2 x/y/yaw에만 반영한다.
+      a1:
+        topic: /lidar/a1/scan
+        x: 0.760
+        y: 0.000
+        yaw_deg: -87.0
+        fov_min_deg: -3.0
+        fov_max_deg: 177.0
+        min_range: 0.15
+        max_range: 12.0
+        range_offset_m: 0.069
+      a2:
+        topic: /lidar/a2/scan
+        x: -0.055
+        y: 0.000
+        yaw_deg: 90.0
+        fov_min_deg: 20.0
+        fov_max_deg: 160.0
+        min_range: 0.15
+        max_range: 12.0
+        range_offset_m: 0.069
+      b1:
+        topic: /lidar/b1/scan
+        # 2026-09-01 front/rear anchor wall calibration (RMS 0.0099 m)
+        x: 0.294739
+        y: 0.171568
+        yaw_deg: 2.827857
+        fov_min_deg: 35.0
+        fov_max_deg: 145.0
+        min_range: 0.15
+        max_range: 12.0
+        range_offset_m: 0.069
+      b2:
+        topic: /lidar/b2/scan
+        # 2026-09-01 front/rear anchor wall calibration (RMS 0.0065 m)
+        x: 0.302170
+        y: -0.224331
+        yaw_deg: -179.762631
+        fov_min_deg: 35.0
+        fov_max_deg: 145.0
+        min_range: 0.15
+        max_range: 12.0
+        range_offset_m: 0.069
