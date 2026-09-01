@@ -44,6 +44,12 @@ Visualization Manager:
       Shape: Axes
       Axes Length: 0.6
       Axes Radius: 0.05
+    - Class: rviz_default_plugins/Marker
+      Name: SLAM x y yaw
+      Enabled: true
+      Topic:
+        Value: /parking/slam_pose_text
+        Reliability Policy: Reliable
   Global Options:
     Background Color: 25; 28; 32
     Fixed Frame: parking_map

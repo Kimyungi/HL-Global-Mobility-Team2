@@ -17,6 +17,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header
+from visualization_msgs.msg import Marker
 
 from .geometry import transform_points
 from .icp_slam import IcpConfig, IcpSlam, voxel_downsample
@@ -51,6 +52,8 @@ class SlamOnlyNode(Node):
         self.pose_pub = self.create_publisher(PoseStamped, '/parking/slam_pose', 1)
         self.scan_pub = self.create_publisher(PointCloud2, '/parking/slam_scan', 1)
         self.map_pub = self.create_publisher(PointCloud2, '/parking/local_map', 1)
+        self.text_pub = self.create_publisher(
+            Marker, '/parking/slam_pose_text', 1)
         self.diag_pub = self.create_publisher(
             DiagnosticArray, '/parking/slam_diagnostics', 10)
         self.last_publish_ns = 0
@@ -92,6 +95,27 @@ class SlamOnlyNode(Node):
         pose.pose.orientation.w = math.cos(0.5 * result.pose.yaw)
         self.pose_pub.publish(pose)
 
+        text = Marker()
+        text.header = header
+        text.ns = 'slam_pose'
+        text.id = 0
+        text.type = Marker.TEXT_VIEW_FACING
+        text.action = Marker.ADD
+        text.pose.position.x = float(result.pose.x)
+        text.pose.position.y = float(result.pose.y)
+        text.pose.position.z = 0.45
+        text.pose.orientation.w = 1.0
+        text.scale.z = 0.22
+        text.color.r = 1.0
+        text.color.g = 1.0
+        text.color.b = 0.15
+        text.color.a = 1.0
+        text.text = (
+            'x: %.3f m\ny: %.3f m\nyaw: %.1f deg (%.3f rad)'
+            % (result.pose.x, result.pose.y,
+               math.degrees(result.pose.yaw), result.pose.yaw))
+        self.text_pub.publish(text)
+
         status = DiagnosticStatus(
             level=DiagnosticStatus.OK if result.accepted else DiagnosticStatus.WARN,
             name='stack_parking/slam_only', hardware_id='four_lidar_icp',
@@ -114,7 +138,8 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
