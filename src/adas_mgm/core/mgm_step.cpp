@@ -358,34 +358,44 @@ void transition(const CoreSnapshot & s, CoreState & st)
       break;
   }
 
-  // TRAFFIC 거리 메모리 (2026-09-01 개정 — 단순화, 이유는 mgm_types.hpp의
-  // traffic_ramp_distance_m 주석 참조). 정지선 인식이 간헐적으로만 성공하는
-  // 조건에서 "최초 한 번만 믿고 고정"은 그 한 번이 틀리면 되돌릴 수 없다.
-  // 대신 안정 검출되는 **매 틱마다** traffic_stop_distance를 그대로 신뢰해
-  // 계속 갱신하고, 안 보이는 동안만 실차속도로 dead-reckoning 감쇠한다.
-  if (st.state == MGM_STATE_TRAFFIC) {
-    const bool just_entered = prev_state != MGM_STATE_TRAFFIC;
-    if (just_entered) {
-      st.traffic_entry_state = prev_state;
-      st.traffic_distance_latched = false;
-      st.traffic_stopline_distance = 0.0f;
-    }
-    const bool valid_line = s.traffic_stopline_detected &&
-      std::isfinite(s.traffic_stop_distance) &&
-      s.traffic_stop_distance > st.params.traffic_stop_offset;
-    if (valid_line) {
-      st.traffic_distance_latched = true;
-      st.traffic_stopline_distance = s.traffic_stop_distance;
-    } else if (st.traffic_distance_latched && s.vehicle_speed_valid) {
-      // 부호를 보존한다: 전진(+v)은 거리를 줄이고 뒤로 밀림(-v)은 거리를 늘린다.
-      st.traffic_stopline_distance -= s.vehicle_speed * MGM_PERIOD_S;
-      if (st.traffic_stopline_distance < 0.0f) {
-        st.traffic_stopline_distance = 0.0f;
-      }
-    }
-  } else if (prev_state == MGM_STATE_TRAFFIC) {
+  // TRAFFIC 거리 메모리 (2026-09-02 개정, 사용자 지정 — 정지선이 화면에서
+  // 사라지는 edge 기준). 스테이트와 무관하게 **항상** 추적한다 — 빨간불이
+  // 뜨기 전에도 정지선을 스쳐 지나갈 수 있고, 그때 쌓인 낡은 값을 아래 가드가
+  // 걸러야 하기 때문이다.
+  //   ① 정지선 검출이 true→false로 떨어지는 순간(=화면에서 사라짐) 거리를
+  //      seed(traffic_ramp_distance_m, 기본 1.5m)로 리셋한다. 카메라
+  //      optical-Z 거리는 검출이 불안정하면 즉시 무효가 되어 그 자체로는 못
+  //      쓴다 — 정지선이 사라지는 지점은 카메라 장착 기준 대략 고정된
+  //      거리라는 사실을 시드로 쓴다(bridge_dspace/tools/
+  //      camera_traffic_ref_test.py로 벤치에서 검증).
+  //   ② 그 뒤로는 실측 차속(vehicle_speed)으로 dead-reckoning 감쇠한다.
+  //   ③ 빨간불이 아직 확정 안 된 채(=이번 정지 판정 전) 감쇠값이
+  //      traffic_stop_offset(기본 0.5m) 이하로 떨어지면, 무관한 정지선을
+  //      스쳐 지나가며 쌓인 낡은 값이 나중에 빨간불이 뜨는 순간 그대로
+  //      급정지로 이어지는 것을 막기 위해 seed로 되돌리고 그 상태를
+  //      붙잡아둔다 — 실질적으로 "seed에서 1m(=0.5m 남을 때까지) 이상 진행한
+  //      상태로 빨간불이 확정돼야만" 실제 정지가 성립한다.
+  if (st.traffic_prev_stopline_detected && !s.traffic_stopline_detected) {
+    st.traffic_stopline_distance = st.params.traffic_ramp_distance_m;
+    st.traffic_distance_latched = true;
+  }
+  st.traffic_prev_stopline_detected = s.traffic_stopline_detected;
+  if (st.traffic_distance_latched && s.vehicle_speed_valid) {
+    st.traffic_stopline_distance =
+      max_f(0.0f, st.traffic_stopline_distance - s.vehicle_speed * MGM_PERIOD_S);
+  }
+  if (!s.traffic_red_active && st.traffic_distance_latched &&
+    st.traffic_stopline_distance <= st.params.traffic_stop_offset)
+  {
+    st.traffic_stopline_distance = st.params.traffic_ramp_distance_m;
+  }
+  if (st.state == MGM_STATE_TRAFFIC && prev_state != MGM_STATE_TRAFFIC) {
+    st.traffic_entry_state = prev_state;
+  } else if (st.state != MGM_STATE_TRAFFIC && prev_state == MGM_STATE_TRAFFIC) {
+    // 초록으로 빠져나가면 다음 신호를 위해 완전히 새로 시작한다.
     st.traffic_distance_latched = false;
     st.traffic_stopline_distance = 0.0f;
+    st.traffic_prev_stopline_detected = false;
   }
 
   // 스테이트가 바뀌면 히스테리시스 카운터를 리셋한다 — "N주기 연속"은 **새
@@ -519,15 +529,15 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         // 안전 쪽 폴백(즉시 정지)이 낫다 — 디버깅도 쉽다: "거리를 알면 ramp,
         // 모르면 정지" 둘 중 하나뿐이라 상태가 섞이지 않는다.
         out.v_ref = 0.0f;
+      } else if (
+        st.traffic_stopline_distance <= st.params.traffic_stop_offset ||
+        st.params.traffic_ramp_distance_m <= 0.0f)
+      {
+        out.v_ref = 0.0f;
       } else {
-        const float remaining =
-          st.traffic_stopline_distance - st.params.traffic_stop_offset;
-        if (remaining <= 0.0f || st.params.traffic_ramp_distance_m <= 0.0f) {
-          out.v_ref = 0.0f;
-        } else {
-          out.v_ref =
-            clamp01(remaining / st.params.traffic_ramp_distance_m) * st.params.v_base;
-        }
+        out.v_ref = clamp01(
+          st.traffic_stopline_distance / st.params.traffic_ramp_distance_m) *
+          st.params.v_base;
       }
       break;
     }

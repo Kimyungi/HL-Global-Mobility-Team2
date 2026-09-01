@@ -217,14 +217,17 @@ public:
       declare_parameter<bool>("escape_require_rear_clear", true) ? 1 : 0;
     p.traffic_state_enabled =
       declare_parameter<bool>("traffic_state_enabled", true) ? 1 : 0;
-    p.traffic_stop_offset = static_cast<float>(
-      declare_parameter<double>("traffic_stop_offset_m", 0.0));
-    // ── 정지 ramp 거리 (2026-09-01 개정 — 단순화, mgm_types.hpp 주석 참조).
-    // 정지선을 한 번도 못 본 run(정지선 인식이 실패하는 조건 포함)에서는
-    // MGM_STATE_TRAFFIC의 !traffic_distance_latched 분기가 즉시 0으로 정지시켜
-    // 안전하다 — 이 값은 거리를 아는 경우의 ramp 시작 거리일 뿐이다.
+    // ── 정지 거리 추적 (2026-09-02 개정 — 정지선 소실 edge 기준,
+    // mgm_types.hpp 주석 참조). 정지선을 한 번도 못 본 run(정지선 인식이
+    // 실패하는 조건 포함)에서는 MGM_STATE_TRAFFIC의 !traffic_distance_latched
+    // 분기가 즉시 0으로 정지시켜 안전하다.
     p.traffic_ramp_distance_m = static_cast<float>(
       declare_parameter<double>("traffic_ramp_distance_m", 1.5));
+    // 가드 문턱 겸 완전 정지 문턱 [m] — mgm_types.hpp의 CoreParams::
+    // traffic_stop_offset 주석 참조. "seed(1.5m)에서 1m 이상 진행해야만
+    // 실제 정지가 성립"과 동일한 값(0.5m, 사용자 지정 2026-09-02).
+    p.traffic_stop_offset = static_cast<float>(
+      declare_parameter<double>("traffic_stop_offset_m", 0.5));
     if (p.traffic_stop_offset < 0.0f) {
       throw std::invalid_argument("traffic_stop_offset_m must be non-negative");
     }

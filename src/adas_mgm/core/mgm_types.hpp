@@ -241,20 +241,21 @@ struct CoreParams
   // ── 신호등 정지 상태 (§4, MGM_STATE_TRAFFIC). 0이면 생성 v1.88 호환을 위해
   // 기능을 끈다.
   int32_t traffic_state_enabled;
-  // 정지선 앞에서 남길 거리 [m]. 카메라 기준 거리의 장착 오프셋 보정에도 사용한다.
+  // ── 정지 거리 추적 (2026-09-02 개정, 사용자 지정 — 정지선 소실 edge 기준).
+  // 카메라 optical-Z 거리(TrafficStop.stop_distance)는 검출이 불안정하면
+  // 즉시 무효가 돼 그 자체로는 연속 신뢰 기준으로 못 쓴다. 대신 "정지선이
+  // 화면에서 사라지는 시점(stopline_detected: true→false) = 카메라 장착
+  // 기준 대략 고정된 거리"를 시드로 삼고, 그 뒤로는 실측 차속(vehicle_speed)
+  // 으로 dead-reckoning한다 — bridge_dspace/tools/camera_traffic_ref_test.py
+  // 로 벤치에서 검증한 방식. (2026-09-01엔 latch-once+운동학적 제동곡선 →
+  // 안정 검출 시 매 틱 재신뢰로 두 번 바뀌었다가, 두 안 모두 이 edge 기반
+  // 시드 방식으로 되돌아왔다 — mgm_step.cpp의 거리 추적 블록 주석 참조.)
+  float traffic_ramp_distance_m;  // 소실 edge에서의 시드 거리 [m] — ramp는 여기서 v_base로 시작
+  // 두 역할을 겸한다: ① 빨간불이 아직 확정 안 된 채 감쇠값이 이 이하로
+  // 떨어지면 시드로 되돌리는 가드 문턱, ② 빨간불 확정 후 이 이하에서 완전
+  // 정지(v_ref=0). 기본 0.5m — "seed(1.5m)에서 1m 이상 진행한 뒤에만 실제
+  // 정지가 성립한다"는 요구사항과 동일한 값이다(사용자 지정, 2026-09-02).
   float traffic_stop_offset;
-  // ── 정지 ramp 거리 기준 (2026-09-01 개정, PR: 카메라 traffic-stop 거리
-  // 기반 감속 — 단순화). 처음엔 진입 시점 거리·속도로 감속도를 고정하는
-  // 운동학적 제동 곡선(latch-once + sqrt(2·decel·remaining))이었는데, 카메라
-  // 정지선 인식이 간헐적으로만 성공하는 조건(2026-09-01 해질녘 실측: 후보조차
-  // 못 찾는 완전 실패도 있음)에서는 그 최초 한 번의 관측이 아예 없거나
-  // 부정확할 위험이 커서, 검증이 더 필요한 지금 단계는 디버깅하기 쉬운 단순
-  // 비율 방식이 낫다는 판단(팀 논의, 2026-09-01)으로 되돌렸다. stopline이
-  // 안정 검출되는 매 틱마다 traffic_stop_distance를 그대로 신뢰해 거리를
-  // 계속 보정하고(최초 값에 고정하지 않음), 안 보일 때만 vehicle_speed로
-  // dead-reckoning한다. bridge_dspace/tools/camera_traffic_ref_test.py 로
-  // 벤치에서 먼저 검증한 방식.
-  float traffic_ramp_distance_m;  // 이 거리부터 v_base에서 서서히 줄이기 시작 [m]
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -306,14 +307,15 @@ struct CoreState
   // ── 신호등 정지 (§4, MGM_STATE_TRAFFIC). TRAFFIC 진입 전 주행 상태 — 현재
   // 계약은 green에서 LANE으로 복귀하지만 로그와 향후 정책 검증을 위해 보존한다.
   uint8_t traffic_entry_state;
-  // 정지선을 한 번이라도 안정 검출했는가. false인 동안은 거리를 모른다는
-  // 뜻이라 prioritize()가 즉시 정지로 폴백한다(2026-09-01 개정 — 아래
-  // traffic_stopline_distance 주석 참조).
+  // 정지선 소실 edge(true→false)를 한 번이라도 봤는가. false인 동안은
+  // 거리를 모른다는 뜻이라 prioritize()가 즉시 정지로 폴백한다.
   bool traffic_distance_latched;
-  // [m] 차량→정지선 거리. stopline이 안정 검출되는 매 틱 traffic_stop_distance
-  // 값으로 계속 갱신되고(최초 한 번에 고정하지 않음), 안 보이는 동안만
-  // vehicle_speed로 dead-reckoning 감쇠한다.
+  // [m] 차량→정지선 거리. 정지선 검출이 true→false로 떨어지는 순간
+  // traffic_ramp_distance_m(시드)으로 리셋되고, 그 뒤로는 vehicle_speed로
+  // dead-reckoning 감쇠한다 — mgm_step.cpp의 거리 추적 블록 주석 참조.
   float traffic_stopline_distance;
+  // edge(true→false) 검출용 — 이번 틱 traffic_stopline_detected의 직전값.
+  bool traffic_prev_stopline_detected;
 };
 
 // 매 틱의 출력 — wrapper가 TargetRef로 변환·발행

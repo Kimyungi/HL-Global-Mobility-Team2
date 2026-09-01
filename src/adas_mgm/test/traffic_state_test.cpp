@@ -1,11 +1,11 @@
 // test/traffic_state_test.cpp — 신호등 정지 MGM_STATE_TRAFFIC (§4) 단위 시험
 //
-// 2026-09-01 개정: 최초 한 번만 거리를 래치하고 그 값·속도로 고정한 운동학적
-// 제동곡선(v=sqrt(2·decel·remaining))을 따라가던 설계를, 정지선 인식이
-// 간헐적으로만 성공하는 조건(YOLO/HSV가 후보조차 못 찾는 완전 실패 포함,
-// 2026-09-01 해질녘 실측)에서는 그 최초 한 번의 관측에 전체 제동을 고정하는
-// 게 위험하다는 판단으로 단순 비율 방식으로 되돌렸다. 이 파일은 그 최종
-// 설계를 고정한다 — 검증 대상은 코어 스테이트 머신 하나다 (ROS 무관).
+// 거리 추적은 2026-09-02 개정(사용자 지정)으로 "정지선 검출이 화면에서
+// 사라지는 edge(true→false) = 시드 거리(기본 1.5m)"로 확정됐다. 그 전
+// 두 시도 — ① 진입 시점 거리·속도로 고정한 운동학적 제동곡선(latch-once),
+// ② 안정 검출되는 매 틱 새 값을 신뢰(continuous trust) — 는 모두 이
+// edge 기반 방식으로 되돌아갔다. 검증 대상은 코어 스테이트 머신 하나다
+// (ROS 무관).
 #include <cmath>
 #include <cstdio>
 
@@ -40,8 +40,8 @@ CoreParams params()
   p.a_down = 100.0f;
   p.wrongway_cycles = 20;
   p.traffic_state_enabled = 1;
-  p.traffic_stop_offset = 0.0f;
-  p.traffic_ramp_distance_m = 1.5f;
+  p.traffic_ramp_distance_m = 1.5f;  // 소실 edge에서의 시드 거리
+  p.traffic_stop_offset = 0.5f;      // 가드 문턱 겸 완전 정지 문턱
   return p;
 }
 
@@ -52,9 +52,19 @@ CoreSnapshot input()
   s.lane_path.n = 1;
   s.lane_path.pts[0] = CorePoint{1.5f, 0.0f, 0.0f, 0.0f};
   s.avoid_ttc = 100.0f;
-  s.vehicle_speed = 0.5f;
+  s.vehicle_speed = 0.0f;
   s.vehicle_speed_valid = true;
   return s;
+}
+
+// 정지선이 한 틱 보였다가(true) 다음 틱에 사라지면(false) 소실 edge가
+// 발생해 거리가 시드(1.5m)로 리셋된다 — 원시 카메라 거리값은 쓰지 않는다.
+void triggerStoplineLostEdge(CoreState & st, CoreSnapshot & s)
+{
+  s.traffic_stopline_detected = true;
+  mgm_step(s, st);
+  s.traffic_stopline_detected = false;
+  mgm_step(s, st);
 }
 
 void testRedEntersTraffic()
@@ -70,13 +80,13 @@ void testRedEntersTraffic()
   CoreOutput out = mgm_step(s, state);
   check(out.state == MGM_STATE_TRAFFIC, "확정 적색이면 즉시 TRAFFIC에 진입해야 한다");
   check(out.path_source == MGM_SRC_LANE, "TRAFFIC은 차선 경로를 유지해야 한다");
-  check(!state.traffic_distance_latched, "정지선 관측 전에는 거리를 래치하면 안 된다");
+  check(!state.traffic_distance_latched, "소실 edge 전에는 거리를 래치하면 안 된다");
 }
 
-// 핵심 회귀 시험: 정지선을 한 번도 못 봤으면(=거리를 모르면) v_base로 계속
-// 달리게 두지 말고 즉시 정지해야 한다. 구 설계는 이 구간에서 v_base를
-// 유지했는데, 카메라 정지선 인식이 아예 실패하는 조건이 실제로 있어
-// "TRAFFIC(적색 확정)인데 한 번도 감속하지 않고 신호를 지나치는" 위험이 있었다.
+// 핵심 회귀 시험: 정지선 소실 edge를 한 번도 못 봤으면(=거리를 모르면)
+// v_base로 계속 달리게 두지 말고 즉시 정지해야 한다. 카메라 정지선 인식이
+// 아예 실패하는 조건이 실제로 있어(해질녘 실측: 후보조차 못 찾음),
+// "TRAFFIC(적색 확정)인데 한 번도 감속하지 않고 신호를 지나치는" 위험을 막는다.
 void testNeverDetectedFallsBackToImmediateStop()
 {
   CoreState state{};
@@ -89,72 +99,76 @@ void testNeverDetectedFallsBackToImmediateStop()
     check(out.state == MGM_STATE_TRAFFIC, "정지선을 못 봐도 TRAFFIC은 유지돼야 한다");
     check(
       out.v_ref == 0.0f,
-      "정지선을 한 번도 못 봤으면(dist 모름) 즉시 0으로 정지해야 한다 "
+      "소실 edge를 한 번도 못 봤으면(dist 모름) 즉시 0으로 정지해야 한다 "
       "(v_base로 계속 달리면 신호를 지나칠 위험)");
     check(!state.traffic_distance_latched, "관측이 없었으니 래치도 없어야 한다");
   }
 }
 
-// 안정 검출되는 매 틱마다 거리를 새로 신뢰해야 한다 — 최초 값에 고정하지 않는다.
-void testFreshReadingsAreTrustedContinuously()
+// 소실 edge가 거리를 시드(1.5m)로 세팅하고, 실측 차속으로 dead-reckoning
+// 감쇠하며, stop_offset(0.5m) 이하에서 v_ref가 정확히 0이 됨을 확인한다.
+void testEdgeSeedsThenDecaysAndFloorsAtZero()
 {
+  CoreParams p = params();
   CoreState state{};
-  mgm_init(state, params());
+  mgm_init(state, p);
   CoreSnapshot s = input();
   s.traffic_red_active = true;
   mgm_step(s, state);
 
-  s.traffic_stopline_detected = true;
-  s.traffic_stop_distance = 2.0f;
-  s.vehicle_speed = 0.0f;   // 감쇠와 분리해서 "신선한 값 신뢰"만 본다
-  mgm_step(s, state);
-  check(state.traffic_distance_latched, "최초 유효 관측에서 래치돼야 한다");
+  triggerStoplineLostEdge(state, s);
   check(
-    std::fabs(state.traffic_stopline_distance - 2.0f) < 1.0e-5f,
-    "첫 관측값을 그대로 신뢰해야 한다");
+    std::fabs(state.traffic_stopline_distance - p.traffic_ramp_distance_m) < 1.0e-5f,
+    "소실 edge 직후 거리는 시드값이어야 한다");
+  check(state.traffic_distance_latched, "소실 edge 이후에는 래치돼야 한다");
 
-  // 뒤이은 관측이 첫 값과 달라도(더 가까운 재측정) 그대로 덮어써야 한다 —
-  // "최초 한 번만 믿고 이후 영상값은 무시"였던 구 설계와 반대되는 요구사항.
-  s.traffic_stop_distance = 1.2f;
-  mgm_step(s, state);
-  check(
-    std::fabs(state.traffic_stopline_distance - 1.2f) < 1.0e-5f,
-    "안정 검출되는 후속 관측도 dead-reckoning 대신 그대로 신뢰해야 한다");
-}
-
-// 정지선이 안 보이는 동안은 실차속도로 dead-reckoning 감쇠하고, 0 아래로는
-// 내려가지 않으며, remaining이 0 이하면 v_ref도 정확히 0이어야 한다.
-void testDeadReckoningDecaysAndFloorsAtZero()
-{
-  CoreState state{};
-  mgm_init(state, params());
-  CoreSnapshot s = input();
-  s.traffic_red_active = true;
-  mgm_step(s, state);
-
-  s.traffic_stopline_detected = true;
-  s.traffic_stop_distance = 1.5f;
-  mgm_step(s, state);
-  const float captured_v_ref = mgm_step(s, state).v_ref;
-  check(captured_v_ref > 0.0f, "거리를 아는 상태에서는 v_ref가 0보다 커야 한다");
-
-  s.traffic_stopline_detected = false;
-  s.traffic_stop_distance = -1.0f;
   s.vehicle_speed = 5.0f;   // 빠르게 소진해서 바닥을 확인한다
-
   bool saw_zero = false;
-  float previous = captured_v_ref;
+  float previous = state.traffic_stopline_distance;
   for (int tick = 0; tick < 100; ++tick) {
     CoreOutput out = mgm_step(s, state);
-    check(out.v_ref <= previous + 1.0e-4f, "안 보이는 동안 v_ref가 늘어나면 안 된다");
+    check(
+      state.traffic_stopline_distance <= previous + 1.0e-4f,
+      "실차속도가 양수인 동안 거리가 늘어나면 안 된다");
     check(state.traffic_stopline_distance >= 0.0f, "적분 거리는 0 아래로 내려가면 안 된다");
-    if (state.traffic_stopline_distance <= 0.0f) {
-      check(out.v_ref == 0.0f, "남은 거리가 0이면 v_ref도 정확히 0이어야 한다");
+    if (state.traffic_stopline_distance <= p.traffic_stop_offset) {
+      check(out.v_ref == 0.0f, "거리가 stop_offset 이하이면 v_ref는 정확히 0이어야 한다");
       saw_zero = true;
     }
-    previous = out.v_ref;
+    previous = state.traffic_stopline_distance;
   }
-  check(saw_zero, "충분히 진행하면 거리가 0에 도달해야 한다");
+  check(saw_zero, "충분히 진행하면 거리가 stop_offset 이하로 내려가야 한다");
+}
+
+// 핵심 요구사항(사용자 지정, 2026-09-02): 빨간불이 아직 확정 안 된 채 거리가
+// stop_offset 이하로 떨어지면 시드로 되돌리고 붙잡아둔다 — 무관한 정지선을
+// 스쳐 지나가며 쌓인 낡은 값이 나중에 빨간불이 뜨는 순간 그대로 급정지로
+// 이어지는 것을 막는다.
+void testStaleDistanceBeforeRedIsHeldAtSeed()
+{
+  CoreParams p = params();
+  CoreState state{};
+  mgm_init(state, p);
+  CoreSnapshot s = input();
+  // 아직 적색 미확정 — LANE 유지
+  triggerStoplineLostEdge(state, s);   // 거리 = 1.5m, 소실 edge만 있었음
+  s.vehicle_speed = 5.0f;
+
+  for (int tick = 0; tick < 200; ++tick) {
+    mgm_step(s, state);
+    check(
+      state.traffic_stopline_distance > p.traffic_stop_offset - 1.0e-4f,
+      "빨간불 확정 전에는 거리가 stop_offset 밑으로 못 내려간다(가드가 시드로 되돌림)");
+  }
+
+  // 이제서야 실제로 빨간불이 확정됐다고 가정 — 낡은 감쇠값이 아니라 시드
+  // 근방에서 다시 시작해야 하므로 급정지(v_ref=0)가 아니어야 한다.
+  s.traffic_red_active = true;
+  s.vehicle_speed = 0.0f;
+  CoreOutput out = mgm_step(s, state);
+  check(
+    out.v_ref > 0.0f,
+    "빨간불 확정 시 낡은 감쇠값 때문에 급정지(v_ref=0)하면 안 된다");
 }
 
 void testGreenExitsAndResetsLatch()
@@ -164,9 +178,7 @@ void testGreenExitsAndResetsLatch()
   CoreSnapshot s = input();
   s.traffic_red_active = true;
   mgm_step(s, state);
-  s.traffic_stopline_detected = true;
-  s.traffic_stop_distance = 1.0f;
-  mgm_step(s, state);
+  triggerStoplineLostEdge(state, s);
   check(state.traffic_distance_latched, "사전 조건: 이 시점엔 래치돼 있어야 한다");
 
   s.traffic_red_active = false;
@@ -214,8 +226,8 @@ int main()
 {
   testRedEntersTraffic();
   testNeverDetectedFallsBackToImmediateStop();
-  testFreshReadingsAreTrustedContinuously();
-  testDeadReckoningDecaysAndFloorsAtZero();
+  testEdgeSeedsThenDecaysAndFloorsAtZero();
+  testStaleDistanceBeforeRedIsHeldAtSeed();
   testGreenExitsAndResetsLatch();
   testFailSafeOnMissingVehicleSpeed();
   testEntryFromWaypointAndExitToLane();
