@@ -1,0 +1,145 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.5
+      Color: 120; 120; 120
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Unified 4 LiDAR Cloud
+      Enabled: true
+      Topic:
+        Value: /unified_lidar/cloud
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 4
+      Size (m): 0.01
+      Alpha: 1
+      Color: 80; 220; 255
+      Color Transformer: FlatColor
+      Position Transformer: XYZ
+      Selectable: true
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/LaserScan
+      Name: Unified Virtual Scan
+      Enabled: false
+      Topic:
+        Value: /unified_lidar/scan
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 4
+      Alpha: 1
+      Color: 255; 80; 180
+      Color Transformer: FlatColor
+      Position Transformer: XYZ
+      Selectable: true
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Raw Front a1
+      Enabled: true
+      Topic:
+        Value: /unified_lidar/raw/a1
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 3
+      Alpha: 0.7
+      Color: 255; 70; 70
+      Color Transformer: FlatColor
+      Position Transformer: XYZ
+      Selectable: true
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Raw Rear a2
+      Enabled: true
+      Topic:
+        Value: /unified_lidar/raw/a2
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 3
+      Alpha: 0.7
+      Color: 255; 210; 60
+      Color Transformer: FlatColor
+      Position Transformer: XYZ
+      Selectable: true
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Raw Left b1
+      Enabled: true
+      Topic:
+        Value: /unified_lidar/raw/b1
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 3
+      Alpha: 0.7
+      Color: 70; 255; 100
+      Color Transformer: FlatColor
+      Position Transformer: XYZ
+      Selectable: true
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Raw Right b2
+      Enabled: true
+      Topic:
+        Value: /unified_lidar/raw/b2
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 3
+      Alpha: 0.7
+      Color: 90; 120; 255
+      Color Transformer: FlatColor
+      Position Transformer: XYZ
+      Selectable: true
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+      Frame Timeout: 15
+      Marker Scale: 0.3
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+  Global Options:
+    Background Color: 25; 27; 30
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Top Down
+      Scale: 90
+      Target Frame: base_link
+      X: 0
+      Y: 0
+    Saved: ~
+  Value: true
+Window Geometry:
+  Height: 900
+  Width: 1400
