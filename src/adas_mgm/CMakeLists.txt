@@ -147,6 +147,14 @@ if(BUILD_TESTING)
     NAME escape_reverse_test
     COMMAND escape_reverse_test)
 
+  # 신호등 정지 ramp (§4, 2026-09-01) — 코어 스테이트 머신만 대상으로 하는 단위 시험.
+  add_executable(traffic_ramp_test test/traffic_ramp_test.cpp)
+  target_include_directories(traffic_ramp_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(traffic_ramp_test mgm_core)
+  add_test(
+    NAME traffic_ramp_test
+    COMMAND traffic_ramp_test)
+
   add_executable(reference_hold_test test/reference_hold_test.cpp)
   target_include_directories(reference_hold_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(reference_hold_test mgm_core)

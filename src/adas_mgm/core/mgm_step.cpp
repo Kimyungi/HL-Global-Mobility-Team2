@@ -24,6 +24,16 @@ float min_f(float a, float b)
   return (a < b) ? a : b;
 }
 
+float max_f(float a, float b)
+{
+  return (a > b) ? a : b;
+}
+
+float clamp01(float x)
+{
+  return max_f(0.0f, min_f(1.0f, x));
+}
+
 // "실제로 멈췄다"로 보는 명령 속도 [m/s] — 지정 지점 정차 카운트다운 시작 조건.
 // 실제 차속 피드백(`/vehicle/vector`)이 실측 0건이라 직전 틱 **명령** 속도를 쓴다.
 // merge()의 rate limit은 0에 정확히 도달하므로(감속 하한이 0을 넘으면 0으로 고정)
@@ -102,6 +112,27 @@ void transition(const CoreSnapshot & s, CoreState & st)
     st.at_end_latched = false;
   } else if (st.state != MGM_STATE_PARKING && s.gps_at_end && s.gps_path.n > 0) {
     st.at_end_latched = true;
+  }
+
+  // ── 신호등 정지 ramp 거리 추적 (2026-09-01). 정지선이 화면에서 사라지는
+  // edge(stopline_detected: true → false)마다 시드 거리로 리셋하고, 이후
+  // 매 틱 실측 차속(vehicle_v)으로 dead-reckoning 감쇠한다 —
+  // bridge_dspace/tools/camera_traffic_ref_test.py 로 검증된 방식.
+  if (st.traffic_prev_stopline_detected && !s.traffic_stopline_detected) {
+    st.traffic_dist_m = st.params.traffic_ramp_reset_distance_m;
+  }
+  st.traffic_prev_stopline_detected = s.traffic_stopline_detected;
+  if (st.traffic_dist_m >= 0.0f) {
+    st.traffic_dist_m = max_f(0.0f, st.traffic_dist_m - s.vehicle_v * MGM_PERIOD_S);
+  }
+  // traffic_stop_required 가 아직 안 걸린 채(=이번 정지 판정에 들어가기 전)
+  // 감쇠값이 정지 문턱 아래로 떨어지면, 이번 신호와 무관하게 스쳐 지나간
+  // 정지선 때문에 쌓인 낡은 값이 나중에 traffic_stop_required 가 뜨는 순간
+  // 그대로 급정지로 이어진다 — 시드 거리로 되돌리고 그 상태를 붙잡아둔다.
+  if (!s.traffic_stop_required && st.traffic_dist_m >= 0.0f &&
+    st.traffic_dist_m <= st.params.traffic_ramp_stop_distance_m)
+  {
+    st.traffic_dist_m = st.params.traffic_ramp_reset_distance_m;
   }
 
   // ── 지정 지점 정지 (§4, 2026-08-18) — 트랙 위 지정 지점에 도달하면 정지하고
@@ -368,7 +399,21 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.v_ref = 0.0f;
         out.immediate_stop = true;
       } else if (s.traffic_stop_required) {
-        out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
+        // dist 를 모르면(이번 run에서 정지선 소실 edge를 한 번도 못 봤음 —
+        // 예: stack_traffic stopline_detection_enabled=false) 종전과 동일하게
+        // 즉시 0 — 안전 쪽 폴백이며 기존 back-to-back 덤프·parity 시험과
+        // 그대로 호환된다. dist 를 알면 v_base 를 상한으로 서서히 줄인다.
+        if (st.traffic_dist_m < 0.0f ||
+          st.traffic_dist_m <= st.params.traffic_ramp_stop_distance_m)
+        {
+          out.v_ref = 0.0f;
+        } else if (st.params.traffic_ramp_reset_distance_m <= 0.0f) {
+          out.v_ref = 0.0f;  // 잘못된 설정(0 이하) — 안전 쪽으로 즉시 정지
+        } else {
+          out.v_ref = clamp01(
+            st.traffic_dist_m / st.params.traffic_ramp_reset_distance_m) *
+            st.params.v_base;
+        }
       } else if (st.at_end_latched) {
         // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03).
         // **lane·waypoint 공통** (2026-08-15). 래치는 transition()이 이 틱에서
@@ -621,6 +666,7 @@ void mgm_init(CoreState & st, const CoreParams & params)
   st.state = MGM_STATE_LANE;
   st.last_src = MGM_SRC_LANE;
   st.n_out = 1;
+  st.traffic_dist_m = -1.0f;  // 아직 정지선 소실 edge를 못 봄 — 거리 모름
   // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)
 }
 

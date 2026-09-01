@@ -34,6 +34,7 @@
 #include "fma_interfaces/msg/traffic_stop.hpp"
 #include "fma_interfaces/msg/estop_request.hpp"
 #include "fma_interfaces/msg/target_ref.hpp"
+#include "fma_interfaces/msg/vehicle_vector.hpp"
 
 #include "core/mgm_step.hpp"
 #include "src/decision_backend.hpp"
@@ -56,6 +57,9 @@ struct LatestMsgs
   fma_interfaces::msg::ParkingStatus parking;
   fma_interfaces::msg::TrafficStop traffic;
   fma_interfaces::msg::EstopRequest estop;
+  // bridge_dspace VEH_FEEDBACK 에코 — 신호등 정지 ramp의 dead-reckoning
+  // 감쇠에만 쓴다(§5.6 rate limit 등 다른 종방향 로직은 여전히 명령 속도 기준).
+  fma_interfaces::msg::VehicleVector vehicle;
 };
 
 // msg → CoreSnapshot 변환 (포맷 변환만 — 판단 금지)
@@ -95,6 +99,8 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   toCorePath(m.parking.points, s.parking_path);
   s.parking_v_suggest = m.parking.v_suggest;
   s.traffic_stop_required = m.traffic.stop_required;
+  s.traffic_stopline_detected = m.traffic.stopline_detected;
+  s.vehicle_v = m.vehicle.v;
   s.estop = m.estop.estop;
   // 후방 여유 (§4 후진 탈출) — staleness 보정은 loop()에서 estop 과 함께 처리한다.
   s.estop_rear_clear = m.estop.rear_clear;
@@ -203,6 +209,13 @@ public:
     // 기본 켬 — 후방 센서가 붙기 전에는 rear_clear 가 항상 false 라 기능이 잠긴다.
     p.escape_require_rear_clear =
       declare_parameter<bool>("escape_require_rear_clear", true) ? 1 : 0;
+    // ── 신호등 정지 ramp (§4, 2026-09-01). stopline_detected 이벤트가 한 번도
+    // 없는 run(카메라 stopline_detection_enabled=false 포함)에서는 거리를
+    // 몰라 종전과 동일하게 즉시 0 으로 정지한다 — 기본값을 켜 둬도 안전하다.
+    p.traffic_ramp_reset_distance_m = static_cast<float>(
+      declare_parameter<double>("traffic_ramp_reset_distance_m", 1.5));
+    p.traffic_ramp_stop_distance_m = static_cast<float>(
+      declare_parameter<double>("traffic_ramp_stop_distance_m", 0.5));
     rcl_interfaces::msg::ParameterDescriptor backend_descriptor;
     backend_descriptor.read_only = true;
     backend_descriptor.description = "startup-only decision backend: core or generated";
@@ -330,6 +343,14 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         msgs_.estop = *m;
         last_estop_rx_ns_ = monotonicNs();});
+    // dSPACE VEH_FEEDBACK 에코 — 신호등 정지 ramp의 dead-reckoning 감쇠 입력.
+    // 미수신이면 vehicle.v는 기본 0.0f로 남아 거리가 감쇠하지 않는다(안전
+    // 쪽 정지 — 별도 staleness watchdog 불필요).
+    sub_vehicle_ = create_subscription<fma_interfaces::msg::VehicleVector>(
+      "/vehicle/vector", rclcpp::SensorDataQoS(),
+      [this](fma_interfaces::msg::VehicleVector::ConstSharedPtr m) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.vehicle = *m;});
 
     msgs_.avoid.ttc = 1e9f;   // 인지 도착 전 TTC=0으로 오인해 정지하는 것 방지
     msgs_.estop.estop = true;  // 첫 EstopRequest 수신 전 fail-safe — 미수신 = 정지
@@ -621,6 +642,7 @@ private:
   rclcpp::Subscription<fma_interfaces::msg::ParkingStatus>::SharedPtr sub_parking_;
   rclcpp::Subscription<fma_interfaces::msg::TrafficStop>::SharedPtr sub_traffic_;
   rclcpp::Subscription<fma_interfaces::msg::EstopRequest>::SharedPtr sub_estop_;
+  rclcpp::Subscription<fma_interfaces::msg::VehicleVector>::SharedPtr sub_vehicle_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_go_;
 
   std::atomic<bool> running_{true};

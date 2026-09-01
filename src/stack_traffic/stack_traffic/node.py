@@ -2184,7 +2184,16 @@ class StackTrafficNode(Node):
             )
             else -1.0
         )
-        self._publish(bool(final_stop), published_stopline_distance)
+        self._publish(
+            bool(final_stop),
+            published_stopline_distance,
+            red_active=bool(red_active),
+            green_active=bool(green_active),
+            stopline_detected=bool(
+                stopline_runtime.detection is not None
+                and stopline_runtime.detection.detected
+            ),
+        )
 
         if self.frame_index % self.print_every == 0:
             processing_ms = (
@@ -2265,6 +2274,9 @@ class StackTrafficNode(Node):
         self,
         stop_required: bool,
         stop_distance_m: float,
+        red_active: bool = False,
+        green_active: bool = False,
+        stopline_detected: bool = False,
     ) -> None:
         msg = TrafficStop()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -2275,6 +2287,9 @@ class StackTrafficNode(Node):
         )
         msg.stop_required = stop_required
         msg.stop_distance = float(stop_distance_m)
+        msg.red_active = bool(red_active)
+        msg.green_active = bool(green_active)
+        msg.stopline_detected = bool(stopline_detected)
         self.publisher.publish(msg)
 
     def _show_debug(

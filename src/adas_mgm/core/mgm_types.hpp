@@ -114,6 +114,16 @@ struct CoreSnapshot
   float parking_v_suggest;      // [m/s] 후진 = 음수
   // stack_traffic
   bool traffic_stop_required;
+  // 이번 틱에 화면에서 정지선이 검출됐는가(=stable 아닌 raw 값, TrafficStop.
+  // stopline_detected). traffic_stop_required 의 근접 게이트와는 별개로,
+  // "정지선이 사라지는 edge"만 잡아 정지 ramp 거리를 시드하는 데 쓴다
+  // (카메라 optical-Z 거리는 흔들리면 즉시 무효가 되어 그 자체로는 못 쓴다 —
+  // bridge_dspace/tools/camera_traffic_ref_test.py 로 검증한 방식).
+  bool traffic_stopline_detected;
+  // dSPACE VEH_FEEDBACK 의 실측 차속 [m/s] (VehicleVector.v). 위 정지 ramp가
+  // 정지선 소실 시점 이후 거리를 dead-reckoning 하는 데만 쓴다 — 그 외 일반
+  // 종방향 제어에는 관여하지 않는다(§5.6 rate limit은 여전히 명령 속도 기준).
+  float vehicle_v;
   // stack_estop
   bool estop;                // 정지 판단 입력 — wrapper의 §5.7 staleness 보정 포함
   bool estop_latch_release;  // at_end 래치 해제 전용 — **실제 EstopRequest 수신값만**
@@ -228,6 +238,21 @@ struct CoreParams
   // 후방 센서가 붙기 전에는 이 값이 항상 false 라 기능이 자연히 잠긴다.
   // 끄면 후방을 보지 않고 시간 상한만으로 후진한다 — 관측자를 세운 시험에서만 쓸 것.
   int32_t escape_require_rear_clear;
+
+  // ── 신호등 정지 ramp (2026-09-01, PR: 카메라 traffic-stop 거리 기반 감속).
+  // 종전에는 traffic_stop_required 가 뜨는 순간 v_ref를 곧장 0으로 떨어뜨렸다
+  // (rate limit만 걸림 — 갑작스러운 감속 개시). stack_traffic 의 카메라
+  // stop_distance 는 정지선이 화면에서 안정 검출된 프레임에서만 유효해(px
+  // 기준, 흔들리면 즉시 -1) 그 자체로는 서서히 줄이는 기준으로 못 쓴다.
+  // 대신 "정지선이 화면에서 사라지는 시점 = 카메라 장착 기준 고정 거리"를
+  // 시드로 삼고, 그 뒤로는 실측 차속(vehicle_v)으로 dead-reckoning한다 —
+  // bridge_dspace/tools/camera_traffic_ref_test.py 로 검증된 방식 그대로
+  // core 로 옮긴 것. stopline_detected 이벤트가 한 번도 없었던 run(예:
+  // stack_traffic 의 stopline_detection_enabled=false)에서는 거리를 몰라
+  // 종전과 동일하게 즉시 0 으로 떨어진다 — 새 필드를 안 쓰면 동작이 100%
+  // 그대로라는 뜻이다.
+  float traffic_ramp_reset_distance_m;  // 정지선 소실 시점의 시드 거리 [m]
+  float traffic_ramp_stop_distance_m;   // 이 이하로 내려가면 완전 정지 [m]
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -276,6 +301,9 @@ struct CoreState
   // 10초 뒤 차가 스스로 뒤로 물러난다. 한 번이라도 굴러간 뒤에만 "갇혔다"고
   // 말할 수 있다.
   bool escape_armed;
+  // ── 신호등 정지 ramp (2026-09-01)
+  float traffic_dist_m;                  // -1 = 아직 모름(소실 edge 없었음)
+  bool traffic_prev_stopline_detected;   // edge(true->false) 검출용 직전값
 };
 
 // 매 틱의 출력 — wrapper가 TargetRef로 변환·발행
