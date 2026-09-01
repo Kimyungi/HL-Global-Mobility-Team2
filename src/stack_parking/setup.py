@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'stack_parking_node = stack_parking.node:main',
+            'slam_only = stack_parking.slam_only:main',
             'parking_simulator = stack_parking.simulation:main',
         ],
     },

@@ -19,7 +19,6 @@
 
   <!-- tools/lidar_fov.py · tools/lidar_overlap.py 가 쓰는 것 -->
   <depend>sensor_msgs</depend>
-  <depend>visualization_msgs</depend>
   <depend>python3-numpy</depend>
 
   <!-- ydlidar_ros2_driver 는 의도적으로 선언하지 않는다. main 에 없는 패키지라
