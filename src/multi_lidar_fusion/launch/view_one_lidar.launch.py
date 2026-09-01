@@ -2,7 +2,7 @@
 
 이 파일의 역할:
     시리얼 포트만으로는 어느 물리 유닛이 앞/뒤/좌/우인지 알 수 없다
-    (YDLiDAR 2대는 시리얼이 둘 다 `0001` 이라 by-id 로도 구분되지 않는다).
+    (네 YDLiDAR가 같은 USB 계열이라 장치명만으로는 위치를 구분하기 어렵다).
     한 대씩 순서대로 띄워 놓고 사람이 눈으로 확인해서 위치를 정한다.
 
     어느 유닛을 띄우든 토픽·frame 이름은 항상 같다(`/probe/scan`, `probe_frame`)
@@ -13,10 +13,16 @@
              안 그러면 RViz 가 "Fixed Frame does not exist" 로 아무것도 안 그린다)
 
 실행:
+    # 새 좌/우 YDLiDAR를 각각 확인
+    ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=b1
+    ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=b2
+
+    # 아직 udev 위치 링크를 만들기 전인 장치 확인
+    ros2 launch multi_lidar_fusion view_one_lidar.launch.py \
+        unit:=custom port:=/dev/serial/by-path/...
+
     ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=yd0
     ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=yd1
-    ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=rp0
-    ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=rp1
 
     RViz 없이 값만 보고 싶으면:  rviz:=false
 
@@ -30,7 +36,7 @@ RViz 화면에서 이 유닛이 어디에 달렸는지 판별하는 법:
     확 붙는다 — 손을 차량 앞쪽/뒤쪽에서 넣어보면 어느 유닛인지 바로 갈린다.
     빨간 축(X)이 그 라이다의 0도 방향이다.
 
-★ 장착 yaw 측정 (RPLiDAR 2대용, 2026-08-13)
+★ 장착 yaw 측정
     화면에 **0~360도 눈금**이 함께 뜬다 (0도=빨강 화살표, 90도=초록 화살표).
     눈금은 이 라이다의 **스캔 원(raw) 각도**다 — 차량 좌표가 아니다.
 
@@ -46,7 +52,7 @@ RViz 화면에서 이 유닛이 어디에 달렸는지 판별하는 법:
     함께 쓰고 "장착 yaw 미실측" 경고가 사라진다.
 
     눈금 간격/크기 조정:
-        ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=rp0 \
+        ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=b1 \
             label_step_deg:=15 label_r:=3.0
     눈금이 필요 없으면 labels:=false
 """
@@ -72,28 +78,12 @@ try:
 except Exception:      # PackageNotFoundError
     HAVE_ANGLE_LABELS = False
 
-BY_PATH = '/dev/serial/by-path/'
-BY_ID = '/dev/serial/by-id/'
-
-# 2026-08-13 실측. YDLiDAR 2대는 시리얼이 겹쳐 by-id 를 못 쓰므로 by-path.
-# ★ 2026-08-27: by-path 를 실측값으로 갱신 (…1.2.4/1.2.3 -> …3.4/3.3).
-#   옛 값은 2026-08-25 udev 슬롯 고정(tools/99-fma-lidars.rules) 시점에 이미
-#   낡아 있었고, 그대로면 YDLiDAR 두 대가 안 열린다.
-#
-#   ⚠ 이 파일은 **일부러 슬롯 심링크(/dev/lidar_front 등)를 쓰지 않는다.**
-#     여기의 목적이 "어느 물리 유닛이 어느 자리인가"를 알아내는 것이라,
-#     자리 이름이 붙은 링크를 쓰면 답을 미리 가정하는 꼴이 된다.
-#     드라이버 본 launch(multi_lidar_drivers.launch.py)만 심링크를 쓴다.
-#
-#   허브 자리를 옮겼으면 다시 확인할 것:
-#     udevadm info -q property -n /dev/ttyUSBx | grep ID_PATH
+# 실기에서 확인한 네 USB 위치를 고정한다. 미배정 장치는 unit:=custom으로 확인한다.
 PORTS = {
-    'yd0': BY_PATH + 'pci-0000:00:14.0-usb-0:3.4:1.0-port0',
-    'yd1': BY_PATH + 'pci-0000:00:14.0-usb-0:3.3:1.0-port0',
-    'rp0': BY_ID + ('usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
-                    '76d341fd291ef1118e6dbee40f0f12f8-if00-port0'),
-    'rp1': BY_ID + ('usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
-                    'f2ee467bfb1df111a7b6c4e40f0f12f8-if00-port0'),
+    'yd0': '/dev/lidar_front',
+    'yd1': '/dev/lidar_rear',
+    'b1': '/dev/lidar_left',
+    'b2': '/dev/lidar_right',
 }
 
 FRAME = 'probe_frame'
@@ -106,22 +96,67 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument(
             'unit', default_value='yd0',
-            choices=['yd0', 'yd1', 'rp0', 'rp1'],
-            description='띄울 라이다 (yd0/yd1 = YDLiDAR T-mini Plus, rp0/rp1 = RPLiDAR C1M1)'),
+            choices=['custom', 'yd0', 'yd1', 'b1', 'b2'],
+            description=('띄울 YDLiDAR 위치 (yd0/yd1=기존 앞·뒤, b1=좌, b2=우, '
+                         'custom=port 인자로 지정)')),
+        DeclareLaunchArgument(
+            'port', default_value='/dev/ttyUSB0',
+            description=(
+                'unit:=custom 전용 포트. /dev/serial/by-path/의 신규 장치 지정')),
         DeclareLaunchArgument('rviz', default_value='true'),
         # ── 각도 눈금 (장착 yaw 측정용) ──
         DeclareLaunchArgument(
             'labels', default_value='true',
             description='0~360도 각도 눈금 표시 (장착 yaw 를 눈으로 읽을 때 필요)'),
         DeclareLaunchArgument(
-            'label_step_deg', default_value='30',
-            description='눈금 간격 [deg]. 촘촘히 보려면 15'),
+            'label_step_deg', default_value='10',
+            description='눈금 간격 [deg] (좌/우 라이다 장착 방향 판독 기본값: 10)'),
         DeclareLaunchArgument(
             'label_r', default_value='2.0',
             description='눈금 반지름 [m]. 숫자가 화면 밖이면 줄일 것'),
     ]
 
     actions = []
+
+    # 기존 위치 심링크에 아직 배정하지 않은 신규 YDLiDAR 확인용.
+    actions.append(Node(
+        package='ydlidar_ros2_driver',
+        executable='ydlidar_ros2_driver_node',
+        name='probe_lidar',
+        output='screen',
+        emulate_tty=True,
+        condition=LaunchConfigurationEquals('unit', 'custom'),
+        parameters=[{
+            'port': LaunchConfiguration('port'),
+            'frame_id': FRAME,
+            'baudrate': 230400,
+            'lidar_type': 1,
+            'device_type': 0,
+            'sample_rate': 4,
+            'abnormal_check_count': 4,
+            'fixed_resolution': False,
+            'reversion': True,
+            'inverted': False,
+            'auto_reconnect': True,
+            'isSingleChannel': False,
+            'intensity': True,
+            'intensity_bit': 8,
+            'support_motor_dtr': False,
+            'frequency': 10.0,
+            'angle_max': 180.0,
+            'angle_min': -180.0,
+            'range_max': 12.0,
+            'range_min': 0.03,
+            'invalid_range_is_inf': False,
+            'ignore_array': '',
+            'debug': False,
+        }],
+        remappings=[('/scan', TOPIC)],
+    ))
+    actions.append(LogInfo(
+        condition=LaunchConfigurationEquals('unit', 'custom'),
+        msg=['[view_one_lidar] 신규 YDLiDAR  port=', LaunchConfiguration('port'),
+             '  topic=', TOPIC, '  angle grid=10deg (기본값)']))
 
     # unit 별로 드라이버 노드를 만들되, LaunchConfigurationEquals 조건으로 하나만 산다.
     for key, default_port in PORTS.items():
@@ -130,9 +165,8 @@ def generate_launch_description():
             DeclareLaunchArgument('port_' + key, default_value=default_port,
                                   description=key + ' 표준 포트'))
         chosen = LaunchConfiguration('port_' + key)
-
-        if key.startswith('yd'):
-            drv = Node(
+        stable_stream = key in ('yd1', 'b1', 'b2')
+        drv = Node(
                 package='ydlidar_ros2_driver',
                 executable='ydlidar_ros2_driver_node',
                 name='probe_lidar',
@@ -145,47 +179,28 @@ def generate_launch_description():
                     'baudrate': 230400,
                     'lidar_type': 1,
                     'device_type': 0,
-                    'sample_rate': 9,
+                    'sample_rate': 4 if stable_stream else 9,
                     'abnormal_check_count': 4,
-                    'fixed_resolution': True,
+                    'fixed_resolution': False if stable_stream else True,
                     # ★ multi_lidar_drivers.launch.py 와 **반드시 같아야** 한다.
                     #   reversion/inverted 는 각도 규약 그 자체라, 다르면 이 화면에서
                     #   읽은 각도가 융합 파이프라인이 보는 각도와 거울상이 된다 —
                     #   측정 화면이 거짓말을 하게 된다.
                     'reversion': True,
-                    'inverted': True,
+                    'inverted': False,
                     'auto_reconnect': True,
                     'isSingleChannel': False,
                     'intensity': True,
-                    'intensity_bit': 16,
+                    'intensity_bit': 8 if stable_stream else 16,
                     'support_motor_dtr': False,
                     'frequency': 10.0,
                     'angle_max': 180.0,
                     'angle_min': -180.0,
                     'range_max': 12.0,
                     'range_min': 0.03,
-                    'invalid_range_is_inf': True,
+                    'invalid_range_is_inf': False if stable_stream else True,
                     'ignore_array': '',
                     'debug': False,
-                }],
-                remappings=[('/scan', TOPIC)],
-            )
-        else:
-            drv = Node(
-                package='rplidar_ros',
-                executable='rplidar_node',
-                name='probe_lidar',
-                output='screen',
-                emulate_tty=True,
-                condition=LaunchConfigurationEquals('unit', key),
-                parameters=[{
-                    'channel_type': 'serial',
-                    'serial_port': chosen,
-                    'serial_baudrate': 460800,
-                    'frame_id': FRAME,
-                    'inverted': False,
-                    'angle_compensate': True,
-                    'scan_mode': 'Standard',
                 }],
                 remappings=[('/scan', TOPIC)],
             )
@@ -227,8 +242,8 @@ def generate_launch_description():
                  '(0도=빨강 화살표, 90도=초록).\n'
                  '                 장착 yaw 측정: 차량 기준 방향을 아는 물체가 눈금 몇 도에'
                  ' 찍히는지 읽고\n'
-                 '                     yaw_deg = (그 물체의 차량 기준 방위) - (읽은 센서 각도)\n'
-                 '                 결과는 stack_parking/config/lidar_mounts.yaml 의'
+                 '                     yaw_deg = 차량 기준 방위 - 센서 각도\n'
+                 '                 결과는 stack_parking/config/lidar_mounts.yaml의'
                  ' 해당 항목에 yaw_deg 로 기록.')))
     else:
         actions.append(LogInfo(
