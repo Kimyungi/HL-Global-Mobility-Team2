@@ -521,14 +521,13 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.immediate_stop = true;
       } else if (!st.traffic_distance_latched) {
         // 정지선을 아직 한 번도 안정 검출하지 못했다 — 거리를 모른다.
-        // 2026-09-01 이전에는 이 구간에서 v_base로 계속 달리게 두고 정지선이
-        // 들어올 때까지 기다렸는데, 카메라 정지선 인식이 아예 실패하는 조건
-        // (해질녘 실측: score=0, 후보조차 못 찾음)이 실제로 있어 그 경우
-        // MGM_STATE_TRAFFIC(=적색 확정)에 있으면서도 감속을 한 번도 시작하지
-        // 못하고 신호를 지나칠 위험이 있었다. 검증이 더 필요한 지금 단계는
-        // 안전 쪽 폴백(즉시 정지)이 낫다 — 디버깅도 쉽다: "거리를 알면 ramp,
-        // 모르면 정지" 둘 중 하나뿐이라 상태가 섞이지 않는다.
-        out.v_ref = 0.0f;
+        // 2026-09-02 확정(사용자 지정): 정지선을 못 봤으면(=미인지 상태) 감속
+        // 없이 v_base로 그냥 통과한다. 한때 안전 쪽 폴백으로 즉시 정지를
+        // 넣었었는데(정지선 인식이 아예 실패하는 조건이 실제로 있어 신호를
+        // 지나칠 위험을 우려), 검증 단계인 지금은 정지선 인지 자체가 아직
+        // 미덥지 않은 채라 "못 봤으면 무조건 정지"가 오히려 관련 없는 곳에서
+        // 잦은 오정지를 만든다는 판단으로 되돌렸다.
+        out.v_ref = st.params.v_base;
       } else if (
         st.traffic_stopline_distance <= st.params.traffic_stop_offset ||
         st.params.traffic_ramp_distance_m <= 0.0f)

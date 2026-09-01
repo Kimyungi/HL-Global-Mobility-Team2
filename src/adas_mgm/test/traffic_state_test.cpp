@@ -83,11 +83,11 @@ void testRedEntersTraffic()
   check(!state.traffic_distance_latched, "소실 edge 전에는 거리를 래치하면 안 된다");
 }
 
-// 핵심 회귀 시험: 정지선 소실 edge를 한 번도 못 봤으면(=거리를 모르면)
-// v_base로 계속 달리게 두지 말고 즉시 정지해야 한다. 카메라 정지선 인식이
-// 아예 실패하는 조건이 실제로 있어(해질녘 실측: 후보조차 못 찾음),
-// "TRAFFIC(적색 확정)인데 한 번도 감속하지 않고 신호를 지나치는" 위험을 막는다.
-void testNeverDetectedFallsBackToImmediateStop()
+// 2026-09-02 확정(사용자 지정): 정지선 소실 edge를 한 번도 못 봤으면(=거리를
+// 모르면, 정지선 미인지 상태) 감속 없이 v_base로 그냥 통과해야 한다. 검증
+// 단계인 지금은 정지선 인지 자체가 미덥지 않아 "못 봤으면 무조건 정지"가
+// 관련 없는 곳에서 잦은 오정지를 만든다는 판단이다.
+void testNeverDetectedPassesThroughAtVBase()
 {
   CoreState state{};
   mgm_init(state, params());
@@ -98,9 +98,8 @@ void testNeverDetectedFallsBackToImmediateStop()
     CoreOutput out = mgm_step(s, state);
     check(out.state == MGM_STATE_TRAFFIC, "정지선을 못 봐도 TRAFFIC은 유지돼야 한다");
     check(
-      out.v_ref == 0.0f,
-      "소실 edge를 한 번도 못 봤으면(dist 모름) 즉시 0으로 정지해야 한다 "
-      "(v_base로 계속 달리면 신호를 지나칠 위험)");
+      out.v_ref == state.params.v_base,
+      "소실 edge를 한 번도 못 봤으면(dist 모름) v_base로 그냥 통과해야 한다");
     check(!state.traffic_distance_latched, "관측이 없었으니 래치도 없어야 한다");
   }
 }
@@ -225,7 +224,7 @@ void testEntryFromWaypointAndExitToLane()
 int main()
 {
   testRedEntersTraffic();
-  testNeverDetectedFallsBackToImmediateStop();
+  testNeverDetectedPassesThroughAtVBase();
   testEdgeSeedsThenDecaysAndFloorsAtZero();
   testStaleDistanceBeforeRedIsHeldAtSeed();
   testGreenExitsAndResetsLatch();
