@@ -1,4 +1,4 @@
-# stack_parking ICP + mapping + parking mission parameters.
+# stack_parking front/rear ICP + mapping + localization + parking parameters.
 #
 # Vehicle constants are copies for ROS parameter injection only. Their single
 # project source is stack_avoid/config/params.yaml; measurement rationale is in
@@ -7,10 +7,55 @@
   ros__parameters:
     map_frame: parking_map
     base_frame: base_link
-    merged_cloud_topic: /lidar/merged_cloud
+    # These are calibrated per-sensor clouds from multi_lidar_fusion.  The
+    # parking node rejects any frame other than base_link, so
+    # publish_sensor_clouds=true and sensor_cloud_frame=base_link are required.
+    front_cloud_topic: /lidar/a1/cloud
+    rear_cloud_topic: /lidar/a2/cloud
     rear_scan_topic: /lidar/a2/scan
-    publish_rate_hz: 20.0
+    vehicle_topic: /vehicle/vector
+    imu_topic: /perception/imu
+    gps_topic: /perception/gps_path
+    slam_rate_hz: 10.0
+    publish_rate_hz: 10.0
     debug_publish_rate_hz: 5.0
+
+    cloud:
+      sync_tolerance_s: 0.08
+      stale_timeout_s: 0.35
+      queue_size: 5
+      min_range_m: 0.15
+      max_range_m: 12.0
+      # Same rear-axle body box and margin as fusion_params.yaml.
+      self_filter_margin_m: 0.02
+
+    # Prediction is an ICP initial guess only. VehicleVector.x/y/yaw are not
+    # consumed: v is integrated in parking_map and yaw comes from IMU delta.
+    prior:
+      velocity_timeout_s: 0.25
+      imu_timeout_s: 0.25
+      max_dt_s: 0.30
+      max_speed_mps: 3.0
+      max_imu_rate_deg_s: 220.0
+      imu_jump_margin_deg: 3.0
+
+    gps:
+      # GpsPath delta is previous-base_link -> current-base_link. Only exact
+      # RTK FIXED quality 4 + HEADING_FUSED is accepted; FLOAT(5), tangent and
+      # reverse-ambiguous COG are intentionally rejected.
+      use_position_correction: true
+      use_yaw_fallback: true
+      fix_quality: 4
+      position_gain: 0.15
+      innovation_gate_m: 1.50
+      max_correction_m: 0.20
+
+    stage:
+      slam_confirm_scans: 10
+      localization_confirm_scans: 3
+      minimum_map_points: 80
+    # Mapping starts at node startup and normally survives a parking trigger.
+    reset_map_on_mission_start: false
 
     # Existing GpsPath only has parking_zone (no type). The default below is
     # used on that rising edge. A GPS node that decides type should publish

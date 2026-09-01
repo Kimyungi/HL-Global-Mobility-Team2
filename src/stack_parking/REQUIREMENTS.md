@@ -8,9 +8,10 @@
 
 ## 계약 (이것만 지키면 나머지는 자유)
 
-- 입력: `multi_lidar_fusion`의 4-LiDAR 융합 endpoint cloud
-  (`/lidar/merged_cloud`) → ICP 자세 추정 + 주차 로컬맵. 융합 뒤에는 점별 센서
-  원점이 없으므로 `base_link`에서 가짜 free-space ray를 만들지 않는다.
+- 입력: `multi_lidar_fusion`의 전·후 보정 endpoint cloud
+  (`/lidar/a1/cloud`, `/lidar/a2/cloud`, frame=`base_link`) → 10Hz ICP 자세 추정 +
+  주차 로컬맵. 좌·우 LiDAR는 반복 탈락해 주차 SLAM의 필수 입력에서 제외한다.
+  endpoint만 누적하며 `base_link`에서 가짜 free-space ray를 만들지 않는다.
 - 주차 완료 전용 입력: 후방 원본 LiDAR `/lidar/a2/scan`. 보정 후 후방 벽 지지점이
   0.20m 이하일 때만 완료 정차를 시작한다.
 - 출력: `/perception/parking` (`fma_interfaces/ParkingStatus`).
@@ -18,7 +19,12 @@
   - `path_blocked`: **동적 침범만**. 정적 경계(콘·연석)는 정지 트리거가 아니라 로컬맵 입력 (CLAUDE.md §4).
   - `points[]`: vehicle frame 주차 경로. 후진 구간 포함 — `v_suggest` 음수로 표현.
     **점 개수: 1개** (팀 합의 2026-07-29) — 현재 추종 목표점 하나만. 나머지는 dSPACE 궤적 생성이 채운다.
-- 입력으로 `/vehicle/vector` 사용 가능 — **dSPACE는 parking 스테이트 중에도 vehicle vector를 계속 회신한다** (PROTOCOL.md RX, 로컬맵·경로 추종 입력).
+- `/vehicle/vector`에서는 실속도 `v`만 motion prior와 정지 확인에 사용한다.
+  x/y/yaw pose를 직접 쓰지 않는다. yaw prior는 `/perception/imu`의 상대 yaw,
+  x/y drift 보정은 RTK FIXED `GpsPath` delta를 사용한다. **dSPACE는 parking
+  스테이트 중에도 vehicle vector를 계속 회신한다** (PROTOCOL.md RX).
+- 내부 단계는 `SLAM → MAPPING → LOCALIZATION → PARKING`. 계획 확정 뒤 map을
+  동결하고 localization 연속 정합 전에는 MGM에 `space_found=true`를 내지 않는다.
 - 경로 target은 ICP map에서 계획하되 매 publish마다 현재 SLAM 자세를 이용해
   `base_link`로 변환한다. preview는 1.0m, `points[]`는 항상 최대 1개다.
 - 겸임: dSPACE 측 MPC·Vehicle MGM (quintic 궤적, feasibility, kinematic bicycle 상태 추정).

@@ -221,12 +221,28 @@ class IcpSlam:
             points = points[order[selected]]
         return points
 
-    def update(self, scan_points: np.ndarray, odom_pose: Optional[Pose2] = None) -> IcpResult:
+    def update(
+        self,
+        scan_points: np.ndarray,
+        odom_pose: Optional[Pose2] = None,
+        update_map: bool = True,
+    ) -> IcpResult:
+        """Register one scan and optionally add accepted endpoints to the map.
+
+        ``update_map=False`` is localization-only mode.  It updates the pose
+        against the frozen map but never lets parked vehicles or other dynamic
+        objects contaminate the static mapping snapshot.
+        """
         scan = self._prepare_scan(scan_points)
         if len(scan) < self.config.min_correspondences:
             return IcpResult(
                 self.pose, False, self.initialized, 0, math.inf, 0,
                 odom_pose is not None, 'too_few_scan_points')
+
+        if not self.initialized and not update_map:
+            return IcpResult(
+                self.pose, False, False, 0, math.inf, 0,
+                odom_pose is not None, 'mapping_disabled_uninitialized')
 
         if not self.initialized:
             self.map.add(transform_points(scan, self.pose))
@@ -290,7 +306,8 @@ class IcpSlam:
         )
         if accepted:
             self.pose = estimate
-            self.map.add(transform_points(scan, self.pose))
+            if update_map:
+                self.map.add(transform_points(scan, self.pose))
         else:
             # Odometry is only a prediction.  A rejected ICP result must not
             # contaminate the point map; pose can follow a valid prior so the

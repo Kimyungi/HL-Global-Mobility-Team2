@@ -100,6 +100,25 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
   **미결 2건** — ⓐ `EstopRequest.rear_clear`를 채우는 구현이 stack_estop에 **없다**(후방/4-LiDAR 통합은 이기돈 판단). 없으면 항상 false라 기본 설정에서 기능이 자연히 잠긴다. ⓑ **실차 미검증** — 음수 v_ref에 대한 dSPACE MPC·하위 PI 동작은 팀 확인(2026-08-24)이나 실차 재확인 권장. 되돌리려면 `ros2 param set /adas_mgm_node escape_after_cycles 0`. 단위시험: `adas_mgm/test/escape_reverse_test.cpp`(9종 — 절반이 "후진하지 않아야 하는 경우"를 고정한다). **§5.5 이중 트랙: Simulink 모델도 동일 반영 필요.**
 - **parking** — 경로 침범 정지 > 주차 진행. 신호등·가속구간 요구 비활성. 정적 경계(콘·연석)는 정지 트리거가 아니라 로컬맵 입력
 
+**Parking 인지 파이프라인 (2026-09-01):** 옆 RPLiDAR의 반복적인 USB 전원
+탈락 때문에 주차 SLAM 입력은 `multi_lidar_fusion`이 `base_link`로 보정해 발행하는
+전방 `/lidar/a1/cloud`와 후방 `/lidar/a2/cloud`만 사용한다. 둘을 timestamp 허용오차
+안에서 한 쌍으로 소비하고 SLAM 갱신은 최대 10Hz로 제한한다. 좌표계는
+`parking_map` 시작 자세 = `(0,0,0)`, `base_link` = 후축 중심·`+x` 전방·`+y`
+좌측·`+yaw` 반시계다. 자세 prior는 dSPACE `VehicleVector.v`(실속도)와 HandsFree
+IMU의 자이로 적분 yaw 증분으로 만들며 `VehicleVector.x/y/yaw`를 직접 자세로 쓰지
+않는다. RTK FIXED인 `GpsPath`의 새 `update`만 위치 drift 보정에 사용한다.
+`GpsPath.dx/dy/dyaw`는 **직전 vehicle frame** 표현이므로 SE(2) 합성으로 누적하고,
+innovation gate와 작은 gain을 통과한 x/y만 prior에 반영한다. IMU가 끊긴 경우에만
+`HEADING_FUSED` GPS `dyaw(k-1)`을 yaw 증분 폴백으로 사용한다.
+
+Parking 내부 단계는 `SLAM → MAPPING → LOCALIZATION → PARKING`으로 분리한다.
+SLAM은 초기 scan-to-map 정합을 확보하고, MAPPING은 정적 endpoint map을 계속
+누적한다. 공간과 경로가 확정되면 map을 동결한 LOCALIZATION에서 연속 정합을
+확인한 뒤에만 PARKING 출력을 MGM에 활성화한다. LOCALIZATION/PARKING 중에는
+동적 물체로 정적 map을 오염시키지 않으며, 단계 전까지 `space_found=false`와
+0속도 제안만 발행한다.
+
 **히스테리시스 카운터 규약 (2026-08-14 개정 — run_0814_184624 실측으로 도출):**
 "N주기 연속"은 **현재 스테이트 안에서** 세어야 한다. 카운터를 스테이트와 무관하게
 누적하면 이전 스테이트에 있는 동안 쌓인 값으로 진입 즉시 되튄다 — AVOID로 5~9초

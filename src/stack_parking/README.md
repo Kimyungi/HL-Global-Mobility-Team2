@@ -1,19 +1,25 @@
-# stack_parking — 4-LiDAR ICP 주차
+# stack_parking — 전·후 LiDAR ICP 주차
 
-기존 `multi_lidar_fusion`의 `/lidar/merged_cloud`를 수정 없이 구독하는 주차 전용
-스택이다. `adas_mgm`, `fma_interfaces`, `multi_lidar_fusion`의 코드는 변경하지 않는다.
+옆 RPLiDAR가 빠져도 계속 동작하도록 `multi_lidar_fusion`의 전방
+`/lidar/a1/cloud`와 후방 `/lidar/a2/cloud`만 구독하는 주차 전용 스택이다. 두 토픽은
+extrinsic 적용이 끝난 `base_link` cloud여야 하며, 다른 frame은 조용히 섞지 않고
+거부한다. `adas_mgm`과 `fma_interfaces` 계약은 변경하지 않는다.
 
 ## 파이프라인
 
-1. `GpsPath.parking_zone` 상승 에지 또는 문자열 명령에서 평행(1자)/직각(T자),
-   좌/우를 결정한다.
-2. `space_found=false`인 동안 기존 camera lane/GPS waypoint 모드가 직진하고,
-   이 스택은 융합 endpoint cloud를 scan-to-local-map ICP로 누적한다.
-3. 양쪽 정적 경계가 있는 gap을 3 frame 연속 확인한다. 직각 주차는 gap 내부 후면
+1. **SLAM** — 전·후 cloud를 timestamp로 한 쌍씩 소비하여 최대 10Hz로 ICP를
+   bootstrap한다. `parking_map` 시작 자세는 `(0,0,0)`이다.
+2. **MAPPING** — `space_found=false`인 동안 endpoint map을 누적한다. dSPACE
+   `VehicleVector.v`와 `/perception/imu`의 상대 yaw로 ICP prior를 만들고,
+   `VehicleVector.x/y/yaw`는 사용하지 않는다. RTK FIXED `GpsPath`의 새 delta만
+   innovation gate 뒤 x/y drift 보정에 쓴다.
+3. `GpsPath.parking_zone` 상승 에지 또는 문자열 명령에서 평행(1자)/직각(T자),
+   좌/우를 결정한다. 양쪽 정적 경계가 있는 gap을 3 frame 연속 확인한다. 직각 주차는 gap 내부 후면
    벽 지지점까지 요구한다.
-4. 후축 기준 최소 회전반경 1.15m의 원호 경로를 만들고 차량 직사각 footprint로
-   정적 충돌 검사를 한다. 계획이 통과한 뒤에만 `space_found=true`를 보낸다.
-5. 원호 시작점이 앞이면 전진 접근 경로를 먼저 보낸다. 이미 지난 경우에는 scan
+4. **LOCALIZATION** — 후축 기준 최소 회전반경 1.15m의 원호 경로를 만들고 차량
+   직사각 footprint로 정적 충돌 검사를 한다. 계획 순간 map을 동결하고 연속 ICP
+   정합을 확인하는 동안에는 아직 `space_found=false`를 유지한다.
+5. **PARKING** — localization 확인 뒤에만 MGM 출력을 활성화한다. 원호 시작점이 앞이면 전진 접근 경로를 먼저 보낸다. 이미 지난 경우에는 scan
    lane을 직선 후진해 원호 시작점에 합류한다.
 6. map-frame 경로에서 약 1m preview를 뽑아 현재 ICP 자세 기준 `base_link`의
    `{x,y,yaw,curvature}` 한 점으로 변환한다. 회전 중 `|v|=0.55m/s`, 마지막
@@ -71,10 +77,14 @@ ros2 topic echo /parking/diagnostics
 
 입력:
 
-- `/lidar/merged_cloud` — ICP/endpoint map. 반드시 `multi_lidar_fusion` 출력.
+- `/lidar/a1/cloud`, `/lidar/a2/cloud` — ICP/endpoint map. 반드시
+  `multi_lidar_fusion`의 `base_link` 센서별 출력. 좌·우 토픽은 구독하지 않는다.
 - `/lidar/a2/scan` — 후방 20cm 완료 조건.
-- `/vehicle/vector` — ICP initial guess와 정지 확인. 없어도 ICP는 돌지만 기본 안전
-  설정에서는 5초 timer를 시작하지 않으므로 출차하지 않는다.
+- `/vehicle/vector` — `v`만 motion prior와 정지 확인에 사용.
+- `/perception/imu` — `stack_gps`가 10Hz로 발행하는 자이로 적분 상대 yaw.
+- `/perception/gps_path` — quality 4(RTK FIXED) + `HEADING_FUSED`인
+  `dx/dy/dyaw/update`만 사용. IMU가 신선하면 `dyaw`는 쓰지 않고, IMU가 끊겼을
+  때만 k-1 yaw 증분으로 폴백한다. TANGENT와 후진 시 180° 모호한 COG는 거부한다.
 
 출력:
 
@@ -82,19 +92,25 @@ ros2 topic echo /parking/diagnostics
 - `/parking/slam_pose`, `/parking/slam_scan` — SLAM 단계.
 - `/parking/local_map`, `/parking/debug_markers` — mapping/space 단계.
 - `/parking/reference_path`, `/parking/active_path` — map 위 경로 단계.
+- `/parking/pipeline_stage` — `slam|mapping|localization|parking`.
 - `/parking/diagnostics` — ICP RMSE/match 수, rear clearance, state/progress.
 
-## RViz 3단계
+## RViz 4단계
 
 ```bash
 rviz2 -d $(ros2 pkg prefix stack_parking)/share/stack_parking/config/parking_1_slam.rviz
 rviz2 -d $(ros2 pkg prefix stack_parking)/share/stack_parking/config/parking_2_mapping.rviz
-rviz2 -d $(ros2 pkg prefix stack_parking)/share/stack_parking/config/parking_3_reference_path.rviz
+rviz2 -d $(ros2 pkg prefix stack_parking)/share/stack_parking/config/parking_3_localization.rviz
+rviz2 -d $(ros2 pkg prefix stack_parking)/share/stack_parking/config/parking_4_parking.rviz
 ```
 
 1. SLAM: 현재 registered scan, 누적 map, ICP vehicle pose.
 2. MAPPING: endpoint map, 검출 공간, 최소반경 시작점과 최종 pose.
-3. reference path on map: 전체 진입 경로, 현재 gear segment, 1m preview.
+3. LOCALIZATION: 동결 map에 대한 현재 scan 정합과 계획 경로.
+4. PARKING: 전체 진입 경로, 현재 gear segment, 1m preview.
+
+기존 `parking_3_reference_path.rviz`는 호환용으로 그대로 남겨 둔다. 모든 화면의
+pose text에는 현재 pipeline stage와 x/y/yaw가 함께 표시된다.
 
 ## ROS 없는 회귀 시뮬레이션
 
