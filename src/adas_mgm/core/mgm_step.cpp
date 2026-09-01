@@ -24,6 +24,16 @@ float min_f(float a, float b)
   return (a < b) ? a : b;
 }
 
+float max_f(float a, float b)
+{
+  return (a > b) ? a : b;
+}
+
+float clamp01(float x)
+{
+  return max_f(0.0f, min_f(1.0f, x));
+}
+
 // "실제로 멈췄다"로 보는 명령 속도 [m/s] — 지정 지점 정차 카운트다운 시작 조건.
 // 실제 차속 피드백(`/vehicle/vector`)이 실측 0건이라 직전 틱 **명령** 속도를 쓴다.
 // merge()의 rate limit은 0에 정확히 도달하므로(감속 하한이 0을 넘으면 0으로 고정)
@@ -348,49 +358,44 @@ void transition(const CoreSnapshot & s, CoreState & st)
       break;
   }
 
-  // TRAFFIC 거리 메모리. 카메라는 약 2.5~1m 구간에서만 정지선을 볼 수 있으므로
-  // 최초 유효 거리만 래치하고 이후 검출값은 사용하지 않는다. 그 다음부터는
-  // dSPACE가 CAN으로 돌려준 실차속도를 10ms마다 적분해 차량→정지선 거리를 줄인다.
-  if (st.state == MGM_STATE_TRAFFIC) {
-    const bool just_entered = prev_state != MGM_STATE_TRAFFIC;
-    if (just_entered) {
-      st.traffic_entry_state = prev_state;
-      st.traffic_distance_latched = false;
-      st.traffic_stopline_distance = 0.0f;
-      st.traffic_brake_decel = 0.0f;
-    }
-    const bool valid_line = s.traffic_stopline_detected &&
-      std::isfinite(s.traffic_stop_distance) &&
-      s.traffic_stop_distance > st.params.traffic_stop_offset;
-    bool captured = false;
-    if (!st.traffic_distance_latched && valid_line) {
-      st.traffic_distance_latched = true;
-      st.traffic_stopline_distance = s.traffic_stop_distance;
-      const float distance_to_target =
-        s.traffic_stop_distance - st.params.traffic_stop_offset;
-      const float measured_speed = s.vehicle_speed_valid && s.vehicle_speed > 0.0f ?
-        s.vehicle_speed : (st.v > 0.0f ? st.v : 0.0f);
-      const float required_decel = distance_to_target > 0.0f ?
-        measured_speed * measured_speed / (2.0f * distance_to_target) : st.params.a_down;
-      st.traffic_brake_decel =
-        required_decel > st.params.traffic_min_decel ?
-        required_decel : st.params.traffic_min_decel;
-      if (st.params.a_down > 0.0f && st.traffic_brake_decel > st.params.a_down) {
-        st.traffic_brake_decel = st.params.a_down;
-      }
-      captured = true;
-    }
-    if (st.traffic_distance_latched && !captured && s.vehicle_speed_valid) {
-      // 부호를 보존한다: 전진(+v)은 거리를 줄이고 뒤로 밀림(-v)은 거리를 늘린다.
-      st.traffic_stopline_distance -= s.vehicle_speed * MGM_PERIOD_S;
-      if (st.traffic_stopline_distance < 0.0f) {
-        st.traffic_stopline_distance = 0.0f;
-      }
-    }
-  } else if (prev_state == MGM_STATE_TRAFFIC) {
+  // TRAFFIC 거리 메모리 (2026-09-02 개정, 사용자 지정 — 정지선이 화면에서
+  // 사라지는 edge 기준). 스테이트와 무관하게 **항상** 추적한다 — 빨간불이
+  // 뜨기 전에도 정지선을 스쳐 지나갈 수 있고, 그때 쌓인 낡은 값을 아래 가드가
+  // 걸러야 하기 때문이다.
+  //   ① 정지선 검출이 true→false로 떨어지는 순간(=화면에서 사라짐) 거리를
+  //      seed(traffic_ramp_distance_m, 기본 1.5m)로 리셋한다. 카메라
+  //      optical-Z 거리는 검출이 불안정하면 즉시 무효가 되어 그 자체로는 못
+  //      쓴다 — 정지선이 사라지는 지점은 카메라 장착 기준 대략 고정된
+  //      거리라는 사실을 시드로 쓴다(bridge_dspace/tools/
+  //      camera_traffic_ref_test.py로 벤치에서 검증).
+  //   ② 그 뒤로는 실측 차속(vehicle_speed)으로 dead-reckoning 감쇠한다.
+  //   ③ 빨간불이 아직 확정 안 된 채(=이번 정지 판정 전) 감쇠값이
+  //      traffic_stop_offset(기본 0.5m) 이하로 떨어지면, 무관한 정지선을
+  //      스쳐 지나가며 쌓인 낡은 값이 나중에 빨간불이 뜨는 순간 그대로
+  //      급정지로 이어지는 것을 막기 위해 seed로 되돌리고 그 상태를
+  //      붙잡아둔다 — 실질적으로 "seed에서 1m(=0.5m 남을 때까지) 이상 진행한
+  //      상태로 빨간불이 확정돼야만" 실제 정지가 성립한다.
+  if (st.traffic_prev_stopline_detected && !s.traffic_stopline_detected) {
+    st.traffic_stopline_distance = st.params.traffic_ramp_distance_m;
+    st.traffic_distance_latched = true;
+  }
+  st.traffic_prev_stopline_detected = s.traffic_stopline_detected;
+  if (st.traffic_distance_latched && s.vehicle_speed_valid) {
+    st.traffic_stopline_distance =
+      max_f(0.0f, st.traffic_stopline_distance - s.vehicle_speed * MGM_PERIOD_S);
+  }
+  if (!s.traffic_red_active && st.traffic_distance_latched &&
+    st.traffic_stopline_distance <= st.params.traffic_stop_offset)
+  {
+    st.traffic_stopline_distance = st.params.traffic_ramp_distance_m;
+  }
+  if (st.state == MGM_STATE_TRAFFIC && prev_state != MGM_STATE_TRAFFIC) {
+    st.traffic_entry_state = prev_state;
+  } else if (st.state != MGM_STATE_TRAFFIC && prev_state == MGM_STATE_TRAFFIC) {
+    // 초록으로 빠져나가면 다음 신호를 위해 완전히 새로 시작한다.
     st.traffic_distance_latched = false;
     st.traffic_stopline_distance = 0.0f;
-    st.traffic_brake_decel = 0.0f;
+    st.traffic_prev_stopline_detected = false;
   }
 
   // 스테이트가 바뀌면 히스테리시스 카운터를 리셋한다 — "N주기 연속"은 **새
@@ -429,6 +434,11 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.v_ref = 0.0f;
         out.immediate_stop = true;
       } else if (s.traffic_stop_required) {
+        // traffic_state_enabled=false(생성 v1.88 등 MGM_STATE_TRAFFIC 미지원
+        // 백엔드)일 때의 안전망 — 그 경우엔 traffic_entry가 절대 서지 않아
+        // LANE/WAYPOINT에 계속 머무르므로, stack_traffic 자체의 적색+근접
+        // 래치만으로 즉시 정지한다. TRAFFIC 스테이트가 켜져 있으면 traffic_entry가
+        // 이보다 먼저 상태를 옮겨 이 분기는 사실상 안 쓰인다(§4 우선권 표).
         out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
       } else if (st.at_end_latched) {
         // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03).
@@ -504,22 +514,29 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       break;
 
     case MGM_STATE_TRAFFIC: {
-      // 횡방향은 계속 카메라 차선을 따른다. 종방향만 정지선 거리 프로파일이 맡는다.
+      // 횡방향은 계속 카메라 차선을 따른다. 종방향만 정지선 거리가 맡는다.
       out.path_source = MGM_SRC_LANE;
       if (s.estop || s.traffic_fail_safe_stop || !s.vehicle_speed_valid) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
       } else if (!st.traffic_distance_latched) {
-        // 적색을 먼저 보고 정지선을 찾는 구간. 영상에서 정지선이 들어올 때까지
-        // 차선 주행을 유지하되 traffic/vehicle watchdog이 죽으면 위에서 즉시 선다.
+        // 정지선을 아직 한 번도 안정 검출하지 못했다 — 거리를 모른다.
+        // 2026-09-02 확정(사용자 지정): 정지선을 못 봤으면(=미인지 상태) 감속
+        // 없이 v_base로 그냥 통과한다. 한때 안전 쪽 폴백으로 즉시 정지를
+        // 넣었었는데(정지선 인식이 아예 실패하는 조건이 실제로 있어 신호를
+        // 지나칠 위험을 우려), 검증 단계인 지금은 정지선 인지 자체가 아직
+        // 미덥지 않은 채라 "못 봤으면 무조건 정지"가 오히려 관련 없는 곳에서
+        // 잦은 오정지를 만든다는 판단으로 되돌렸다.
         out.v_ref = st.params.v_base;
+      } else if (
+        st.traffic_stopline_distance <= st.params.traffic_stop_offset ||
+        st.params.traffic_ramp_distance_m <= 0.0f)
+      {
+        out.v_ref = 0.0f;
       } else {
-        const float remaining =
-          st.traffic_stopline_distance - st.params.traffic_stop_offset;
-        const float profile = remaining > 0.0f ?
-          std::sqrt(2.0f * st.traffic_brake_decel * remaining) : 0.0f;
-        // 적색 제동 중 목표속도가 직전 명령보다 커지는 일은 금지한다.
-        out.v_ref = min_f(profile, st.v > 0.0f ? st.v : 0.0f);
+        out.v_ref = clamp01(
+          st.traffic_stopline_distance / st.params.traffic_ramp_distance_m) *
+          st.params.v_base;
       }
       break;
     }

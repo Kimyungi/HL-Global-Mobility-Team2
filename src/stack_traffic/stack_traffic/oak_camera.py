@@ -727,7 +727,12 @@ def _configure_stereo(
     stereo.initialConfig.setMedianFilter(
         median_filters[depth_median_filter_size]
     )
-    stereo_config = stereo.initialConfig.get()
+    # depthai 2.x: initialConfig.get()이 RawStereoDepthConfig을 반환하고
+    # .set()으로 되돌려 써야 반영된다. depthai 3.6.1부터는 initialConfig
+    # 자체가 postProcessing을 직접 노출하는 StereoDepthConfig이라 get/set
+    # 왕복이 없다(오히려 .get 속성 자체가 없음, 실측 2026-09-01).
+    has_get_set = hasattr(stereo.initialConfig, "get")
+    stereo_config = stereo.initialConfig.get() if has_get_set else stereo.initialConfig
     stereo_config.postProcessing.speckleFilter.enable = (
         depth_speckle_filter
     )
@@ -748,7 +753,8 @@ def _configure_stereo(
     stereo_config.postProcessing.thresholdFilter.maxRange = int(
         maximum_depth_m * 1000.0
     )
-    stereo.initialConfig.set(stereo_config)
+    if has_get_set:
+        stereo.initialConfig.set(stereo_config)
     if not align_with_input:
         stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
     stereo.setOutputSize(width, height)
