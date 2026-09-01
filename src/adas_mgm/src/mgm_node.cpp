@@ -225,10 +225,12 @@ public:
     p.traffic_ramp_distance_m = static_cast<float>(
       declare_parameter<double>("traffic_ramp_distance_m", 1.5));
     // 가드 문턱 겸 완전 정지 문턱 [m] — mgm_types.hpp의 CoreParams::
-    // traffic_stop_offset 주석 참조. "seed(1.5m)에서 1.3m 이상 진행해야만
-    // 실제 정지가 성립"과 동일한 값(0.2m, 사용자 지정 2026-09-02).
+    // traffic_stop_offset 주석 참조. "seed(1.5m)에서 0.5m 이상 진행해야만
+    // 실제 정지가 성립"과 동일한 값(1.0m, 사용자 지정 2026-09-02). ⚠ seed와의
+    // 차(0.5m)가 곧 ramp 구간이라 제동 여유가 빡빡하다 — 2m/s로 달리면 더
+    // 그렇다(사용자 확인). seed(traffic_ramp_distance_m)를 같이 올릴지는 별도 검토.
     p.traffic_stop_offset = static_cast<float>(
-      declare_parameter<double>("traffic_stop_offset_m", 0.2));
+      declare_parameter<double>("traffic_stop_offset_m", 1.0));
     if (p.traffic_stop_offset < 0.0f) {
       throw std::invalid_argument("traffic_stop_offset_m must be non-negative");
     }
