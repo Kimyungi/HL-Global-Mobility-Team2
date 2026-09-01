@@ -114,27 +114,6 @@ void transition(const CoreSnapshot & s, CoreState & st)
     st.at_end_latched = true;
   }
 
-  // ── 신호등 정지 ramp 거리 추적 (2026-09-01). 정지선이 화면에서 사라지는
-  // edge(stopline_detected: true → false)마다 시드 거리로 리셋하고, 이후
-  // 매 틱 실측 차속(vehicle_v)으로 dead-reckoning 감쇠한다 —
-  // bridge_dspace/tools/camera_traffic_ref_test.py 로 검증된 방식.
-  if (st.traffic_prev_stopline_detected && !s.traffic_stopline_detected) {
-    st.traffic_dist_m = st.params.traffic_ramp_reset_distance_m;
-  }
-  st.traffic_prev_stopline_detected = s.traffic_stopline_detected;
-  if (st.traffic_dist_m >= 0.0f) {
-    st.traffic_dist_m = max_f(0.0f, st.traffic_dist_m - s.vehicle_v * MGM_PERIOD_S);
-  }
-  // traffic_stop_required 가 아직 안 걸린 채(=이번 정지 판정에 들어가기 전)
-  // 감쇠값이 정지 문턱 아래로 떨어지면, 이번 신호와 무관하게 스쳐 지나간
-  // 정지선 때문에 쌓인 낡은 값이 나중에 traffic_stop_required 가 뜨는 순간
-  // 그대로 급정지로 이어진다 — 시드 거리로 되돌리고 그 상태를 붙잡아둔다.
-  if (!s.traffic_stop_required && st.traffic_dist_m >= 0.0f &&
-    st.traffic_dist_m <= st.params.traffic_ramp_stop_distance_m)
-  {
-    st.traffic_dist_m = st.params.traffic_ramp_reset_distance_m;
-  }
-
   // ── 지정 지점 정지 (§4, 2026-08-18) — 트랙 위 지정 지점에 도달하면 정지하고
   // stop_zone_hold_cycles 만큼 머문 뒤 **스스로** 재출발한다 (언덕 정차 시험 등).
   // 어디서 서는지는 인지(stack_gps)가 위경도로 알고, "서고 다시 간다"는 판단은
@@ -243,6 +222,7 @@ void transition(const CoreSnapshot & s, CoreState & st)
     escape_usable && st.escape_armed && rear_ok &&
     st.escape_phase == MGM_ESCAPE_NONE &&
     st.state != MGM_STATE_PARKING &&
+    st.state != MGM_STATE_TRAFFIC &&
     st.estop_hold_cnt >= st.params.escape_after_cycles;
 
   // avoid 복귀 보류 카운터 — waypoint에서 GPS 트랙에 재합류할 시간을 벌어준다
@@ -272,6 +252,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // 되레 멈춰 세운다. 래치하지 않는다 — 위치로 정해지는 값이라 구간을 벗어나면
   // 평소 히스테리시스(신뢰도 N주기 + 트랙 재합류)로 자연 복귀한다.
   const bool gps_only_zone = s.gps_gps_only_zone && s.gps_path.n > 0;
+  const bool traffic_entry = st.params.traffic_state_enabled != 0 &&
+    s.traffic_red_active;
   // ★ 구간 안에서는 LANE 복귀 카운터를 **세지 않는다**(0으로 묶는다).
   //   안 그러면 구간을 지나는 내내 쌓인 값으로 **벗어나는 순간 한 틱 만에** LANE이
   //   된다 — 차선을 못 믿겠다고 지정한 구간을 막 빠져나온 참에, 그 구간 동안의
@@ -305,7 +287,9 @@ void transition(const CoreSnapshot & s, CoreState & st)
 
   switch (st.state) {
     case MGM_STATE_LANE:
-      if (s.gps_parking_zone && s.parking_space_found) {
+      if (traffic_entry) {
+        st.state = MGM_STATE_TRAFFIC;
+      } else if (s.gps_parking_zone && s.parking_space_found) {
         st.state = MGM_STATE_PARKING;
       } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
@@ -318,7 +302,9 @@ void transition(const CoreSnapshot & s, CoreState & st)
       break;
 
     case MGM_STATE_WAYPOINT:
-      if (avoid_entry) {
+      if (traffic_entry) {
+        st.state = MGM_STATE_TRAFFIC;
+      } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
       } else if (!gps_only_zone && st.return_hold_left == 0 &&
         st.lane_high_cnt >= st.params.n_cycles && rejoined)
@@ -358,9 +344,48 @@ void transition(const CoreSnapshot & s, CoreState & st)
       }
       break;
 
+    case MGM_STATE_TRAFFIC:
+      // 적색/미검출은 해제 근거가 아니다. 확정 초록만 즉시 LANE으로 복귀시킨다.
+      // estop/fail-safe가 동시에 참이어도 상태 전이는 수행하고 LANE 우선권에서
+      // 계속 정지한다. 즉 "초록이면 상태 탈출"과 "고장 중 출발 금지"가 양립한다.
+      if (s.traffic_green_active && !s.traffic_red_active) {
+        st.state = MGM_STATE_LANE;
+      }
+      break;
+
     default:
       st.state = MGM_STATE_LANE;
       break;
+  }
+
+  // TRAFFIC 거리 메모리 (2026-09-01 개정 — 단순화, 이유는 mgm_types.hpp의
+  // traffic_ramp_distance_m 주석 참조). 정지선 인식이 간헐적으로만 성공하는
+  // 조건에서 "최초 한 번만 믿고 고정"은 그 한 번이 틀리면 되돌릴 수 없다.
+  // 대신 안정 검출되는 **매 틱마다** traffic_stop_distance를 그대로 신뢰해
+  // 계속 갱신하고, 안 보이는 동안만 실차속도로 dead-reckoning 감쇠한다.
+  if (st.state == MGM_STATE_TRAFFIC) {
+    const bool just_entered = prev_state != MGM_STATE_TRAFFIC;
+    if (just_entered) {
+      st.traffic_entry_state = prev_state;
+      st.traffic_distance_latched = false;
+      st.traffic_stopline_distance = 0.0f;
+    }
+    const bool valid_line = s.traffic_stopline_detected &&
+      std::isfinite(s.traffic_stop_distance) &&
+      s.traffic_stop_distance > st.params.traffic_stop_offset;
+    if (valid_line) {
+      st.traffic_distance_latched = true;
+      st.traffic_stopline_distance = s.traffic_stop_distance;
+    } else if (st.traffic_distance_latched && s.vehicle_speed_valid) {
+      // 부호를 보존한다: 전진(+v)은 거리를 줄이고 뒤로 밀림(-v)은 거리를 늘린다.
+      st.traffic_stopline_distance -= s.vehicle_speed * MGM_PERIOD_S;
+      if (st.traffic_stopline_distance < 0.0f) {
+        st.traffic_stopline_distance = 0.0f;
+      }
+    }
+  } else if (prev_state == MGM_STATE_TRAFFIC) {
+    st.traffic_distance_latched = false;
+    st.traffic_stopline_distance = 0.0f;
   }
 
   // 스테이트가 바뀌면 히스테리시스 카운터를 리셋한다 — "N주기 연속"은 **새
@@ -399,21 +424,12 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.v_ref = 0.0f;
         out.immediate_stop = true;
       } else if (s.traffic_stop_required) {
-        // dist 를 모르면(이번 run에서 정지선 소실 edge를 한 번도 못 봤음 —
-        // 예: stack_traffic stopline_detection_enabled=false) 종전과 동일하게
-        // 즉시 0 — 안전 쪽 폴백이며 기존 back-to-back 덤프·parity 시험과
-        // 그대로 호환된다. dist 를 알면 v_base 를 상한으로 서서히 줄인다.
-        if (st.traffic_dist_m < 0.0f ||
-          st.traffic_dist_m <= st.params.traffic_ramp_stop_distance_m)
-        {
-          out.v_ref = 0.0f;
-        } else if (st.params.traffic_ramp_reset_distance_m <= 0.0f) {
-          out.v_ref = 0.0f;  // 잘못된 설정(0 이하) — 안전 쪽으로 즉시 정지
-        } else {
-          out.v_ref = clamp01(
-            st.traffic_dist_m / st.params.traffic_ramp_reset_distance_m) *
-            st.params.v_base;
-        }
+        // traffic_state_enabled=false(생성 v1.88 등 MGM_STATE_TRAFFIC 미지원
+        // 백엔드)일 때의 안전망 — 그 경우엔 traffic_entry가 절대 서지 않아
+        // LANE/WAYPOINT에 계속 머무르므로, stack_traffic 자체의 적색+근접
+        // 래치만으로 즉시 정지한다. TRAFFIC 스테이트가 켜져 있으면 traffic_entry가
+        // 이보다 먼저 상태를 옮겨 이 분기는 사실상 안 쓰인다(§4 우선권 표).
+        out.v_ref = 0.0f;  // 일반 감속 정지 (rate limit 적용)
       } else if (st.at_end_latched) {
         // 트랙 종점(래치) — 통과·밀림 시 유턴 방지 (§4, 2026-08-03).
         // **lane·waypoint 공통** (2026-08-15). 래치는 transition()이 이 틱에서
@@ -486,6 +502,35 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         out.v_ref = s.parking_v_suggest;
       }
       break;
+
+    case MGM_STATE_TRAFFIC: {
+      // 횡방향은 계속 카메라 차선을 따른다. 종방향만 정지선 거리가 맡는다.
+      out.path_source = MGM_SRC_LANE;
+      if (s.estop || s.traffic_fail_safe_stop || !s.vehicle_speed_valid) {
+        out.v_ref = 0.0f;
+        out.immediate_stop = true;
+      } else if (!st.traffic_distance_latched) {
+        // 정지선을 아직 한 번도 안정 검출하지 못했다 — 거리를 모른다.
+        // 2026-09-01 이전에는 이 구간에서 v_base로 계속 달리게 두고 정지선이
+        // 들어올 때까지 기다렸는데, 카메라 정지선 인식이 아예 실패하는 조건
+        // (해질녘 실측: score=0, 후보조차 못 찾음)이 실제로 있어 그 경우
+        // MGM_STATE_TRAFFIC(=적색 확정)에 있으면서도 감속을 한 번도 시작하지
+        // 못하고 신호를 지나칠 위험이 있었다. 검증이 더 필요한 지금 단계는
+        // 안전 쪽 폴백(즉시 정지)이 낫다 — 디버깅도 쉽다: "거리를 알면 ramp,
+        // 모르면 정지" 둘 중 하나뿐이라 상태가 섞이지 않는다.
+        out.v_ref = 0.0f;
+      } else {
+        const float remaining =
+          st.traffic_stopline_distance - st.params.traffic_stop_offset;
+        if (remaining <= 0.0f || st.params.traffic_ramp_distance_m <= 0.0f) {
+          out.v_ref = 0.0f;
+        } else {
+          out.v_ref =
+            clamp01(remaining / st.params.traffic_ramp_distance_m) * st.params.v_base;
+        }
+      }
+      break;
+    }
 
     default:
       out.path_source = MGM_SRC_LANE;
@@ -580,21 +625,10 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     n_wire = MGM_NUM_POINTS;
   }
 
-  // 인지 소스가 이전 틱과 완전히 같은 값을 냈는지(= 아직 새 추론이 안 나와
-  // wrapper가 같은 스냅샷을 또 읽어준 것) 판정. 2026-08-08 조향 미반영 진단:
-  // dSPACE가 완전 동일한 CAN 페이로드 반복 수신 시 이를 무시하는 것으로 실측
-  // 확인됨(실카메라 로그에서 78.7%가 직전 틱과 동일값이었고 그 구간 str 무반응,
-  // 명시적으로 매틱 값이 바뀌게 한 진단 스크립트는 45도 반응). stack_lane 추론이
-  // ~21Hz로 CAN 주기(100Hz)보다 느려 구조적으로 발생.
-  // "새 추론 미도착" 판정은 **메시지 도착 여부**로 한다 (s.*_updated).
-  // 값 동일성으로 판정하던 것을 2026-08-14에 교체: 인지가 의도적으로 상수를 내는
-  // 경우(회피 통과 유지점 (1.5,0))를 영원히 낡은 값으로 오판해 x를 무한 감쇠시켰다.
-  // wrapper가 소스를 못 알려주는 경우(_updated 전부 false인 옛 스냅샷)를 대비해
-  // 값 동일성을 보조 조건으로 남긴다.
-  // MGM_SRC_ESCAPE 는 **항상 최신**이다 — 인지가 주는 값이 아니라 이 함수가 매 틱
-  // 다시 만드는 고정 기하이므로 "새 추론 미도착" 자체가 성립하지 않는다. true 로
-  // 두지 않으면 값이 매 틱 동일하다는 이유로 낡은 것으로 오판되어 x 가 계속 깎이고,
-  // 직선 ref 가 MGM_MIN_REF_X 까지 쪼그라들어 조향 기준이 무너진다.
+  // 새 인지/GNSS 표본이 아직 오지 않아 wrapper가 같은 스냅샷을 다시 준 틱을 판정한다.
+  // 10 ms CAN 송신 주기는 유지하되 ref는 다음 표본까지 그대로 hold한다. 새 표본 여부는
+  // s.*_updated가 정본이고, 값 비교는 갱신 플래그가 없는 옛 스냅샷의 호환 경로다.
+  // MGM_SRC_ESCAPE는 인지 입력이 아니라 이 함수가 매 틱 만드는 경로이므로 항상 최신이다.
   const bool src_updated =
     (src == MGM_SRC_LANE) ? s.lane_updated :
     (src == MGM_SRC_GPS) ? s.gps_updated :
@@ -624,8 +658,8 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     }
     --st.blend_left;
   } else if (is_stale_repeat) {
-    /* Hold the last ref until a new perception/GNSS sample arrives.  The old
-     * x -= commanded_velocity * 10ms pose estimate was intentionally removed. */
+    // Hold the last ref until the next perception/GNSS sample. The previous
+    // v_cmd-based 10 ms extrapolation was not a measured pose correction.
   } else {
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.ref_out[i] = target[i];
@@ -666,7 +700,6 @@ void mgm_init(CoreState & st, const CoreParams & params)
   st.state = MGM_STATE_LANE;
   st.last_src = MGM_SRC_LANE;
   st.n_out = 1;
-  st.traffic_dist_m = -1.0f;  // 아직 정지선 소실 edge를 못 봄 — 거리 모름
   // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)
 }
 

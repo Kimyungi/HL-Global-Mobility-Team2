@@ -467,6 +467,8 @@ def generate_launch_description():
                     LaunchConfiguration('avoid_zone_only'), value_type=bool),
                 # ADAS_MGR2 v1.88은 main의 rear-escape 계약을 아직 포함하지 않는다.
                 'escape_after_cycles': 0,
+                # TRAFFIC 상태도 v1.88 Simulink 모델 재생성 전에는 사용할 수 없다.
+                'traffic_state_enabled': False,
             }],
             output='screen',
             on_exit=die_hard('mgm_node',

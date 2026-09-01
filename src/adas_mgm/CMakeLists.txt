@@ -147,18 +147,15 @@ if(BUILD_TESTING)
     NAME escape_reverse_test
     COMMAND escape_reverse_test)
 
-  # 신호등 정지 ramp (§4, 2026-09-01) — 코어 스테이트 머신만 대상으로 하는 단위 시험.
-  add_executable(traffic_ramp_test test/traffic_ramp_test.cpp)
-  target_include_directories(traffic_ramp_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(traffic_ramp_test mgm_core)
-  add_test(
-    NAME traffic_ramp_test
-    COMMAND traffic_ramp_test)
-
   add_executable(reference_hold_test test/reference_hold_test.cpp)
   target_include_directories(reference_hold_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(reference_hold_test mgm_core)
   add_test(NAME reference_hold_test COMMAND reference_hold_test)
+
+  add_executable(traffic_state_test test/traffic_state_test.cpp)
+  target_include_directories(traffic_state_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(traffic_state_test mgm_core)
+  add_test(NAME traffic_state_test COMMAND traffic_state_test)
 
   add_executable(
     transition_log_test
@@ -171,7 +168,8 @@ if(BUILD_TESTING)
 endif()
 
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS tools/go tools/state DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS tools/go tools/state tools/can_watchdog_check.py
+  DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_package()

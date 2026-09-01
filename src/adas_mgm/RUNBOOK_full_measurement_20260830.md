@@ -1,8 +1,136 @@
-# 통합 실차 주행 런북 — 주차를 뺀 전 시나리오 한 번에
+# 통합 실차 측정 런북 (2026-08-30) — 주차 제외, 신호등 정지 임계값 수집
 
 **launch: `adas_mgm/launch/REAL_VEHICLE_lane_gps_can.launch.py` + `traffic_enabled:=true`**
 
-차선 · GPS(waypoint) · 회피 · 긴급정지 · **신호등/정지선**을 **launch 하나**로 띄운다.
+> 이 문서는 **측정 전용**이다. 기본 `traffic_stop_y_ratio:=0.0`에서는 신호등이
+> 차를 세우지 않는다. 검증된 임계값으로 실제 정지까지 시험하려면
+> `RUNBOOK_full_operation_20260830.md`를 사용한다.
+
+## 처음 하는 사람은 여기만 순서대로 실행
+
+아래는 **한라대학교 코스 기준**이다. 원주 운전면허시험장이면 V2 블록의 `COURSE=`
+한 줄만 다음 파일로 바꾼다.
+
+```bash
+COURSE=$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_wonju_license_20260818_160511.csv
+```
+
+명령 앞의 `B1`, `V1` 등은 터미널 이름이다. 코드 블록 안의 내용만 복사한다.
+명령 실행 중에는 해당 터미널을 닫지 않는다.
+
+### 1단계 — 차량을 띄우고 물리 비상정지를 누른 상태로 둔다
+
+- 구동 바퀴가 땅에 닿아 있다면 주변 사람과 장애물을 치운다.
+- 물리 비상정지가 실제로 차량을 멈추는지 먼저 확인한다.
+- 아래 절차에서 `go`를 실행하기 전까지 물리 비상정지를 해제하지 않는다.
+
+### 2단계 — 차량 PC의 새 터미널에서 사전점검
+
+```bash
+source /opt/ros/humble/setup.bash
+source $HOME/FMA_ws/install/setup.bash
+ros2 run stack_traffic stack_traffic_ml_preflight
+$HOME/FMA_ws/src/bridge_dspace/tools/can_setup/install.sh --check
+python3 $HOME/FMA_ws/src/multi_lidar_fusion/tools/check_sensors.py --no-ros
+```
+
+`ML_RUNTIME_READY`, CAN의 `✔ 점검 통과`, 센서의 `== 전 항목 통과 ==`가 모두 나와야
+한다. 하나라도 실패하면 이후 명령을 실행하지 말고 이 문서의 상세 진단을 본다.
+
+### 3단계 — B1: 베이스 PC에서 실행
+
+```bash
+cd $HOME/FMA_ws/src/stack_gps/tools/base_station
+python3 rtcm_server.py --radio /dev/ttyRadio
+```
+
+이 터미널은 그대로 둔다.
+
+### 4단계 — V1: 차량 PC의 새 터미널에서 실행
+
+```bash
+python3 $HOME/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
+  --port /dev/ttyRadio --tcp-port 2101
+```
+
+약 10초마다 `RTCM`과 0보다 큰 `B/s`가 나오면 정상이다. 이 터미널도 그대로 둔다.
+RTK가 안정화되도록 5~10분 기다리는 동안 다음 단계를 진행한다.
+
+### 5단계 — V2: 차량 PC의 새 터미널에서 통합 launch 실행
+
+```bash
+source /opt/ros/humble/setup.bash
+source "$HOME/FMA_ws/install/setup.bash"
+COURSE="$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv"
+ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  waypoint_csv:="$COURSE" \
+  traffic_enabled:=true \
+  traffic_stop_y_ratio:=0.0
+```
+
+이 명령부터 CAN TX가 활성화된다. 아직 `go`를 실행하지 않는다. 콘솔에서
+`출발 대기 중`과 신호등 카메라의 `usb_actual=HIGH`를 확인한다.
+
+### 6단계 — M: 차량 PC의 새 터미널에서 자동 점검
+
+```bash
+source /opt/ros/humble/setup.bash
+source $HOME/FMA_ws/install/setup.bash
+timeout 12 ros2 topic hz /scan
+timeout 12 ros2 topic hz /perception/lane_path
+timeout 12 ros2 topic hz /perception/avoid
+timeout 12 ros2 topic hz /perception/traffic_stop
+timeout 12 ros2 topic hz /adas/target_ref
+timeout 12 ros2 topic hz /vehicle/vector
+ros2 param get /stack_traffic_node stopline_stop_y_ratio
+```
+
+앞의 네 토픽은 약 10 Hz, 뒤의 두 토픽은 약 100 Hz여야 한다. 마지막 값은 반드시
+`0.0`이어야 한다. `timeout` 종료 코드가 표시되는 것은 정상이며, 각 명령 출력에
+`average rate`가 없으면 실패다.
+
+### 7단계 — V3: 출발 직전에 물리 비상정지를 해제하고 실행
+
+운전자는 계속 물리 비상정지에 손을 둔다.
+
+```bash
+source /opt/ros/humble/setup.bash
+source $HOME/FMA_ws/install/setup.bash
+ros2 run adas_mgm go --require-traffic
+```
+
+모든 항목이 `[OK]`이고 마지막에 `출발 인가 발행 완료`가 나와야 출발한다.
+`[FAIL]`이 하나라도 나오면 출발하지 않는다.
+
+> 이 측정 주행에서는 빨간 신호등과 정지선이 보여도 자동으로 서지 않는다. 운전자가
+> 물리 비상정지로 안전하게 정차해야 한다.
+
+### 8단계 — 측정 종료
+
+먼저 V2에서 `Ctrl-C`를 한 번 누른다. `can_zero`가 실행되고 차량이 완전히 멈춘 것을
+확인한 뒤 V1, 마지막으로 B1에서 `Ctrl-C`를 누른다. `kill -9`나 PC 전원 차단으로
+멈추지 않는다.
+
+V2 콘솔에 출력된 `~/FMA_ws/drive_logs/run_...` 경로를 기록하고, 아래 상세 절차의
+§6에서 `y_ratio`를 추출한다. 정지 시작 위치로 검증할 값을 정한 뒤 다음 블록을
+그대로 실행하고, 질문이 나오면 측정한 숫자를 입력한다.
+
+```bash
+read -r -p '측정한 traffic_stop_y_ratio 입력 (0보다 크고 1.10 이하): ' FMA_TRAFFIC_STOP_Y_RATIO
+export FMA_TRAFFIC_STOP_Y_RATIO
+python3 -c 'import os; v=float(os.environ["FMA_TRAFFIC_STOP_Y_RATIO"]); assert 0.0 < v <= 1.10, v' && \
+  printf '%s\n' "$FMA_TRAFFIC_STOP_Y_RATIO" > $HOME/FMA_ws/traffic_stop_y_ratio.txt
+python3 -c 'import os; p=os.path.expanduser("~/FMA_ws/traffic_stop_y_ratio.txt"); v=float(open(p).read()); print("저장된 임계값:", v)'
+```
+
+이제 `RUNBOOK_full_operation_20260830.md`의 초보자 절차로 이동한다.
+
+---
+
+## 아래는 원리·튜닝·문제 해결 상세
+
+차선 · GPS(waypoint) · 회피 · 긴급정지와 **신호등/정지선 측정**을 launch 하나로 띄운다.
 `RUNBOOK_lane_gps.md`(신호등 없는 구성)의 상위집합이며, 신호등이 붙으면서 달라지는
 것만 이 문서가 따로 다룬다. 판단 코어는 **운영 C++** 이다 — 생성 C(MBD) 검증은
 `RUNBOOK_mbd_lane_gps.md` 쪽이고 **두 launch 를 동시에 띄우지 말 것**.
@@ -23,7 +151,8 @@ CLAUDE.md §1 의 시나리오 6종 기준:
 | 차선 주행 | ✅ | `stack_lane` → LANE |
 | GPS(waypoint) 주행 | ✅ | `stack_gps` → WAYPOINT |
 | 장애물 회피 | ✅ | `stack_avoid` → AVOID |
-| 신호등·정지선 정지 | ✅ **이 문서가 추가하는 것** | `stack_traffic` → v_ref 0 |
+| 신호등·정지선 인지·임계값 측정 | ✅ **정지 요구는 비활성** | `stack_traffic` 측정 로그 |
+| 신호등·정지선 실제 정지 | ❌ | `RUNBOOK_full_operation_20260830.md` |
 | 돌발 장애물 긴급 정지 | ✅ | `stack_estop` → v_ref 0 |
 | **라이다 주차** | ❌ | `stack_parking` — 아래 참조 |
 
@@ -32,9 +161,9 @@ producer 가 없어 `/perception/parking` 발행자가 0 이고, PARKING 스테�
 전이 조건(`GPS 주차구간 AND 주차공간 인식`)이 성립하지 않는다. 4-LiDAR ICP 파이프라인은
 아직 PR #45(draft)로 main 밖에 있다(P0 6건 중 후방 각도 1건만 해소).
 
-**신호등 정지는 스테이트가 아니다** (CLAUDE.md §4 원칙). 적색+정지선이면 `v_ref=0`
-으로만 반영되고 스테이트는 LANE/WAYPOINT 그대로 유지된다 — `ros2 run adas_mgm state`
-에서 스테이트가 안 바뀌는 것이 정상이다. 서 있는지는 `v_ref` 로 본다.
+적색 확정 시 MGM은 TRAFFIC으로 전이한다. metric 정지선 거리가 유효하면 이를
+래치해 실차속도 적분 감속을 시작한다. 정지 동작 없이 영상만 측정하려면 MGM의
+`traffic_state_enabled:=false`를 함께 지정해야 한다.
 
 ---
 
@@ -84,11 +213,13 @@ $HOME/FMA_ws/src/bridge_dspace/tools/can_setup/install.sh --check   # sudo 불�
 ### 1-4. 센서 배치 전수 점검
 
 ```bash
-python3 $HOME/FMA_ws/src/multi_lidar_fusion/tools/check_sensors.py
+python3 $HOME/FMA_ws/src/multi_lidar_fusion/tools/check_sensors.py --no-ros
 ```
 
 "무엇이 살아 있나"가 아니라 **확정 배치와 같은가**를 본다. 심링크 7종·IMU·GPS·CAN·
-OAK-D 2대·허브 분리까지 한 번에.
+OAK-D 2대·허브 분리까지 한 번에 본다. 4-LiDAR `/lidar/*/scan` 검사는 주차/융합용
+별도 드라이버가 떠 있어야 하며, 이 통합 launch의 전방 `/scan`과 같은 물리 포트를
+중복 점유할 수 있으므로 이 런북의 사전점검에서는 실행하지 않는다.
 
 ---
 
@@ -107,6 +238,8 @@ OAK-D 2대·허브 분리까지 한 번에.
       `resume_on_green` 이 실차 표준이고 launch 가 그렇게 띄운다.
 - [ ] 정지선이 노면에 있는가 — 적색만으로는 안 선다(§0 판정식).
 - [ ] 신호등 카메라(`14442C10B167CFD200`)가 **상단 시야**로 물려 있는가.
+- [ ] 야간에는 기존 흰색 외에 CLAHE 국소 대비와 평행 에지 쌍이 동작하지만, 정지선이
+  카메라 화면 밖이면 어떤 조건도 검출할 수 없다. 하단 ROI 안에 실제 선이 보이는가.
       차선용(`14442C105157D3D200`)과 바뀌면 둘 다 못 쓴다.
 
 ---
@@ -119,23 +252,34 @@ OAK-D 2대·허브 분리까지 한 번에.
 
 B1·V1·M·V3 는 `RUNBOOK_lane_gps.md` 와 **완전히 같다.** V2 만 인자가 늘어난다.
 
+### V1 [차량 PC]
+
+```bash
+python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
+    --port /dev/ttyRadio --tcp-port 2101
+```
+
 ### V2 [차량 PC] — 두 단계
 
 **launch 는 한 번만 띄운다.** 두 단계를 가르는 것은 launch 인자가 아니라
-`ros2 run adas_mgm go` 다.
+`ros2 run adas_mgm go --require-traffic` 다.
 
 ```bash
+source /opt/ros/humble/setup.bash
+source "$HOME/FMA_ws/install/setup.bash"
+COURSE="$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv"
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
-    REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-    waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
-    traffic_enabled:=true
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  waypoint_csv:="$COURSE" \
+  traffic_enabled:=true \
+  traffic_stop_y_ratio:=0.0
 ```
 
-**한 번만 띄운다** — 이 블록에 launch 를 두 줄 적어 두면 복사할 때 두 번 떠서
+**한 번만 띄운다** — launch 를 두 번 띄우면
 estop·mgm·bridge·scan 이 중복되고 CAN TX 가 두 배로 나간다(§0 동시 실행 금지).
 
 - **① 정지 점검** — 기동 직후 `go` 를 주기 전까지. §4 의 확인을 여기서 한다.
-- **② 실주행** — ①을 통과한 뒤 `ros2 run adas_mgm go`.
+- **② 측정 주행** — ①을 통과한 뒤 `ros2 run adas_mgm go --require-traffic`.
 
 > **⚠ 2026-08-30 정정 — 토큰을 빼고 띄우는 "CAN 없는 점검"은 존재하지 않는다.**
 > `REAL_VEHICLE_CONFIRM` 없이 띄우면 정지 점검이 되는 게 아니라 **launch 가 통째로
@@ -174,10 +318,12 @@ estop·mgm·bridge·scan 이 중복되고 CAN TX 가 두 배로 나간다(§0 �
 
 ---
 
-## 4. ① 정지 점검 (`go` 전) — 필수 게이트
+## 4. ① 출발 전 측정 체인 점검 (`go` 전) — 필수 게이트
 
 `go` 를 주기 전까지 MGM 이 estop 을 물고 있어 v_ref 0 이다 — 바퀴가 안 움직인다
-(근거는 §3 의 정정 상자). **여기서 신호등이 안 서면 주행으로 넘어가지 말 것.**
+(근거는 §3 의 정정 상자). 이 런북에서는 신호등 정지 게이트가 꺼져 있으므로
+**신호등이 차를 세우지 않는 것이 정상**이다. 대신 아래 토픽과 판정 재료가 모두
+정상인지 확인하지 못하면 측정 주행으로 넘어가지 말 것.
 
 기동 직후 콘솔에서:
 
@@ -195,7 +341,7 @@ estop·mgm·bridge·scan 이 중복되고 CAN TX 가 두 배로 나간다(§0 �
 | 차선 | `ros2 topic hz /perception/lane_path` | ~10 Hz |
 | **신호등** | `ros2 topic hz /perception/traffic_stop` | **~10 Hz** |
 | 회피 | `ros2 topic hz /perception/avoid` | ~10 Hz |
-| 라이다 4대 | `ros2 topic hz /lidar/{a1,a2,b1,b2}/scan` | 각 ~10 Hz |
+| 전방 안전 라이다 | `ros2 topic hz /scan` | ~10 Hz |
 | 카메라를 손으로 가림 | `M` 터미널 | 0.5s 뒤 `→ gps` 전이 |
 | 콘을 놓아 본다 | `M` 터미널 | `→ AVOID` |
 
@@ -216,7 +362,7 @@ frame=000310 | yolo_run=1 yolo=1 yolo_ms=25.0 conf=0.83 bbox_src=yolo
 
 ---
 
-## 5. ② 실주행
+## 5. ② 측정 주행
 
 ```
 [launch] ⚠ 실주행 모드 — CAN TX 나갑니다. 물리 비상정지에 손 올릴 것
@@ -224,7 +370,7 @@ frame=000310 | yolo_run=1 yolo=1 yolo_ms=25.0 conf=0.83 bbox_src=yolo
 
 - 운전자는 **물리 비상정지에 손 올리고** 대기
 - 소프트웨어 정지 = **V2 Ctrl-C** (종료 경로가 `can_zero` 로 목표값 0 을 보낸다)
-- 출발 인가: `ros2 run adas_mgm go` (매 출발마다)
+- 출발 인가: `ros2 run adas_mgm go --require-traffic` (매 출발마다)
 
 ### 판정 기준값 — 2026-08-29 Xanadu-book5 실측
 
@@ -232,7 +378,7 @@ frame=000310 | yolo_run=1 yolo=1 yolo_ms=25.0 conf=0.83 bbox_src=yolo
 
 | 항목 | 기준값 | 비고 |
 |---|---|---|
-| 라이다 4대 | 10.01 ~ 10.06 Hz | 프레임 간격 max 0.107s = **끊김 0** |
+| 전방 안전 라이다 `/scan` | ~10 Hz | 통합 launch가 직접 기동하는 입력 |
 | `/perception/lane_path` | 9.86 Hz | |
 | `/perception/traffic_stop` | 10.07 Hz | |
 | `/adas/target_ref` | ~100 Hz | |
@@ -263,7 +409,7 @@ TX 프레임/헤더 = 2.00          ← v5. 21.00 이면 옛 v3 코드가 도는
 
 ## 6. 신호등 임계값 정하기 — 첫 세션은 **측정 전용**
 
-`traffic_stop_y_ratio` 와 `traffic_stop_distance_m` 이 **둘 다 0 이면 노드는 정지
+`traffic_stop_y_ratio` 와 노드 파라미터 `stopline_stop_distance_m` 이 **둘 다 0 이면 노드는 정지
 요구를 만들지 않는다.** 측정만 한다. 이것이 기본값인 이유:
 
 현장값 `0.98` 은 **옛 ROI · 고정 장착 · 0.28 m/s 이하**에서만 검증됐다. 카메라 장착
@@ -274,18 +420,23 @@ TX 프레임/헤더 = 2.00          ← v5. 21.00 이면 옛 v3 코드가 도는
 
 1. `traffic_stop_y_ratio:=0.0`(기본) 으로 코스를 돈다. 신호등 앞을 **세우지 않고**
    천천히 통과한다.
-2. 로그에서 `y_ratio` 를 모은다 — `stable=1` 이고 세우고 싶은 지점의 값을 본다.
+2. rosbag의 `/rosout`에서 `y_ratio`를 추출한다. 터미널 A에서 bag을 재생하고 터미널
+   B에서 메시지를 저장한다. `stable=1`이고 세우고 싶은 지점의 값을 본다.
 
    ```bash
-   RUN=~/FMA_ws/drive_logs/run_<시각>
-   grep -o "y_ratio=[0-9.]*" $RUN/../*.log | ...   # 또는 V2 콘솔 스크롤
+   # 터미널 A
+   RUN=$HOME/FMA_ws/drive_logs/run_<시각>
+   ros2 bag play "$RUN/rosbag" --topics /rosout
+
+   # 터미널 B (A를 실행하기 전에 먼저 대기시켜도 됨)
+   ros2 topic echo /rosout --field msg | \
+     grep --line-buffered -oE 'y_ratio=[0-9.]+' | tee "$RUN/traffic_y_ratio.txt"
    ```
 
 3. **정차 위치의 값을 그대로 쓰지 않는다.** 그 위치에서야 감속을 시작하므로 지나친다.
    조금 이른 값(작은 y_ratio)을 고른다.
-4. 그 값으로 다시 띄운다: `traffic_stop_y_ratio:=0.92` 처럼.
-5. 정지·재출발을 확인한다. 재출발은 **fresh YOLO 초록 3/5** 로만 된다 — 카메라 사망·
-   정지선 소실·bbox 소실은 해제 조건이 아니다.
+4. 선택한 값과 근거 run을 기록한다.
+5. 실제 정지·재출발 검증은 `RUNBOOK_full_operation_20260830.md`를 따른다.
 
 **정지 우선권** (CLAUDE.md §4): `긴급정지 > 신호등 정지 > 트랙 종점 > 역방향 > 지정
 지점 정지 > 가속구간 > 기본 속도`. 신호등이 걸려도 estop 이 이긴다.
@@ -338,6 +489,7 @@ load 1.8 이라 필요 없다.
 | `FINAL_STOP` 이 영원히 0 | 로그에 `gate=off` | **측정 전용 모드다.** §6 으로 값을 정한다 |
 | 신호등이 있는데 `yolo=0` | `conf` · 거리 | 해상도를 `1280x720` 로(대역폭 주의, §3) |
 | 적색인데 안 섬 | `red_votes` · `stopline` · `y_ok` | 셋이 다 서야 선다. 정지선이 안 보이면 `stopline=0` |
+| 재시작 직후 신호등 로그가 없음 | `ros2 node list \| grep stack_traffic` | OAK 동시 초기화 실패는 2초 자동 respawn. 계속 없으면 출발 금지 |
 | 초록인데 재출발 안 함 | `green_votes 3/5` | **fresh YOLO 초록만** 해제한다. bbox 를 놓치면 안 풀린다 |
 | 갑자기 감속 정지 + traffic 로그 없음 | §7 ①의 watchdog | 신호등 노드가 죽었다. V2 재시작 |
 | `stack_traffic` CPU 487% | `omp_runtime.py` 있는 빌드인가 | §5 |
@@ -363,6 +515,7 @@ column -s, -t $RUN/transitions.csv | cut -c1-160
 
 ## 참조
 
+- `RUNBOOK_full_operation_20260830.md` — 검증된 임계값으로 신호등 정지까지 수행
 - `RUNBOOK_lane_gps.md` — 신호등 없는 같은 구성 (베이스·RTCM·go·일반 진단의 원본)
 - `RUNBOOK_avoid_field_test.md` — 회피 판정 기준·튜닝 노브·구간 찍기 §2-1
 - `RUNBOOK_mbd_lane_gps.md` — 생성 C(MBD) 검증. **동시 실행 금지**

@@ -240,6 +240,84 @@ ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=yd0
 ros2 launch multi_lidar_fusion identify_positions.launch.py
 ```
 
+### ⚠ 두 번째 함정 — RPLiDAR 가 `health OK` 인데 `/scan` 이 0 Hz (2026-08-30)
+
+**드라이버로는 절대 안 풀린다. `RESET(0xA5 0x40)` 을 사람이 보내야 한다.**
+
+`rplidar_node` 는 `STOP → GET_INFO → GET_HEALTH → SCAN` 만 보내고 **RESET 을 보내지
+않는다.** 그래서 라이다가 모터 latch-off 상태로 굳으면 재기동·재연결·`/start_motor`
+서비스 호출 중 무엇으로도 못 빠져나온다. 로그가 전부 정상으로 보이는 게 악질이다:
+
+```
+[rplidar_b1] RPLidar health status : OK.                      ← 정상
+[rplidar_b1] current scan mode: Standard, 5 KHz, 16.0m, 10Hz  ← 정상
+ros2 topic hz /lidar/b1/scan  → 발행 없음                      ← ★ 여기만 이상
+```
+
+시리얼로 직접 찔러 본 결과 (2026-08-30):
+
+| 보낸 것 | 응답 |
+|---|---|
+| `GET_DEVICE_INFO` | 27B 정상 (모델 `0x41`, FW 1.02, HW 18) |
+| `GET_HEALTH` | `Good(0)` |
+| `SCAN` / `EXPRESS_SCAN` | **디스크립터 7바이트만, 측정 데이터 0** |
+| DTR/RTS 6개 조합 · `SET_MOTOR_SPEED` | 변화 없음 |
+| **`RESET`** | **부트 배너 + 1초에 4095B — 즉시 회복** |
+
+```bash
+python3 - <<'PY'
+import serial, time
+for d in ['/dev/lidar_left', '/dev/lidar_right']:
+    s = serial.Serial(d, 460800, timeout=1)
+    s.write(b'\xA5\x25'); time.sleep(0.3); s.reset_input_buffer()
+    s.write(b'\xA5\x40'); time.sleep(2.5)          # RESET
+    raw = s.read(s.in_waiting or 1)
+    print(f"  {'OK' if b'LIDAR System' in raw else 'FAIL'} {d}"); s.close()
+PY
+```
+
+한 번 풀리면 드라이버를 SIGTERM/SIGKILL 어느 쪽으로 죽여도 재발하지 않는다
+(재기동 4회 연속 확인). 들어가는 원인은 전원으로 보인다 — 스캔 도중 전압이 끊기면
+컨트롤러는 살아남고 모터만 latch-off 된다. **HANDOVER §3.7 "전류를 갈라라"와 같은
+고장의 앞뒤다: 전류 분리는 재발을 막고, 이 RESET 은 이미 걸린 것을 푼다.**
+4대 기동 절차에는 리셋을 먼저 넣어 두는 것이 안전하다.
+
+> **위 스크립트의 `FAIL` 은 그 자체로 고장이 아니다.** 배너는 읽기 창을 놓치면
+> 안 잡히고(이미 정상인 장치도 그렇다), 무엇보다 **다른 프로세스가 포트를 잡고 있으면
+> 반드시 실패한다.** 판정의 최종 근거는 배너가 아니라 **`/scan` 이 도느냐**다:
+>
+> ```bash
+> # 먼저 포트를 잡은 놈이 없는지 — 이게 FAIL 의 최빈 원인이다
+> for d in /dev/lidar_left /dev/lidar_right; do
+>   echo "$d: $(fuser $(readlink -f $d) 2>&1 >/dev/null || echo 비어있음)"; done
+> # 그다음 실제 판정
+> for t in a1 a2 b1 b2; do echo -n "$t: "; \
+>   timeout 7 ros2 topic hz /lidar/$t/scan 2>&1 | grep -oE 'average rate: [0-9.]+' | head -1; done
+> ```
+>
+> **launch 를 두 번 띄우면 포트마다 프로세스가 둘씩 붙어 서로를 죽인다.** 실제로
+> 2026-08-30 검증 중에 이걸로 3대가 0Hz 가 됐다 — 리셋 문제로 오진하기 딱 좋다.
+> 새로 띄우기 전에 위 `fuser` 로 항상 비었는지 확인할 것.
+
+### ⚠ 부트 배너의 `RP S2` 는 모델명이 아니다
+
+RESET 하면 `RP S2 LIDAR System.` 이 찍히는데 **펌웨어 플랫폼 배너일 뿐이고 C1M1 이 맞다.**
+실측 제원이 전부 C1 이다:
+
+```
+모델 바이트 0x41 · FW 1.02 · HW 18 · 보드 460800
+샘플레이트 5 kHz · 10 Hz · 물리 분해능 0.72° (511점/회전)
+지원 모드  Standard(16.0 m) / DenseBoost(40.0 m)
+```
+
+S2 라면 `0.12° · 32 kHz · 1 Mbps` 여야 하므로 하나도 맞지 않는다.
+**배너를 보고 모델을 바꿔 잡거나 보드레이트를 1 Mbps 로 올리지 말 것.**
+
+> 표의 `0.499°` 와 여기 `0.72°` 가 다른 것은 정상이다. launch 가 `angle_compensate=True`
+> 로 띄우므로 드라이버가 720 bin(0.499°)으로 보간해 내보내고, 0.72° 는 그 아래의
+> 물리 샘플 간격이다. 융합 `scan.angle_increment` 하한(1.0°)의 근거는 **성긴 쪽인
+> T-mini 0.839°** 이므로 어느 쪽으로도 바뀌지 않는다.
+
 ---
 
 ## 7. 설정

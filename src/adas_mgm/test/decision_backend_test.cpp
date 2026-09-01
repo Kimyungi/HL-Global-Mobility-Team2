@@ -164,6 +164,18 @@ void testSelectorAndCoreDefault()
   expect(
     invalid_guard_failed,
     "generated backend must reject the unsupported rear-escape extension at startup");
+
+  invalid_guard = params;
+  invalid_guard.traffic_state_enabled = 1;
+  invalid_guard_failed = false;
+  try {
+    DecisionBackend generated("generated", true, invalid_guard);
+  } catch (const std::invalid_argument &) {
+    invalid_guard_failed = true;
+  }
+  expect(
+    invalid_guard_failed,
+    "generated backend must reject the unsupported TRAFFIC state at startup");
 }
 
 void testGeneratedDispatchAndActiveState()

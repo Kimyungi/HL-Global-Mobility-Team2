@@ -108,16 +108,14 @@ class TestNodeInitialization(unittest.TestCase):
             self.assertEqual(node.traffic_light_class_ids, [9])
             self.assertFalse(node.camera_fault_latched)
             self.assertTrue(node.startup_hold_latched)
-            # 패키지 기본은 자동 해제 없음 — 초록 재출발은 실차 launch 가
-            # 켠다 (CLAUDE.md §6, 2026-08-09 팀장 결정). launch 쪽 기본값은
-            # test_launch_defaults.py 가 true 로 잠근다.
-            self.assertFalse(node.resume_on_green)
+            # 확정 초록은 TRAFFIC 상태를 즉시 해제한다.
+            self.assertTrue(node.resume_on_green)
             self.assertFalse(node.resume_on_red_clear)
             self.assertFalse(node.show_debug)
 
             published_stops = []
             node._publish = (
-                lambda stop, _distance: published_stops.append(stop)
+                lambda stop, _distance, **_fields: published_stops.append(stop)
             )
             node.oak_camera.frame = np.zeros(
                 (720, 1280, 3),

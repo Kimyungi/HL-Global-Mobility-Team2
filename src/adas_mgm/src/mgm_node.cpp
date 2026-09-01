@@ -15,11 +15,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <exception>
 #include <fstream>
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -33,6 +35,7 @@
 #include "fma_interfaces/msg/parking_status.hpp"
 #include "fma_interfaces/msg/traffic_stop.hpp"
 #include "fma_interfaces/msg/estop_request.hpp"
+#include "fma_interfaces/msg/can_health.hpp"
 #include "fma_interfaces/msg/target_ref.hpp"
 #include "fma_interfaces/msg/vehicle_vector.hpp"
 
@@ -57,9 +60,8 @@ struct LatestMsgs
   fma_interfaces::msg::ParkingStatus parking;
   fma_interfaces::msg::TrafficStop traffic;
   fma_interfaces::msg::EstopRequest estop;
-  // bridge_dspace VEH_FEEDBACK 에코 — 신호등 정지 ramp의 dead-reckoning
-  // 감쇠에만 쓴다(§5.6 rate limit 등 다른 종방향 로직은 여전히 명령 속도 기준).
-  fma_interfaces::msg::VehicleVector vehicle;
+  fma_interfaces::msg::CanHealth can;   // 브리지 CAN 링크 건전성 (§5.7 ⑥)
+  fma_interfaces::msg::VehicleVector vehicle;  // dSPACE 실차속도 피드백
 };
 
 // msg → CoreSnapshot 변환 (포맷 변환만 — 판단 금지)
@@ -99,8 +101,12 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   toCorePath(m.parking.points, s.parking_path);
   s.parking_v_suggest = m.parking.v_suggest;
   s.traffic_stop_required = m.traffic.stop_required;
+  s.traffic_red_active = m.traffic.red_active;
+  s.traffic_green_active = m.traffic.green_active;
   s.traffic_stopline_detected = m.traffic.stopline_detected;
-  s.vehicle_v = m.vehicle.v;
+  s.traffic_stop_distance = m.traffic.stop_distance;
+  s.traffic_fail_safe_stop = m.traffic.fail_safe_stop;
+  s.vehicle_speed = m.vehicle.v;
   s.estop = m.estop.estop;
   // 후방 여유 (§4 후진 탈출) — staleness 보정은 loop()에서 estop 과 함께 처리한다.
   s.estop_rear_clear = m.estop.rear_clear;
@@ -209,13 +215,19 @@ public:
     // 기본 켬 — 후방 센서가 붙기 전에는 rear_clear 가 항상 false 라 기능이 잠긴다.
     p.escape_require_rear_clear =
       declare_parameter<bool>("escape_require_rear_clear", true) ? 1 : 0;
-    // ── 신호등 정지 ramp (§4, 2026-09-01). stopline_detected 이벤트가 한 번도
-    // 없는 run(카메라 stopline_detection_enabled=false 포함)에서는 거리를
-    // 몰라 종전과 동일하게 즉시 0 으로 정지한다 — 기본값을 켜 둬도 안전하다.
-    p.traffic_ramp_reset_distance_m = static_cast<float>(
-      declare_parameter<double>("traffic_ramp_reset_distance_m", 1.5));
-    p.traffic_ramp_stop_distance_m = static_cast<float>(
-      declare_parameter<double>("traffic_ramp_stop_distance_m", 0.5));
+    p.traffic_state_enabled =
+      declare_parameter<bool>("traffic_state_enabled", true) ? 1 : 0;
+    p.traffic_stop_offset = static_cast<float>(
+      declare_parameter<double>("traffic_stop_offset_m", 0.0));
+    // ── 정지 ramp 거리 (2026-09-01 개정 — 단순화, mgm_types.hpp 주석 참조).
+    // 정지선을 한 번도 못 본 run(정지선 인식이 실패하는 조건 포함)에서는
+    // MGM_STATE_TRAFFIC의 !traffic_distance_latched 분기가 즉시 0으로 정지시켜
+    // 안전하다 — 이 값은 거리를 아는 경우의 ramp 시작 거리일 뿐이다.
+    p.traffic_ramp_distance_m = static_cast<float>(
+      declare_parameter<double>("traffic_ramp_distance_m", 1.5));
+    if (p.traffic_stop_offset < 0.0f) {
+      throw std::invalid_argument("traffic_stop_offset_m must be non-negative");
+    }
     rcl_interfaces::msg::ParameterDescriptor backend_descriptor;
     backend_descriptor.read_only = true;
     backend_descriptor.description = "startup-only decision backend: core or generated";
@@ -264,10 +276,38 @@ public:
     // traffic_stop 신선도 watchdog — 수신 이력이 있은 뒤 끊긴 경우만 (§5.7 ③)
     traffic_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("traffic_stale_timeout_sec", 0.5) * 1e9);
+    vehicle_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("vehicle_stale_timeout_sec", 0.2) * 1e9);
     // avoid 신선도 watchdog (§5.7 ⑤, 2026-08-12 회피 통합) — stale이면 진입 재료
     // 무효화, AVOID 스테이트 중이면 estop 보정 (낡은 회피 경로 주행 차단)
     avoid_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("avoid_stale_timeout_sec", 0.5) * 1e9);
+    // parking 신선도 watchdog (§5.7 ⑦, 2026-08-31 — PR #45 통합 검토 P0 ③).
+    // avoid(⑤)와 같은 규약이다. **CoreSnapshot 은 건드리지 않는다** — parking_updated
+    // 를 넣으면 덤프 포맷이 v6→v7 이 되어 drive_logs 의 기존 스냅샷이 전부 재생
+    // 불가가 된다. 수신 시각만으로 판정하면 코어도 덤프도 그대로다.
+    parking_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("parking_stale_timeout_sec", 0.5) * 1e9);
+
+    // ── CAN 헬스 watchdog (§5.7 ⑥, 2026-08-26) ─────────────────────────────
+    // traffic(③)과 같은 규약: **수신 이력이 있은 뒤에만** 판정한다. 미수신을
+    // 보정하면 브리지 없이 도는 단독 스택 시험·재생이 전부 estop 이 된다.
+    can_stale_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("can_stale_timeout_sec", 0.5) * 1e9);
+    // 몇 주기 연속 송신 실패를 고장으로 볼 것인가. 기본 3 = 30ms — §3 dSPACE
+    // counter watchdog 의 3주기와 같은 눈금이다. 프레임 하나 흘린 것으로 서지 않는다.
+    can_fail_ticks_ = static_cast<uint32_t>(
+      declare_parameter<int>("can_fail_ticks", 3));
+    // 이 시간 넘게 불건전이 지속되면 **래치**를 건다 — 링크가 살아나도 스스로
+    // 재출발하지 않고 /operator/go 재인가를 기다린다.
+    //   근거: PROTOCOL.md:78 은 "복구는 자동, 래치 없음"인데 그 규정이 전제한 두절은
+    //   프레임 몇 개(수십 ms) 수준이다. 어댑터 이탈 같은 초 단위 고장에서 자동
+    //   재출발하면, 그 사이 마지막 v_ref 로 굴러갔을 수 있는 차가 사람이 옆에 선
+    //   채로 다시 움직인다. 그래서 **짧은 두절은 그의 규정대로 자동 복귀**시키고
+    //   긴 고장만 래치한다 (INTEGRATION_TEST_0826.md §6 ①).
+    //   0 이하면 래치 없음 = PROTOCOL.md 규정 그대로.
+    can_relatch_ns_ = static_cast<int64_t>(
+      declare_parameter<double>("can_relatch_sec", 1.0) * 1e9);
 
     // 출발 인가 게이트 (2026-08-11, 실차 launch 전용) — true면 /operator/go 수신
     // 전까지 estop 보정 유지(v_ref 0 대기). launch 직후 바로 출발해 출발 전
@@ -275,15 +315,21 @@ public:
     // estop 경로 재사용(코어에 새 정지 로직 없음). 인가는 tools/go 스크립트가
     // RTK FIXED 확인 후 발행한다.
     wait_go_ = declare_parameter<bool>("wait_go", false);
+    // 구독은 wait_go 와 무관하게 **항상** 만든다 — CAN 고장 래치(§5.7 ⑥)의 해제도
+    // 같은 인가를 쓰기 때문이다. wait_go 는 "출발 전에도 인가가 필요한가"만 정한다.
+    sub_go_ = create_subscription<std_msgs::msg::Bool>(
+      "/operator/go", rclcpp::QoS(1),
+      [this](std_msgs::msg::Bool::ConstSharedPtr m) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (m->data && !go_received_) {
+          RCLCPP_INFO(get_logger(), "출발 인가 수신 — 주행 시작");
+        }
+        if (m->data && can_latched_.load()) {
+          can_latched_ = false;
+          RCLCPP_WARN(get_logger(), "CAN 고장 래치 해제 — 재인가로 주행 재개");
+        }
+        go_received_ = m->data;});
     if (wait_go_) {
-      sub_go_ = create_subscription<std_msgs::msg::Bool>(
-        "/operator/go", rclcpp::QoS(1),
-        [this](std_msgs::msg::Bool::ConstSharedPtr m) {
-          std::lock_guard<std::mutex> lk(mtx_);
-          if (m->data && !go_received_) {
-            RCLCPP_INFO(get_logger(), "출발 인가 수신 — 주행 시작");
-          }
-          go_received_ = m->data;});
       RCLCPP_INFO(get_logger(),
         "출발 대기 모드 — 점검 후 `ros2 run adas_mgm go` 로 출발 인가");
     }
@@ -330,7 +376,8 @@ public:
     sub_parking_ = create_subscription<fma_interfaces::msg::ParkingStatus>(
       "/perception/parking", qos,
       [this](fma_interfaces::msg::ParkingStatus::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); msgs_.parking = *m;});
+        std::lock_guard<std::mutex> lk(mtx_); msgs_.parking = *m;
+        last_parking_rx_ns_ = monotonicNs();});
     sub_traffic_ = create_subscription<fma_interfaces::msg::TrafficStop>(
       "/perception/traffic_stop", qos,
       [this](fma_interfaces::msg::TrafficStop::ConstSharedPtr m) {
@@ -343,14 +390,21 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         msgs_.estop = *m;
         last_estop_rx_ns_ = monotonicNs();});
-    // dSPACE VEH_FEEDBACK 에코 — 신호등 정지 ramp의 dead-reckoning 감쇠 입력.
-    // 미수신이면 vehicle.v는 기본 0.0f로 남아 거리가 감쇠하지 않는다(안전
-    // 쪽 정지 — 별도 staleness watchdog 불필요).
+    // CAN 링크 건전성 (§5.7 ⑥, 2026-08-26) — bridge_dspace 가 발행. 정지 명령이
+    // 실제로 버스에 나가고 있는지를 MGM 이 알 수 있는 유일한 경로다.
+    sub_can_ = create_subscription<fma_interfaces::msg::CanHealth>(
+      "/bridge/can_health", qos,
+      [this](fma_interfaces::msg::CanHealth::ConstSharedPtr m) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.can = *m;
+        last_can_rx_ns_ = monotonicNs();});
+    // dSPACE VEH_FEEDBACK 에코 — MGM_STATE_TRAFFIC의 dead-reckoning 감쇠 입력.
     sub_vehicle_ = create_subscription<fma_interfaces::msg::VehicleVector>(
       "/vehicle/vector", rclcpp::SensorDataQoS(),
       [this](fma_interfaces::msg::VehicleVector::ConstSharedPtr m) {
         std::lock_guard<std::mutex> lk(mtx_);
-        msgs_.vehicle = *m;});
+        msgs_.vehicle = *m;
+        last_vehicle_rx_ns_ = monotonicNs();});
 
     msgs_.avoid.ttc = 1e9f;   // 인지 도착 전 TTC=0으로 오인해 정지하는 것 방지
     msgs_.estop.estop = true;  // 첫 EstopRequest 수신 전 fail-safe — 미수신 = 정지
@@ -411,6 +465,9 @@ private:
     int64_t gps_rx_ns;
     int64_t traffic_rx_ns;
     int64_t avoid_rx_ns;
+    int64_t parking_rx_ns;
+    int64_t can_rx_ns;
+    int64_t vehicle_rx_ns;
     bool go;
     {
       std::lock_guard<std::mutex> lk(mtx_);
@@ -420,6 +477,9 @@ private:
       gps_rx_ns = last_gps_rx_ns_;
       traffic_rx_ns = last_traffic_rx_ns_;
       avoid_rx_ns = last_avoid_rx_ns_;
+      parking_rx_ns = last_parking_rx_ns_;
+      can_rx_ns = last_can_rx_ns_;
+      vehicle_rx_ns = last_vehicle_rx_ns_;
       go = go_received_;
     }
     // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
@@ -448,10 +508,12 @@ private:
     // estop 경로를 그대로 재사용 — 새 판단 로직을 추가하는 게 아니라 기존
     // "estop=true → 전 스테이트 정지" 판단에 태우는 것 (§5.1 준수).
     const bool lane_stale = lane_rx_ns < 0 || monotonicNs() - lane_rx_ns > lane_stale_ns_;
-    if (backend_->activeState() == MGM_STATE_LANE && lane_stale && !estop_stale) {
+    if ((backend_->activeState() == MGM_STATE_LANE ||
+      backend_->activeState() == MGM_STATE_TRAFFIC) && lane_stale && !estop_stale)
+    {
       m.estop.estop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-        "lane_path 신선도 초과(state=lane) — estop 강제 (stack_lane 확인 필요)");
+        "lane_path 신선도 초과(state=lane/traffic) — estop 강제 (stack_lane 확인 필요)");
     }
     // gps_path 신선도 watchdog — lane과 대칭. waypoint 스테이트가 gps_path 없이도
     // v_base로 계속 주행하던 문제 방지 (실제로 lane→waypoint 자동 전이 후 이
@@ -478,10 +540,9 @@ private:
     // true가 남아 어차피 정지 유지 — 위험 케이스는 false 상태로 죽은 뒤 적색이
     // 켜지는 경우이며 이 보정이 그걸 막는다. estop이 아닌 traffic 요구로 태워
     // 일반 감속 정지(rate limit)로 선다. (2026-08-08, PR #21 검토에서 도출)
-    if (traffic_rx_ns >= 0 && monotonicNs() - traffic_rx_ns > traffic_stale_ns_ &&
-      !m.traffic.stop_required)
-    {
+    if (traffic_rx_ns >= 0 && monotonicNs() - traffic_rx_ns > traffic_stale_ns_) {
       m.traffic.stop_required = true;
+      m.traffic.fail_safe_stop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "traffic_stop 신선도 초과 — 정지 요구 강제 (stack_traffic 확인 필요)");
     }
@@ -501,7 +562,76 @@ private:
           "avoid 신선도 초과(state=avoid) — estop 강제 (stack_avoid 확인 필요)");
       }
     }
+    // parking 신선도 watchdog (§5.7 ⑦, 2026-08-31) — avoid(⑤)와 같은 구조다.
+    // 미수신/staleness 시 **진입 재료**(space_found)를 무효화해 죽은 stack_parking 의
+    // 마지막 메시지로 PARKING 에 진입하는 것을 막고, 이미 PARKING 이면 estop 을
+    // 보정한다 — 낡은 주차 경로로 계속 움직이는 것을 막기 위해서다. 주차는 후진이
+    // 섞이므로(parking_v_suggest 음수) 낡은 값으로 굴러가는 것이 특히 위험하다.
+    //
+    // done 도 함께 무효화한다: 죽기 직전 메시지의 done 으로 PARKING 을 빠져나가면
+    // 차가 어디에 서 있는지 모르는 채 주행 스테이트로 올라간다. estop 이 걸린 채
+    // PARKING 에 머무는 쪽이 안전하다.
+    //
+    // 미수신(-1)도 stale 로 본다. stack_parking 없이 도는 단독 스택 시험과 양립한다 —
+    // space_found 기본값이 false 라 PARKING 에 못 들어가고, PARKING 이 아니면
+    // estop 보정도 걸리지 않기 때문이다.
+    const bool parking_stale =
+      parking_rx_ns < 0 || monotonicNs() - parking_rx_ns > parking_stale_ns_;
+    if (parking_stale) {
+      m.parking.space_found = false;
+      m.parking.done = false;
+      if (backend_->activeState() == MGM_STATE_PARKING && !estop_stale) {
+        m.estop.estop = true;
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+          "parking 신선도 초과(state=parking) — estop 강제 (stack_parking 확인 필요)");
+      }
+    }
+    // CAN 헬스 watchdog (§5.7 ⑥, 2026-08-26). 다른 watchdog 이 "인지가 살아 있는가"를
+    // 보는 데 비해 이것은 **"우리 명령이 실제로 버스에 나가고 있는가"**를 본다.
+    // dSPACE counter watchdog 이 미구현인 동안(HANDOVER.md §3.6) PC 가 못 보내면
+    // dSPACE 는 마지막 v_ref 를 유지한다 — 그 구간에 차를 세울 방법은 PC 에 없다.
+    // 그래서 이 보정의 목적은 "지금 세우는 것"이 아니라 **링크가 살아난 뒤 나가는
+    // 첫 프레임이 정지값이 되게 하는 것**이다.
+    // traffic(③)과 같은 규약으로 **수신 이력이 있은 뒤에만** 판정한다 — 브리지 없이
+    // 도는 단독 스택 시험·재생을 깨지 않기 위해서다.
+    if (can_rx_ns >= 0) {
+      const bool can_stale = monotonicNs() - can_rx_ns > can_stale_ns_;
+      const bool can_bad = can_stale || !m.can.link_up ||
+        m.can.consecutive_tx_fail >= can_fail_ticks_;
+      if (!can_bad) {
+        can_bad_since_ns_ = -1;
+      } else if (can_bad_since_ns_ < 0) {
+        can_bad_since_ns_ = monotonicNs();
+      }
+      // 긴 고장이면 래치 — 링크가 살아나도 스스로 재출발하지 않는다 (§6 ① 절충).
+      if (can_relatch_ns_ > 0 && can_bad_since_ns_ >= 0 && !can_latched_.load() &&
+        monotonicNs() - can_bad_since_ns_ >= can_relatch_ns_)
+      {
+        can_latched_ = true;
+        RCLCPP_ERROR(
+          get_logger(),
+          "CAN 고장 %.1fs 지속 — 래치. 확인 후 `ros2 run adas_mgm go` 로 재인가할 것",
+          static_cast<double>(can_relatch_ns_) * 1e-9);
+      }
+      if ((can_bad || can_latched_.load()) && !estop_stale) {
+        m.estop.estop = true;
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "CAN %s — estop 강제 (link_up=%d tx_fail=%u errno=%d%s)",
+          can_stale ? "헬스 신선도 초과(브리지 확인 필요)" : "송신 불가",
+          static_cast<int>(m.can.link_up), m.can.consecutive_tx_fail, m.can.last_errno,
+          can_latched_.load() ? " · 래치" : "");
+      }
+    }
     CoreSnapshot s = toSnapshot(m);
+    const bool vehicle_stale = vehicle_rx_ns < 0 ||
+      monotonicNs() - vehicle_rx_ns > vehicle_stale_ns_;
+    s.vehicle_speed_valid = !vehicle_stale && std::isfinite(s.vehicle_speed);
+    if (backend_->activeState() == MGM_STATE_TRAFFIC && !s.vehicle_speed_valid) {
+      s.traffic_fail_safe_stop = true;
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+        "vehicle/vector 신선도 초과(state=traffic) — 정지 강제");
+    }
     s.estop_latch_release = estop_real;  // toSnapshot은 LatestMsgs만 알므로 여기서 주입
     // 소스별 "이번 틱에 새 메시지 도착" — §5.8 이동 보정의 판정 근거.
     // 값 동일성으로 판정하면 인지가 상수를 낼 때 무한 감쇠한다 (mgm_types.hpp 주석).
@@ -568,6 +698,14 @@ private:
         "정차 중 — 남은 %.1fs (v_ref %.2f)",
         backend_->stopHoldLeft() * 0.01, static_cast<double>(out.v_ref));
     }
+    if (out.state == MGM_STATE_TRAFFIC) {
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+        "TRAFFIC — red=%d green=%d line_latched=%d remaining=%.2fm v_actual=%.2f v_ref=%.2f",
+        static_cast<int>(s.traffic_red_active), static_cast<int>(s.traffic_green_active),
+        static_cast<int>(backend_->trafficDistanceLatched()),
+        static_cast<double>(backend_->trafficStoplineDistance()),
+        static_cast<double>(s.vehicle_speed), static_cast<double>(out.v_ref));
+    }
 
     TargetRef msg;
     msg.header.stamp = now();
@@ -626,11 +764,21 @@ private:
   int64_t last_traffic_rx_ns_{-1};  // 마지막 TrafficStop 수신 시각 (미수신 = -1)
   int64_t traffic_stale_ns_{500'000'000};
   int64_t last_avoid_rx_ns_{-1};  // 마지막 AvoidStatus 수신 시각 (미수신 = -1)
+  int64_t last_parking_rx_ns_{-1};  // 마지막 ParkingStatus 수신 시각 (미수신 = -1)
   // 직전 틱에 사용한 수신 시각 — 비교해서 "이번 틱에 새 메시지" 판정 (§5.8)
   int64_t last_lane_rx_used_{-1};
   int64_t last_gps_rx_used_{-1};
   int64_t last_avoid_rx_used_{-1};
   int64_t avoid_stale_ns_{500'000'000};
+  int64_t parking_stale_ns_{500'000'000};
+  int64_t last_can_rx_ns_{-1};    // 마지막 CanHealth 수신 시각 (미수신 = -1)
+  int64_t can_stale_ns_{500'000'000};
+  uint32_t can_fail_ticks_{3};    // 연속 송신 실패 몇 주기부터 고장으로 볼 것인가
+  int64_t can_relatch_ns_{1'000'000'000};  // 이만큼 지속되면 래치 (0 이하 = 래치 없음)
+  int64_t last_vehicle_rx_ns_{-1};
+  int64_t vehicle_stale_ns_{200'000'000};
+  int64_t can_bad_since_ns_{-1};  // CAN 불건전 시작 시각 (건전 = -1, 루프 스레드 전용)
+  std::atomic<bool> can_latched_{false};   // CAN 고장 래치 — /operator/go 재인가로만 해제
   bool stop_holding_prev_{false};   // 지정 지점 정차 로그용 (코어 상태의 직전 값)
   bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
   bool go_received_{false};         // /operator/go 마지막 수신값
@@ -642,6 +790,7 @@ private:
   rclcpp::Subscription<fma_interfaces::msg::ParkingStatus>::SharedPtr sub_parking_;
   rclcpp::Subscription<fma_interfaces::msg::TrafficStop>::SharedPtr sub_traffic_;
   rclcpp::Subscription<fma_interfaces::msg::EstopRequest>::SharedPtr sub_estop_;
+  rclcpp::Subscription<fma_interfaces::msg::CanHealth>::SharedPtr sub_can_;
   rclcpp::Subscription<fma_interfaces::msg::VehicleVector>::SharedPtr sub_vehicle_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_go_;
 

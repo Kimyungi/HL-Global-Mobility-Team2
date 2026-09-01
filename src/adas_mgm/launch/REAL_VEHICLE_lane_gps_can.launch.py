@@ -152,6 +152,21 @@ def validate(context):
         raise RuntimeError(
             'REAL VEHICLE launch refused. '
             'Set REAL_VEHICLE_CONFIRM:=' + CONFIRM_TOKEN)
+    traffic_enabled = LaunchConfiguration('traffic_enabled').perform(context).lower() == 'true'
+    traffic_require_stop_gate = (
+        LaunchConfiguration('traffic_require_stop_gate').perform(context).lower() == 'true')
+    try:
+        traffic_stop_y_ratio = float(
+            LaunchConfiguration('traffic_stop_y_ratio').perform(context))
+    except ValueError as e:
+        raise RuntimeError('traffic_stop_y_ratio는 숫자여야 합니다.') from e
+    if traffic_require_stop_gate and not traffic_enabled:
+        raise RuntimeError(
+            'traffic_require_stop_gate:=true 이면 traffic_enabled:=true 가 필요합니다.')
+    if traffic_require_stop_gate and not 0.0 < traffic_stop_y_ratio <= 1.10:
+        raise RuntimeError(
+            '운영 신호등 정지 게이트가 비활성입니다. 검증된 '
+            'traffic_stop_y_ratio:=<0보다 크고 1.10 이하>를 지정하세요.')
     waypoint_csv = LaunchConfiguration('waypoint_csv').perform(context)
     if not waypoint_csv:
         raise RuntimeError('waypoint_csv:=<코스 CSV 경로> 를 지정하세요 (stack_gps 필수)')
@@ -391,6 +406,8 @@ def generate_launch_description():
         # 시나리오 기능은 인자로 켠다.
         #   ros2 launch ... traffic_enabled:=true
         DeclareLaunchArgument('traffic_enabled', default_value='false'),
+        # 운영 런북 전용 fail-closed 가드. 측정 런북은 false로 두어 y gate 0을 허용한다.
+        DeclareLaunchArgument('traffic_require_stop_gate', default_value='false'),
         # 신호등용 OAK-D MxID (CLAUDE.md §6 정본표). 차선용과 반드시 달라야 한다 —
         # 핀닝이 없거나 겹치면 어느 노드가 어느 카메라를 잡을지 부팅 순서에 좌우된다.
         DeclareLaunchArgument('traffic_mxid', default_value='14442C10B167CFD200'),
@@ -405,6 +422,9 @@ def generate_launch_description():
         #   (traffic_width:=1280 traffic_height:=720) 양쪽 fps 를 실측할 것.
         DeclareLaunchArgument('traffic_width', default_value='640'),
         DeclareLaunchArgument('traffic_height', default_value='360'),
+        # TRAFFIC 상태의 정지선 거리 래치에는 metric depth가 필수다. USB 부하는
+        # 해상도/fps와 함께 실차에서 확인하며, false는 인지 측정 디버그 전용이다.
+        DeclareLaunchArgument('traffic_depth_enabled', default_value='true'),
         # 정지 게이트. 0 = **측정 전용**(정지 요구를 만들지 않는다). 첫 실차 세션은
         # 이 상태로 돌려 로그의 y_ratio 분포를 보고 값을 정한다 — 현장값 0.98 은
         # 옛 ROI·고정 장착·0.28m/s 이하에서만 검증됐고, 카메라 장착·ROI·속도가
@@ -527,8 +547,8 @@ def generate_launch_description():
         # 발행하면 어느 쪽이 이길지 RViz 기동 타이밍에 따라 달라진다 (2026-08-09 규명).
 
         # ── stack_avoid (2026-08-12 통합) — 장애물 감지·회피 목표점 → MGM avoid 스테이트.
-        # 파라미터 단일 소스 = stack_avoid/config/params.yaml (target_speed_mps 0.6 =
-        # MGM v_base와 일치 유지할 것 — 2026-08-15에 둘 다 0.5→0.6).
+        # 파라미터 단일 소스 = stack_avoid/config/params.yaml (target_speed_mps 1.0 =
+        # MGM v_base와 일치 유지할 것 — 2026-08-18에 둘 다 0.6→1.0).
         # 현장 튜닝: ros2 param set /stack_avoid_node ...
         Node(
             package='stack_avoid',
@@ -635,6 +655,11 @@ def generate_launch_description():
             executable='stack_traffic_node',
             name='stack_traffic_node',
             condition=IfCondition(LaunchConfiguration('traffic_enabled')),
+            # lane/traffic OAK-D를 동시에 열 때 DepthAI 장치 열거 경쟁으로 traffic이
+            # 시작 직후 exit 1 하는 실차 사례가 있다. MGM watchdog은 traffic을 한 번도
+            # 수신하지 못한 시작 실패에는 개입하지 못하므로 launch가 반드시 복구한다.
+            respawn=True,
+            respawn_delay=2.0,
             parameters=[{
                 # 노드 기본은 'opencv'(USB 웹캠) — 실차는 반드시 oak 로 바꾼다.
                 'camera_backend': 'oak',
@@ -648,8 +673,8 @@ def generate_launch_description():
                     LaunchConfiguration('traffic_width'), value_type=int),
                 'oak_height': ParameterValue(
                     LaunchConfiguration('traffic_height'), value_type=int),
-                # RGB-only. depth 는 진단용이고 USB2 에서 2B/px 를 더 얹는다.
-                'oak_depth_enabled': False,
+                'oak_depth_enabled': ParameterValue(
+                    LaunchConfiguration('traffic_depth_enabled'), value_type=bool),
                 # y gate 를 쓰려면 정지선 검출이 켜져 있어야 한다(노드가 검증).
                 'stopline_detection_enabled': True,
                 'stopline_stop_y_ratio': ParameterValue(
@@ -690,7 +715,7 @@ def generate_launch_description():
                 'stop_zone_hold_cycles': ParameterValue(PythonExpression(
                     ["int(round(float('", LaunchConfiguration('stop_hold_sec'), "') * 100))"]),
                     value_type=int),
-                # 회피 허용 구간 밖 AVOID 전이 금지 (기본 켬 — 위 인자 주석 참조)
+                # 회피 허용 구간 밖 AVOID 전이 금지 (기본 끔 — 위 인자 주석 참조)
                 'avoid_zone_only': ParameterValue(
                     LaunchConfiguration('avoid_zone_only'), value_type=bool),
             }],

@@ -133,24 +133,21 @@ mgm_node:
     wrongway_yaw_rad: 2.1
     wrongway_cycles: 50
 
-    # ── 신호등 정지 ramp (§4, 2026-09-01) — traffic_stop_required 가 뜨는
-    # 순간 v_ref 를 곧장 0으로 떨어뜨리던 것을 거리 기반으로 서서히 줄인다.
-    # stack_traffic 의 카메라 stop_distance(px 기준)는 흔들리면 즉시 -1이라
-    # 그대로는 못 쓴다 — 대신 stack_traffic.stopline_detected 가 true→false로
-    # 떨어지는 시점(=정지선이 화면에서 사라짐)을 "카메라 장착 기준 고정 거리"로
-    # 시드하고, 그 뒤로는 /vehicle/vector 실측 차속으로 dead-reckoning 한다.
-    # bridge_dspace/tools/camera_traffic_ref_test.py 로 검증한 방식을 그대로
-    # core 로 옮긴 것 — stopline_detected 이벤트가 없는 run(stack_traffic
-    # stopline_detection_enabled=false 포함)에서는 거리를 몰라 종전과 동일하게
-    # 즉시 0 으로 떨어진다. 실차 미검증 — 카메라 장착 고정 후 재보정 권장.
-    traffic_ramp_reset_distance_m: 1.5
-    traffic_ramp_stop_distance_m: 0.5
-
     # estop 입력 신선도 watchdog (wrapper 입력 컨디셔닝 — 판단은 코어)
     # 미수신 또는 이 시간 초과 staleness → 스냅샷 estop=true 보정.
     # stack_estop 하트비트 50ms 기준 5주기.
     estop_stale_timeout_sec: 0.25
     traffic_stale_timeout_sec: 0.5   # 수신 이력 후 끊김만 보정 (§5.7 ③) — 미수신은 단독 스택 시험 허용
+    vehicle_stale_timeout_sec: 0.2   # TRAFFIC 거리 적분용 dSPACE 실차속도 freshness
+    traffic_state_enabled: true      # 적색 즉시 TRAFFIC 진입 (generated v1.88에서는 false만 허용)
+    traffic_stop_offset_m: 0.0       # 정지선 앞 목표 여유거리(카메라 장착 오프셋 포함)
+    # 정지 ramp 시작 거리 [m] (§4 traffic, 2026-09-01 개정 — 단순화. 처음엔
+    # 진입 시점 거리·속도로 고정 제동곡선을 만드는 방식이었는데, 정지선 인식이
+    # 간헐적으로만 성공하는 조건에서는 그 최초 관측 하나에 전체 제동을 고정하는
+    # 게 위험해 단순 비율 방식으로 되돌렸다. stopline이 안정 검출되는 동안은
+    # 매 틱 거리를 새로 신뢰하고, 정지선을 한 번도 못 봤으면 즉시 0으로 정지
+    # (v_base로 계속 달리다 신호를 지나치는 사고 방지 — mgm_step.cpp 참조).
+    traffic_ramp_distance_m: 1.5
     # lane/gps 경로 신선도 (§5.7 ②) — 해당 소스를 쓰는 스테이트에서만 적용.
     # gps는 staleness 외에 fix_quality=0/빈 경로(신선하지만 무효)도 동일 보정.
     # lane 1.0s: 산업용 PC는 GPU 없어 CPU 추론 2.5Hz(프레임 간격 최대 0.45s 실측,

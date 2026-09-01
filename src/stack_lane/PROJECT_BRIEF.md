@@ -1,5 +1,9 @@
 # stack_lane 작업 브리핑
 
+> **과거 역할 배분 기록:** 이 문서의 `/perception/stopline` 구현 항목은 폐기됐다.
+> 현재 정본은 `CLAUDE.md`와 `src/stack_traffic/REQUIREMENTS.md`이며, stack_traffic 전용
+> OAK-D가 주간 흰색·야간 국소 대비·평행 에지 쌍으로 정지선을 직접 검출한다.
+
 > 담당: 이현준 · 산출물: 차선 단독 주행 (마일스톤 8/2)
 > 이 문서는 전체 프로젝트 구조를 파악하고 stack_lane이 구현해야 할 범위를 정의하기 위한 작업 노트.
 > 프로젝트 전체 아키텍처의 기준 문서는 [`CLAUDE.md`](../../CLAUDE.md), stack_lane 공식 계약은 [`REQUIREMENTS.md`](REQUIREMENTS.md).

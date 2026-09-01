@@ -9,7 +9,7 @@
 
 | 구조체 | Simulink 대응 | 비고 |
 |---|---|---|
-| `CoreSnapshot` | 입력 버스 | 인지 6종의 코어 필요분. bool→boolean, float→single, int32_t→int32 |
+| `CoreSnapshot` | 입력 버스 | 인지 입력 + traffic 적/녹/정지선 거리 + dSPACE 실차속도. bool→boolean, float→single, int32_t→int32 |
 | `CoreOutput` | 출력 버스 | state, path_source, immediate_stop, v_ref, **n_points**, ref_points[20] (유효분은 n_points개 — 현재 모든 소스 1) |
 | `CoreState` | 모델 내부 상태 | Stateflow 차트 상태 + Data Store (params 포함) |
 | `CoreParams` | tunable parameter | params.yaml과 1:1 |
@@ -18,8 +18,10 @@
 
 ## 2. Stateflow 차트 스펙 = `docs/state_machine_detail.drawio` + CLAUDE.md §4
 
-- 스테이트 4개 (lane=0, waypoint=1, avoid=2, parking=3), 전이 라벨·우선권 표 그대로.
-- avoid 복귀처 변수 1개(`avoid_return`)만 기억. parking→avoid 전이 없음.
+- 스테이트 5개 (lane=0, waypoint=1, avoid=2, parking=3, traffic=4), 전이 라벨·우선권 표 그대로.
+- avoid는 완료/시간상한에서 waypoint로 복귀한다. parking→avoid, traffic→avoid 전이 없음.
+- traffic은 최초 유효 `traffic_stop_distance`를 Data Store에 래치하고 매 10ms
+  `vehicle_speed`를 적분한다. `traffic_green_active`에서 즉시 lane으로 복귀한다.
 - at_end 래치 해제는 `estop_latch_release`(실제 EstopRequest 수신값)로만 —
   `estop`(wrapper staleness 보정 포함)으로 해제 금지 (2026-08-11, CLAUDE.md §4 래치).
 - 판단 뒤의 실행부(ref 조립 블렌드·v_ref rate limit)는 Stateflow 밖의 일반 블록으로 —
@@ -44,6 +46,10 @@ ros2 run adas_mgm core_replay sample.bin golden.csv  # 레퍼런스 정답 출�
 
 생성 코드를 같은 방식으로 재생(core_replay.cpp에서 `mgm_step` 호출부만 생성 코드로 링크)하여
 `diff golden.csv gen.csv`가 0이면 합격. 실차 rosbag 덤프(`mgm_node`의 `snapshot_dump_path` 파라미터로 기록)도 같은 절차.
+
+현재 체크인된 `ADAS_MGR2 v1.88` 생성 C는 기존 4상태까지다. TRAFFIC을 넣은 모델을
+재생성하기 전에는 production core만 5상태를 실행하며, generated backend는
+`traffic_state_enabled=true` 기동을 명시적으로 거부한다.
 
 ### 정답 CSV 스테이트 전이 체크포인트 (빠른 육안 확인용)
 

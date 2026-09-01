@@ -8,13 +8,14 @@
 
 1. RGB 상단 ROI에서 YOLOv8n으로 주행 대상 신호등 bbox 검출
 2. bbox 내부 HSV 비율로 적색·초록색 판정
-3. RGB 하단 ROI에서 긴 흰색 횡방향 정지선 검출
+3. 적색 확정 뒤 RGB 하단 ROI에서 주간 흰색·야간 국소 대비·평행 에지 쌍으로 횡방향 정지선 검출
 4. 선택적 저해상도 depth 진단에서 정지선 인접 노면의 optical-Z 측정
-5. 적색과 RGB y gate(선택적으로 depth)를 결합해 `/perception/traffic_stop` 발행
+5. 적색/초록 상태와 최초 래치용 metric 정지선 거리를 `/perception/traffic_stop`으로 발행
 
 외부 `/perception/stopline`은 구독하지 않는다. CAN과 `v_ref`도 직접 만들지
-않는다. MGM이 `TrafficStop.stop_required`를 `v_ref=0`으로 병합하고
-`bridge_dspace`가 CAN으로 전송한다.
+않는다. MGM은 적색에서 TRAFFIC 상태에 진입하고, 최초 유효 정지선 거리를 래치한
+뒤 `/vehicle/vector.v`를 적분해 정지선 소실 이후의 남은 거리를 계산한다.
+`bridge_dspace`가 목표속도를 CAN으로 전송하고 dSPACE 실차속도를 다시 돌려준다.
 
 ## 신호등 판정
 
@@ -28,16 +29,24 @@
   허용한다. 유효한 template이 이어지는 동안 단순 YOLO miss만으로 bbox를
   버리지 않고, 만료 후 오래된 template을 다시 살리지 않는다.
 - 적색은 최근 유효 관측 5개 중 3개 이상이면 활성화한다.
+- 적색 3/5가 한 번 확정되면 `red_phase_latched=true`로 기억하고 당시 신호등
+  bbox를 anchor로 저장한다. YOLO가 초록 화살표·비원형 초록 점등을 놓치더라도
+  저장된 동일 bbox 안의 초록색 3/5는 fresh 해제 관측으로 인정한다. anchor 밖의
+  초록색, anchor가 없는 상태의 초록색, unknown·황색은 해제 근거가 아니다.
+  적색과 초록이 동시에 활성화된 비정상 투표창에서는 적색이 우선한다.
 - unknown·미검출은 색상 투표창을 진행시키지 않는다. template 적색 투표는
-  동일 target에서 fresh YOLO 적색을 먼저 확인한 뒤에만 허용한다. 초록
-  해제는 fresh YOLO에서만 허용한다.
-- 패키지 기본은 자동 해제를 끄고, 실차·실험 launch는 fresh YOLO bbox의
-  초록 3/5로만 해제하는 `resume_on_green=true`를 기본으로 둔다
-  (CLAUDE.md §6, 2026-08-09 팀장 결정). `resume_on_red_clear`는 끈다.
+  동일 target에서 fresh YOLO 적색을 먼저 확인한 뒤에만 허용한다. 초록 해제는
+  fresh YOLO bbox 또는 확정 적색 anchor 안의 최신 프레임에서만 허용한다.
+- 패키지와 실차·실험 launch 모두 위 조건의 초록 3/5에서 즉시 해제하는
+  `resume_on_green=true`를 기본으로 둔다. `resume_on_red_clear`는 끈다.
 
 ## 정지선 판정
 
-- 하단 ROI에서 저채도·고명도 마스크를 만든다.
+- 하단 ROI에서 기존 저채도·고명도 마스크와 CLAHE 기반 국소 대비 마스크를 OR 결합한다.
+  야간 기본값은 LAB 명도 60 이상, 주변 노면 대비 25 이상이다.
+- 색상 마스크와 별도로 Canny/Hough로 위·아래 수평 에지 쌍을 찾는다. 각 에지는 ROI
+  폭의 35% 이상, 절대 각도 ±12도, 상호 각도 차 4도 이내여야 하며 두 에지 사이가
+  위·아래 노면보다 밝기 8 이상이어야 한다. 단일 에지·그림자는 후보가 아니다.
 - 폭, 가로세로비, 중심 통과, 각도, 두께, 채움률 조건으로 분리된 횡단보도
   무늬와 차선 오검출을 거른다.
 - 최근 5프레임 중 최소 3프레임에서 차량 쪽 경계 y가 안정적이어야 한다.
@@ -59,13 +68,16 @@
 조기 정지를 막기 위해 두 조건을 모두 만족해야 한다. 둘 다 `0`이면 측정
 전용 모드라서 정지 요구를 만들지 않는다.
 
-최종 진입 조건은 다음과 같다.
+TRAFFIC 상태 진입은 정지선과 무관하게 다음 조건 하나다.
 
 ```text
-red_active
-AND stable_stopline
-AND enabled_stopline_gates
+red_phase_latched
 ```
+
+진입 뒤에만 정지선 검출을 수행한다. 최초 `stable_stopline`과 유효 depth 거리가
+확정되면 MGM이 그 거리를 한 번 래치한다. 약 1m 안쪽에서 정지선이 검출되지 않아도
+정상이며, 그 뒤에는 영상 거리 대신 실차속도 적분값을 사용한다. 확정 초록은
+TRAFFIC을 즉시 해제한다.
 
 `TrafficStop.stop_distance`에는 유효한 optical-Z 미터 값만 넣고 frame id를
 `oak_rgb_optical_frame`으로 표시한다. depth가 무효하면 `-1.0`이다. y ratio를
@@ -119,6 +131,9 @@ AND enabled_stopline_gates
 - 50 Hz polling에서 OAK queue가 비어 있는 것은 정상이다. 마지막 정상 프레임
   뒤 0.5초가 지나야 카메라 fault로 판단한다.
 - 카메라 fault는 안전 정지로 래치되며 노드를 재시작해야 해제된다.
+- 통합 실차 launch는 두 OAK-D 동시 초기화 경쟁으로 프로세스가 시작 직후 종료되는
+  경우를 위해 `stack_traffic_node`를 2초 간격으로 자동 respawn한다. 출발 전 노드 목록
+  확인은 별도로 수행한다.
 - 실차 정지 gate가 활성인 기동 직후에는 5회 YOLO 판단창과 정지선
   필터창이 준비될 때까지 `stop_required=true`를 발행한다.
 - 모델·OpenCV·정지선 처리 예외도 카메라 fault와 같이 정지로 래치한다.
@@ -135,19 +150,22 @@ y_raw, y_ratio, y_med, line_z, z_med, stable, accepted
 최종 정차 위치의 값을 그대로 쓰면 그 위치에서야 감속을 시작하므로 지나칠 수
 있다. 첫 시험은 0.28m/s 이하에서 보수적으로 조금 이른 요청 위치를 사용하고,
 실제 MGM·차량 응답을 측정해 임계값을 조정한다.
-현장값 `0.98`은 현재 정지선 ROI, 고정된 카메라 장착 자세, 0.28m/s 이하에서만
-검증된 값이며 범용 기본값이 아니다. 장착 자세·ROI·속도를 바꾸면 다시 측정한다.
+현재 한라대 운영 파일은 `0.60`을 사용하며, 최근 정지 시험에서 에지 쌍 후보가
+`y_ratio=0.885~0.978`, `width=45~80%`, `stable=1`, `FINAL_STOP=1`을 만들었다.
+이 값도 고정된 카메라 장착 자세와 현장에만 유효하다. 장착 자세·ROI·속도·정지선이
+바뀌면 측정 런북으로 다시 측정한다. 과거 `0.98`은 현재 운영값이 아니다.
 
 ## 안전 조건
 
-- MGM은 `/perception/traffic_stop` 미수신/시간 초과 0.5초 후
-  `traffic_stop_required=true`로 보정해야 한다(LANE/WAYPOINT).
+- MGM은 `/perception/traffic_stop` 미수신/시간 초과 0.5초 후 fail-safe 정지한다.
+- TRAFFIC 중 `/vehicle/vector`가 0.2초 이상 stale이면 거리 적분을 신뢰하지 않고
+  fail-safe 정지한다.
 - 카메라·모델·프로세스 장애와 무관하게 물리 E-stop 담당자가 즉시
   제어할 수 있어야 한다.
 - dSPACE의 CAN counter watchdog이 실제로 동작하는지 먼저 확인한다.
 - 실제 주행은 유효한 E-stop heartbeat와 경로 입력이 있어야 한다.
 - `dummy_ref_publisher`와 MGM을 동시에 실행하지 않는다.
-- 신호등 정지는 MGM의 LANE/WAYPOINT 상태에서만 적용된다.
+- 적색은 LANE/WAYPOINT에서 TRAFFIC으로 전이하며, 초록은 LANE으로 복귀한다.
 
-실행 명령과 터미널 배치는 저장소 루트의
-`TRAFFIC_STOP_TEST_COMMANDS.md`를 따른다.
+실행 명령과 터미널 배치는
+`src/adas_mgm/RUNBOOK_full_operation_20260830.md`를 따른다.

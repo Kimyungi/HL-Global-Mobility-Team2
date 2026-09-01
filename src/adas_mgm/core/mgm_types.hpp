@@ -14,20 +14,18 @@ namespace adas_mgm
 constexpr int32_t MGM_NUM_POINTS = 20;   // ref points 최대치 (CAN ID 예약 폭, PROTOCOL.md)
                                          // 실제 점 수는 현재 모든 소스 1 (n은 확장 대비 가변)
 constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
-// §5.8 이동 보정이 ref x를 깎을 수 있는 하한 [m]. 전진밖에 못 하는 차에게
-// 차 뒤(x<0) 목표는 도달 불가능하므로 감쇠로 여기를 넘지 않는다 (2026-08-14).
-// 값이 작은 이유: avoid 1점 계약을 20점으로 보간하면 첫 점이 목표의 1/20
-// (1.5m 목표 → 0.075m)이라 정상값이 원래 작다. 하한을 크게 잡으면 그 정상값을
-// 왜곡한다 — 여기서는 "뒤로 넘어가지 않는다"만 보장한다.
+// 안전 폴백이 내보내는 최소 전방 ref 거리 [m]. 값이 작은 이유: avoid 1점 계약을
+// 20점으로 보간하면 첫 점이 목표의 1/20(1.5m 목표 → 0.075m)이라 정상값도 작다.
 constexpr float MGM_MIN_REF_X = 0.01f;
 
-// CLAUDE.md §4 스테이트 4개 — TargetRef.msg의 STATE_* 상수와 값 일치
+// CLAUDE.md §4 스테이트 5개 — TargetRef.msg의 STATE_* 상수와 값 일치
 enum : uint8_t
 {
   MGM_STATE_LANE = 0,
   MGM_STATE_WAYPOINT = 1,
   MGM_STATE_AVOID = 2,
   MGM_STATE_PARKING = 3,
+  MGM_STATE_TRAFFIC = 4,
 };
 
 // 스테이트가 고른 횡방향 경로 소스
@@ -114,16 +112,17 @@ struct CoreSnapshot
   float parking_v_suggest;      // [m/s] 후진 = 음수
   // stack_traffic
   bool traffic_stop_required;
-  // 이번 틱에 화면에서 정지선이 검출됐는가(=stable 아닌 raw 값, TrafficStop.
-  // stopline_detected). traffic_stop_required 의 근접 게이트와는 별개로,
-  // "정지선이 사라지는 edge"만 잡아 정지 ramp 거리를 시드하는 데 쓴다
-  // (카메라 optical-Z 거리는 흔들리면 즉시 무효가 되어 그 자체로는 못 쓴다 —
-  // bridge_dspace/tools/camera_traffic_ref_test.py 로 검증한 방식).
+  bool traffic_red_active;
+  bool traffic_green_active;
+  // 이번 틱에 화면에서 정지선이 안정 검출됐는가(TrafficStop.stopline_detected
+  // — stable AND depth 유효). MGM_STATE_TRAFFIC이 이 값이 참인 매 틱마다
+  // traffic_stop_distance를 새로 신뢰하는 데 쓴다 (아래 CoreParams 주석 참조).
   bool traffic_stopline_detected;
-  // dSPACE VEH_FEEDBACK 의 실측 차속 [m/s] (VehicleVector.v). 위 정지 ramp가
-  // 정지선 소실 시점 이후 거리를 dead-reckoning 하는 데만 쓴다 — 그 외 일반
-  // 종방향 제어에는 관여하지 않는다(§5.6 rate limit은 여전히 명령 속도 기준).
-  float vehicle_v;
+  float traffic_stop_distance;  // [m], 유효하지 않으면 음수
+  bool traffic_fail_safe_stop;
+  // bridge_dspace /vehicle/vector (dSPACE→PC CAN feedback)
+  float vehicle_speed;           // [m/s], 전진 +
+  bool vehicle_speed_valid;
   // stack_estop
   bool estop;                // 정지 판단 입력 — wrapper의 §5.7 staleness 보정 포함
   bool estop_latch_release;  // at_end 래치 해제 전용 — **실제 EstopRequest 수신값만**
@@ -239,20 +238,23 @@ struct CoreParams
   // 끄면 후방을 보지 않고 시간 상한만으로 후진한다 — 관측자를 세운 시험에서만 쓸 것.
   int32_t escape_require_rear_clear;
 
-  // ── 신호등 정지 ramp (2026-09-01, PR: 카메라 traffic-stop 거리 기반 감속).
-  // 종전에는 traffic_stop_required 가 뜨는 순간 v_ref를 곧장 0으로 떨어뜨렸다
-  // (rate limit만 걸림 — 갑작스러운 감속 개시). stack_traffic 의 카메라
-  // stop_distance 는 정지선이 화면에서 안정 검출된 프레임에서만 유효해(px
-  // 기준, 흔들리면 즉시 -1) 그 자체로는 서서히 줄이는 기준으로 못 쓴다.
-  // 대신 "정지선이 화면에서 사라지는 시점 = 카메라 장착 기준 고정 거리"를
-  // 시드로 삼고, 그 뒤로는 실측 차속(vehicle_v)으로 dead-reckoning한다 —
-  // bridge_dspace/tools/camera_traffic_ref_test.py 로 검증된 방식 그대로
-  // core 로 옮긴 것. stopline_detected 이벤트가 한 번도 없었던 run(예:
-  // stack_traffic 의 stopline_detection_enabled=false)에서는 거리를 몰라
-  // 종전과 동일하게 즉시 0 으로 떨어진다 — 새 필드를 안 쓰면 동작이 100%
-  // 그대로라는 뜻이다.
-  float traffic_ramp_reset_distance_m;  // 정지선 소실 시점의 시드 거리 [m]
-  float traffic_ramp_stop_distance_m;   // 이 이하로 내려가면 완전 정지 [m]
+  // ── 신호등 정지 상태 (§4, MGM_STATE_TRAFFIC). 0이면 생성 v1.88 호환을 위해
+  // 기능을 끈다.
+  int32_t traffic_state_enabled;
+  // 정지선 앞에서 남길 거리 [m]. 카메라 기준 거리의 장착 오프셋 보정에도 사용한다.
+  float traffic_stop_offset;
+  // ── 정지 ramp 거리 기준 (2026-09-01 개정, PR: 카메라 traffic-stop 거리
+  // 기반 감속 — 단순화). 처음엔 진입 시점 거리·속도로 감속도를 고정하는
+  // 운동학적 제동 곡선(latch-once + sqrt(2·decel·remaining))이었는데, 카메라
+  // 정지선 인식이 간헐적으로만 성공하는 조건(2026-09-01 해질녘 실측: 후보조차
+  // 못 찾는 완전 실패도 있음)에서는 그 최초 한 번의 관측이 아예 없거나
+  // 부정확할 위험이 커서, 검증이 더 필요한 지금 단계는 디버깅하기 쉬운 단순
+  // 비율 방식이 낫다는 판단(팀 논의, 2026-09-01)으로 되돌렸다. stopline이
+  // 안정 검출되는 매 틱마다 traffic_stop_distance를 그대로 신뢰해 거리를
+  // 계속 보정하고(최초 값에 고정하지 않음), 안 보일 때만 vehicle_speed로
+  // dead-reckoning한다. bridge_dspace/tools/camera_traffic_ref_test.py 로
+  // 벤치에서 먼저 검증한 방식.
+  float traffic_ramp_distance_m;  // 이 거리부터 v_base에서 서서히 줄이기 시작 [m]
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -301,9 +303,17 @@ struct CoreState
   // 10초 뒤 차가 스스로 뒤로 물러난다. 한 번이라도 굴러간 뒤에만 "갇혔다"고
   // 말할 수 있다.
   bool escape_armed;
-  // ── 신호등 정지 ramp (2026-09-01)
-  float traffic_dist_m;                  // -1 = 아직 모름(소실 edge 없었음)
-  bool traffic_prev_stopline_detected;   // edge(true->false) 검출용 직전값
+  // ── 신호등 정지 (§4, MGM_STATE_TRAFFIC). TRAFFIC 진입 전 주행 상태 — 현재
+  // 계약은 green에서 LANE으로 복귀하지만 로그와 향후 정책 검증을 위해 보존한다.
+  uint8_t traffic_entry_state;
+  // 정지선을 한 번이라도 안정 검출했는가. false인 동안은 거리를 모른다는
+  // 뜻이라 prioritize()가 즉시 정지로 폴백한다(2026-09-01 개정 — 아래
+  // traffic_stopline_distance 주석 참조).
+  bool traffic_distance_latched;
+  // [m] 차량→정지선 거리. stopline이 안정 검출되는 매 틱 traffic_stop_distance
+  // 값으로 계속 갱신되고(최초 한 번에 고정하지 않음), 안 보이는 동안만
+  // vehicle_speed로 dead-reckoning 감쇠한다.
+  float traffic_stopline_distance;
 };
 
 // 매 틱의 출력 — wrapper가 TargetRef로 변환·발행

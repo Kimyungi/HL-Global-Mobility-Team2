@@ -128,6 +128,10 @@ bool generatedInputWithinLaneWaypointScope(
     reason = "rear escape is unsupported by ADAS_MGR2 v1.88";
     return false;
   }
+  if (params.traffic_state_enabled != 0) {
+    reason = "TRAFFIC state is unsupported by ADAS_MGR2 v1.88";
+    return false;
+  }
   if (!std::isfinite(input.lane_confidence) ||
     !std::isfinite(input.gps_cross_track) ||
     !std::isfinite(input.avoid_ttc) ||
@@ -171,6 +175,11 @@ DecisionBackend::DecisionBackend(
     throw std::invalid_argument(
             "backend=generated requires escape_after_cycles=0 because "
             "ADAS_MGR2 v1.88 has no rear-escape input or state");
+  }
+  if (params_.traffic_state_enabled != 0) {
+    throw std::invalid_argument(
+            "backend=generated requires traffic_state_enabled=false because "
+            "ADAS_MGR2 v1.88 has no TRAFFIC state");
   }
   if (!std::isfinite(params_.ttc_stop) || params_.ttc_stop < 0.0f) {
     throw std::invalid_argument("backend=generated requires a finite non-negative ttc_stop");
@@ -312,6 +321,16 @@ int32_t DecisionBackend::returnHoldLeft() const
   }
 #endif
   return core_state_.return_hold_left;
+}
+
+bool DecisionBackend::trafficDistanceLatched() const
+{
+  return kind_ == Kind::kCore && core_state_.traffic_distance_latched;
+}
+
+float DecisionBackend::trafficStoplineDistance() const
+{
+  return kind_ == Kind::kCore ? core_state_.traffic_stopline_distance : 0.0f;
 }
 
 uint8_t DecisionBackend::activeState() const

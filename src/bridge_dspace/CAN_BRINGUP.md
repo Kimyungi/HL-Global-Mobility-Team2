@@ -205,6 +205,10 @@ ip -details -statistics link show can0
   간헐적으로만 깨진다. 이때는 **BRS를 잠깐 꺼서 갈라 본다** — BRS off로 에러가 사라지면
   원인은 데이터 구간(#2·#5), 그대로면 nominal 쪽(#1·#5)이다.
 - bus-off는 100ms 후 자동 복구되도록 설정돼 있으나, 근본 원인(배선/설정)을 잡아야 한다.
+- Kvaser USB가 순간 재열거되어 옛 소켓이 무효화되면 `can_bridge_node`가 100ms마다
+  새 `can0`를 찾아 자동 재바인드한다. 성공 로그 뒤 다음 MGM 최신 목표부터 자동으로
+  송신하며, 수동 노드 재시작은 필요 없다. 브리지 프로세스 자체가 종료되면 0-command
+  가드 수행 뒤 1초 후 launch가 자동 재기동한다. USB 케이블 접촉 불량 자체는 별도로 고친다.
 
 ---
 
@@ -312,6 +316,45 @@ ros2 run bridge_dspace dummy_ref_publisher
 > ⚠ **이 watchdog은 dSPACE에 아직 없다** (2026-08-09 실측, J-6 — CLAUDE.md §3).
 > 구현 전까지는 종료 시 `can_zero`가 목표값 0 복귀를 보장한다. `can_zero`는 인터페이스
 > MTU로 FD/classic을 **자동 판정**하므로 이관 후에도 인자를 붙일 필요가 없다.
+
+---
+
+## 6-2단계 — CAN 회생 검증 (2026-08-26 신설)
+
+6단계가 "PC가 송신을 멈췄을 때 dSPACE가 세우는가"를 본다면, 여기는 **"링크가 죽었을 때
+PC가 그 사실을 아는가"**를 본다. 두 고장은 다르다 — 6단계에서는 링크가 멀쩡하다.
+
+**① 헬스가 나오는지:**
+
+```bash
+ros2 topic echo /bridge/can_health --once
+```
+
+✅ `link_up: true`, `consecutive_tx_fail: 0`, `down_duration_s: 0.0`
+
+**② 링크를 죽여 본다** (브리지가 뜬 상태에서):
+
+```bash
+sudo ip link set can0 down
+```
+
+✅ 브리지 로그에 `CAN write 실패 N회 연속 — Network is down (치명 — 소켓 재오픈 대기)`
+✅ `link_up: false` 로 바뀜
+✅ MGM 로그에 `CAN 송신 불가 — estop 강제`, 1초 뒤 `CAN 고장 1.0s 지속 — 래치`
+✅ **`top`에서 브리지 CPU가 100%로 튀지 않는다** (예전에는 read가 회전했다)
+
+**③ 되살린다:**
+
+```bash
+sudo /usr/local/bin/can_up.sh can0
+```
+
+✅ 브리지 로그 `CAN 재오픈 성공 — can0`
+✅ MGM 은 **아직 정지 유지** (래치) → `ros2 run adas_mgm go` 로 재인가해야 재출발
+   (짧은 두절 1초 미만이면 래치 없이 자동 복귀한다 — `can_relatch_sec`)
+
+**하드웨어 없이 MGM 쪽만 보려면:** `python3 src/adas_mgm/tools/can_watchdog_check.py`
+(가짜 CanHealth 로 6단계 시퀀스를 재현하고 PASS/FAIL 을 찍는다).
 
 ---
 

@@ -96,6 +96,16 @@ def main():
     k = kinds(acts)
     check('6) can 가드 = 브리지+종료후0+폴백',
           k == ['Node', 'RegisterEventHandler', 'Node'], str(k))
+    bridge = acts[0]
+    respawn = next(
+        (getattr(bridge, a) for a in dir(bridge) if a.endswith('__respawn')),
+        None)
+    respawn_delay = next(
+        (getattr(bridge, a) for a in dir(bridge) if a.endswith('__respawn_delay')),
+        None)
+    check('7) CAN 브리지 장애 → 1초 뒤 자동 respawn',
+          bool(respawn) and float(respawn_delay) == 1.0,
+          f'respawn={respawn!r}, delay={respawn_delay!r}')
 
     bad = results.count(False)
     print('\n=== 결과: ' + ('전부 통과' if not bad else f'{bad}건 실패') + ' ===')

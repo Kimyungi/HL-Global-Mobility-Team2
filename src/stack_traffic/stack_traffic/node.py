@@ -8,8 +8,9 @@
 - HSV로 red_raw/green_raw 판정
 - 최근 5프레임 중 빨간불 3프레임 이상이면 red_active
 - 하단 RGB에서 정지선을 찾고 정렬 depth로 차량 쪽 경계 거리를 직접 측정
-- red_active AND 활성화된 접근 임계값이면 정지 래치
-- 정지 래치는 fresh bbox의 초록색 3/5가 확인될 때만 해제
+- 확정 red_active를 fresh 초록까지 페이즈 래치
+- red_phase_latched AND 활성화된 접근 임계값이면 정지 래치
+- 정지 래치는 fresh bbox 또는 확정 적색 anchor 안의 초록색 3/5에서만 해제
 
 결과는 /perception/traffic_stop (TrafficStop)으로 발행한다. ADAS MGM이
 stop_required를 v_ref=0으로 병합하고 bridge_dspace가 CAN으로 전송한다.
@@ -54,7 +55,9 @@ from stack_traffic.logic import (
     select_horizontal_roi_tile,
     select_tracking_candidate,
     should_clear_visual_track,
+    should_accept_anchored_green,
     should_record_color_vote,
+    update_red_phase_latch,
     update_stop_latch,
 )
 from stack_traffic.oak_camera import (
@@ -437,6 +440,7 @@ class StackTrafficNode(Node):
         # 추적 결과만 색 판정과 bbox 표시를 이어 가는 데 사용한다.
         self.tracked_bbox: Optional[BBox] = None
         self.stop_target_bbox: Optional[BBox] = None
+        self.red_phase_target_bbox: Optional[BBox] = None
         self.tracking_missed_frames = 0
         self.tracking_age_frames = 0
         self.template_tracking_failed_frames = 0
@@ -449,6 +453,7 @@ class StackTrafficNode(Node):
             ),
         )
         self.stop_required_latched = False
+        self.red_phase_latched = False
         self.camera_fault_latched = False
         self.startup_hold_latched = bool(
             self.stopline_detection_enabled
@@ -693,6 +698,17 @@ class StackTrafficNode(Node):
         self.declare_parameter("stopline_maximum_saturation", 90)
         self.declare_parameter("stopline_adaptive_percentile", 65.0)
         self.declare_parameter("stopline_adaptive_margin", 12.0)
+        self.declare_parameter("stopline_local_contrast_enabled", True)
+        self.declare_parameter("stopline_local_contrast_minimum_value", 60)
+        self.declare_parameter("stopline_local_contrast_delta", 25.0)
+        self.declare_parameter("stopline_local_contrast_background_ratio", 0.12)
+        self.declare_parameter("stopline_local_contrast_clahe_clip_limit", 2.0)
+        self.declare_parameter("stopline_edge_pair_enabled", True)
+        self.declare_parameter("stopline_edge_pair_canny_low", 35)
+        self.declare_parameter("stopline_edge_pair_canny_high", 110)
+        self.declare_parameter("stopline_edge_pair_minimum_length_ratio", 0.35)
+        self.declare_parameter("stopline_edge_pair_maximum_angle_difference_deg", 4.0)
+        self.declare_parameter("stopline_edge_pair_minimum_interior_contrast", 8.0)
         self.declare_parameter("stopline_horizontal_close_ratio", 0.015)
         self.declare_parameter("stopline_minimum_width_ratio", 0.45)
         self.declare_parameter("stopline_minimum_aspect_ratio", 6.0)
@@ -735,7 +751,7 @@ class StackTrafficNode(Node):
         self.declare_parameter("stopline_maximum_fit_residual_m", 0.25)
         self.declare_parameter("stopline_stop_distance_m", 0.0)
         self.declare_parameter("stopline_stop_y_ratio", 0.0)
-        self.declare_parameter("resume_on_green", False)
+        self.declare_parameter("resume_on_green", True)
         self.declare_parameter("resume_on_red_clear", False)
         self.declare_parameter("show_debug", False)
         self.declare_parameter("show_auxiliary_debug", False)
@@ -951,6 +967,49 @@ class StackTrafficNode(Node):
         )
         self.stopline_adaptive_margin = float(
             self.get_parameter("stopline_adaptive_margin").value
+        )
+        self.stopline_local_contrast_enabled = bool(
+            self.get_parameter("stopline_local_contrast_enabled").value
+        )
+        self.stopline_local_contrast_minimum_value = int(
+            self.get_parameter("stopline_local_contrast_minimum_value").value
+        )
+        self.stopline_local_contrast_delta = float(
+            self.get_parameter("stopline_local_contrast_delta").value
+        )
+        self.stopline_local_contrast_background_ratio = float(
+            self.get_parameter(
+                "stopline_local_contrast_background_ratio"
+            ).value
+        )
+        self.stopline_local_contrast_clahe_clip_limit = float(
+            self.get_parameter(
+                "stopline_local_contrast_clahe_clip_limit"
+            ).value
+        )
+        self.stopline_edge_pair_enabled = bool(
+            self.get_parameter("stopline_edge_pair_enabled").value
+        )
+        self.stopline_edge_pair_canny_low = int(
+            self.get_parameter("stopline_edge_pair_canny_low").value
+        )
+        self.stopline_edge_pair_canny_high = int(
+            self.get_parameter("stopline_edge_pair_canny_high").value
+        )
+        self.stopline_edge_pair_minimum_length_ratio = float(
+            self.get_parameter(
+                "stopline_edge_pair_minimum_length_ratio"
+            ).value
+        )
+        self.stopline_edge_pair_maximum_angle_difference_deg = float(
+            self.get_parameter(
+                "stopline_edge_pair_maximum_angle_difference_deg"
+            ).value
+        )
+        self.stopline_edge_pair_minimum_interior_contrast = float(
+            self.get_parameter(
+                "stopline_edge_pair_minimum_interior_contrast"
+            ).value
         )
         self.stopline_horizontal_close_ratio = float(
             self.get_parameter("stopline_horizontal_close_ratio").value
@@ -1260,6 +1319,40 @@ class StackTrafficNode(Node):
             )
         if self.stopline_adaptive_margin < 0.0:
             raise ValueError("stopline_adaptive_margin은 0 이상이어야 합니다.")
+        if not 0 <= self.stopline_local_contrast_minimum_value <= 255:
+            raise ValueError(
+                "stopline_local_contrast_minimum_value는 0~255여야 합니다."
+            )
+        if not 0.0 < self.stopline_local_contrast_delta <= 255.0:
+            raise ValueError(
+                "stopline_local_contrast_delta는 0보다 크고 255 이하여야 합니다."
+            )
+        if not 0.03 <= self.stopline_local_contrast_background_ratio <= 0.50:
+            raise ValueError(
+                "stopline_local_contrast_background_ratio는 0.03~0.50이어야 합니다."
+            )
+        if self.stopline_local_contrast_clahe_clip_limit <= 0.0:
+            raise ValueError(
+                "stopline_local_contrast_clahe_clip_limit는 0보다 커야 합니다."
+            )
+        if not 0 <= self.stopline_edge_pair_canny_low <= 255:
+            raise ValueError("stopline_edge_pair_canny_low는 0~255여야 합니다.")
+        if not self.stopline_edge_pair_canny_low < self.stopline_edge_pair_canny_high <= 255:
+            raise ValueError(
+                "stopline_edge_pair_canny_high는 low보다 크고 255 이하여야 합니다."
+            )
+        if not 0.10 <= self.stopline_edge_pair_minimum_length_ratio <= 1.0:
+            raise ValueError(
+                "stopline_edge_pair_minimum_length_ratio는 0.10~1.0이어야 합니다."
+            )
+        if not 0.0 <= self.stopline_edge_pair_maximum_angle_difference_deg <= 15.0:
+            raise ValueError(
+                "stopline_edge_pair_maximum_angle_difference_deg는 0~15여야 합니다."
+            )
+        if not 0.0 <= self.stopline_edge_pair_minimum_interior_contrast <= 255.0:
+            raise ValueError(
+                "stopline_edge_pair_minimum_interior_contrast는 0~255여야 합니다."
+            )
         if not 0.0 < self.stopline_horizontal_close_ratio <= 0.10:
             raise ValueError(
                 "stopline_horizontal_close_ratio는 0 초과 0.10 이하여야 합니다."
@@ -1527,27 +1620,30 @@ class StackTrafficNode(Node):
             sample_bbox=sample_bbox,
         )
 
+    def _empty_stopline_runtime(self) -> StopLineRuntime:
+        return StopLineRuntime(
+            detection=None,
+            depth=self._empty_stopline_depth(),
+            current_camera_z_m=math.nan,
+            median_camera_z_m=math.nan,
+            valid_distance_samples=0,
+            median_y_px=math.nan,
+            current_y_ratio=math.nan,
+            median_y_ratio=math.nan,
+            valid_y_samples=0,
+            stable=False,
+            depth_near=False,
+            y_near=False,
+            near=False,
+        )
+
     def _process_stopline(
         self,
         frame: np.ndarray,
         depth_mm: Optional[np.ndarray],
     ) -> StopLineRuntime:
         if not self.stopline_detection_enabled:
-            return StopLineRuntime(
-                detection=None,
-                depth=self._empty_stopline_depth(),
-                current_camera_z_m=math.nan,
-                median_camera_z_m=math.nan,
-                valid_distance_samples=0,
-                median_y_px=math.nan,
-                current_y_ratio=math.nan,
-                median_y_ratio=math.nan,
-                valid_y_samples=0,
-                stable=False,
-                depth_near=False,
-                y_near=False,
-                near=False,
-            )
+            return self._empty_stopline_runtime()
 
         detection = detect_stop_line(
             frame=frame,
@@ -1559,6 +1655,29 @@ class StackTrafficNode(Node):
             maximum_saturation=self.stopline_maximum_saturation,
             adaptive_percentile=self.stopline_adaptive_percentile,
             adaptive_margin=self.stopline_adaptive_margin,
+            local_contrast_enabled=self.stopline_local_contrast_enabled,
+            local_contrast_minimum_value=(
+                self.stopline_local_contrast_minimum_value
+            ),
+            local_contrast_delta=self.stopline_local_contrast_delta,
+            local_contrast_background_ratio=(
+                self.stopline_local_contrast_background_ratio
+            ),
+            local_contrast_clahe_clip_limit=(
+                self.stopline_local_contrast_clahe_clip_limit
+            ),
+            edge_pair_enabled=self.stopline_edge_pair_enabled,
+            edge_pair_canny_low=self.stopline_edge_pair_canny_low,
+            edge_pair_canny_high=self.stopline_edge_pair_canny_high,
+            edge_pair_minimum_length_ratio=(
+                self.stopline_edge_pair_minimum_length_ratio
+            ),
+            edge_pair_maximum_angle_difference_deg=(
+                self.stopline_edge_pair_maximum_angle_difference_deg
+            ),
+            edge_pair_minimum_interior_contrast=(
+                self.stopline_edge_pair_minimum_interior_contrast
+            ),
             horizontal_close_ratio=(
                 self.stopline_horizontal_close_ratio
             ),
@@ -1881,7 +2000,21 @@ class StackTrafficNode(Node):
                 else 0.9 * self.filtered_fps + 0.1 * instant_fps
             )
 
-        stopline_runtime = self._process_stopline(frame, depth_mm)
+        # 정지선 인지는 확정 적색 이후에만 시작한다. 적색과 같은 프레임에서는 아직
+        # latch가 갱신되기 전이므로 다음 카메라 프레임(통상 100ms 뒤)부터 시작한다.
+        # 비적색 동안의 흰 선 이력은 적색 진입에 섞이지 않도록 비운다.
+        if self.red_phase_latched:
+            stopline_runtime = self._process_stopline(frame, depth_mm)
+        else:
+            self.stopline_y_history.clear()
+            self.stopline_y_history.extend(
+                [math.nan] * self.stopline_detection_window
+            )
+            self.stopline_distance_history.clear()
+            self.stopline_distance_history.extend(
+                [math.nan] * self.stopline_depth_window
+            )
+            stopline_runtime = self._empty_stopline_runtime()
 
         # CPU 환경에서는 YOLO가 가장 비싸다. 첫 프레임과 지정 간격의
         # 프레임에서만 추론하고, 사이 프레임은 아래 template 추적기로
@@ -2072,6 +2205,18 @@ class StackTrafficNode(Node):
                     else:
                         bbox = None
                         bbox_source = "none"
+        color_bbox = bbox
+        anchored_color = False
+        if (
+            color_bbox is None
+            and self.red_phase_latched
+            and self.red_phase_target_bbox is not None
+        ):
+            # 적색으로 확정했던 동일 housing 위치만 최신 프레임에서 다시 본다.
+            # 초록 화살표처럼 점등 모양이 바뀌어 YOLO/template이 target을 놓쳐도
+            # 화면의 다른 초록 물체가 아니라 이 anchor 안의 초록만 해제 후보다.
+            color_bbox = self.red_phase_target_bbox
+            anchored_color = True
         (
             hsv_red_raw,
             hsv_green_raw,
@@ -2082,7 +2227,7 @@ class StackTrafficNode(Node):
             green_mask,
         ) = classify_signal_color(
             frame=frame,
-            bbox=bbox,
+            bbox=color_bbox,
             minimum_red_ratio=self.minimum_red_ratio,
             minimum_green_ratio=self.minimum_green_ratio,
             red_hue_upper=self.red_hue_upper,
@@ -2092,19 +2237,32 @@ class StackTrafficNode(Node):
         )
         red_raw = int(bool(hsv_red_raw))
         green_raw = int(bool(hsv_green_raw))
-        color_source = "hsv" if bbox is not None else "none"
+        anchored_green_fresh = should_accept_anchored_green(
+            red_phase_latched=self.red_phase_latched,
+            anchor_available=anchored_color,
+            green_raw=bool(green_raw),
+        )
+        green_observation_fresh = bool(
+            detection_fresh or anchored_green_fresh
+        )
+        color_source = (
+            "hsv_anchor" if anchored_color
+            else "hsv" if color_bbox is not None
+            else "none"
+        )
         # 미검출/unknown을 0표로 넣으면 간헐적인 YOLO miss마다 투표가
         # 씻긴다. 유효 색 관측만 누적하고 target을 잃을 때 전체를 비운다.
         # template 적색은 같은 target에서 fresh YOLO 적색을 최소 한 번
-        # 확인한 뒤에만 투표한다. 초록/clear에는 항상 fresh YOLO가 필요하다.
+        # 확인한 뒤에만 투표한다. 초록은 fresh YOLO 또는 확정 적색 anchor의
+        # 최신 영상에서만, clear는 항상 fresh YOLO에서만 진행한다.
         if detection_fresh and red_raw:
             self.red_fresh_seeded = True
-        elif detection_fresh and green_raw:
+        elif green_observation_fresh and green_raw:
             self.red_fresh_seeded = False
         vote_observation_valid = bool(
-            bbox is not None
+            color_bbox is not None
             and should_record_color_vote(
-                detection_fresh=bool(detection_fresh),
+                detection_fresh=green_observation_fresh,
                 red_raw=bool(red_raw),
                 green_raw=bool(green_raw),
                 red_fresh_seeded=bool(
@@ -2116,13 +2274,31 @@ class StackTrafficNode(Node):
         if vote_observation_valid:
             self.red_history.append(red_raw)
             self.green_history.append(
-                green_raw if detection_fresh else 0
+                green_raw if green_observation_fresh else 0
             )
-            self.bbox_observed_history.append(int(detection_fresh))
+            self.bbox_observed_history.append(
+                int(green_observation_fresh)
+            )
         red_votes = sum(self.red_history)
         green_votes = sum(self.green_history)
         red_active = int(red_votes >= self.minimum_red_votes)
         green_active = int(green_votes >= self.minimum_green_votes)
+
+        # 확정 적색을 실제로 보던 housing 위치를 저장한다. 적색 추적이 이어지는
+        # 동안 갱신해 차량 접근에 따른 화면상 이동을 따라가고, stopline 프레임에서
+        # bbox가 사라져도 같은 위치의 비원형 초록 점등을 확인할 수 있게 한다.
+        if red_active and bbox is not None:
+            self.red_phase_target_bbox = bbox
+
+        # 적색과 정지선이 서로 다른 프레임에서 안정 검출되는 실차 패턴을 허용한다.
+        # 한 번 확정한 적색은 bbox/YOLO 일시 소실로 해제하지 않고 fresh YOLO 또는
+        # 확정 적색 anchor의 초록 3/5만 전환 근거로 쓴다. 동시 활성에서는 적색 우선.
+        was_red_phase = self.red_phase_latched
+        self.red_phase_latched = update_red_phase_latch(
+            current=self.red_phase_latched,
+            red_active=bool(red_active),
+            green_active=bool(green_active),
+        )
 
         proximity_reached = bool(stopline_runtime.near)
         clear_bbox_observations = sum(self.bbox_observed_history)
@@ -2137,13 +2313,13 @@ class StackTrafficNode(Node):
             )
         )
         # 적색 정지 래치:
-        # - 진입에는 적색 + 정지선 근접 gate 도달이 모두 필요하다.
+        # - 진입에는 확정 적색 페이즈 + 정지선 근접 gate 도달이 모두 필요하다.
         # - 신호등 bbox 미검출만으로는 해제하지 않는다.
-        # - bbox가 유지되고 최근 전체 투표창에서 적색이 없으면 재출발한다.
+        # - fresh bbox 또는 확정 적색 anchor 안의 초록 3/5에서 재출발한다.
         was_stopped = self.stop_required_latched
         self.stop_required_latched = update_stop_latch(
             current=self.stop_required_latched,
-            red_active=bool(red_active),
+            red_active=self.red_phase_latched,
             pixel_approaching=proximity_reached,
             green_active=bool(green_active),
             resume_on_green=self.resume_on_green,
@@ -2152,10 +2328,14 @@ class StackTrafficNode(Node):
         )
         if not was_stopped and self.stop_required_latched:
             self.stop_target_bbox = (
-                bbox if bbox is not None else self.tracked_bbox
+                bbox if bbox is not None
+                else self.tracked_bbox if self.tracked_bbox is not None
+                else self.red_phase_target_bbox
             )
         elif was_stopped and not self.stop_required_latched:
             self.stop_target_bbox = None
+        if was_red_phase and not self.red_phase_latched:
+            self.red_phase_target_bbox = None
 
         if (
             self.startup_hold_latched
@@ -2184,14 +2364,19 @@ class StackTrafficNode(Node):
             )
             else -1.0
         )
+        metric_stopline_detected = bool(
+            stopline_runtime.stable
+            and stopline_runtime.depth.accepted
+            and math.isfinite(published_stopline_distance)
+        )
         self._publish(
             bool(final_stop),
             published_stopline_distance,
-            red_active=bool(red_active),
-            green_active=bool(green_active),
-            stopline_detected=bool(
-                stopline_runtime.detection is not None
-                and stopline_runtime.detection.detected
+            red_active=bool(self.red_phase_latched),
+            green_active=bool(green_active and not self.red_phase_latched),
+            stopline_detected=metric_stopline_detected,
+            fail_safe_stop=bool(
+                self.camera_fault_latched or self.startup_hold_latched
             ),
         )
 
@@ -2217,11 +2402,13 @@ class StackTrafficNode(Node):
                 f"{self.template_tracking_max_consecutive_failures} "
                 f"track_recovered={int(tracking_recovered)} | "
                 f"color_src={color_source} "
+                f"red_anchor={int(self.red_phase_target_bbox is not None)} "
                 f"hsv_red={hsv_red_raw} "
                 f"hsv_green={hsv_green_raw} | "
                 f"red_raw={red_raw} "
                 f"red_votes={red_votes}/{self.vote_window} "
                 f"red_active={red_active} "
+                f"red_phase={int(self.red_phase_latched)} "
                 f"green_raw={green_raw} "
                 f"green_votes={green_votes}/{self.vote_window} "
                 f"green_active={green_active} | "
@@ -2277,6 +2464,7 @@ class StackTrafficNode(Node):
         red_active: bool = False,
         green_active: bool = False,
         stopline_detected: bool = False,
+        fail_safe_stop: bool = True,
     ) -> None:
         msg = TrafficStop()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -2287,9 +2475,10 @@ class StackTrafficNode(Node):
         )
         msg.stop_required = stop_required
         msg.stop_distance = float(stop_distance_m)
-        msg.red_active = bool(red_active)
-        msg.green_active = bool(green_active)
-        msg.stopline_detected = bool(stopline_detected)
+        msg.red_active = red_active
+        msg.green_active = green_active
+        msg.stopline_detected = stopline_detected
+        msg.fail_safe_stop = fail_safe_stop
         self.publisher.publish(msg)
 
     def _show_debug(
