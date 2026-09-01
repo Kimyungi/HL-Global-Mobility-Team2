@@ -81,7 +81,10 @@ class CameraTrafficRefTestNode(Node):
         self.declare_parameter("log_period_ms", 100)
         self.declare_parameter("default_v_ref", 1.0)
         self.declare_parameter("stopline_reset_distance_m", 1.5)
-        self.declare_parameter("stop_distance_m", 0.5)
+        # adas_mgm/core/mgm_step.cpp의 traffic_stop_offset_m과 동일한 값으로
+        # 맞춘다 — 2026-09-02 사용자 지정 0.5→1.0m (seed 1.5m와의 차 0.5m가
+        # 그대로 제동 구간).
+        self.declare_parameter("stop_distance_m", 1.0)
         # 빈 문자열이면 저장소 안 log/camera_traffic_test/<타임스탬프>.csv에
         # 자동 저장 — /tmp 스크래치패드는 세션 재시작 시 지워지므로 쓰지 않는다.
         self.declare_parameter("csv_path", "")
