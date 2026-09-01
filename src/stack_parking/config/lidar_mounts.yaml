@@ -35,33 +35,34 @@ lidar_mounts:
     yaw_deg: -87.0
     note: "앞범퍼. stack_avoid 와 같은 유닛·같은 토픽"
   left:
-    x: 0.310
-    y: 0.155
+    x: 0.294739
+    y: 0.171568
     z: 0.065
-    # ★ 2026-08-13 RViz 확인 후 지정: **스캔 raw 180도가 정면**(= 차량 좌측)이고
-    #   raw 120~250 도만 쓴다. 정면 기준 -60 / +70 로 비대칭이다 — 의도된 값이다.
-    #   vehicle frame 표기: 센서각 = vehicle각 - yaw -> 중심 95 - (-90) = 185, 폭 130
-    #     -> 센서 기준 120 ~ 250. 우측(정면 180, 폭 120)과 같은 구성이다.
-    fov_center_deg: 95.0
-    fov_width_deg: 130.0
-    # 장착 yaw — 2026-08-14 실차 확정. 전제: rplidar inverted=true.
-    #   RP 는 정면이 raw 180 이고, 그 값은 각도 부호 반전의 **고정점**이라
-    #   inverted 를 바꿔도 yaw 는 그대로다 (YD 와 다른 점 — 헷갈리기 쉽다).
-    yaw_deg: -89.8
-    note: "중심선에서 +155mm"
+    # YDLiDAR raw 270도가 차량 좌측(+90도)을 향한다. 요청 범위 raw 200~340도는
+    # 산술상 140도이므로, "사이각은 무조건 110도" 조건을 우선해 그 안쪽의
+    # raw 215~325도(270 ±55도)만 사용한다.
+    fov_center_deg: 90.0
+    fov_width_deg: 110.0
+    # reversion=true/inverted=false이면 raw 270도는 scan +90도다.
+    # 차량 좌측(+90) - scan 정면(+90) = TF yaw 0도.
+    yaw_deg: 2.827857
+    fov_min_raw_deg: 215.0
+    fov_max_raw_deg: 325.0
+    note: "2026-09-01 앞/뒤 기준 벽 보정 완료(RMS 0.0099m)"
   right:
-    x: 0.310
-    y: -0.155
+    x: 0.302170
+    y: -0.224331
     z: 0.065
-    # ★ 2026-08-13 RViz 확인 후 지정: 이 유닛은 **스캔 raw 180도가 정면**(= 차량 우측)이고
-    #   raw 110~230 도만 쓴다. 정면 기준 좌우가 대칭이 아니다(-70 / +50) — 의도된 값이다.
-    #   vehicle frame 표기로 옮긴 것이 아래 두 값이다:
-    #     센서각 = vehicle각 - yaw  ->  중심 -100 - 90 = -190 ≡ 170,  폭 120  ->  110~230
-    fov_center_deg: -100.0
-    fov_width_deg: 120.0
-    # 장착 yaw — 2026-08-14 실차 확정. 좌측과 같은 모델, 부호만 반대.
-    yaw_deg: 87.4
-    note: "중심선에서 −155mm"
+    # 좌측과 같은 YDLiDAR/FOV를 쓰되 센서 정면은 차량 우측(-90도)을 향한다.
+    # raw 200~340도 안쪽에서 110도를 유지하는 raw 215~325도만 사용한다.
+    fov_center_deg: -90.0
+    fov_width_deg: 110.0
+    # 차량 우측(-90) - scan 정면(+90) = -180도. +180과 같은 회전이지만
+    # 좌/우 부호 규약을 명확히 하려고 -180도로 기록한다.
+    yaw_deg: -179.762631
+    fov_min_raw_deg: 215.0
+    fov_max_raw_deg: 325.0
+    note: "2026-09-01 앞/뒤 기준 벽 보정 완료(RMS 0.0065m)"
   rear:
     x: -0.055
     y: 0.0
@@ -84,8 +85,8 @@ lidar_mounts:
 #   - 최종 확인 수단은 `tools/lidar_fov.py mask` (MEASUREMENTS.md D절, 미완).
 #   - 스캔프레임 적용각 = 위 vehicle-frame 각도 − 해당 유닛의 장착 yaw.
 
-# 장착 yaw 최종 (2026-08-14, 겹침 역산으로 확정)
-#     front -87.0 |  right +87.4 |  left -89.8 |  rear +90 (미검증)
+# 장착 yaw 현재값
+#     front -87.0 | right -179.762631 | left +2.827857 | rear +90
 #
 #   앞·좌·우는 `pair_calibrate.py` 로 두 겹침 쌍(앞↔우, 앞↔좌)을 동시에 풀어 얻었다.
 #   좌·우가 같은 모델이라 거리 바이어스가 같아야 한다는 구속이 절대 yaw 를 정했다 —
@@ -98,18 +99,11 @@ lidar_mounts:
 #
 #   ★ 이 값은 **드라이버 각도 옵션과 한 세트**다. 하나라도 바꾸면 전부 무효:
 #       YD T-mini Plus : lidar_type=1, reversion=true, inverted=false
-#       RPLiDAR C1M1   : inverted=true
+#       좌/우 YD도 동일: lidar_type=1, reversion=true, inverted=false
 #     (multi_lidar_fusion/launch/multi_lidar_drivers.launch.py)
 #
-#   ★ 겪은 함정 — 같은 실수를 반복하지 않기 위해:
-#     1) lidar_type=0 으로 띄우면 거리가 **4배**로 나온다 (T-mini Plus 는 1).
-#     2) inverted 는 각도 **부호 반전(거울상)**. 정면에 판을 두고 yaw 를 맞추면
-#        정면에서는 상쇄되고 **좌우만 뒤집혀** 보여서 원인 찾기가 어렵다.
-#     3) 그 반전을 되돌릴 때 yaw 를 네 대 모두 뒤집으면 안 된다. 고정점이 raw 0/180 이라
-#        YD(정면 raw 270)만 부호 반전이 필요하고 RP(정면 raw 180)는 그대로 둬야 한다.
-#        일괄 적용했다가 좌·우 점이 2개/6개만 남았다.
-#
-#   검산: 같은 모델끼리 센서기준 시야중심이 같아야 한다 — YD 앞/뒤 raw +90, RP 좌/우 raw ±175.
-#   측정법: ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=rp0
+#   좌/우 검산: 두 센서 모두 raw 270 중심, 폭 110도다. 드라이버 scan 중심은 +90도이며
+#   TF yaw만 좌 0도 / 우 -180도로 달라 차량의 서로 반대쪽을 향한다.
+#   측정법: ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=b1
 #           RViz 0~360도 눈금에서 읽고  yaw_deg = (물체의 차량 기준 방위) - (읽은 센서 각도)
 fov_status: geometric_upper_bound   # 값: geometric_upper_bound | measured

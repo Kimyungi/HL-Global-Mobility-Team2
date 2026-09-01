@@ -4,7 +4,7 @@
   <name>multi_lidar_fusion</name>
   <version>0.1.0</version>
   <description>
-    2D LiDAR 4대(YDLiDAR T-mini Plus x2, SLAMTEC RPLiDAR C1M1 x2)를 하나의 가상 360도
+    2D LiDAR 4대(YDLiDAR T-mini Plus x4)를 하나의 가상 360도
     LiDAR로 추상화하는 융합 노드. 출력은 /lidar/merged_cloud (PointCloud2) 와
     /lidar/merged_scan (LaserScan), 둘 다 base_link 기준.
     회피 로직(stack_avoid)은 /lidar/merged_scan 하나만 구독하면 된다.
@@ -28,7 +28,6 @@
   <exec_depend>rviz2</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <!-- 센서 드라이버 (multi_lidar_drivers.launch.py 에서만 사용. 융합 코어는 무관) -->
-  <exec_depend>rplidar_ros</exec_depend>
   <exec_depend>ydlidar_ros2_driver</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
