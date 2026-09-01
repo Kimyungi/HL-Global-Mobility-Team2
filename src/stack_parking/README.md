@@ -10,8 +10,8 @@ extrinsic 적용이 끝난 `base_link` cloud여야 하며, 다른 frame은 조�
 1. **SLAM** — 전·후 cloud를 timestamp로 한 쌍씩 소비하여 최대 10Hz로 ICP를
    bootstrap한다. `parking_map` 시작 자세는 `(0,0,0)`이다.
 2. **MAPPING** — `space_found=false`인 동안 endpoint map을 누적한다. dSPACE
-   `VehicleVector.v`와 `/perception/imu`의 상대 yaw로 ICP prior를 만들고,
-   `VehicleVector.x/y/yaw`는 사용하지 않는다. RTK FIXED `GpsPath`의 새 delta만
+   `VehicleVector.v/str`의 자전거 모델로 ICP prior를 만들고,
+   `VehicleVector.x/y/yaw`와 IMU는 사용하지 않는다. 필요 시 RTK FIXED `GpsPath`의 새 delta만
    innovation gate 뒤 x/y drift 보정에 쓴다.
 3. `GpsPath.parking_zone` 상승 에지 또는 문자열 명령에서 평행(1자)/직각(T자),
    좌/우를 결정한다. 양쪽 정적 경계가 있는 gap을 3 frame 연속 확인한다. 직각 주차는 gap 내부 후면

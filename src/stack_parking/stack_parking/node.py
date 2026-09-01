@@ -137,9 +137,11 @@ class StackParkingNode(Node):
         self.vehicle_sub = self.create_subscription(
             VehicleVector, str(self._p('vehicle_topic')), self._on_vehicle,
             qos_profile_sensor_data)
-        self.imu_sub = self.create_subscription(
-            Imu, str(self._p('imu_topic')), self._on_imu,
-            qos_profile_sensor_data)
+        self.imu_sub = None
+        if bool(self._p('prior.use_imu')):
+            self.imu_sub = self.create_subscription(
+                Imu, str(self._p('imu_topic')), self._on_imu,
+                qos_profile_sensor_data)
         self.gps_sub = self.create_subscription(
             GpsPath, str(self._p('gps_topic')), self._on_gps_path, 1)
         self.gps_command_sub = self.create_subscription(
@@ -180,10 +182,17 @@ class StackParkingNode(Node):
             'cloud.self_filter_margin_m': 0.02,
             'prior.velocity_timeout_s': 0.25,
             'prior.imu_timeout_s': 0.25,
+            'prior.steering_timeout_s': 0.25,
             'prior.max_dt_s': 0.30,
             'prior.max_speed_mps': 3.0,
             'prior.max_imu_rate_deg_s': 220.0,
             'prior.imu_jump_margin_deg': 3.0,
+            'prior.use_imu': False,
+            'prior.use_steering': True,
+            'prior.steering_sign': -1.0,
+            'prior.steering_bias_deg': 0.0,
+            'prior.steering_deadband_deg': 0.3,
+            'prior.max_steering_deg': 30.0,
             'gps.use_position_correction': True,
             'gps.use_yaw_fallback': True,
             'gps.fix_quality': 4,
@@ -268,12 +277,23 @@ class StackParkingNode(Node):
         return MotionPriorConfig(
             velocity_timeout_s=float(self._p('prior.velocity_timeout_s')),
             imu_timeout_s=float(self._p('prior.imu_timeout_s')),
+            steering_timeout_s=float(self._p('prior.steering_timeout_s')),
             max_dt_s=float(self._p('prior.max_dt_s')),
             max_speed_mps=float(self._p('prior.max_speed_mps')),
             max_imu_rate_rad_s=math.radians(
                 float(self._p('prior.max_imu_rate_deg_s'))),
             imu_jump_margin_rad=math.radians(
                 float(self._p('prior.imu_jump_margin_deg'))),
+            use_imu=bool(self._p('prior.use_imu')),
+            use_steering=bool(self._p('prior.use_steering')),
+            wheelbase_m=float(self._p('vehicle.wheelbase_m')),
+            steering_sign=float(self._p('prior.steering_sign')),
+            steering_bias_rad=math.radians(
+                float(self._p('prior.steering_bias_deg'))),
+            steering_deadband_rad=math.radians(
+                float(self._p('prior.steering_deadband_deg'))),
+            max_steering_rad=math.radians(
+                float(self._p('prior.max_steering_deg'))),
             gps_fix_quality=int(self._p('gps.fix_quality')),
             gps_position_gain=(
                 float(self._p('gps.position_gain'))
@@ -335,8 +355,9 @@ class StackParkingNode(Node):
         self.latest_vehicle = msg
         now_s = self._clock_s()
         self.latest_vehicle_s = now_s
-        self.prior.update_velocity(
-            float(msg.v), self._message_stamp_s(msg.header.stamp, now_s))
+        self.prior.update_vehicle(
+            float(msg.v), float(msg.str),
+            self._message_stamp_s(msg.header.stamp, now_s))
 
     def _on_imu(self, msg: Imu) -> None:
         q = msg.orientation
@@ -921,6 +942,10 @@ class StackParkingNode(Node):
             'cloud_sync_drops': str(self.cloud_pairer.sync_drops),
             'motion_prior_source': prior.source,
             'velocity_fresh': str(prior.velocity_fresh),
+            'steering_fresh': str(prior.steering_fresh),
+            'steering_ros_deg': '%.3f' % math.degrees(prior.steering_rad),
+            'bicycle_yaw_rate_deg_s': (
+                '%.3f' % math.degrees(prior.yaw_rate_rad_s)),
             'vehicle_vector_age_s': (
                 'inf' if not math.isfinite(now_s - self.latest_vehicle_s)
                 else '%.3f' % (now_s - self.latest_vehicle_s)),

@@ -30,21 +30,29 @@
       self_filter_margin_m: 0.02
 
     # Prediction is an ICP initial guess only. VehicleVector.x/y/yaw are not
-    # consumed: v is integrated in parking_map and yaw comes from IMU delta.
+    # consumed. dSPACE RX v+str drive a kinematic-bicycle prior; the measured
+    # str sign is opposite ROS +yaw, as verified in stack_avoid field logs.
     prior:
       velocity_timeout_s: 0.25
       imu_timeout_s: 0.25
+      steering_timeout_s: 0.25
       max_dt_s: 0.30
       max_speed_mps: 3.0
       max_imu_rate_deg_s: 220.0
       imu_jump_margin_deg: 3.0
+      use_imu: false
+      use_steering: true
+      steering_sign: -1.0
+      steering_bias_deg: 0.0
+      steering_deadband_deg: 0.3
+      max_steering_deg: 30.0
 
     gps:
       # GpsPath delta is previous-base_link -> current-base_link. Only exact
       # RTK FIXED quality 4 + HEADING_FUSED is accepted; FLOAT(5), tangent and
       # reverse-ambiguous COG are intentionally rejected.
-      use_position_correction: true
-      use_yaw_fallback: true
+      use_position_correction: false
+      use_yaw_fallback: false
       fix_quality: 4
       position_gain: 0.15
       innovation_gate_m: 1.50

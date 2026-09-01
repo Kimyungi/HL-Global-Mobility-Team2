@@ -169,6 +169,65 @@ class FrontRearLocalizationTest(unittest.TestCase):
         self.assertAlmostEqual(pose.x, 2.0 / math.pi, places=6)
         self.assertAlmostEqual(pose.y, 2.0 / math.pi - 1.0, places=6)
 
+    def test_vehicle_rx_steering_integrates_bicycle_yaw_without_imu(self):
+        prior = MotionPrior(MotionPriorConfig(
+            velocity_timeout_s=2.0,
+            steering_timeout_s=2.0,
+            max_dt_s=2.0,
+            use_imu=False,
+            use_steering=True,
+            wheelbase_m=1.0,
+            steering_sign=-1.0,
+            steering_deadband_rad=0.0,
+            max_steering_rad=math.radians(60.0),
+        ))
+        # dSPACE reports the opposite sign: str=-45deg is ROS left steering.
+        prior.update_vehicle(1.0, -math.pi / 4.0, 0.0)
+        prior.predict(0.0)
+        prior.update_vehicle(1.0, -math.pi / 4.0, 1.0)
+        pose = prior.predict(1.0)
+        self.assertAlmostEqual(pose.x, math.sin(1.0), places=6)
+        self.assertAlmostEqual(pose.y, 1.0 - math.cos(1.0), places=6)
+        self.assertAlmostEqual(pose.yaw, 1.0, places=6)
+        self.assertEqual(prior.last_status.source, 'vehicle_bicycle')
+        self.assertTrue(prior.last_status.velocity_fresh)
+        self.assertTrue(prior.last_status.steering_fresh)
+        self.assertFalse(prior.last_status.imu_fresh)
+
+    def test_vehicle_rx_reverse_changes_bicycle_yaw_direction(self):
+        prior = MotionPrior(MotionPriorConfig(
+            velocity_timeout_s=2.0,
+            steering_timeout_s=2.0,
+            max_dt_s=2.0,
+            use_imu=False,
+            use_steering=True,
+            wheelbase_m=1.0,
+            steering_sign=-1.0,
+            steering_deadband_rad=0.0,
+        ))
+        prior.update_vehicle(-1.0, -math.pi / 4.0, 0.0)
+        prior.predict(0.0)
+        prior.update_vehicle(-1.0, -math.pi / 4.0, 1.0)
+        pose = prior.predict(1.0)
+        self.assertAlmostEqual(pose.yaw, -1.0, places=6)
+
+    def test_vehicle_rx_steering_deadband_suppresses_center_noise(self):
+        prior = MotionPrior(MotionPriorConfig(
+            velocity_timeout_s=2.0,
+            steering_timeout_s=2.0,
+            max_dt_s=2.0,
+            use_imu=False,
+            use_steering=True,
+            steering_deadband_rad=math.radians(0.3),
+        ))
+        prior.update_vehicle(1.0, math.radians(0.2), 0.0)
+        prior.predict(0.0)
+        prior.update_vehicle(1.0, math.radians(0.2), 1.0)
+        pose = prior.predict(1.0)
+        self.assertAlmostEqual(pose.x, 1.0, places=6)
+        self.assertAlmostEqual(pose.y, 0.0, places=6)
+        self.assertAlmostEqual(pose.yaw, 0.0, places=6)
+
     def test_gps_delta_is_composed_in_previous_vehicle_frame(self):
         prior = MotionPrior(MotionPriorConfig(
             max_dt_s=1.0,

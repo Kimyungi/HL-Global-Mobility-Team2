@@ -114,10 +114,18 @@ class FrontRearCloudPairer:
 class MotionPriorConfig:
     velocity_timeout_s: float = 0.25
     imu_timeout_s: float = 0.25
+    steering_timeout_s: float = 0.25
     max_dt_s: float = 0.30
     max_speed_mps: float = 3.0
     max_imu_rate_rad_s: float = math.radians(220.0)
     imu_jump_margin_rad: float = math.radians(3.0)
+    use_imu: bool = True
+    use_steering: bool = False
+    wheelbase_m: float = 0.595
+    steering_sign: float = -1.0
+    steering_bias_rad: float = 0.0
+    steering_deadband_rad: float = math.radians(0.3)
+    max_steering_rad: float = math.radians(30.0)
     gps_fix_quality: int = 4
     gps_position_gain: float = 0.15
     gps_innovation_gate_m: float = 1.50
@@ -128,13 +136,16 @@ class MotionPriorConfig:
 class MotionPriorStatus:
     source: str = 'uninitialized'
     velocity_fresh: bool = False
+    steering_fresh: bool = False
     imu_fresh: bool = False
+    steering_rad: float = 0.0
+    yaw_rate_rad_s: float = 0.0
     gps_corrected: bool = False
     gps_innovation_m: float = math.inf
 
 
 class MotionPrior:
-    """Predict a local pose from actual speed, IMU yaw and gated GNSS delta.
+    """Predict a local pose from vehicle RX, optional IMU and gated GNSS.
 
     IMU yaw may have an arbitrary zero; only differences are used.  GPS deltas
     are accumulated with :func:`compose` because ``dx``/``dy`` are expressed
@@ -151,6 +162,8 @@ class MotionPrior:
         self._last_predict_s: Optional[float] = None
         self._velocity_mps = 0.0
         self._velocity_stamp_s = -math.inf
+        self._steering_rad = 0.0
+        self._steering_stamp_s = -math.inf
         self._imu_yaw_rad: Optional[float] = None
         self._imu_stamp_s = -math.inf
         self._last_used_imu_yaw: Optional[float] = None
@@ -166,6 +179,19 @@ class MotionPrior:
         limit = max(0.0, self.config.max_speed_mps)
         self._velocity_mps = max(-limit, min(limit, float(velocity_mps)))
         self._velocity_stamp_s = float(stamp_s)
+
+    def update_steering(self, steering_rad: float, stamp_s: float) -> None:
+        if not math.isfinite(steering_rad) or not math.isfinite(stamp_s):
+            return
+        limit = max(0.0, self.config.max_steering_rad)
+        self._steering_rad = max(-limit, min(limit, float(steering_rad)))
+        self._steering_stamp_s = float(stamp_s)
+
+    def update_vehicle(self, velocity_mps: float, steering_rad: float,
+                       stamp_s: float) -> None:
+        """Consume the two trusted dSPACE RX fields from one sample."""
+        self.update_velocity(velocity_mps, stamp_s)
+        self.update_steering(steering_rad, stamp_s)
 
     def update_imu(self, yaw_rad: float, stamp_s: float) -> None:
         if not math.isfinite(yaw_rad) or not math.isfinite(stamp_s):
@@ -232,18 +258,26 @@ class MotionPrior:
     def predict(self, stamp_s: float) -> Pose2:
         stamp_s = float(stamp_s)
         imu_fresh = (
+            self.config.use_imu
+            and
             self._imu_yaw_rad is not None
             and self._fresh(self._imu_stamp_s, stamp_s,
                             self.config.imu_timeout_s)
         )
         velocity_fresh = self._fresh(
             self._velocity_stamp_s, stamp_s, self.config.velocity_timeout_s)
+        steering_fresh = (
+            self.config.use_steering
+            and self._fresh(self._steering_stamp_s, stamp_s,
+                            self.config.steering_timeout_s)
+        )
 
         if self._last_predict_s is None:
             self._last_predict_s = stamp_s
             self._last_used_imu_yaw = self._imu_yaw_rad if imu_fresh else None
             self.last_status = MotionPriorStatus(
-                'baseline', velocity_fresh, imu_fresh, False, math.inf)
+                source='baseline', velocity_fresh=velocity_fresh,
+                steering_fresh=steering_fresh, imu_fresh=imu_fresh)
             return self.pose
 
         dt = stamp_s - self._last_predict_s
@@ -252,10 +286,13 @@ class MotionPrior:
             self._last_used_imu_yaw = self._imu_yaw_rad if imu_fresh else None
             self._pending_gps_yaw = 0.0
             self.last_status = MotionPriorStatus(
-                'time_reset', velocity_fresh, imu_fresh, False, math.inf)
+                source='time_reset', velocity_fresh=velocity_fresh,
+                steering_fresh=steering_fresh, imu_fresh=imu_fresh)
             return self.pose
 
         yaw_delta = 0.0
+        yaw_rate = 0.0
+        steering_ros = 0.0
         source = 'yaw_held'
         if imu_fresh:
             source = 'imu'
@@ -273,8 +310,24 @@ class MotionPrior:
             self._last_used_imu_yaw = self._imu_yaw_rad
             # Never replay GPS yaw accumulated while direct IMU was healthy.
             self._pending_gps_yaw = 0.0
+        elif velocity_fresh and steering_fresh:
+            steering_ros = self.config.steering_sign * (
+                self._steering_rad - self.config.steering_bias_rad)
+            if abs(steering_ros) <= max(0.0, self.config.steering_deadband_rad):
+                steering_ros = 0.0
+            limit = min(max(0.0, self.config.max_steering_rad),
+                        math.radians(89.0))
+            steering_ros = max(-limit, min(limit, steering_ros))
+            wheelbase = max(1.0e-3, self.config.wheelbase_m)
+            yaw_rate = self._velocity_mps * math.tan(steering_ros) / wheelbase
+            yaw_delta = yaw_rate * dt
+            source = 'vehicle_bicycle'
+            self._last_used_imu_yaw = None
+            self._pending_gps_yaw = 0.0
         else:
             self._last_used_imu_yaw = None
+            if velocity_fresh:
+                source = 'velocity_only'
             if abs(self._pending_gps_yaw) > 0.0:
                 yaw_delta = self._pending_gps_yaw
                 self._pending_gps_yaw = 0.0
@@ -306,7 +359,15 @@ class MotionPrior:
             self._gps_position_pending = False
 
         self.last_status = MotionPriorStatus(
-            source, velocity_fresh, imu_fresh, corrected, innovation_m)
+            source=source,
+            velocity_fresh=velocity_fresh,
+            steering_fresh=steering_fresh,
+            imu_fresh=imu_fresh,
+            steering_rad=steering_ros,
+            yaw_rate_rad_s=yaw_rate,
+            gps_corrected=corrected,
+            gps_innovation_m=innovation_m,
+        )
         return self.pose
 
 
