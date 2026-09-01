@@ -83,6 +83,20 @@ source install/setup.bash
 ros2 launch lidar_fusion_v2 bringup.launch.py
 ```
 
+이 차량에서는 실기에서 인식한 USB 허브 위치를 아래처럼 **고정 배선**으로 사용한다.
+케이블을 다른 포트로 옮기면 위치 이름과 실제 라이다가 달라질 수 있으므로 임의로
+이동하지 않는다.
+
+| 장착 위치 | 고정 장치 링크 | 고정 USB `ID_PATH` |
+|---|---|---|
+| 앞 a1 | `/dev/lidar_front` | `pci-0000:00:14.0-usb-0:1.3:1.0` |
+| 뒤 a2 | `/dev/lidar_rear` | `pci-0000:00:14.0-usb-0:1.2:1.0` |
+| 좌 b1 | `/dev/lidar_left` | `pci-0000:00:14.0-usb-0:1.1:1.0` |
+| 우 b2 | `/dev/lidar_right` | `pci-0000:00:14.0-usb-0:1.4.1:1.0` |
+
+허브나 메인보드를 교체해 `ID_PATH` 자체가 달라진 경우에만 네 라이다의 물리 위치를
+다시 식별한 뒤 `tools/99-fma-lidars.rules`를 함께 갱신한다.
+
 소스 트리의 실행 스크립트를 사용하면 빌드부터 한 명령으로 실행할 수 있다.
 
 ```bash

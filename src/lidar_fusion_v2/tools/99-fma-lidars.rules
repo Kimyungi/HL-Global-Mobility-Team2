@@ -1,7 +1,7 @@
 # FMA four-YDLiDAR fixed-position links (Xanadu-book5, verified 2026-09-01).
-# All four CP2102 units report non-unique identities, so the physical USB hub
-# path is the only stable discriminator. Moving a cable requires updating this
-# file and re-identifying the corresponding sensor position.
+# All four CP2102 units report non-unique identities, so these verified physical
+# USB hub positions are the fixed vehicle wiring contract. Do not move a cable.
+# If the hub or mainboard changes, re-identify all positions before updating it.
 #
 # Install:
 #   sudo cp 99-fma-lidars.rules /etc/udev/rules.d/
