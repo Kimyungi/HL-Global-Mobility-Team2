@@ -1,4 +1,4 @@
-"""stack_gps 노드 — RTK/IMU → /perception/gps_path + relative /perception/imu
+"""stack_gps 노드 — 웨이포인트 CSV + RTK 로버(GGA) → /perception/gps_path
 담당: 김윤기 (팀장)
 
 구성 (wrapper — 판단 로직 없음, CLAUDE.md §5.5):
@@ -33,7 +33,7 @@ from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Path
 from rclpy.qos import DurabilityPolicy, QoSProfile
-from sensor_msgs.msg import Imu, NavSatFix
+from sensor_msgs.msg import NavSatFix
 from tf2_ros import TransformBroadcaster
 
 from stack_gps.gga_link import GgaLink
@@ -176,9 +176,6 @@ class StackGpsNode(Node):
         # 폐기 — imu_link 참조). 자이로는 반시계+ 실측 → 기본 +1.0.
         # 기종 교체·재장착 시 tools/imu_sign_check.py로 재판정.
         self.declare_parameter('imu_yaw_sign', 1.0)
-        self.declare_parameter('imu_topic', '/perception/imu')
-        self.declare_parameter('imu_frame_id', 'imu_link')
-        self.declare_parameter('imu_publish_stale_s', 0.25)
         self.declare_parameter('fusion_alpha', 0.1)   # offset 저역통과 이득
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
         self.declare_parameter('parking_zone_ranges', [0])  # 기본 [0] = 미설정(쌍 안 됨)
@@ -300,10 +297,6 @@ class StackGpsNode(Node):
         self.sub_estop = self.create_subscription(
             EstopRequest, '/perception/estop', self._on_estop, 1)
         self.pub = self.create_publisher(GpsPath, '/perception/gps_path', 1)
-        # Raw gyro-integrated yaw has an arbitrary zero.  Consumers must use
-        # orientation differences, not treat it as an absolute ENU heading.
-        self.pub_imu = self.create_publisher(
-            Imu, str(p('imu_topic').value), 10)
         # 디버그·시각화용 (MGM 계약 아님): RViz Path + 전역 위치 + TF(map→base_link)
         self.pub_viz = self.create_publisher(Path, '/perception/gps_path_viz', 1)
         self.pub_fix = self.create_publisher(NavSatFix, '/perception/gps_fix', 1)
@@ -327,47 +320,10 @@ class StackGpsNode(Node):
         self.timer = self.create_timer(float(p('publish_period').value), self.tick)
         self.status_timer = self.create_timer(2.0, self.report_status)
 
-    def _publish_imu(self, stamp) -> None:
-        if self.imu is None:
-            return
-        yaw_sample = self.imu.latest_yaw_gyro()
-        stale_s = float(self.get_parameter('imu_publish_stale_s').value)
-        if yaw_sample is None or yaw_sample[1] > stale_s:
-            return
-
-        sign = float(self.get_parameter('imu_yaw_sign').value)
-        yaw = sign * float(yaw_sample[0])
-        msg = Imu()
-        msg.header.stamp = stamp
-        msg.header.frame_id = str(self.get_parameter('imu_frame_id').value)
-        msg.orientation.z = math.sin(0.5 * yaw)
-        msg.orientation.w = math.cos(0.5 * yaw)
-        # Roll/pitch are intentionally not sourced from the magnetometer-based
-        # AHRS solution.  A large covariance leaves only the relative yaw
-        # useful to downstream 2-D localization.
-        msg.orientation_covariance = [
-            1.0e6, 0.0, 0.0,
-            0.0, 1.0e6, 0.0,
-            0.0, 0.0, math.radians(1.0) ** 2,
-        ]
-        gyro = self.imu.latest_gyro_z()
-        if gyro is not None and gyro[1] <= stale_s:
-            msg.angular_velocity.z = sign * float(gyro[0])
-            msg.angular_velocity_covariance = [
-                1.0e6, 0.0, 0.0,
-                0.0, 1.0e6, 0.0,
-                0.0, 0.0, math.radians(0.5) ** 2,
-            ]
-        else:
-            msg.angular_velocity_covariance[0] = -1.0
-        msg.linear_acceleration_covariance[0] = -1.0
-        self.pub_imu.publish(msg)
-
     def tick(self):
         msg = GpsPath()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
-        self._publish_imu(msg.header.stamp)
         msg.dx, msg.dy, msg.dyaw = self._pose_delta_tracker.delta
         msg.update = self._pose_delta_tracker.update
 
