@@ -41,7 +41,7 @@ CoreParams params()
   p.wrongway_cycles = 20;
   p.traffic_state_enabled = 1;
   p.traffic_ramp_distance_m = 1.5f;  // 소실 edge에서의 시드 거리
-  p.traffic_stop_offset = 0.5f;      // 가드 문턱 겸 완전 정지 문턱
+  p.traffic_stop_offset = 0.2f;      // 가드 문턱 겸 완전 정지 문턱
   return p;
 }
 
@@ -105,7 +105,7 @@ void testNeverDetectedPassesThroughAtVBase()
 }
 
 // 소실 edge가 거리를 시드(1.5m)로 세팅하고, 실측 차속으로 dead-reckoning
-// 감쇠하며, stop_offset(0.5m) 이하에서 v_ref가 정확히 0이 됨을 확인한다.
+// 감쇠하며, stop_offset(0.2m) 이하에서 v_ref가 정확히 0이 됨을 확인한다.
 void testEdgeSeedsThenDecaysAndFloorsAtZero()
 {
   CoreParams p = params();
