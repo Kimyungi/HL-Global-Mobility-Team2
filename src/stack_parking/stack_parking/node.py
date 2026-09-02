@@ -224,7 +224,7 @@ class StackParkingNode(Node):
             'vehicle.rear_m': 0.090,
             'vehicle.wheelbase_m': 0.595,
             'vehicle.min_turn_radius_m': 1.15,
-            'lidar.rear_x_m': -0.055,
+            'lidar.rear_x_m': -0.110354,
             'icp.scan_voxel_m': 0.06,
             'icp.max_scan_points': 900,
             'icp.map_voxel_m': 0.08,

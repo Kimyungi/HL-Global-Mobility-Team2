@@ -31,7 +31,7 @@ class SpaceDetectorConfig:
     perpendicular_min_depth_m: float = 1.35
     parallel_offset_min_m: float = 0.68
     parallel_offset_max_m: float = 1.00
-    rear_lidar_x_m: float = -0.055
+    rear_lidar_x_m: float = -0.110354
     completion_clearance_m: float = 0.20
     # Plan a little past the threshold so quantization/noise can actually
     # satisfy rear_clearance <= completion_clearance at the path end.

@@ -1,7 +1,7 @@
 # lidar_fusion_v2
 
-기존 합성 구현에 의존하지 않는 4대 2D LiDAR 통합 패키지이다. 앞(a1)·뒤(a2)를
-고정 기준으로 두고, 좌(b1)·우(b2)의 장착 위치만 벽 관측으로 보정한다. 각
+기존 합성 구현에 의존하지 않는 4대 2D LiDAR 통합 패키지이다. 앞(a1)을 좌표계의
+고정 기준으로 두고, 뒤(a2)·좌(b1)·우(b2)를 벽 관측으로 공동 보정한다. 각
 센서의 방향과 시야각은 설정 파일에서 한 번만 읽으며 프레임마다 변경하지 않는다.
 
 ## 입출력
@@ -117,66 +117,69 @@ RViz에는 통합 cloud와 센서별 진단 점군이 함께 등록되어 있다
 ### 실기 드라이버 프로파일
 
 네 센서는 모두 YDLiDAR T-mini Plus이고 `lidar_type=1`, `reversion=true`,
-`inverted=false`, 230400 baud, 10 Hz를 사용한다. 실기 스트림 형식 차이는 아래처럼
-고정되어 있다.
+`inverted=false`, 230400 baud, 10 Hz를 사용한다. 2026-09-02 고정 장착 재시험에서
+네 유닛 모두 4K/가변 해상도/8-bit 조합으로 연속 발행되는 것을 확인했다.
 
 | 위치 | 장치 링크 | sample rate | fixed resolution | intensity |
 |---|---|---:|---:|---:|
-| 앞 a1 | `/dev/lidar_front` | 9K | true | 16 bit |
+| 앞 a1 | `/dev/lidar_front` | 4K | false | 8 bit |
 | 뒤 a2 | `/dev/lidar_rear` | 4K | false | 8 bit |
 | 좌 b1 | `/dev/lidar_left` | 4K | false | 8 bit |
 | 우 b2 | `/dev/lidar_right` | 4K | false | 8 bit |
 
-특히 후면 a2에 a1의 9K/고정 해상도/16 bit 설정을 사용하면 실기에서 checksum
-오류 뒤 데이터 스트림이 종료됐으므로 네 위치의 프로파일을 일괄 통일하지 않는다.
+기존 앞 a1의 9K/고정 해상도/16-bit 설정은 고정 장착 재시험에서 발행이 중단됐다.
+4K/8-bit로 재시작한 뒤 네 원본 토픽 모두 약 10 Hz를 유지했다.
 
-## 앞·뒤 기준 벽 보정 순서
+## 앞 기준 공동 벽 보정 순서
 
-앞·뒤 자세와 네 시야각은 고정하고, 좌·우의 `x`, `y`, `yaw`만 계산한다.
+앞 a1을 좌표계 기준으로 고정하고 뒤 a2와 좌·우의 `x`, `y`, `yaw`를 함께 계산한다.
+네 시야각은 보정 변수가 아니므로 항상 그대로 유지한다. 뒤를 고정 기준으로 가정해
+좌우를 따로 풀면 뒤 yaw 오차가 양쪽 결과에 전파될 수 있으므로, 앞↔옆과 뒤↔옆
+관측을 하나의 강건 최소제곱 문제로 연결한다.
 
 ```mermaid
 flowchart TD
-    S[앞/뒤 자세와 4개 FOV 고정] --> FL[좌전방 벽 캡처: a1 + b1]
+    S[앞 a1과 4개 FOV 고정] --> FL[좌전방 벽 캡처: a1 + b1]
     FL --> RL[벽 위치와 각도를 변경]
     RL --> RLC[좌후방 벽 캡처: a2 + b1]
-    RLC --> L[직선 RANSAC + 강건 최소제곱으로 b1 자세 계산]
-    L --> FR[우전방 벽 캡처: a1 + b2]
+    RLC --> FR[우전방 벽 캡처: a1 + b2]
     FR --> RR[벽 위치와 각도를 변경]
     RR --> RRC[우후방 벽 캡처: a2 + b2]
-    RRC --> R[직선 RANSAC + 강건 최소제곱으로 b2 자세 계산]
-    R --> G{품질/안전 한계 통과?}
+    RRC --> R[직선 RANSAC + a2/b1/b2 공동 강건 최소제곱]
+    R --> G{독립 벽 4구간 검증 통과?}
     G -- 아니오 --> S
-    G -- 예 --> A[fixed_geometry.yaml의 b1/b2만 반영]
+    G -- 예 --> A[fixed_geometry.yaml의 a2/b1/b2 자세만 반영]
     A --> V[새 벽 프레임으로 RMS 재검증]
 ```
 
-한쪽 자세를 계산하려면 서로 다른 각도의 평평한 벽 관측이 최소 2개 필요하다.
+각 옆 라이다는 앞과 뒤 양쪽 기준의 평평한 벽 관측이 모두 필요하다.
 도구는 대응점 수, 벽 길이, 두 센서가 본 직선의 각도 차이와 보정량 안전 한계를
 검사하며 품질이 부족하면 결과를 만들지 않는다.
 
 ```bash
-# 좌측: 앞 기준 캡처 -> 벽 이동/회전 -> 뒤 기준 캡처 -> 계산
+# 학습 데이터: 각 구간을 여러 벽 각도로 반복 캡처
 ros2 run lidar_fusion_v2 wall_calibrator capture --pair front_left
 ros2 run lidar_fusion_v2 wall_calibrator capture --pair rear_left
-ros2 run lidar_fusion_v2 wall_calibrator solve --side left
-
-# 우측: 앞 기준 캡처 -> 벽 이동/회전 -> 뒤 기준 캡처 -> 계산
 ros2 run lidar_fusion_v2 wall_calibrator capture --pair front_right
 ros2 run lidar_fusion_v2 wall_calibrator capture --pair rear_right
-ros2 run lidar_fusion_v2 wall_calibrator solve --side right
+ros2 run lidar_fusion_v2 wall_calibrator solve --side joint
 ```
 
-기본 캡처 파일은 `/tmp/lidar_wall_calibration.json`이다. 계산 결과 중 b1/b2의
-`x`, `y`, `yaw_deg`만 `config/fixed_geometry.yaml`에 반영하고, a1/a2와 모든
-`fov_min_deg`, `fov_max_deg`는 변경하지 않는다.
+기본 캡처 파일은 `/tmp/lidar_wall_calibration.json`이다. 학습에 쓰지 않은 새 벽
+위치에서 네 겹침 구간을 다시 캡처해 오차 감소를 확인한 뒤 a2/b1/b2의 `x`, `y`,
+`yaw_deg`만 반영한다. a1과 모든 `fov_min_deg`, `fov_max_deg`는 변경하지 않는다.
 
 ## 현재 실차 보정 결과
 
-2026-09-01 벽 이동·각도 변경 시험으로 얻은 값이다.
+2026-09-02 완전 고정된 장착 상태에서 긴 벽 11회 학습 캡처로 얻은 값이다.
 
 | 센서 | x (m) | y (m) | yaw (deg) | 계산 RMS |
 |---|---:|---:|---:|---:|
-| b1 좌측 | 0.294739 | 0.171568 | 2.827857 | 9.9 mm |
-| b2 우측 | 0.302170 | -0.224331 | -179.762631 | 6.5 mm |
+| a1 전면(고정) | 0.760000 | 0.000000 | -87.000000 | - |
+| a2 후면 | -0.110354 | 0.002473 | 93.410120 | - |
+| b1 좌측 | 0.215329 | 0.211549 | 1.703610 | - |
+| b2 우측 | 0.246203 | -0.225131 | -177.787378 | - |
 
-반영 후 새 프레임 재검증 RMS는 좌측 12.3 mm, 우측 5.0 mm였다.
+학습 전체 RMS는 9.2 mm였다. 학습에 사용하지 않은 네 위치에서 기존값→새값 RMS는
+후면-우측 36.6→9.0 mm, 후면-좌측 36.5→9.5 mm, 전면-좌측 23.2→10.6 mm,
+전면-우측 37.7→11.7 mm로 모두 감소했다.
