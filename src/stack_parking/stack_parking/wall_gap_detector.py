@@ -201,12 +201,32 @@ class WallGapDetector:
             candidates = find_gap_candidates(segments, side, cfg)
             live_candidates.extend(candidates)
             for cand in candidates:
+                # Valid point pinned to the wall's own near_distance (not the
+                # square's mid-depth) so it plots exactly ON the wall line —
+                # "_ . _" (2026-09-02 user spec): the dot sits on the same
+                # line as the wall segments either side of the gap.
                 map_pt = transform_points(
-                    np.array([[cand.center_x,
-                              sign * (cand.near_distance + 0.5 * cfg.square_size_m)]]),
+                    np.array([[cand.center_x, sign * cand.near_distance]]),
                     vehicle_pose)[0]
+                matched = next(
+                    (t for t in self.tracked
+                     if t.side == side and not t.tested
+                     and math.hypot(t.map_x - map_pt[0], t.map_y - map_pt[1])
+                     <= cfg.dedup_tolerance_m),
+                    None,
+                )
+                if matched is not None:
+                    # Live re-measurement supersedes the old one — refresh
+                    # rather than freeze at first detection, so the valid
+                    # point keeps tracking the wall's real current surface as
+                    # mapping accumulates more/better points.
+                    matched.map_x = float(map_pt[0])
+                    matched.map_y = float(map_pt[1])
+                    matched.width_m = cand.width_m
+                    matched.near_distance = cand.near_distance
+                    continue
                 if any(
-                    t.side == side
+                    t.side == side and t.tested
                     and math.hypot(t.map_x - map_pt[0], t.map_y - map_pt[1])
                     <= cfg.dedup_tolerance_m
                     for t in self.tracked
