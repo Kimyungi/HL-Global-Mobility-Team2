@@ -64,22 +64,71 @@ flowchart TD
 
 ## 빌드 및 실행 순서
 
-1. 네 드라이버가 `/lidar/a1/scan`, `/lidar/a2/scan`, `/lidar/b1/scan`,
-   `/lidar/b2/scan`을 발행하는지 확인한다.
+1. 최초 1회 udev 규칙을 설치해 네 물리 포트를 고정한다.
 2. 워크스페이스에서 패키지를 빌드하고 환경을 적용한다.
-3. launch 파일로 통합 노드와 전용 RViz를 실행한다.
+3. `bringup.launch.py`로 네 드라이버, 통합 노드와 전용 RViz를 실행한다.
 4. 로그의 `active=['a1', 'a2', 'b1', 'b2']`를 확인한다.
 5. 후속 인지 노드는 `/unified_lidar/scan` 또는 `/unified_lidar/cloud`만 구독한다.
 
 ```bash
+# 최초 1회: 이 장비의 물리 USB 허브 위치를 앞/뒤/좌/우 이름으로 고정
+sudo cp src/lidar_fusion_v2/tools/99-fma-lidars.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+ls -l /dev/lidar_front /dev/lidar_rear /dev/lidar_left /dev/lidar_right
+
 source /opt/ros/humble/setup.bash
 colcon build --packages-select lidar_fusion_v2 --symlink-install
 source install/setup.bash
+ros2 launch lidar_fusion_v2 bringup.launch.py
+```
+
+이 차량에서는 실기에서 인식한 USB 허브 위치를 아래처럼 **고정 배선**으로 사용한다.
+케이블을 다른 포트로 옮기면 위치 이름과 실제 라이다가 달라질 수 있으므로 임의로
+이동하지 않는다.
+
+| 장착 위치 | 고정 장치 링크 | 고정 USB `ID_PATH` |
+|---|---|---|
+| 앞 a1 | `/dev/lidar_front` | `pci-0000:00:14.0-usb-0:1.3:1.0` |
+| 뒤 a2 | `/dev/lidar_rear` | `pci-0000:00:14.0-usb-0:1.2:1.0` |
+| 좌 b1 | `/dev/lidar_left` | `pci-0000:00:14.0-usb-0:1.1:1.0` |
+| 우 b2 | `/dev/lidar_right` | `pci-0000:00:14.0-usb-0:1.4.1:1.0` |
+
+허브나 메인보드를 교체해 `ID_PATH` 자체가 달라진 경우에만 네 라이다의 물리 위치를
+다시 식별한 뒤 `tools/99-fma-lidars.rules`를 함께 갱신한다.
+
+소스 트리의 실행 스크립트를 사용하면 빌드부터 한 명령으로 실행할 수 있다.
+
+```bash
+src/lidar_fusion_v2/tools/run_4lidar_v2.sh --build
+```
+
+`bringup.launch.py`와 위 스크립트는 기존 `multi_lidar_fusion` 노드나
+`/lidar/merged_scan`, `/lidar/merged_cloud`를 실행하지 않는다. 네 드라이버가
+이미 실행 중이거나 rosbag을 재생할 때는 드라이버 없이 처리 노드만 띄운다.
+
+```bash
 ros2 launch lidar_fusion_v2 fusion_v2.launch.py
 ```
 
 RViz에는 통합 cloud와 센서별 진단 점군이 함께 등록되어 있다. 개별 표시가
 필요하지 않으면 `Raw Front/Rear/Left/Right` 항목만 끄면 된다.
+
+### 실기 드라이버 프로파일
+
+네 센서는 모두 YDLiDAR T-mini Plus이고 `lidar_type=1`, `reversion=true`,
+`inverted=false`, 230400 baud, 10 Hz를 사용한다. 실기 스트림 형식 차이는 아래처럼
+고정되어 있다.
+
+| 위치 | 장치 링크 | sample rate | fixed resolution | intensity |
+|---|---|---:|---:|---:|
+| 앞 a1 | `/dev/lidar_front` | 9K | true | 16 bit |
+| 뒤 a2 | `/dev/lidar_rear` | 4K | false | 8 bit |
+| 좌 b1 | `/dev/lidar_left` | 4K | false | 8 bit |
+| 우 b2 | `/dev/lidar_right` | 4K | false | 8 bit |
+
+특히 후면 a2에 a1의 9K/고정 해상도/16 bit 설정을 사용하면 실기에서 checksum
+오류 뒤 데이터 스트림이 종료됐으므로 네 위치의 프로파일을 일괄 통일하지 않는다.
 
 ## 앞·뒤 기준 벽 보정 순서
 

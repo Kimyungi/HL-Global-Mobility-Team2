@@ -1,0 +1,14 @@
+# FMA four-YDLiDAR fixed-position links (Xanadu-book5, verified 2026-09-01).
+# All four CP2102 units report non-unique identities, so these verified physical
+# USB hub positions are the fixed vehicle wiring contract. Do not move a cable.
+# If the hub or mainboard changes, re-identify all positions before updating it.
+#
+# Install:
+#   sudo cp 99-fma-lidars.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:1.3:1.0", ATTRS{product}=="CP2102 USB to UART Bridge Controller", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_front"
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:1.2:1.0", ATTRS{product}=="CP2102 USB to UART Bridge Controller", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_rear"
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:1.1:1.0", ATTRS{product}=="CP2102 USB to UART Bridge Controller", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_left"
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:1.4.1:1.0", ATTRS{product}=="CP2102 USB to UART Bridge Controller", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_right"

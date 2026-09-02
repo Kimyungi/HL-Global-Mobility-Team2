@@ -4,10 +4,10 @@
 
 | 슬롯 | 위치 | 모델 | 포트 (launch 기본값) | 규칙이 무엇으로 가르나 | 실측 |
 |---|---|---|---|---|---|
-| `a1` | 전방 | YDLiDAR T-mini Plus | `/dev/lidar_front` | 허브 구멍 `ID_PATH …3.4` | 10.2 Hz, 0.839°, 12 m |
-| `a2` | 후방 | YDLiDAR T-mini Plus | `/dev/lidar_rear` | 허브 구멍 `ID_PATH …3.3` | 10.1 Hz, 0.839°, 12 m |
-| `b1` | 좌측 | SLAMTEC RPLiDAR C1M1 | `/dev/lidar_left` | 시리얼 `f2ee467b…` | 10 Hz, 0.499°, 16 m |
-| `b2` | 우측 | SLAMTEC RPLiDAR C1M1 | `/dev/lidar_right` | 시리얼 `76d341fd…` | 10 Hz, 0.499°, 16 m |
+| `a1` | 전방 | YDLiDAR T-mini Plus | `/dev/lidar_front` | `ID_PATH …1.3` | 10.2 Hz, 0.839°, 12 m |
+| `a2` | 후방 | YDLiDAR T-mini Plus | `/dev/lidar_rear` | `ID_PATH …1.2` | 10.1 Hz, 12 m |
+| `b1` | 좌측 | YDLiDAR T-mini Plus | `/dev/lidar_left` | `ID_PATH …1.1` | 10 Hz, 12 m |
+| `b2` | 우측 | YDLiDAR T-mini Plus | `/dev/lidar_right` | `ID_PATH …1.4.1` | 10 Hz, 12 m |
 
 심링크는 `tools/99-fma-lidars.rules` 가 만든다. **설치돼 있어야 launch 가 돈다:**
 
@@ -18,13 +18,9 @@ sudo cp tools/99-fma-lidars.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-> 2026-08-27 에 기본값을 by-path 에서 심링크로 바꿨다. by-path 는 2026-08-25 udev
-> 규칙을 넣은 시점에 이미 낡아 있었고(`…1.2.4/1.2.3` → 실제 `…3.4/3.3`),
-> 값이 두 곳에 갈라져 있어서 생긴 일이다. 이제 슬롯의 단일 원천은 udev 규칙이다.
->
-> ⚠ RPLiDAR 는 시리얼로 가르니 구멍을 옮겨도 따라가지만, **YDLiDAR 두 대는
-> 시리얼이 둘 다 `0001` 이라 허브 구멍으로만 갈린다** — 옮겨 꽂으면 앞/뒤가
-> 뒤바뀌므로 규칙의 `ID_PATH` 를 고쳐야 한다.
+> 위 네 `ID_PATH`는 실기에서 확인한 이 차량의 고정 배선 계약이다. 네 YDLiDAR는
+> 고유 시리얼로 위치를 구분할 수 없으므로 케이블을 다른 USB 포트로 옮기지 않는다.
+> 허브나 메인보드를 교체한 경우에만 전체 위치를 다시 식별하고 udev 규칙을 갱신한다.
 
 회피 로직(`stack_avoid`)은 라이다가 4대라는 사실을 알 필요가 없다. **`/lidar/merged_scan` 하나만 구독**하면 된다.
 
@@ -159,13 +155,14 @@ colcon test-result --all --verbose
 
 이 스크립트가 대신 처리해 주는 것 두 가지:
 
-- **YD 포트 자동 탐지.** YD 2대는 by-id 가 겹쳐 by-path 를 쓰는데, 그 주소는 "허브의 그 구멍"이라 USB 를 옮기거나 허브 전원을 껐다 켜면 조용히 바뀐다(2026-08-14: `0:1.2.x` → `0:3.x` 로 바뀌어 YD 2대가 무발행이었다). 매번 CP2102 장치를 찾아 배정하고 무엇을 골랐는지 찍는다.
-- **안전한 종료.** `SIGINT` 를 먼저 보내고 4초 기다린 뒤에야 강제 종료한다. `SIGKILL` 로 죽이면 드라이버가 라이다에 정지 명령을 못 보내, RPLiDAR 가 다음 기동에서 `SL_RESULT_OPERATION_TIMEOUT` / `Can not start scan` 으로 실패한다(실측).
+- **포트 고정.** 네 센서 모두 실기에서 확인한 `/dev/lidar_front/rear/left/right`
+  위치 링크만 사용한다.
+- **안전한 종료.** `SIGINT` 를 먼저 보내고 4초 기다린 뒤에야 강제 종료한다.
 
 ```bash
 run_4lidar.sh --no-rviz            # RViz 없이 (rosbag 기록·원격 접속)
 run_4lidar.sh --build              # 빌드 후 실행
-run_4lidar.sh --a1 /dev/... --a2 /dev/...   # 자동 탐지가 틀렸을 때
+run_4lidar.sh --a1 /dev/... --a2 /dev/... --b1 /dev/... --b2 /dev/...
 ```
 
 > 앞/뒤가 바뀐 것 같으면 `ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=yd0` 로 한 대씩 확인한다.
@@ -203,11 +200,12 @@ ros2 launch multi_lidar_fusion multi_lidar_fusion.launch.py \
 
 ## 6. ⚠ 시리얼 포트 — 4대 구성의 첫 번째 함정
 
-YDLiDAR T-mini Plus와 RPLiDAR C1M1은 **둘 다 Silicon Labs CP210x** 를 쓴다. IMU까지 같은 칩이라 `/etc/udev/rules.d/99-ydlidar.rules` 가 `10c4:ea60` 전체를 `/dev/ydlidar` 로 묶어버린다. 2026-08-13 확인 시점에 `/dev/ydlidar` 와 `/dev/rplidar` 가 **둘 다 같은 장치**를 가리키고 있었다. 이 심볼릭 링크는 쓰지 않는다.
+YDLiDAR와 IMU가 같은 CP210x 계열을 쓸 수 있어 VID/PID만으로 만든 `/dev/ydlidar` 링크는 쓰지 않는다. 위치별 `/dev/lidar_front/rear/left/right` 링크를 사용한다.
 
-### YDLiDAR 2대는 by-id 로도 구분되지 않는다 (실측 확인)
+### YDLiDAR는 위치 링크로 구분한다
 
-T-mini Plus 유닛의 CP210x 시리얼이 **둘 다 `0001`** 이라 by-id 이름이 완전히 같아진다. 4대를 동시에 붙여 확인한 결과:
+T-mini Plus 유닛의 CP210x 식별자가 중복되어 by-id만으로 네 위치를 안정적으로
+구분할 수 없다. 따라서 네 대 모두 검증된 USB 허브 위치로 구분한다.
 
 ```
 by-path 항목 6개   vs   by-id 항목 5개      ← YDLiDAR 하나가 by-id 주소를 잃음
@@ -218,16 +216,28 @@ usb-…CP2102_…_0001-if00-port0 -> ttyUSB5    ← 나중에 붙은 쪽이 먼�
 
 | | 고정 방식 | 이유 |
 |---|---|---|
-| `a1`, `a2` (YDLiDAR) | **by-path** | 시리얼이 겹쳐 by-id 불가 |
-| `b1`, `b2` (RPLiDAR) | **by-id** | 시리얼이 고유 |
+| `a1`, `a2` (YDLiDAR) | **udev ID_PATH** | 앞/뒤 위치 고정 |
+| `b1`, `b2` (YDLiDAR) | **udev ID_PATH** | 좌/우 위치 고정 |
 
-> **by-path 는 "허브의 그 구멍"이 주소다.** 케이블을 다른 포트로 옮겨 꽂으면 앞/뒤가 조용히 뒤바뀐다. 옮겼으면 반드시 다시 확인할 것.
+> **ID_PATH는 "허브의 그 구멍"이 주소다.** 현재 네 위치는 고정 배선이므로 케이블을
+> 옮기지 않는다. 하드웨어 구성이 바뀐 경우에만 네 위치를 모두 다시 확인한다.
 
 ### 어느 유닛이 어디에 달렸는지 확인하는 법
 
 ```bash
-# 한 대만 띄워 RViz 로 본다. unit = yd0 | yd1 | rp0 | rp1
-ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=yd0
+# 한 대만 띄워 RViz 로 본다. unit = yd0 | yd1 | b1 | b2
+ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=b1
+
+# 좌/우 교체용으로 새로 인식된 YDLiDAR 한 대만 확인 (기본 각도 눈금 10도)
+# /dev/lidar_front, /dev/lidar_rear 등 기존 위치 링크가 가리키는 장치는 제외하고
+# /dev/serial/by-path/ 에 새로 나타난 경로를 port 로 넣는다.
+ls -l /dev/serial/by-path/ /dev/lidar_front /dev/lidar_rear \
+      /dev/lidar_left /dev/lidar_right
+ros2 launch multi_lidar_fusion view_one_lidar.launch.py \
+    unit:=custom port:=/dev/serial/by-path/<신규-장치-경로>
+
+# 화면의 빨간 X축이 센서 raw 0도(정면), 방사형 숫자는 10도 간격이다.
+# 차량의 기준 방향에 물체를 놓고 찍히는 각도를 읽어 좌/우 yaw와 사용할 FOV를 정한다.
 ```
 
 화면 정중앙이 그 라이다, 빨간 축(X)이 그 유닛의 0도 방향이다. 차량 앞쪽에서 손을 넣어 점이 반응하면 그게 앞 라이다다. 확인한 값을 `launch/multi_lidar_drivers.launch.py` 의 `DEFAULT_PORTS` 에 적는다.
@@ -239,84 +249,6 @@ ros2 launch multi_lidar_fusion view_one_lidar.launch.py unit:=yd0
 ```bash
 ros2 launch multi_lidar_fusion identify_positions.launch.py
 ```
-
-### ⚠ 두 번째 함정 — RPLiDAR 가 `health OK` 인데 `/scan` 이 0 Hz (2026-08-30)
-
-**드라이버로는 절대 안 풀린다. `RESET(0xA5 0x40)` 을 사람이 보내야 한다.**
-
-`rplidar_node` 는 `STOP → GET_INFO → GET_HEALTH → SCAN` 만 보내고 **RESET 을 보내지
-않는다.** 그래서 라이다가 모터 latch-off 상태로 굳으면 재기동·재연결·`/start_motor`
-서비스 호출 중 무엇으로도 못 빠져나온다. 로그가 전부 정상으로 보이는 게 악질이다:
-
-```
-[rplidar_b1] RPLidar health status : OK.                      ← 정상
-[rplidar_b1] current scan mode: Standard, 5 KHz, 16.0m, 10Hz  ← 정상
-ros2 topic hz /lidar/b1/scan  → 발행 없음                      ← ★ 여기만 이상
-```
-
-시리얼로 직접 찔러 본 결과 (2026-08-30):
-
-| 보낸 것 | 응답 |
-|---|---|
-| `GET_DEVICE_INFO` | 27B 정상 (모델 `0x41`, FW 1.02, HW 18) |
-| `GET_HEALTH` | `Good(0)` |
-| `SCAN` / `EXPRESS_SCAN` | **디스크립터 7바이트만, 측정 데이터 0** |
-| DTR/RTS 6개 조합 · `SET_MOTOR_SPEED` | 변화 없음 |
-| **`RESET`** | **부트 배너 + 1초에 4095B — 즉시 회복** |
-
-```bash
-python3 - <<'PY'
-import serial, time
-for d in ['/dev/lidar_left', '/dev/lidar_right']:
-    s = serial.Serial(d, 460800, timeout=1)
-    s.write(b'\xA5\x25'); time.sleep(0.3); s.reset_input_buffer()
-    s.write(b'\xA5\x40'); time.sleep(2.5)          # RESET
-    raw = s.read(s.in_waiting or 1)
-    print(f"  {'OK' if b'LIDAR System' in raw else 'FAIL'} {d}"); s.close()
-PY
-```
-
-한 번 풀리면 드라이버를 SIGTERM/SIGKILL 어느 쪽으로 죽여도 재발하지 않는다
-(재기동 4회 연속 확인). 들어가는 원인은 전원으로 보인다 — 스캔 도중 전압이 끊기면
-컨트롤러는 살아남고 모터만 latch-off 된다. **HANDOVER §3.7 "전류를 갈라라"와 같은
-고장의 앞뒤다: 전류 분리는 재발을 막고, 이 RESET 은 이미 걸린 것을 푼다.**
-4대 기동 절차에는 리셋을 먼저 넣어 두는 것이 안전하다.
-
-> **위 스크립트의 `FAIL` 은 그 자체로 고장이 아니다.** 배너는 읽기 창을 놓치면
-> 안 잡히고(이미 정상인 장치도 그렇다), 무엇보다 **다른 프로세스가 포트를 잡고 있으면
-> 반드시 실패한다.** 판정의 최종 근거는 배너가 아니라 **`/scan` 이 도느냐**다:
->
-> ```bash
-> # 먼저 포트를 잡은 놈이 없는지 — 이게 FAIL 의 최빈 원인이다
-> for d in /dev/lidar_left /dev/lidar_right; do
->   echo "$d: $(fuser $(readlink -f $d) 2>&1 >/dev/null || echo 비어있음)"; done
-> # 그다음 실제 판정
-> for t in a1 a2 b1 b2; do echo -n "$t: "; \
->   timeout 7 ros2 topic hz /lidar/$t/scan 2>&1 | grep -oE 'average rate: [0-9.]+' | head -1; done
-> ```
->
-> **launch 를 두 번 띄우면 포트마다 프로세스가 둘씩 붙어 서로를 죽인다.** 실제로
-> 2026-08-30 검증 중에 이걸로 3대가 0Hz 가 됐다 — 리셋 문제로 오진하기 딱 좋다.
-> 새로 띄우기 전에 위 `fuser` 로 항상 비었는지 확인할 것.
-
-### ⚠ 부트 배너의 `RP S2` 는 모델명이 아니다
-
-RESET 하면 `RP S2 LIDAR System.` 이 찍히는데 **펌웨어 플랫폼 배너일 뿐이고 C1M1 이 맞다.**
-실측 제원이 전부 C1 이다:
-
-```
-모델 바이트 0x41 · FW 1.02 · HW 18 · 보드 460800
-샘플레이트 5 kHz · 10 Hz · 물리 분해능 0.72° (511점/회전)
-지원 모드  Standard(16.0 m) / DenseBoost(40.0 m)
-```
-
-S2 라면 `0.12° · 32 kHz · 1 Mbps` 여야 하므로 하나도 맞지 않는다.
-**배너를 보고 모델을 바꿔 잡거나 보드레이트를 1 Mbps 로 올리지 말 것.**
-
-> 표의 `0.499°` 와 여기 `0.72°` 가 다른 것은 정상이다. launch 가 `angle_compensate=True`
-> 로 띄우므로 드라이버가 720 bin(0.499°)으로 보간해 내보내고, 0.72° 는 그 아래의
-> 물리 샘플 간격이다. 융합 `scan.angle_increment` 하한(1.0°)의 근거는 **성긴 쪽인
-> T-mini 0.839°** 이므로 어느 쪽으로도 바뀌지 않는다.
 
 ---
 
@@ -337,8 +269,8 @@ S2 라면 `0.12° · 32 kHz · 1 Mbps` 여야 하므로 하나도 맞지 않는�
 |---|---|---|---|---|---|---|---|
 | `a1` | `front` | 0.760 | 0 | 0.065 | 0° | 180° | 357~177° |
 | `a2` | `rear` | −0.055 | 0 | 0.065 | 180° | 140° | 20~160° |
-| `b1` | `left` | 0.310 | +0.155 | 0.065 | +95° | 130° | 120~250° |
-| `b2` | `right` | 0.310 | −0.155 | 0.065 | −100° | 120° | 113~233° |
+| `b1` | `left` | 0.294739 | +0.171568 | 0.065 | +90° | **110°** | **215~325°** |
+| `b2` | `right` | 0.302170 | −0.224331 | 0.065 | −90° | **110°** | **215~325°** |
 
 > "사용 raw 구간"은 `fov_center_deg − yaw_deg` 로 launch 가 계산한 값이다. 손으로 적지 말고 launch 로그로 확인할 것.
 
@@ -350,15 +282,16 @@ S2 라면 `0.12° · 32 kHz · 1 Mbps` 여야 하므로 하나도 맞지 않는�
 |---|---|---|---|---|
 | `a1` front | T-mini Plus | **−87.0°** | **+0.069** | 겹침 역산 확정 |
 | `a2` rear | T-mini Plus | +90.0° | +0.069 | ⚠ yaw 미검증 (거리는 같은 모델이라 공유) |
-| `b1` left | RPLiDAR C1M1 | **−89.8°** | **−0.016** | 겹침 역산 확정 |
-| `b2` right | RPLiDAR C1M1 | **+87.4°** | **−0.016** | 겹침 역산 확정 |
+| `b1` left | T-mini Plus | **+2.827857°** | **+0.069** | 앞/뒤 기준 벽 보정 |
+| `b2` right | T-mini Plus | **−179.762631°** | **+0.069** | 앞/뒤 기준 벽 보정 |
 
 **전제 — 드라이버 각도 옵션과 한 세트다. 하나라도 바뀌면 위 값 전부 무효:**
 
 | 모델 | 설정 |
 |---|---|
-| YD T-mini Plus | `lidar_type=1`, `sample_rate=9`, `reversion=true`, `inverted=false` |
-| RPLiDAR C1M1 | `inverted=true` |
+| 앞 YD (기존 유지) | `lidar_type=1`, `sample_rate=9`, `fixed_resolution=true`, `reversion=true`, `inverted=false` |
+| 뒤 YD (실기 파싱 안정화) | `lidar_type=1`, `sample_rate=4`, `fixed_resolution=false`, `intensity_bit=8` |
+| 좌/우 YD (교체) | `lidar_type=1`, `sample_rate=4`, `fixed_resolution=false`, `reversion=true`, `inverted=false` |
 
 **확정 방법** — `tools/pair_calibrate.py` 로 두 겹침 쌍(앞↔우, 앞↔좌)을 **동시에** 풀었다. 좌·우가 같은 모델이라 거리 바이어스가 같아야 한다는 구속이 절대 yaw 를 정한다. **한 쌍만으로는 불가능하다** — yaw 를 5° 돌리면 거리 오프셋이 4cm 움직여 서로 상쇄되기 때문이다(실측 확인).
 
@@ -368,13 +301,14 @@ S2 라면 `0.12° · 32 kHz · 1 Mbps` 여야 하므로 하나도 맞지 않는�
 
 1. **`lidar_type=0`(TOF)로 띄우면 거리가 정확히 4배**로 나온다. T-mini Plus 는 삼각측량이라 `1` 이어야 한다. 판을 30cm 에 뒀는데 145cm 로 읽혀 "판이 안 보인다"로 나타났다.
 2. **`inverted` 는 각도 부호 반전(거울상)이다.** 정면에 판을 두고 yaw 를 맞추면 정면에서는 상쇄되고 **좌우만 뒤집혀** 보인다 (`a_rep = Y − β`, `yaw_cfg = −Y` → `β_pipe = −β`). 센서끼리는 서로 일치해서 개별 검증으로는 안 잡히고, 병합 화면 전체를 봐야 드러난다. 좌우 교환 증상이 보이면 **포트보다 각도 부호를 먼저** 의심할 것.
-3. **그 반전을 되돌릴 때 yaw 를 네 대 모두 뒤집으면 안 된다.** 부호 반전의 고정점이 raw 0 / raw 180 이므로, YD(정면 raw 270)만 부호 반전이 필요하고 RP(정면 raw 180)는 그대로 둬야 한다. 일괄 적용했다가 좌·우 점이 2개/6개만 남았다.
+3. **좌우 부호를 같은 값으로 두면 안 된다.** 같은 raw 270 정면을 좌측은 차량 +90°, 우측은 차량 −90°로 보내므로 TF yaw는 각각 0°와 −180°다.
 
 **검산 규칙**: 같은 모델끼리 **센서기준 시야중심이 같아야 한다.**
 
 > ⚠ **뒤(a2) yaw 는 아직 검증 전이다.** 같은 모델이라 앞에서 유도하면 +93° 지만, 앞이 규약값(−90)과 3° 달랐던 만큼 유닛별 편차가 있다. 뒤↔좌 또는 뒤↔우 쌍으로 같은 절차를 밟을 것.
 >
-> ⚠ **거리 보정의 절대 배분은 근거가 약하다.** 상대차 8.44cm(YD − RP)만 확정값이고, 절대값은 판 실측 평균에 맞춘 것이다. 더 나은 기준이 생기면 **두 값을 같은 양만큼 함께** 옮길 것 — 상대차만 유지되면 4대 정합은 그대로다.
+> 네 대의 `range_offset_m`은 현재 같은 YDLiDAR 기준값을 사용한다. 절대 거리 기준을
+> 다시 측정하면 네 값을 같은 절차로 재검증한다.
 
 ### 7.2 센서 정의 — `config/lidar_extrinsics.yaml`
 
@@ -408,7 +342,7 @@ sensors:
 | `filter.enable_voxel_filter` | false | 겹침이 심할 때 켬 |
 | `scan.angle_increment` | 0.0174533 (1.0°) | 아래 참조 |
 
-**`scan.angle_increment` 를 원본 센서보다 촘촘하게 잡지 말 것.** T-mini Plus ~0.9°, RPLiDAR C1 ~0.72° 인데 0.5°(720 bin)로 두면 점이 닿지 않는 bin이 생겨 `inf` 로 남는다. 회피 로직은 그것을 "비어 있음"으로 읽으므로 위험하다.
+**`scan.angle_increment` 를 원본 센서보다 촘촘하게 잡지 말 것.** T-mini Plus가 약 0.9°인데 0.5°(720 bin)로 두면 점이 닿지 않는 bin이 생겨 `inf`로 남는다. 회피 로직은 그것을 "비어 있음"으로 읽으므로 위험하다.
 
 시뮬 실측 (2026-08-13):
 
