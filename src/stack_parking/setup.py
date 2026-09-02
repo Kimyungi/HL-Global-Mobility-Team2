@@ -25,6 +25,7 @@ setup(
         'console_scripts': [
             'stack_parking_node = stack_parking.node:main',
             'slam_only = stack_parking.slam_only:main',
+            'scan_to_cloud = stack_parking.scan_to_cloud:main',
             'parking_simulator = stack_parking.simulation:main',
         ],
     },

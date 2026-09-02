@@ -65,6 +65,16 @@
     # Mapping starts at node startup and normally survives a parking trigger.
     reset_map_on_mission_start: false
 
+    # Endpoint clouds contain no explicit no-return rays. Free-space clearing
+    # therefore requires a farther measured endpoint; empty angular bins are
+    # treated as unknown. Padding lets a thin foreground cone occlude nearby
+    # bins too, preventing aligned cones behind it from being erased.
+    icp.freespace_clear_enabled: true
+    icp.freespace_clear_radius_m: 4.0
+    icp.freespace_bin_width_deg: 1.0
+    icp.freespace_margin_m: 0.10
+    icp.freespace_occlusion_padding_deg: 1.5
+
     # Existing GpsPath only has parking_zone (no type). The default below is
     # used on that rising edge. A GPS node that decides type should publish
     # "start perpendicular right" or "start parallel right" as std_msgs/String

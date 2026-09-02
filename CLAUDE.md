@@ -115,6 +115,20 @@ IMU의 자이로 적분 yaw 증분으로 만들며 `VehicleVector.x/y/yaw`를 �
 innovation gate와 작은 gain을 통과한 x/y만 prior에 반영한다. IMU가 끊긴 경우에만
 `HEADING_FUSED` GPS `dyaw(k-1)`을 yaw 증분 폴백으로 사용한다.
 
+**4-LiDAR 병합 입력 전환 (2026-09-02, 사용자 지정):** 위 front/rear-only 결정은
+b1/b2(좌우) USB 전원 탈락이 **아직 해소됐다는 전제로** 4대 병합 입력으로 전환한다
+— 즉 이 전제가 실제로 참인지는 이 세션에서 검증되지 않았다. `stack_parking_node`에
+`merged_cloud_topic` 파라미터(기본값 빈 문자열 = 기존 front/rear 페어러 유지)를
+추가해, 설정하면 `FrontRearCloudPairer`를 완전히 건너뛰고 그 토픽 하나를 그대로
+ICP에 먹인다. 겹치는 시야 처리는 `lidar_fusion_v2`(PR #70)의
+`/unified_lidar/scan`이 이미 한다 — 1도 bin마다 `np.minimum.at`으로 가장 가까운
+거리만 남기는 nearest-wins 방식(`/unified_lidar/cloud`는 겹침 그대로인 raw
+concat이라 이 용도에 안 맞음). `stack_parking/launch/parking_mapping_bench.launch.py`가
+`scan_to_cloud` 노드(신규, `laser_geometry`로 LaserScan→PointCloud2)로 그 scan을
+`/parking/nearest_merged_cloud`로 바꿔 물린다. **b1/b2가 다시 끊기면 이 모드는
+전방/후방에도 없는 시야를 조용히 잃는다** — front/rear-only로 되돌리려면
+`merged_cloud_topic:=''`.
+
 Parking 내부 단계는 `SLAM → MAPPING → LOCALIZATION → PARKING`으로 분리한다.
 SLAM은 초기 scan-to-map 정합을 확보하고, MAPPING은 정적 endpoint map을 계속
 누적한다. 공간과 경로가 확정되면 map을 동결한 LOCALIZATION에서 연속 정합을

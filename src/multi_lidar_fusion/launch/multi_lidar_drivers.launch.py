@@ -69,18 +69,20 @@ BY_PATH = '/dev/serial/by-path/'
 #       udevadm info -q property -n /dev/ttyUSBx | grep ID_PATH
 #
 #   되돌리려면 인자로 넘기면 된다 — 예: a1_port:=/dev/serial/by-path/...
+# ★★ 2026-09-02: RPLiDAR C1M1 2대(b1/b2)를 YDLiDAR T-mini Plus로 교체했다
+#   (팀 확인, 의도적 교체). 4대가 전부 같은 모델이 됐다 — 그래서 b1/b2 도
+#   이제 _rplidar() 가 아니라 _ydlidar() 로 띄운다. 이 PC(허브 배치가 예전과
+#   다름)에서 손 가림 식별(RViz 4색 오버레이)로 재확인한 위치:
+#     전방(a1)=ID_PATH ...4.3 · 후방(a2)=...4.2 · 좌(b1)=...4.1 · 우(b2)=...4.4.1
+#   99-fma-lidars.rules 를 이 값으로 다시 설치해야 아래 심링크가 잡힌다.
 DEFAULT_PORTS = {
-    # YDLiDAR T-mini Plus — 각분해능 0.839deg, range 12m
-    # 규칙이 허브 구멍(ID_PATH)으로 가른다: 전방 3.4 / 후방 3.3
-    'a1': '/dev/lidar_front',   # 전방 (unit yd0) — /dev/ttyUSB_LIDAR 와 같은 장치
-    'a2': '/dev/lidar_rear',    # 후방 (unit yd1)
-    # SLAMTEC RPLiDAR C1M1 — 각분해능 0.499deg, range 16m
-    # 규칙이 시리얼로 가른다 (좌 f2ee467b… / 우 76d341fd…) — 구멍을 옮겨도 따라간다.
-    # 2026-08-13 현장 식별값(view_one_lidar 로 한 대씩 확인). 8/14 에 한 번 맞바꿨다가
-    # 되돌렸다 — "좌우가 서로의 자리"로 보이던 증상의 원인은 포트가 아니라 **각도 반전**
-    # (아래 inverted 주석 참조)이었다.
-    'b1': '/dev/lidar_left',    # 좌측 (unit rp1)
-    'b2': '/dev/lidar_right',   # 우측 (unit rp0)
+    # YDLiDAR T-mini Plus 4대 — 각분해능 0.839deg, range 12m.
+    # 규칙이 허브 구멍(ID_PATH)으로 가른다 — 시리얼이 넷 다 USB 서술자 레벨에서는
+    # "0001"로 겹쳐(SDK 레벨 고유 시리얼은 있지만 udev 는 못 본다) 반드시 ID_PATH.
+    'a1': '/dev/lidar_front',   # 전방
+    'a2': '/dev/lidar_rear',    # 후방
+    'b1': '/dev/lidar_left',    # 좌측 (2026-09-02부터 YDLiDAR)
+    'b2': '/dev/lidar_right',   # 우측 (2026-09-02부터 YDLiDAR)
 }
 
 
@@ -142,71 +144,6 @@ def _ydlidar(sensor_id):
     )
 
 
-def _rplidar(sensor_id):
-    """SLAMTEC RPLiDAR C1M1 1대.
-
-    ⚠ 부트 배너가 `RP S2 LIDAR System.` 으로 나온다 — **모델명이 아니라 펌웨어
-      플랫폼 배너다. C1M1 이 맞다.** 2026-08-30 에 실측으로 확정했다:
-
-          모델 바이트 0x41 · FW 1.02 · HW 18 · 보드 460800
-          샘플레이트 5 kHz · 10 Hz · 물리 분해능 0.72°(511점/회전)
-          지원 모드  Standard(16.0m) / DenseBoost(40.0m)
-
-      S2 라면 0.12° · 32 kHz · 1 Mbps 여야 하므로 하나도 맞지 않는다.
-      배너만 보고 모델을 바꿔 잡지 말 것 (아래 `serial_baudrate` 도 그래서 460800).
-
-      참고: 아래 `angle_compensate=True` 때문에 드라이버가 내는 `angle_increment` 는
-      0.499°(720 bin)로 보간된 값이다. 물리 분해능 0.72° 와 다른 수치인 게 정상이며,
-      융합의 `scan.angle_increment` 하한(1.0°) 근거는 **성긴 쪽인 T-mini 0.839°** 다.
-
-    ⚠ **먹통 상태는 드라이버가 못 푼다 — `RESET(0xA5 0x40)` 이 필요하다.**
-      이 노드는 STOP → GET_INFO → GET_HEALTH → SCAN 만 보내고 RESET 을 보내지 않는다.
-      그래서 한 번 걸리면 재기동·재연결·`/start_motor` 무엇으로도 안 풀린다.
-      증상: **health OK 인데 `/scan` 0 Hz** (SCAN 을 걸면 디스크립터 7바이트만 오고
-      측정 데이터가 0 = 모터가 안 돈다).
-
-          python3 - <<'PY'
-          import serial, time
-          for d in ['/dev/lidar_left', '/dev/lidar_right']:
-              s = serial.Serial(d, 460800, timeout=1)
-              s.write(b'\\xA5\\x25'); time.sleep(0.3); s.reset_input_buffer()
-              s.write(b'\\xA5\\x40'); time.sleep(2.5)   # RESET
-              print(d, b'LIDAR System' in s.read(s.in_waiting or 1)); s.close()
-          PY
-
-      한 번 풀리면 드라이버를 SIGTERM/SIGKILL 어느 쪽으로 죽여도 재발하지 않는다
-      (2026-08-30, 재기동 4회 연속 확인). 들어가는 원인은 전원으로 보인다 —
-      스캔 도중 전압이 끊기면 컨트롤러는 살아남고 모터만 latch-off 된다.
-      HANDOVER §3.7 의 "전류를 갈라라"와 **같은 고장의 앞뒤**다: 전류 분리는 재발을
-      막고, 이 RESET 은 이미 걸린 것을 푼다.
-
-      ※ 위 스크립트가 `False` 를 내도 그 자체로 고장은 아니다 — 배너는 읽기 창을
-        놓치면 안 잡히고, **다른 프로세스가 포트를 잡고 있으면 반드시 실패한다.**
-        최종 판정은 `/lidar/*/scan` 이 도느냐로 한다. 특히 **이 launch 를 두 번
-        띄우면** 포트마다 프로세스가 둘씩 붙어 서로를 죽이므로, 새로 띄우기 전에
-        `fuser $(readlink -f /dev/lidar_left)` 로 비었는지 볼 것.
-    """
-    return Node(
-        package='rplidar_ros',
-        executable='rplidar_node',
-        name='rplidar_' + sensor_id,
-        output='screen',
-        emulate_tty=True,
-        condition=IfCondition(LaunchConfiguration('enable_' + sensor_id)),
-        parameters=[{
-            'channel_type': 'serial',
-            'serial_port': LaunchConfiguration(sensor_id + '_port'),
-            'serial_baudrate': 460800,      # C1 은 460800 (A1 의 115200 아님)
-            'frame_id': 'lidar_' + sensor_id + '_link',
-            # ★ YD 와 같은 이유 (위 _ydlidar 주석). 네 대가 같은 방향 규약을 써야 한다.
-            'inverted': True,
-            'angle_compensate': True,
-            'scan_mode': 'Standard',
-        }],
-        remappings=[('/scan', '/lidar/' + sensor_id + '/scan')],
-    )
-
-
 def generate_launch_description():
     args = []
     for sid, port in DEFAULT_PORTS.items():
@@ -222,6 +159,6 @@ def generate_launch_description():
     return LaunchDescription(args + [
         _ydlidar('a1'),
         _ydlidar('a2'),
-        _rplidar('b1'),
-        _rplidar('b2'),
+        _ydlidar('b1'),
+        _ydlidar('b2'),
     ])

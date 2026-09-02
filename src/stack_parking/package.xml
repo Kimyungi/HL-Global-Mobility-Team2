@@ -15,7 +15,9 @@
   <depend>std_msgs</depend>
   <depend>sensor_msgs_py</depend>
   <depend>visualization_msgs</depend>
+  <depend>laser_geometry</depend>
   <exec_depend>multi_lidar_fusion</exec_depend>
+  <exec_depend>lidar_fusion_v2</exec_depend>
 
   <!-- tools/lidar_fov.py · tools/lidar_overlap.py 가 쓰는 것 -->
   <depend>sensor_msgs</depend>

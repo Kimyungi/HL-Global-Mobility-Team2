@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 
 from stack_parking.geometry import Pose2, between, compose, transform_points
-from stack_parking.icp_slam import IcpConfig, IcpSlam
+from stack_parking.icp_slam import IcpConfig, IcpSlam, VoxelPointMap
 from stack_parking.localization import (
     FrontRearCloudPairer,
     MotionPrior,
@@ -34,6 +34,36 @@ class GeometryTest(unittest.TestCase):
 
 
 class IcpSlamTest(unittest.TestCase):
+
+    def test_freespace_empty_bin_is_unknown(self):
+        point_map = VoxelPointMap(0.02)
+        point_map.add(np.asarray([[2.0, 0.0]]))
+        removed = point_map.clear_freespace(
+            Pose2(), np.empty((0, 2)), 4.0, math.radians(1.0), 0.10)
+        self.assertEqual(removed, 0)
+        self.assertEqual(len(point_map), 1)
+
+    def test_freespace_foreground_return_protects_adjacent_bins(self):
+        point_map = VoxelPointMap(0.02)
+        # Old cone is just across a 1-degree bin boundary from the visible
+        # foreground cone, but is farther away and therefore occluded.
+        bearing = math.radians(1.1)
+        point_map.add(np.asarray([[3.0 * math.cos(bearing),
+                                  3.0 * math.sin(bearing)]]))
+        removed = point_map.clear_freespace(
+            Pose2(), np.asarray([[1.0, 0.0]]), 4.0,
+            math.radians(1.0), 0.10, math.radians(1.5))
+        self.assertEqual(removed, 0)
+        self.assertEqual(len(point_map), 1)
+
+    def test_freespace_farther_return_clears_old_point(self):
+        point_map = VoxelPointMap(0.02)
+        point_map.add(np.asarray([[1.0, 0.0]]))
+        removed = point_map.clear_freespace(
+            Pose2(), np.asarray([[2.0, 0.0]]), 4.0,
+            math.radians(1.0), 0.10, math.radians(1.5))
+        self.assertEqual(removed, 1)
+        self.assertEqual(len(point_map), 0)
 
     def _world(self):
         return np.vstack((
