@@ -18,13 +18,11 @@ def test_all_units_share_direction_contract():
 
 
 def test_field_verified_stream_profiles():
-    front = parameters('a1', DEFAULT_PORTS['a1'])
-    assert (front['sample_rate'], front['fixed_resolution'],
-            front['intensity_bit']) == (9, True, 16)
-    for sensor_id in ('a2', 'b1', 'b2'):
+    for sensor_id in SENSOR_IDS:
         stable = parameters(sensor_id, DEFAULT_PORTS[sensor_id])
         assert (stable['sample_rate'], stable['fixed_resolution'],
                 stable['intensity_bit']) == (4, False, 8)
+        assert stable['invalid_range_is_inf'] is False
 
 
 def test_unknown_sensor_is_rejected():

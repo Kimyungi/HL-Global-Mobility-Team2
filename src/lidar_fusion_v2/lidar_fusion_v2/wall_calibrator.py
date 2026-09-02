@@ -1,4 +1,4 @@
-"""Capture walls from anchor/side overlaps and solve side LiDAR extrinsics."""
+"""Capture overlap walls and solve four-LiDAR planar extrinsics."""
 
 import argparse
 import json
@@ -15,7 +15,8 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 import yaml
 
-from .calibration import fit_line_ransac, solve_sensor_pose
+from .calibration import fit_line_ransac, solve_four_lidar_poses
+from .calibration import solve_sensor_pose
 from .geometry import SensorGeometry, local_to_base, scan_to_local
 
 
@@ -123,6 +124,8 @@ def _capture(args):
 
     record = {
         'pair': args.pair, 'anchor': anchor, 'target': target,
+        'anchor_pose': [geometry[anchor].x, geometry[anchor].y,
+                        math.radians(geometry[anchor].yaw_deg)],
         'sector_deg': [sector_min, sector_max],
         'normal': normal.tolist(), 'offset': offset,
         'anchor_inliers': int(inliers.sum()),
@@ -144,8 +147,25 @@ def _capture(args):
 
 def _solve(args):
     geometry, _ = _load_geometry(args.config)
-    sensor_id = 'b1' if args.side == 'left' else 'b2'
     content = json.loads(Path(args.dataset).read_text())
+    if args.side == 'joint':
+        initial = {
+            sensor_id: (sensor.x, sensor.y, math.radians(sensor.yaw_deg))
+            for sensor_id, sensor in geometry.items()
+        }
+        poses, rms, result = solve_four_lidar_poses(
+            content['captures'], initial)
+        if not result.success:
+            raise RuntimeError(result.message)
+        print(f'joint captures={len(content["captures"])} RMS={rms:.4f}m')
+        for sensor_id in ('a1', 'a2', 'b1', 'b2'):
+            pose = poses[sensor_id]
+            print(f'{sensor_id}: x={pose[0]:.6f} y={pose[1]:.6f} '
+                  f'yaw_deg={math.degrees(pose[2]):.6f}')
+        print('a1 and every FOV value remain unchanged')
+        return
+
+    sensor_id = 'b1' if args.side == 'left' else 'b2'
     captures = [item for item in content['captures'] if item['target'] == sensor_id]
     initial = (geometry[sensor_id].x, geometry[sensor_id].y,
                math.radians(geometry[sensor_id].yaw_deg))
@@ -182,7 +202,8 @@ def _parser():
     capture.add_argument('--minimum-span', type=float, default=0.30)
     capture.add_argument('--maximum-angle-error', type=float, default=12.0)
     solve = sub.add_parser('solve')
-    solve.add_argument('--side', required=True, choices=('left', 'right'))
+    solve.add_argument('--side', required=True,
+                       choices=('left', 'right', 'joint'))
     return parser
 
 
