@@ -27,6 +27,7 @@ setup(
             'slam_only = stack_parking.slam_only:main',
             'scan_to_cloud = stack_parking.scan_to_cloud:main',
             'parking_simulator = stack_parking.simulation:main',
+            'wall_gap_node = stack_parking.wall_gap_node:main',
         ],
     },
 )

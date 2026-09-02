@@ -32,9 +32,9 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, ColorRGBA, String
 from visualization_msgs.msg import Marker, MarkerArray
 
-from stack_parking.geometry import Pose2, points_in_frame, transform_points
-from stack_parking.reference_path import ReferencePath, build_reference_path
-from stack_parking.wall_gap_detector import (
+from .geometry import Pose2, points_in_frame, transform_points
+from .reference_path import ReferencePath, build_reference_path
+from .wall_gap_detector import (
     SIDE_LEFT,
     SIDE_RIGHT,
     WallGapConfig,
