@@ -9,12 +9,16 @@ Written once per run (as soon as they appear on /wall_gap/markers):
   valid_point.csv     — side, map_x, map_y, width_m, near_distance_m
   reference_path.csv  — segment, index, map_x, map_y  (path_straight1,
                          path_arc, path_straight2, path_points rows)
+  exit_reference_path.csv — the second, centreline-mirrored forward path
 
 Written continuously, one row every ``log_period_ms`` (default 10ms) on a
 fixed ROS timer — not off either topic's own callback, so row spacing stays
 uniform regardless of /adas/target_ref (100Hz) or /vehicle/vector arrival
 jitter/drops. Each row holds the latest cached sample of both (same "hold
-between updates" convention the CAN protocol itself uses, CLAUDE.md §5.8):
+between updates" convention the CAN protocol itself uses, CLAUDE.md §5.8).
+When the forward-exit preview reaches its final end point, the controller
+publishes ``exit_path_end_stop``; the logger then flushes/closes all files and
+shuts down automatically:
   ticks.csv — stamp_s, ref_x, ref_y, ref_yaw, ref_curvature, target_str,
               act_str, v_ref, act_v, dx, dy, dyaw
 
@@ -38,6 +42,7 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from std_msgs.msg import String
 from visualization_msgs.msg import MarkerArray
 
 from fma_interfaces.msg import TargetRef, VehicleVector
@@ -68,6 +73,7 @@ class WallGapLogger(Node):
 
         self.valid_point_written = False
         self.reference_path_written = False
+        self.exit_reference_path_written = False
 
         self.ticks_path = self.out_dir / 'ticks.csv'
         self.ticks_file = open(self.ticks_path, 'w', newline='')
@@ -81,6 +87,7 @@ class WallGapLogger(Node):
 
         self.latest_ref: TargetRef | None = None
         self.latest_veh: VehicleVector | None = None
+        self.logging_finished = False
 
         self.create_subscription(
             MarkerArray, '/wall_gap/markers', self._on_markers, 5)
@@ -89,6 +96,8 @@ class WallGapLogger(Node):
         self.create_subscription(
             VehicleVector, '/vehicle/vector', self._on_vehicle_vector,
             qos_profile_sensor_data)
+        self.create_subscription(
+            String, '/wall_gap/state', self._on_state, 10)
 
         # Fixed-period timer rather than writing off the /vehicle/vector
         # callback: guarantees a uniform 10ms row spacing (user directive,
@@ -97,7 +106,7 @@ class WallGapLogger(Node):
         # of each topic, same "hold between updates" convention the CAN
         # protocol itself uses (CLAUDE.md 5.8).
         period_s = max(1.0, float(self.get_parameter('log_period_ms').value)) / 1000.0
-        self.create_timer(period_s, self._on_log_tick)
+        self.log_timer = self.create_timer(period_s, self._on_log_tick)
 
         self.get_logger().info(
             'wall_gap_logger writing to %s (period=%.0fms)'
@@ -145,13 +154,56 @@ class WallGapLogger(Node):
                 self.get_logger().info(
                     'reference path logged: %d points -> %s' % (len(rows), path))
 
+        if not self.exit_reference_path_written:
+            segment_ns = (
+                'exit_path_straight2', 'exit_path_arc', 'exit_path_straight1')
+            rows = []
+            for marker in msg.markers:
+                if marker.ns in segment_ns:
+                    for i, point in enumerate(marker.points):
+                        rows.append((marker.ns, i, point.x, point.y))
+                elif marker.ns == 'exit_path_points':
+                    label = {0: 'start', 1: 'P0', 2: 'E', 3: 'end'}.get(
+                        marker.id, str(marker.id))
+                    rows.append((
+                        'exit_path_points:' + label, 0,
+                        marker.pose.position.x, marker.pose.position.y))
+            if rows:
+                path = self.out_dir / 'exit_reference_path.csv'
+                with open(path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['segment', 'index', 'map_x', 'map_y'])
+                    writer.writerows(rows)
+                self.exit_reference_path_written = True
+                self.get_logger().info(
+                    'exit reference path logged: %d points -> %s'
+                    % (len(rows), path))
+
     def _on_target_ref(self, msg: TargetRef) -> None:
         self.latest_ref = msg
 
     def _on_vehicle_vector(self, msg: VehicleVector) -> None:
         self.latest_veh = msg
 
+    def _on_state(self, msg: String) -> None:
+        if self.logging_finished or msg.data != 'exit_path_end_stop':
+            return
+        self.logging_finished = True
+        self.log_timer.cancel()
+        if not self.ticks_file.closed:
+            self.ticks_file.flush()
+            self.ticks_file.close()
+        self.get_logger().info(
+            'exit preview reached the reference-path end — logging complete')
+        # End the standalone logger process only after every buffered row has
+        # been committed. The controller keeps publishing its zero-speed final
+        # state independently.
+        if rclpy.ok():
+            rclpy.shutdown()
+
     def _on_log_tick(self) -> None:
+        if self.logging_finished:
+            return
         veh = self.latest_veh
         if veh is None:
             return
@@ -178,8 +230,9 @@ class WallGapLogger(Node):
             self.get_logger().info('%d ticks logged' % self.tick_count)
 
     def destroy_node(self) -> bool:
-        self.ticks_file.flush()
-        self.ticks_file.close()
+        if not self.ticks_file.closed:
+            self.ticks_file.flush()
+            self.ticks_file.close()
         return super().destroy_node()
 
 
@@ -188,7 +241,7 @@ def main(args=None):
     node = WallGapLogger()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         try:

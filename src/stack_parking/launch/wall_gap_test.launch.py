@@ -13,15 +13,15 @@ Driving remains manual (joystick) unless ``enable_control:=true`` is
 explicitly supplied. With control enabled, this node takes over as soon as
 the vehicle is switched out of joystick mode: it commands a straight-ahead
 drive at ``search_speed_mps`` (default 0.75m/s) while the detector hunts the
-gap. The instant a square is confirmed it commands zero, holds for one
-second, drives forward at ``forward_speed_mps`` until its ``preview_distance_m``
-(default 1.5m) preview reaches the outer end of the 3m wall-parallel line,
-then reverses the line/arc/2m inward leg at ``-reverse_speed_mps`` until that
-same preview point reaches the end of the final straight segment. There is no
-rear-clearance stop during the reverse leg (removed by directive) — the only
-bound is the preview point reaching the fixed path's end. Do not run adas_mgm at
-the same time because this bench node owns /adas/target_ref throughout (both
-the search leg and after confirmation).
+gap. The instant a square is confirmed it continues into forward alignment
+without stopping. When its ``preview_distance_m`` (default 1.5m) preview
+reaches the outer end of the 2m wall-parallel line, it holds for one second,
+then reverses the line/arc/2m inward leg at ``-reverse_speed_mps``. At the
+reverse-path end it stops for one second, mirrors the full path about the
+inward straight, and follows that new path forward out of the bay. There is
+no rear-clearance stop during the reverse leg — the finite reference-path end
+is the bound. Do not run adas_mgm at the same time because this bench node
+owns /adas/target_ref throughout (both the search leg and after confirmation).
 
 Examples:
   ros2 launch stack_parking wall_gap_test.launch.py
@@ -29,7 +29,7 @@ Examples:
   ros2 launch stack_parking wall_gap_test.launch.py enable_control:=true search_speed_mps:=0.2
   ros2 launch stack_parking wall_gap_test.launch.py search_side:=right
   ros2 launch stack_parking wall_gap_test.launch.py wall_line_offset_m:=0.15
-  ros2 launch stack_parking wall_gap_test.launch.py inside_straight_m:=2.0 parallel_straight_m:=3.0
+  ros2 launch stack_parking wall_gap_test.launch.py inside_straight_m:=2.0 parallel_straight_m:=2.0
   ros2 launch stack_parking wall_gap_test.launch.py start_multi_lidar:=false
   ros2 launch stack_parking wall_gap_test.launch.py start_can:=false
 """
@@ -65,7 +65,7 @@ def generate_launch_description():
     reverse_speed_mps = LaunchConfiguration('reverse_speed_mps')
     search_speed_mps = LaunchConfiguration('search_speed_mps')
     preview_distance_m = LaunchConfiguration('preview_distance_m')
-    hold_after_detection_s = LaunchConfiguration('hold_after_detection_s')
+    direction_change_hold_s = LaunchConfiguration('direction_change_hold_s')
     rviz = LaunchConfiguration('rviz')
 
     return LaunchDescription([
@@ -91,7 +91,7 @@ def generate_launch_description():
             'inside_straight_m', default_value='2.0',
             description='Reference-path length from P0 into the parking bay'),
         DeclareLaunchArgument(
-            'parallel_straight_m', default_value='3.0',
+            'parallel_straight_m', default_value='2.0',
             description='Wall-parallel reference-path length before the arc'),
         DeclareLaunchArgument(
             'enable_control', default_value='false',
@@ -106,7 +106,11 @@ def generate_launch_description():
                 'Straight-ahead speed commanded while hunting for the gap, '
                 'before a square is confirmed (enable_control only)')),
         DeclareLaunchArgument('preview_distance_m', default_value='1.5'),
-        DeclareLaunchArgument('hold_after_detection_s', default_value='1.0'),
+        DeclareLaunchArgument(
+            'direction_change_hold_s', default_value='1.0',
+            description=(
+                'Stop duration before reverse parking and before the mirrored '
+                'forward pull-out')),
         DeclareLaunchArgument(
             'rviz', default_value='true',
             description='Open the wall_gap RViz view'),
@@ -194,8 +198,8 @@ def generate_launch_description():
                     search_speed_mps, value_type=float),
                 'preview_distance_m': ParameterValue(
                     preview_distance_m, value_type=float),
-                'hold_after_detection_s': ParameterValue(
-                    hold_after_detection_s, value_type=float),
+                'direction_change_hold_s': ParameterValue(
+                    direction_change_hold_s, value_type=float),
             }],
         ),
 

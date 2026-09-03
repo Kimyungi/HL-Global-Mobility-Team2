@@ -5,9 +5,11 @@ With ``enable_control`` set, this node drives the full manoeuvre once the
 vehicle is switched out of joystick mode: it commands a straight-ahead
 ``/adas/target_ref`` at ``search_speed_mps`` while the detector hunts the
 LiDAR SLAM map for a gap, and the instant the first reachable square is
-confirmed it asserts an immediate stop, creates the fixed 3m-line/arc/2m-line
-path, holds for one second, then drives that path (forward align, then
-reverse park) at the 100Hz ``/adas/target_ref`` stream used by bridge_dspace.
+confirmed it creates the fixed 2m-line/arc/2m-line path and continues directly
+into forward alignment.  It holds for one second when the preview reaches the
+outer end, reverses into the bay, holds for one second, then follows a newly
+drawn forward path mirrored about the inward straight.  Commands use the
+100Hz ``/adas/target_ref`` stream consumed by bridge_dspace.
 All motion output is guarded by the explicit ``enable_control`` parameter;
 visualization remains usable with control disabled, in which case both the
 search leg and the post-confirmation path are left to the driver/joystick.
@@ -28,6 +30,8 @@ Markers on /wall_gap/markers (ns):
                green=clear, red=blocked
   squares    — the 1m x 1m inscribed-square outline for every *tested*
                candidate (green outline if clear, red if blocked)
+  path_*     — the first reference path used for reverse parking
+  exit_path_* — the mirrored second reference path used for forward pull-out
 """
 
 from __future__ import annotations
@@ -71,8 +75,8 @@ def _rgba(r: float, g: float, b: float, a: float = 1.0) -> ColorRGBA:
 
 class WallGapNode(Node):
 
-    def __init__(self):
-        super().__init__('wall_gap_node')
+    def __init__(self, node_name: str = 'wall_gap_node'):
+        super().__init__(node_name)
         self.declare_parameter('map_topic', '/parking/local_map')
         self.declare_parameter('pose_topic', '/parking/slam_pose')
         self.declare_parameter('map_frame', 'parking_map')
@@ -94,12 +98,12 @@ class WallGapNode(Node):
         self.declare_parameter('publish_rate_hz', 5.0)
         self.declare_parameter('min_turn_radius_m', 1.15)
         self.declare_parameter('inside_straight_m', 2.0)
-        self.declare_parameter('parallel_straight_m', 3.0)
+        self.declare_parameter('parallel_straight_m', 2.0)
         self.declare_parameter('search_side', 'left')
         self.declare_parameter('enable_control', False)
         self.declare_parameter('target_topic', '/adas/target_ref')
         self.declare_parameter('command_rate_hz', 100.0)
-        self.declare_parameter('hold_after_detection_s', 1.0)
+        self.declare_parameter('direction_change_hold_s', 1.0)
         self.declare_parameter('preview_distance_m', 1.5)
         self.declare_parameter('forward_speed_mps', 0.75)
         self.declare_parameter('reverse_speed_mps', 0.75)
@@ -179,7 +183,8 @@ class WallGapNode(Node):
             [center_x - half_l, center_y - half_w],
         ])
         self.controller = WallGapController(WallGapControlConfig(
-            hold_s=float(self.get_parameter('hold_after_detection_s').value),
+            direction_change_hold_s=float(
+                self.get_parameter('direction_change_hold_s').value),
             preview_distance_m=float(
                 self.get_parameter('preview_distance_m').value),
             forward_speed_mps=float(
@@ -436,21 +441,24 @@ class WallGapNode(Node):
                         'reference path exists, but controller sampling failed')
                 else:
                     self.delta_tracker.reset(pose)
-                    # Send the first zero-speed frame in this same detection
-                    # callback; do not wait up to one more 10ms command tick.
+                    # Publish immediately in this detection callback.  start()
+                    # now enters FORWARD directly, so square confirmation does
+                    # not insert the old one-second zero-speed hold.
                     first_output = self.controller.update(pose, now_s)
                     self.last_control_output = first_output
-                    self.stop_pub.publish(Bool(data=True))
+                    self.stop_pub.publish(Bool(
+                        data=abs(first_output.v_ref_mps) < 1.0e-6))
                     self.state_pub.publish(String(data=first_output.status))
                     self._publish_target(first_output)
                     self.get_logger().info(
                         'usable space confirmed: side=%s map=(%.2f,%.2f) '
-                        'width=%.2fm — immediate stop, hold=%.1fs, '
-                        'preview=%.1fm, v_forward=%.2f, v_reverse=%.2f, '
-                        'no rear-clearance stop (removed by directive)'
+                        'width=%.2fm — no detection hold, direction-change '
+                        'hold=%.1fs, preview=%.1fm, v_forward=%.2f, '
+                        'v_reverse=%.2f, mirrored forward exit enabled'
                         % (
                             cleared.side, cleared.map_x, cleared.map_y,
-                            cleared.width_m, self.controller.config.hold_s,
+                            cleared.width_m,
+                            self.controller.config.direction_change_hold_s,
                             self.controller.config.preview_distance_m,
                             self.controller.config.forward_speed_mps,
                             -self.controller.config.reverse_speed_mps,
@@ -609,6 +617,52 @@ class WallGapNode(Node):
                 marker.pose.position.y = float(pt[1])
                 marker.pose.position.z = 0.02
                 marker.scale.x = marker.scale.y = marker.scale.z = 0.15
+                marker.color = color
+                array.markers.append(marker)
+
+        if self.controller.exit_reference_path is not None:
+            exit_path = self.controller.exit_reference_path
+            # Publish in actual forward traversal order: G -> P0 -> mirrored
+            # arc -> mirrored E -> mirrored S.
+            exit_segs = [
+                ('exit_path_straight2', exit_path.straight2_map[::-1],
+                 _rgba(1.0, 0.55, 0.0)),
+                ('exit_path_arc', exit_path.arc_map[::-1],
+                 _rgba(0.75, 0.2, 1.0)),
+                ('exit_path_straight1', exit_path.straight1_map[::-1],
+                 _rgba(0.0, 0.85, 0.9)),
+            ]
+            for ns, pts, color in exit_segs:
+                marker = Marker()
+                marker.header.frame_id = self.map_frame
+                marker.header.stamp = self.get_clock().now().to_msg()
+                marker.ns = ns
+                marker.id = 0
+                marker.type = Marker.LINE_STRIP
+                marker.action = Marker.ADD
+                marker.scale.x = 0.045
+                marker.color = color
+                marker.points = [
+                    Point(x=float(x), y=float(y), z=0.05) for x, y in pts]
+                array.markers.append(marker)
+
+            for marker_id, (pt, color) in enumerate((
+                (exit_path.goal_map, _rgba(1.0, 0.55, 0.0)),
+                (exit_path.p0_map, _rgba(0.9, 0.2, 0.9)),
+                (exit_path.e_map, _rgba(0.75, 0.2, 1.0)),
+                (exit_path.straight1_map[0], _rgba(0.0, 0.85, 0.9)),
+            )):
+                marker = Marker()
+                marker.header.frame_id = self.map_frame
+                marker.header.stamp = self.get_clock().now().to_msg()
+                marker.ns = 'exit_path_points'
+                marker.id = marker_id
+                marker.type = Marker.SPHERE
+                marker.action = Marker.ADD
+                marker.pose.position.x = float(pt[0])
+                marker.pose.position.y = float(pt[1])
+                marker.pose.position.z = 0.05
+                marker.scale.x = marker.scale.y = marker.scale.z = 0.12
                 marker.color = color
                 array.markers.append(marker)
 

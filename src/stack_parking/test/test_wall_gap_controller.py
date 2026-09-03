@@ -11,6 +11,7 @@ from stack_parking.wall_gap_controller import (
     WallGapControlConfig,
     WallGapController,
     controller_paths,
+    mirrored_forward_exit_path,
 )
 
 
@@ -75,11 +76,9 @@ class WallGapControllerTest(unittest.TestCase):
         self.assertTrue(all(point.curvature < 0.0 for point in right_curve))
         self.assertAlmostEqual(right_curve[-1].yaw, math.pi / 2.0, places=6)
 
-    def test_hold_forward_preview_end_then_reverse_to_path_end(self):
-        # No rear-clearance stop (removed by directive) — reverse runs at a
-        # constant -reverse_speed_mps until the finite reverse path ends.
+    def test_no_detection_hold_then_two_direction_change_holds(self):
         controller = WallGapController(WallGapControlConfig(
-            hold_s=1.0,
+            direction_change_hold_s=1.0,
             preview_distance_m=1.0,
             forward_speed_mps=0.3,
             reverse_speed_mps=0.3,
@@ -87,11 +86,9 @@ class WallGapControllerTest(unittest.TestCase):
         initial = Pose2(1.0, -1.0, 0.0)
         self.assertTrue(controller.start(_left_path(), initial, now_s=10.0))
 
-        output = controller.update(initial, 10.5)
-        self.assertEqual(output.state, ControlState.HOLD)
-        self.assertEqual(output.v_ref_mps, 0.0)
-
-        output = controller.update(initial, 11.0)
+        # Detection starts the forward alignment immediately: no old
+        # square-confirmation hold remains.
+        output = controller.update(initial, 10.0)
         self.assertEqual(output.state, ControlState.FORWARD)
         self.assertAlmostEqual(output.v_ref_mps, 0.3)
         self.assertAlmostEqual(output.reference_local.x, 1.0, places=6)
@@ -99,7 +96,16 @@ class WallGapControllerTest(unittest.TestCase):
         # At x=3 the one-metre preview is clamped to S=(4,-1), which is the
         # explicitly requested transition trigger. The reverse preview then
         # lies one metre behind the vehicle on the same wall-parallel line.
-        output = controller.update(Pose2(3.0, -1.0, 0.0), 12.0)
+        align_pose = Pose2(3.0, -1.0, 0.0)
+        output = controller.update(align_pose, 11.0)
+        self.assertEqual(output.state, ControlState.ALIGN_HOLD)
+        self.assertEqual(output.v_ref_mps, 0.0)
+
+        output = controller.update(align_pose, 11.99)
+        self.assertEqual(output.state, ControlState.ALIGN_HOLD)
+        self.assertEqual(output.v_ref_mps, 0.0)
+
+        output = controller.update(align_pose, 12.0)
         self.assertEqual(output.state, ControlState.REVERSE)
         self.assertAlmostEqual(output.v_ref_mps, -0.3)
         self.assertAlmostEqual(output.reference_local.x, -1.0, places=6)
@@ -110,11 +116,50 @@ class WallGapControllerTest(unittest.TestCase):
         self.assertEqual(output.state, ControlState.REVERSE)
         self.assertAlmostEqual(output.v_ref_mps, -0.3)
 
-        # At the reverse path's end (goal), the finite-path bound stops it.
-        output = controller.update(Pose2(0.0, 2.0, -math.pi / 2.0), 12.2)
+        # Reaching the reverse path's end draws the mirrored exit path and
+        # holds before the forward pull-out.
+        parked_pose = Pose2(0.0, 2.0, -math.pi / 2.0)
+        output = controller.update(parked_pose, 13.0)
+        self.assertEqual(output.state, ControlState.PARKED_HOLD)
+        self.assertEqual(output.v_ref_mps, 0.0)
+        self.assertIsNotNone(controller.exit_reference_path)
+        self.assertTrue(controller.exit_path)
+
+        output = controller.update(parked_pose, 13.99)
+        self.assertEqual(output.state, ControlState.PARKED_HOLD)
+        self.assertEqual(output.v_ref_mps, 0.0)
+
+        output = controller.update(parked_pose, 14.0)
+        self.assertEqual(output.state, ControlState.FORWARD_EXIT)
+        self.assertEqual(output.v_ref_mps, 0.3)
+
+        # The vehicle is still one preview distance short of the path end.
+        # Stopping is triggered by the preview reaching end, not by the
+        # vehicle pose itself arriving there.
+        exit_end = controller.exit_path[-1]
+        output = controller.update(
+            Pose2(-3.0, -1.0, exit_end.yaw), 15.0)
         self.assertEqual(output.state, ControlState.STOPPED)
         self.assertEqual(output.v_ref_mps, 0.0)
-        self.assertEqual(output.status, 'planned_path_end_stop')
+        self.assertEqual(output.status, 'exit_path_end_stop')
+        self.assertAlmostEqual(output.reference_map.x, exit_end.x, places=6)
+        self.assertAlmostEqual(output.reference_map.y, exit_end.y, places=6)
+
+    def test_forward_exit_is_mirrored_about_inside_straight(self):
+        mirrored, exit_path = mirrored_forward_exit_path(
+            _left_path(), step_m=0.05)
+        self.assertIsNotNone(mirrored)
+        np.testing.assert_allclose(
+            mirrored.straight1_map,
+            np.asarray([[-4.0, -1.0], [-1.0, -1.0]]),
+            atol=1.0e-9,
+        )
+        np.testing.assert_allclose(mirrored.goal_map, [0.0, 2.0])
+        self.assertAlmostEqual(exit_path[0].x, 0.0)
+        self.assertAlmostEqual(exit_path[0].y, 2.0)
+        self.assertAlmostEqual(exit_path[-1].x, -4.0)
+        self.assertAlmostEqual(exit_path[-1].y, -1.0)
+        self.assertTrue(all(point.gear == 1 for point in exit_path))
 
     def test_lidar_pose_delta_is_previous_vehicle_frame_and_held(self):
         tracker = PoseDeltaTracker()

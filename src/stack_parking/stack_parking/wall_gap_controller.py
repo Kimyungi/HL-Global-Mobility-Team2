@@ -1,10 +1,11 @@
 """ROS-independent controller for the fixed-wall gap parking experiment.
 
 The controller owns only the motion that starts after a square has been
-confirmed.  It holds for one second, drives toward the outer end of the
-wall-parallel segment, then follows the same fixed path in reverse with a
-one-metre preview.  All reference points are converted from ``parking_map``
-to the live LiDAR-localized vehicle frame on every update.
+confirmed.  It immediately drives toward the outer end of the wall-parallel
+segment, holds there, follows the fixed path in reverse into the bay, holds
+again, then drives forward on a path mirrored about the bay's inward straight.
+All reference points are converted from ``parking_map`` to the live
+LiDAR-localized vehicle frame on every update.
 """
 
 from __future__ import annotations
@@ -26,20 +27,25 @@ from .geometry import (
     preview_path_point,
     wrap_angle,
 )
-from .reference_path import ReferencePath
+from .reference_path import (
+    ReferencePath,
+    mirror_reference_path_about_inside_straight,
+)
 
 
 class ControlState(str, enum.Enum):
     IDLE = 'idle'
-    HOLD = 'hold'
     FORWARD = 'forward_align'
+    ALIGN_HOLD = 'forward_path_end_hold'
     REVERSE = 'reverse_park'
+    PARKED_HOLD = 'reverse_path_end_hold'
+    FORWARD_EXIT = 'forward_exit'
     STOPPED = 'stopped'
 
 
 @dataclass(frozen=True)
 class WallGapControlConfig:
-    hold_s: float = 1.0
+    direction_change_hold_s: float = 1.0
     preview_distance_m: float = 1.5
     forward_speed_mps: float = 0.3
     reverse_speed_mps: float = 0.3
@@ -194,16 +200,46 @@ def controller_paths(
     return tuple(forward), tuple(reverse)
 
 
+def mirrored_forward_exit_path(
+    reference: ReferencePath,
+    step_m: float = 0.05,
+) -> tuple[Optional[ReferencePath], tuple[PathPoint, ...]]:
+    """Build G->P0->mirrored arc->mirrored S for forward pull-out.
+
+    Mirroring uses the straight that enters the bay as its axis.  Reversing
+    the mirrored parking traversal makes the new path start where the reverse
+    parking leg ended.  Vehicle yaw and curvature remain valid when the gear
+    changes from reverse to forward because traversal direction is reversed
+    at the same time.
+    """
+    mirrored = mirror_reference_path_about_inside_straight(reference)
+    if mirrored is None:
+        return None, ()
+    _, mirrored_reverse = controller_paths(mirrored, step_m)
+    forward_exit = tuple(PathPoint(
+        point.x,
+        point.y,
+        point.yaw,
+        point.curvature,
+        1,
+    ) for point in reversed(mirrored_reverse))
+    return mirrored, forward_exit
+
+
 class WallGapController:
     def __init__(self, config: Optional[WallGapControlConfig] = None):
         self.config = config or WallGapControlConfig()
         self.state = ControlState.IDLE
         self.forward_path: tuple[PathPoint, ...] = ()
         self.reverse_path: tuple[PathPoint, ...] = ()
+        self.exit_path: tuple[PathPoint, ...] = ()
         self.forward_lengths: list[float] = []
         self.reverse_lengths: list[float] = []
+        self.exit_lengths: list[float] = []
         self.progress = 0
-        self.started_at_s = 0.0
+        self.hold_started_at_s = 0.0
+        self.entry_reference_path: Optional[ReferencePath] = None
+        self.exit_reference_path: Optional[ReferencePath] = None
         self._last_reference_map: Optional[PathPoint] = None
         self.stop_reason = ''
 
@@ -222,11 +258,17 @@ class WallGapController:
             return False
         self.forward_path = forward
         self.reverse_path = reverse
+        self.exit_path = ()
         self.forward_lengths = cumulative_lengths(forward)
         self.reverse_lengths = cumulative_lengths(reverse)
+        self.exit_lengths = []
         self.progress = closest_path_index(forward, current_pose_map)
-        self.started_at_s = float(now_s)
-        self.state = ControlState.HOLD
+        self.hold_started_at_s = 0.0
+        self.entry_reference_path = path
+        self.exit_reference_path = None
+        # Space confirmation itself no longer inserts a stop.  The first
+        # command produced after start() is the forward alignment command.
+        self.state = ControlState.FORWARD
         self.stop_reason = ''
         self._last_reference_map = self._preview(
             forward, self.forward_lengths, current_pose_map)
@@ -268,17 +310,6 @@ class WallGapController:
         if self.state == ControlState.IDLE:
             return self._output(current_pose_map, None, 0.0, 'idle')
 
-        if self.state == ControlState.HOLD:
-            reference = self._preview(
-                self.forward_path, self.forward_lengths, current_pose_map)
-            elapsed = float(now_s) - self.started_at_s
-            if elapsed < self.config.hold_s:
-                return self._output(
-                    current_pose_map, reference, 0.0,
-                    'square_confirmed_hold:%.2f/%.2fs' % (
-                        max(0.0, elapsed), self.config.hold_s))
-            self.state = ControlState.FORWARD
-
         if self.state == ControlState.FORWARD:
             reference = self._preview(
                 self.forward_path, self.forward_lengths, current_pose_map)
@@ -292,6 +323,23 @@ class WallGapController:
                     current_pose_map, reference,
                     self.config.forward_speed_mps, 'forward_alignment')
 
+            self.state = ControlState.ALIGN_HOLD
+            self.hold_started_at_s = float(now_s)
+            return self._output(
+                current_pose_map, reference, 0.0,
+                'forward_path_end_hold:0.00/%.2fs'
+                % self.config.direction_change_hold_s)
+
+        if self.state == ControlState.ALIGN_HOLD:
+            reference = self.forward_path[-1]
+            elapsed = float(now_s) - self.hold_started_at_s
+            if elapsed < self.config.direction_change_hold_s:
+                return self._output(
+                    current_pose_map, reference, 0.0,
+                    'forward_path_end_hold:%.2f/%.2fs' % (
+                        max(0.0, elapsed),
+                        self.config.direction_change_hold_s,
+                    ))
             self.state = ControlState.REVERSE
             self.progress = closest_path_index(
                 self.reverse_path, current_pose_map)
@@ -309,14 +357,65 @@ class WallGapController:
             preview_at_end = math.hypot(
                 reference.x - end.x, reference.y - end.y) <= 1.0e-6
             if preview_at_end:
-                self.state = ControlState.STOPPED
-                self.stop_reason = 'planned_path_end'
+                if self.entry_reference_path is None:
+                    self.state = ControlState.STOPPED
+                    self.stop_reason = 'missing_entry_reference_path'
+                    return self._output(
+                        current_pose_map, reference, 0.0,
+                        self.stop_reason)
+                mirrored, exit_path = mirrored_forward_exit_path(
+                    self.entry_reference_path, self.config.sample_step_m)
+                if mirrored is None or not exit_path:
+                    self.state = ControlState.STOPPED
+                    self.stop_reason = 'exit_reference_path_failed'
+                    return self._output(
+                        current_pose_map, reference, 0.0,
+                        self.stop_reason)
+                self.exit_reference_path = mirrored
+                self.exit_path = exit_path
+                self.exit_lengths = cumulative_lengths(exit_path)
+                self.progress = closest_path_index(
+                    self.exit_path, current_pose_map)
+                self.state = ControlState.PARKED_HOLD
+                self.hold_started_at_s = float(now_s)
+                reference = self._preview(
+                    self.exit_path, self.exit_lengths, current_pose_map)
                 return self._output(
                     current_pose_map, reference, 0.0,
-                    'planned_path_end_stop')
+                    'reverse_path_end_hold:0.00/%.2fs'
+                    % self.config.direction_change_hold_s)
             return self._output(
                 current_pose_map, reference,
                 -self.config.reverse_speed_mps, 'reverse_parking')
+
+        if self.state == ControlState.PARKED_HOLD:
+            reference = self._preview(
+                self.exit_path, self.exit_lengths, current_pose_map)
+            elapsed = float(now_s) - self.hold_started_at_s
+            if elapsed < self.config.direction_change_hold_s:
+                return self._output(
+                    current_pose_map, reference, 0.0,
+                    'reverse_path_end_hold:%.2f/%.2fs' % (
+                        max(0.0, elapsed),
+                        self.config.direction_change_hold_s,
+                    ))
+            self.state = ControlState.FORWARD_EXIT
+
+        if self.state == ControlState.FORWARD_EXIT:
+            reference = self._preview(
+                self.exit_path, self.exit_lengths, current_pose_map)
+            end = self.exit_path[-1]
+            preview_at_end = math.hypot(
+                reference.x - end.x, reference.y - end.y) <= 1.0e-6
+            if preview_at_end:
+                self.state = ControlState.STOPPED
+                self.stop_reason = 'exit_path_end'
+                return self._output(
+                    current_pose_map, reference, 0.0,
+                    'exit_path_end_stop')
+            return self._output(
+                current_pose_map, reference,
+                self.config.forward_speed_mps, 'forward_exit')
 
         return self._output(
             current_pose_map, self._last_reference_map, 0.0,

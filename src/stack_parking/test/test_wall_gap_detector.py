@@ -137,7 +137,7 @@ class FixedReferenceWallTest(unittest.TestCase):
         self.assertAlmostEqual(
             float(np.linalg.norm(
                 path.straight1_map[1] - path.straight1_map[0])),
-            3.0,
+            2.0,
             places=9,
         )
         self.assertAlmostEqual(
@@ -149,7 +149,7 @@ class FixedReferenceWallTest(unittest.TestCase):
         # Both transitions are tangent-continuous: the outer line is wall
         # parallel and the inner line follows the inward wall normal.
         parallel_direction = (
-            path.straight1_map[1] - path.straight1_map[0]) / 3.0
+            path.straight1_map[1] - path.straight1_map[0]) / 2.0
         inside_direction = (
             path.straight2_map[1] - path.straight2_map[0]) / 2.0
         self.assertAlmostEqual(abs(float(np.dot(parallel_direction, tangent))), 1.0)

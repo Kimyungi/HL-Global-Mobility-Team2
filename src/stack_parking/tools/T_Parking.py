@@ -11,12 +11,14 @@ bridge_dspace/dSPACE can be driven without the full MGM stack:
   - dx=1.0, dy=0.0, dyaw=0.0 — the equivalent straight-line GNSS delta.
   - update increments by 1 every 10 ticks (10Hz fix rate inside the 100Hz
     TX loop, same ratio as the real GPS-vs-CAN cadence).
-  - v_ref = target_speed_mps (0.3 by default) until wall_gap_node confirms a
-    square and asserts ``/wall_gap/stop``.
+  - v_ref = target_speed_mps (0.3 by default) until wall_gap_node asserts
+    ``/wall_gap/stop``.
 
-On that first stop edge this node sends one final zero-speed frame and then
-permanently stops publishing. That handoff leaves an enabled wall_gap_node as
-the sole ``/adas/target_ref`` publisher for the hold/alignment/reverse phases.
+This is a legacy lead-in helper for manual/control-disabled bench runs.  The
+autonomous wall-gap flow now owns the search, alignment, reverse park, and
+mirrored forward exit itself; launch it with ``enable_control:=true`` and do
+not run this helper at the same time.  In the legacy flow, the first stop edge
+still sends one final zero-speed frame and permanently stops publishing.
 Restart this process for a new run; do not run adas_mgm at the same time.
 
 ``counter`` is not part of TargetRef — bridge_dspace assigns it at send

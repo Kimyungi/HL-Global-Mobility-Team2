@@ -28,6 +28,8 @@ setup(
             'scan_to_cloud = stack_parking.scan_to_cloud:main',
             'parking_simulator = stack_parking.simulation:main',
             'wall_gap_node = stack_parking.wall_gap_node:main',
+            'parallel_parking_node = stack_parking.parallel_parking_node:main',
+            'parallel_parking_logger = stack_parking.parallel_parking_logger:main',
         ],
     },
 )
