@@ -9,7 +9,9 @@ already being published.
 
 Markers on /wall_gap/markers (ns):
   walls      — one line per detected wall segment, left=blue right=orange,
-               drawn along the band's near_m offset
+               projected onto the map-fixed reference wall
+  wall_reference — the first fitted wall, extended over the observed span
+  wall_offset — the two boundaries of the accepted wall-point offset band
   candidates — one small disc per tracked gap candidate, yellow=untested,
                green=clear, red=blocked
   squares    — the 1m x 1m inscribed-square outline for every *tested*
@@ -32,13 +34,14 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, ColorRGBA, String
 from visualization_msgs.msg import Marker, MarkerArray
 
-from .geometry import Pose2, points_in_frame, transform_points
+from .geometry import Pose2
 from .reference_path import ReferencePath, build_reference_path
 from .wall_gap_detector import (
     SIDE_LEFT,
     SIDE_RIGHT,
     WallGapConfig,
     WallGapDetector,
+    candidate_square_corners,
 )
 
 
@@ -55,6 +58,10 @@ class WallGapNode(Node):
         self.declare_parameter('map_frame', 'parking_map')
         self.declare_parameter('near_m', 0.3)
         self.declare_parameter('far_m', 1.6)
+        self.declare_parameter('wall_line_offset_m', 0.12)
+        self.declare_parameter('initial_wall_min_points', 6)
+        self.declare_parameter('initial_wall_min_length_m', 0.5)
+        self.declare_parameter('initial_wall_max_angle_deg', 45.0)
         self.declare_parameter('join_gap_m', 0.3)
         self.declare_parameter('min_segment_points', 3)
         self.declare_parameter('min_gap_m', 1.2)
@@ -76,6 +83,14 @@ class WallGapNode(Node):
         cfg = WallGapConfig(
             near_m=float(self.get_parameter('near_m').value),
             far_m=float(self.get_parameter('far_m').value),
+            wall_line_offset_m=float(
+                self.get_parameter('wall_line_offset_m').value),
+            initial_wall_min_points=int(
+                self.get_parameter('initial_wall_min_points').value),
+            initial_wall_min_length_m=float(
+                self.get_parameter('initial_wall_min_length_m').value),
+            initial_wall_max_angle_deg=float(
+                self.get_parameter('initial_wall_max_angle_deg').value),
             join_gap_m=float(self.get_parameter('join_gap_m').value),
             min_segment_points=int(self.get_parameter('min_segment_points').value),
             min_gap_m=float(self.get_parameter('min_gap_m').value),
@@ -87,9 +102,9 @@ class WallGapNode(Node):
             search_sides=search_sides,
         )
         self.detector = WallGapDetector(cfg)
-        # Seeded once, off the first pose received (see _tick) — a virtual
-        # wall segment right where the vehicle starts, so the first *real*
-        # segment found ahead has something to pair against for a gap.
+        # Seeded once from the first pose received (see _tick). The detector
+        # uses this pose only to acquire its initial side wall; the fitted
+        # line is then fixed in parking_map for the rest of the run.
         self.seeded = False
         self.seeded_at_s = 0.0
         self.last_reset_send_s = -1
@@ -129,8 +144,10 @@ class WallGapNode(Node):
         rate = float(self.get_parameter('publish_rate_hz').value)
         self.timer = self.create_timer(1.0 / max(1.0, rate), self._tick)
         self.get_logger().info(
-            'wall_gap_node ready: near=%.2f far=%.2f min_gap=%.2f square=%.2f'
-            % (cfg.near_m, cfg.far_m, cfg.min_gap_m, cfg.square_size_m))
+            'wall_gap_node ready: initial_band=%.2f..%.2f wall_offset=+/-%.2f '
+            'min_gap=%.2f square=%.2f'
+            % (cfg.near_m, cfg.far_m, cfg.wall_line_offset_m,
+               cfg.min_gap_m, cfg.square_size_m))
 
     def _clock_s(self) -> float:
         return self.get_clock().now().nanoseconds * 1.0e-9
@@ -154,11 +171,8 @@ class WallGapNode(Node):
         if not self.seeded:
             self.seeded = True
             self.seeded_at_s = self._clock_s()
-            seed_side = self.detector.config.search_sides[0]
-            self.detector.set_seed(pose, side=seed_side)
             self.get_logger().info(
-                'seed wall planted at vehicle start (%.2f,%.2f), side=%s — '
-                'requesting a fresh SLAM map' % (pose.x, pose.y, seed_side))
+                'requesting a fresh SLAM map before reference-wall acquisition')
 
         # Resend for a few seconds, not once — a single early publish can be
         # lost to DDS discovery latency before stack_parking_node's
@@ -190,9 +204,32 @@ class WallGapNode(Node):
             # shared map again, so wall_gap_node's map keeps growing.
             self.final_cancel_sent = True
             self.command_pub.publish(String(data='cancel'))
+            # stack_parking_node resets both the map and its published pose to
+            # zero. Capture the seed only after that reset window; otherwise
+            # a pre-reset pose could be mixed with post-reset map points.
+            seed_side = self.detector.config.search_sides[0]
+            self.detector.set_seed(pose, side=seed_side)
+            self.get_logger().info(
+                'reference-wall acquisition seeded in fresh %s at '
+                '(%.2f,%.2f), side=%s'
+                % (self.map_frame, pose.x, pose.y, seed_side))
+
+        if self.detector.seed_pose is None:
+            self.stop_pub.publish(Bool(data=False))
+            self._publish_markers()
+            return
 
         if not self.stopped:
+            reference_sides_before = set(self.detector.reference_walls)
             cleared = self.detector.update(self.latest_map, pose)
+            for side in set(self.detector.reference_walls) - reference_sides_before:
+                wall = self.detector.reference_walls[side]
+                self.get_logger().info(
+                    'reference wall locked in %s: side=%s yaw=%.1fdeg '
+                    'distance=%.2fm offset=+/-%.2fm'
+                    % (self.map_frame, side, math.degrees(wall.yaw),
+                       wall.distance_from_seed_m,
+                       self.detector.config.wall_line_offset_m))
             if cleared is not None and self.confirmed_candidate is None:
                 self.confirmed_candidate = cleared
                 self.confirmed_at_pose = pose
@@ -225,7 +262,7 @@ class WallGapNode(Node):
             self.detector.update(self.latest_map, pose)
 
         self.stop_pub.publish(Bool(data=self.stopped))
-        self._publish_markers(pose)
+        self._publish_markers()
 
     def _line_marker(self, marker_id: int, p0, p1, color: ColorRGBA, ns: str,
                      width: float = 0.04) -> Marker:
@@ -244,7 +281,7 @@ class WallGapNode(Node):
         ]
         return marker
 
-    def _publish_markers(self, pose: Pose2) -> None:
+    def _publish_markers(self) -> None:
         array = MarkerArray()
         delete = Marker()
         delete.header.frame_id = self.map_frame
@@ -255,17 +292,41 @@ class WallGapNode(Node):
         cfg = self.detector.config
         marker_id = 0
         for side, segments in self.detector.last_segments.items():
-            sign = 1.0 if side == SIDE_LEFT else -1.0
             color = _rgba(0.2, 0.5, 1.0) if side == SIDE_LEFT else _rgba(1.0, 0.6, 0.1)
             for seg in segments:
-                local = np.array([
-                    [seg.start_x, sign * seg.near_distance],
-                    [seg.end_x, sign * seg.near_distance],
-                ])
-                p0, p1 = transform_points(local, pose)
+                endpoints = self.detector.segment_map_points(side, seg)
+                if endpoints is None:
+                    continue
+                p0, p1 = endpoints
                 array.markers.append(self._line_marker(
                     marker_id, p0, p1, color, 'walls', width=0.06))
                 marker_id += 1
+
+        # Draw the infinitely extended model over the currently observed
+        # span, plus both offset-band limits. All three are generated directly
+        # in parking_map and therefore never follow the vehicle's yaw.
+        for reference_id, (side, wall) in enumerate(
+                self.detector.reference_walls.items()):
+            segments = self.detector.last_segments.get(side, [])
+            if segments:
+                start_s = min(seg.start_s for seg in segments) - 1.0
+                end_s = max(seg.end_s for seg in segments) + 1.0
+            else:
+                start_s, end_s = -1.0, 1.0
+            center_line = wall.to_map(np.array([
+                [start_s, 0.0], [end_s, 0.0]]))
+            array.markers.append(self._line_marker(
+                reference_id, center_line[0], center_line[1],
+                _rgba(0.1, 1.0, 0.8, 0.9), 'wall_reference', width=0.025))
+            for offset_id, offset in enumerate((
+                    -cfg.wall_line_offset_m, cfg.wall_line_offset_m)):
+                boundary = wall.to_map(np.array([
+                    [start_s, offset], [end_s, offset]]))
+                array.markers.append(self._line_marker(
+                    2 * reference_id + offset_id,
+                    boundary[0], boundary[1],
+                    _rgba(0.1, 1.0, 0.8, 0.35),
+                    'wall_offset', width=0.015))
 
         for i, cand in enumerate(self.detector.tracked):
             if cand.clear is True:
@@ -288,24 +349,7 @@ class WallGapNode(Node):
             array.markers.append(marker)
 
             if cand.tested:
-                sign = 1.0 if cand.side == SIDE_LEFT else -1.0
-                half = 0.5 * cfg.square_size_m
-                # The square is pinned to the candidate's map position, not
-                # wherever the vehicle is now — re-derive its local x under
-                # the *current* pose each tick so it stays put as the
-                # vehicle keeps moving after the test.
-                local_xy = points_in_frame(
-                    np.array([[cand.map_x, cand.map_y]]), pose)[0]
-                cx_local = float(local_xy[0])
-                near_d = cand.near_distance
-                corners_local = np.array([
-                    [cx_local - half, sign * near_d],
-                    [cx_local + half, sign * near_d],
-                    [cx_local + half, sign * (near_d + cfg.square_size_m)],
-                    [cx_local - half, sign * (near_d + cfg.square_size_m)],
-                    [cx_local - half, sign * near_d],
-                ])
-                corners_map = transform_points(corners_local, pose)
+                corners_map = candidate_square_corners(cand, cfg)
                 sq_marker = Marker()
                 sq_marker.header.frame_id = self.map_frame
                 sq_marker.header.stamp = self.get_clock().now().to_msg()

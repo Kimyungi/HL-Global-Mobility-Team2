@@ -17,6 +17,7 @@ alongside this launch; it already reacts to wall_gap_node's /wall_gap/stop.
 Examples:
   ros2 launch stack_parking wall_gap_test.launch.py
   ros2 launch stack_parking wall_gap_test.launch.py search_side:=right
+  ros2 launch stack_parking wall_gap_test.launch.py wall_line_offset_m:=0.15
   ros2 launch stack_parking wall_gap_test.launch.py start_multi_lidar:=false
   ros2 launch stack_parking wall_gap_test.launch.py start_can:=false
 """
@@ -27,6 +28,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -43,6 +45,7 @@ def generate_launch_description():
     start_can = LaunchConfiguration('start_can')
     can_interface = LaunchConfiguration('can_interface')
     search_side = LaunchConfiguration('search_side')
+    wall_line_offset_m = LaunchConfiguration('wall_line_offset_m')
     rviz = LaunchConfiguration('rviz')
 
     return LaunchDescription([
@@ -60,6 +63,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'search_side', default_value='left',
             description='Which side to search for a gap: left | right | both'),
+        DeclareLaunchArgument(
+            'wall_line_offset_m', default_value='0.12',
+            description=(
+                'Half-width in metres of the fixed reference-wall offset band')),
         DeclareLaunchArgument(
             'rviz', default_value='true',
             description='Open the wall_gap RViz view'),
@@ -117,6 +124,9 @@ def generate_launch_description():
                 'auto_trigger_gps_zone': False,
                 'manual_test_publish_gps_gate': False,
                 'merged_cloud_topic': merged_cloud_topic,
+                # wall_gap_node seeds its fixed reference only after this
+                # launch-specific fresh-map reset sequence has completed.
+                'reset_map_on_mission_start': True,
             }],
         ),
 
@@ -125,7 +135,11 @@ def generate_launch_description():
             executable='wall_gap_node',
             name='wall_gap_node',
             output='screen',
-            parameters=[{'search_side': search_side}],
+            parameters=[{
+                'search_side': search_side,
+                'wall_line_offset_m': ParameterValue(
+                    wall_line_offset_m, value_type=float),
+            }],
         ),
 
         Node(

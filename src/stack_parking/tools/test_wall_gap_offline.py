@@ -1,88 +1,86 @@
 #!/usr/bin/env python3
-"""Offline test of wall_gap_detector against the real room geometry
-(reconstructed from the 2026-09-02 live-map analysis — no recording existed
-at the time, see record_map.py for capturing one going forward).
+"""Offline check for fixed-reference wall-gap detection.
 
-Room, in vehicle/lane frame at the moment of analysis:
-  - left arm:     x in [1.60, 1.93], y from ~1.32 to ~3.77 (dense)
-  - right arm:    x in [3.12, 3.24], y from ~1.6  to ~2.7
-  - back wall:    y ~= 2.65-2.75,   x from ~1.8 to ~3.2 (connects the arms)
-  - clutter row:  y ~= 1.1-1.65,    x from -3.5 to +2.0 (continuous, NOT
-                  part of the bay — this is exactly what broke plain x-axis
-                  clustering in space_detector.py before the 2D-blob fix)
-  - far clutter:  x in [-3.16,-2.20], y ~= 1.0-1.05
-  - opposite wall: y ~= -1.0..-1.1, x from -4 to +4 (right side, unrelated)
-
-Runs the detector through simulated forward motion and reports whether/when
-it finds and confirms the bay, with both wall_gap_detector's *default*
-near/far band (0.3-1.6m, tuned for "gap between two parked cars") and a
-band tuned to this room's actual scale (1.7-2.3m) — the point is to show
-this new algorithm has the *same* scene-scale dependency the old one did,
-not a magic fix for it.
+The fixture contains a sloped left wall with a 1.4m opening and a parallel
+row of clutter outside the configured wall offset. The simulated vehicle
+changes yaw while passing the opening; the acquired reference line must stay
+bit-for-bit unchanged and the opening must still be confirmed.
 """
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from stack_parking.geometry import Pose2
-from stack_parking.wall_gap_detector import WallGapConfig, WallGapDetector
+from stack_parking.wall_gap_detector import (
+    SIDE_LEFT,
+    WallGapConfig,
+    WallGapDetector,
+)
 
 
-def build_room() -> np.ndarray:
+def build_scene() -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(0)
+    angle = math.radians(10.0)
+    tangent = np.array([math.cos(angle), math.sin(angle)])
+    normal = np.array([-math.sin(angle), math.cos(angle)])
+    anchor = 1.0 * normal
 
-    def line(x0, x1, y0, y1, n, jitter=0.01):
-        t = np.linspace(0.0, 1.0, n)
-        x = x0 + (x1 - x0) * t + rng.normal(0, jitter, n)
-        y = y0 + (y1 - y0) * t + rng.normal(0, jitter, n)
-        return np.column_stack((x, y))
+    def segment(start_s: float, end_s: float, count: int) -> np.ndarray:
+        along = np.linspace(start_s, end_s, count)
+        points = anchor + np.outer(along, tangent)
+        return points + rng.normal(0.0, 0.008, points.shape)
 
-    # Back wall at near_m + 1.4m depth (2026-09-02: real deployment will be
-    # laid out at ~1.4m depth, not this room's ~0.98m — arms extended to
-    # match so they still reach the back wall).
-    left_arm = line(1.75, 1.80, 1.32, 4.20, 44)
-    right_arm = line(3.18, 3.20, 1.6, 3.15, 26)
-    back_wall = line(1.85, 3.15, 3.12, 3.10, 26)
-    clutter_row = line(-3.5, 2.0, 1.1, 1.65, 90)
-    far_clutter = line(-3.16, -2.20, 1.0, 1.05, 15)
-    opposite_wall = line(-4.0, 4.0, -1.05, -1.0, 100)
-
-    return np.vstack([
-        left_arm, right_arm, back_wall, clutter_row, far_clutter, opposite_wall,
-    ])
-
-
-def run(label: str, cfg: WallGapConfig, room: np.ndarray) -> None:
-    print('--- %s (near=%.2f far=%.2f) ---' % (label, cfg.near_m, cfg.far_m))
-    det = WallGapDetector(cfg)
-    # Simulate the vehicle driving from x=-1.0 to x=4.0 in 0.2m steps —
-    # each step is one _tick equivalent (the real node runs this every map
-    # update, here it's just "one detector.update() call per position").
-    found = None
-    for x in np.arange(-1.0, 4.0, 0.2):
-        result = det.update(room, Pose2(float(x), 0.0, 0.0))
-        if result is not None and found is None:
-            found = (x, result)
-    if found:
-        x, cand = found
-        print('  CONFIRMED at vehicle x=%.2f: side=%s map=(%.2f,%.2f) width=%.2fm'
-              % (x, cand.side, cand.map_x, cand.map_y, cand.width_m))
-    else:
-        print('  not confirmed. tracked candidates:')
-        for c in det.tracked:
-            print('    side=%s map=(%.2f,%.2f) width=%.2f tested=%s clear=%s'
-                  % (c.side, c.map_x, c.map_y, c.width_m, c.tested, c.clear))
-        if not det.tracked:
-            print('    (none — no gap >= min_gap_m ever seen in this band)')
+    wall = np.vstack((segment(-0.8, 0.8, 36), segment(2.2, 4.0, 42)))
+    # This row is parallel but 30cm toward the lane, outside +/-12cm.
+    clutter_s = np.linspace(0.5, 2.5, 34)
+    clutter = (
+        anchor + np.outer(clutter_s, tangent) - 0.30 * normal
+        + rng.normal(0.0, 0.006, (len(clutter_s), 2)))
+    return np.vstack((wall, clutter)), tangent
 
 
 def main() -> None:
-    room = build_room()
-    print('room fixture: %d points' % len(room))
+    scene, tangent = build_scene()
+    cfg = WallGapConfig(
+        search_sides=(SIDE_LEFT,),
+        wall_line_offset_m=0.12,
+        initial_wall_max_angle_deg=30.0,
+    )
+    detector = WallGapDetector(cfg)
+    detector.set_seed(Pose2(), SIDE_LEFT)
 
-    run('default band', WallGapConfig(), room)
-    run('room-tuned band', WallGapConfig(near_m=1.7, far_m=2.3), room)
+    confirmed = None
+    locked_reference = None
+    for along in np.arange(0.0, 3.0, 0.1):
+        # Deliberately rotate the vehicle by up to 50deg. Detection uses only
+        # its projected progress; the reference wall remains in parking_map.
+        yaw = math.radians(50.0) * math.sin(float(along))
+        vehicle_xy = along * tangent
+        result = detector.update(scene, Pose2(
+            float(vehicle_xy[0]), float(vehicle_xy[1]), yaw))
+        reference = detector.reference_walls.get(SIDE_LEFT)
+        if reference is not None and locked_reference is None:
+            locked_reference = reference
+            print('LOCKED yaw=%.2fdeg distance=%.3fm offset=+/-%.2fm' % (
+                math.degrees(reference.yaw),
+                reference.distance_from_seed_m,
+                cfg.wall_line_offset_m,
+            ))
+        elif reference is not None and reference != locked_reference:
+            raise AssertionError('reference wall moved after acquisition')
+        if result is not None:
+            confirmed = result
+            print('CONFIRMED along=%.2fm map=(%.2f,%.2f) width=%.2fm' % (
+                along, result.map_x, result.map_y, result.width_m))
+            break
+
+    if locked_reference is None:
+        raise SystemExit('failed to acquire the initial left wall')
+    if confirmed is None:
+        raise SystemExit('failed to confirm the wall opening')
 
 
 if __name__ == '__main__':

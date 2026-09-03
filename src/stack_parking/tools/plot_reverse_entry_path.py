@@ -1,21 +1,10 @@
 #!/usr/bin/env python3
-"""Plot the wall_gap_detector -> reference-path pipeline end to end:
-room (offline fixture) -> confirmed square -> 50cm advance -> reference path.
-
-P0 = centre of the square's near-wall edge (2026-09-02 spec) is fed straight
-into simple_entry_path.build_entry_path() as the mouth point (depth =
-0.5 * square_size_m, reaching the square's centre) — that function already
-builds a tangent-continuous straight -> arc -> straight path (verified
-earlier: A sits on the vehicle's y=0 heading line so straight 1 has no kink,
-and the arc's radius vector is vertical at A / horizontal at E so both
-transitions are tangent). An earlier version of this script re-derived the
-arc by hand anchored differently and got a non-tangent, wrong-direction
-straight 1 — fixed by reusing the validated construction instead.
-"""
+"""Plot the fixed-wall detector -> square -> reference-path pipeline."""
 
 from __future__ import annotations
 
 import math
+from pathlib import Path
 import sys
 
 import matplotlib
@@ -25,154 +14,99 @@ import numpy as np  # noqa: E402
 
 sys.path.insert(0, __file__.rsplit('/tools/', 1)[0])
 
-from stack_parking.geometry import Pose2, points_in_frame, transform_points, wrap_angle  # noqa: E402
-from stack_parking.wall_gap_detector import SIDE_LEFT, WallGapConfig, WallGapDetector  # noqa: E402
+from stack_parking.geometry import Pose2  # noqa: E402
+from stack_parking.reference_path import build_reference_path  # noqa: E402
+from stack_parking.wall_gap_detector import (  # noqa: E402
+    SIDE_LEFT,
+    WallGapConfig,
+    WallGapDetector,
+    candidate_square_corners,
+)
 
 
-def build_room() -> np.ndarray:
+def build_scene() -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(0)
+    angle = math.radians(10.0)
+    tangent = np.array([math.cos(angle), math.sin(angle)])
+    normal = np.array([-math.sin(angle), math.cos(angle)])
+    anchor = normal
 
-    def line(x0, x1, y0, y1, n, jitter=0.01):
-        t = np.linspace(0.0, 1.0, n)
-        x = x0 + (x1 - x0) * t + rng.normal(0, jitter, n)
-        y = y0 + (y1 - y0) * t + rng.normal(0, jitter, n)
-        return np.column_stack((x, y))
+    def segment(start_s: float, end_s: float, count: int) -> np.ndarray:
+        along = np.linspace(start_s, end_s, count)
+        points = anchor + np.outer(along, tangent)
+        return points + rng.normal(0.0, 0.008, points.shape)
 
-    left_arm = line(1.75, 1.80, 1.32, 4.20, 44)
-    right_arm = line(3.18, 3.20, 1.6, 3.15, 26)
-    back_wall = line(1.85, 3.15, 3.12, 3.10, 26)
-    clutter_row = line(-3.5, 2.0, 1.1, 1.65, 90)
-    far_clutter = line(-3.16, -2.20, 1.0, 1.05, 15)
-    opposite_wall = line(-4.0, 4.0, -1.05, -1.0, 100)
-    return np.vstack([
-        left_arm, right_arm, back_wall, clutter_row, far_clutter, opposite_wall,
-    ])
+    return np.vstack((segment(-0.8, 0.8, 36),
+                      segment(2.2, 4.0, 42))), tangent
 
 
 def main() -> None:
-    room = build_room()
-    cfg = WallGapConfig(near_m=1.7, far_m=2.3)
-    det = WallGapDetector(cfg)
+    scene, tangent = build_scene()
+    cfg = WallGapConfig(
+        search_sides=(SIDE_LEFT,), initial_wall_max_angle_deg=30.0)
+    detector = WallGapDetector(cfg)
+    detector.set_seed(Pose2(), SIDE_LEFT)
 
     confirmed = None
-    confirm_x = None
-    for x in np.arange(-1.0, 4.0, 0.2):
-        result = det.update(room, Pose2(float(x), 0.0, 0.0))
+    confirm_s = None
+    for along in np.arange(0.0, 3.0, 0.1):
+        vehicle_xy = along * tangent
+        result = detector.update(scene, Pose2(
+            float(vehicle_xy[0]), float(vehicle_xy[1]),
+            math.radians(35.0) * math.sin(float(along))))
         if result is not None:
             confirmed = result
-            confirm_x = x
+            confirm_s = float(along)
             break
-    if confirmed is None:
-        print('no candidate confirmed — nothing to plot')
-        return
-    print('confirmed at vehicle x=%.2f: %s' % (confirm_x, confirmed))
+    if confirmed is None or confirm_s is None:
+        raise SystemExit('no candidate confirmed')
 
-    # Advance the vehicle 50cm further, as specified.
-    advanced_pose = Pose2(confirm_x + 0.5, 0.0, 0.0)
+    advanced_xy = (confirm_s + 0.5) * tangent
+    advanced_pose = Pose2(
+        float(advanced_xy[0]), float(advanced_xy[1]), math.radians(30.0))
+    path = build_reference_path(
+        confirmed, advanced_pose, cfg, min_turn_radius_m=1.15)
+    if path is None:
+        raise SystemExit('reference path is degenerate')
 
-    side_sign = 1.0 if confirmed.side == SIDE_LEFT else -1.0
-    p0_local = points_in_frame(
-        np.array([[confirmed.map_x, confirmed.map_y]]), advanced_pose)[0]
-    # confirmed.map_x/map_y were stored at the *gap centre, mid-depth* (see
-    # WallGapDetector.update) — pin P0 to the wall line itself (near_m), not
-    # that mid-depth point, since P0 is defined as the square's near-wall
-    # edge centre.
-    p0_local = np.array([p0_local[0], side_sign * cfg.near_m])
+    wall = detector.reference_walls[SIDE_LEFT]
+    square = candidate_square_corners(confirmed, cfg)
+    reference = wall.to_map(np.array([[-1.5, 0.0], [4.8, 0.0]]))
+    offset_a = wall.to_map(np.array([
+        [-1.5, -cfg.wall_line_offset_m], [4.8, -cfg.wall_line_offset_m]]))
+    offset_b = wall.to_map(np.array([
+        [-1.5, cfg.wall_line_offset_m], [4.8, cfg.wall_line_offset_m]]))
 
-    r = 1.15  # vehicle.min_turn_radius_m (CLAUDE.md single source)
-    # Corrected per user feedback: the centre must be on the vehicle side of
-    # P0 (P0 + r horizontally *toward* the vehicle), not on the far/goal
-    # side — the earlier build_entry_path reuse put it on the wrong side.
-    direction = 1.0 if p0_local[0] < 0.0 else -1.0
-    center_local = np.array([p0_local[0] + direction * r, p0_local[1]])
-
-    # E is where the tangent line *from the vehicle itself* touches this
-    # circle — that's what actually guarantees straight1 has no kink (a
-    # fixed 90-degree sweep from P0, tried earlier, put E off that tangent
-    # line by ~30 degrees; the tangent-from-vehicle construction is exact,
-    # at the cost of the sweep not landing on exactly 90 degrees).
-    to_vehicle = -center_local  # vehicle is at local (0,0)
-    d = float(np.linalg.norm(to_vehicle))
-    angle_c = math.acos(min(1.0, r / d))
-    u = to_vehicle / d
-
-    def _rot(vec, theta):
-        c, s = math.cos(theta), math.sin(theta)
-        return np.array([c * vec[0] - s * vec[1], s * vec[0] + c * vec[1]])
-
-    candidates = [center_local + r * _rot(u, angle_c),
-                 center_local + r * _rot(u, -angle_c)]
-    # Pick whichever tangent point is on the vehicle's forward (+x) side —
-    # the other one sits behind the vehicle, which isn't a usable approach.
-    e_local = max(candidates, key=lambda p: p[0])
-
-    a0 = math.atan2(p0_local[1] - center_local[1], p0_local[0] - center_local[0])
-    theta_end = math.atan2(e_local[1] - center_local[1], e_local[0] - center_local[0])
-    sweep = wrap_angle(theta_end - a0)
-    goal_local = p0_local + np.array([0.0, side_sign * 0.5 * cfg.square_size_m])
-
-    n = 24
-    angles = a0 + np.linspace(0.0, sweep, n)
-    arc_local = np.column_stack((
-        center_local[0] + r * np.cos(angles), center_local[1] + r * np.sin(angles)))
-    straight1_local = np.array([[0.0, 0.0], list(e_local)])
-    straight2_local = np.array([list(p0_local), list(goal_local)])
-
-    # Tangency check at E: heading of straight1 vs. the arc's tangent there.
-    straight1_heading = math.atan2(e_local[1] - 0.0, e_local[0] - 0.0)
-    # Tangent direction at a point on a circle, angle theta from centre,
-    # travelling in the direction of increasing angle (CCW) is
-    # (-sin theta, cos theta); flip it if the sweep runs the other way (CW).
-    ccw = np.sign(sweep) if sweep != 0 else 1.0
-    tangent_at_e = math.atan2(ccw * math.cos(theta_end), -ccw * math.sin(theta_end))
-    print('straight1 heading=%.1fdeg, arc tangent at E=%.1fdeg (should match for no kink)'
-          % (math.degrees(straight1_heading), math.degrees(tangent_at_e)))
-
-    to_map = lambda pts: transform_points(np.asarray(pts), advanced_pose)  # noqa: E731
-
-    fig, ax = plt.subplots(figsize=(9, 9))
-    ax.scatter(room[:, 0], room[:, 1], s=4, c='k', alpha=0.5, label='map points')
-    veh_map = advanced_pose.x, advanced_pose.y
-    ax.plot(veh_map[0], veh_map[1], 'r^', ms=14, label='vehicle (after 50cm advance)')
-
-    s1 = to_map(straight1_local)
-    arc = to_map(arc_local)
-    s2 = to_map(straight2_local)
-    ax.plot(s1[:, 0], s1[:, 1], 'b-', lw=2, label='straight 1 (vehicle -> E)')
-    ax.plot(arc[:, 0], arc[:, 1], 'g-', lw=2, label='arc (E -> P0, r=%.2fm)' % r)
-    ax.plot(s2[:, 0], s2[:, 1], 'r-', lw=2, label='straight 2 (P0 -> goal)')
-
-    p0_map = to_map([list(p0_local)])[0]
-    c_map = to_map([list(center_local)])[0]
-    e_map = to_map([list(e_local)])[0]
-    goal_map = to_map([list(goal_local)])[0]
-    ax.plot(*p0_map, 'mx', ms=10, mew=2, label='P0 (square near-wall edge centre)')
-    ax.plot(*c_map, 'g+', ms=12, mew=2, label='arc centre C (= P0 + r toward vehicle)')
-    ax.plot(*e_map, 'k+', ms=12, mew=2, label='E (arc end, 90deg from P0)')
-    ax.plot(*goal_map, 'r*', ms=16, label='goal (square centre)')
-
-    # square outline for context
-    half = 0.5 * cfg.square_size_m
-    sq_local = np.array([
-        [p0_local[0] - half, side_sign * cfg.near_m],
-        [p0_local[0] + half, side_sign * cfg.near_m],
-        [p0_local[0] + half, side_sign * (cfg.near_m + cfg.square_size_m)],
-        [p0_local[0] - half, side_sign * (cfg.near_m + cfg.square_size_m)],
-        [p0_local[0] - half, side_sign * cfg.near_m],
-    ])
-    sq_map = to_map(sq_local)
-    ax.plot(sq_map[:, 0], sq_map[:, 1], 'y--', lw=1.5, label='confirmed square')
-
+    fig, ax = plt.subplots(figsize=(9, 7))
+    ax.scatter(scene[:, 0], scene[:, 1], s=8, c='k', alpha=0.55,
+               label='map points')
+    ax.plot(reference[:, 0], reference[:, 1], color='cyan', lw=1.5,
+            label='locked reference wall')
+    ax.plot(offset_a[:, 0], offset_a[:, 1], 'c--', lw=0.8,
+            label='wall offset band')
+    ax.plot(offset_b[:, 0], offset_b[:, 1], 'c--', lw=0.8)
+    ax.plot(square[:, 0], square[:, 1], 'y--', lw=1.5,
+            label='confirmed square')
+    ax.plot(path.straight1_map[:, 0], path.straight1_map[:, 1], 'b-', lw=2,
+            label='straight 1')
+    ax.plot(path.arc_map[:, 0], path.arc_map[:, 1], 'g-', lw=2,
+            label='arc')
+    ax.plot(path.straight2_map[:, 0], path.straight2_map[:, 1], 'r-', lw=2,
+            label='straight 2')
+    ax.plot(advanced_pose.x, advanced_pose.y, 'r^', ms=12,
+            label='vehicle after 0.5m advance')
+    ax.plot(*path.p0_map, 'mx', ms=10, mew=2, label='P0')
+    ax.plot(*path.goal_map, 'r*', ms=14, label='goal')
     ax.set_aspect('equal', adjustable='datalim')
     ax.grid(True, alpha=0.3)
-    ax.set_xlabel('map x [m]')
-    ax.set_ylabel('map y [m]')
-    ax.set_title('reference path: side=%s r=%.2fm' % (confirmed.side, r))
-    ax.legend(loc='best', fontsize=7)
+    ax.set_xlabel('parking_map x [m]')
+    ax.set_ylabel('parking_map y [m]')
+    ax.set_title('fixed reference wall and parking path')
+    ax.legend(loc='best', fontsize=8)
     fig.tight_layout()
-    out = '/tmp/reverse_entry_path.png'
-    fig.savefig(out, dpi=150)
-    print('saved', out)
+    output = Path.cwd() / 'reverse_entry_path.png'
+    fig.savefig(output, dpi=150)
+    print('saved', output)
 
 
 if __name__ == '__main__':
