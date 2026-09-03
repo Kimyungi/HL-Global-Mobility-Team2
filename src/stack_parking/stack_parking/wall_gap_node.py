@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """Live fixed-wall gap detection, reference generation, and parking control.
 
-The detector runs against the LiDAR SLAM map.  Once the first reachable
-square is confirmed, the node asserts an immediate stop, creates the fixed
-3m-line/arc/2m-line path, holds for one second, and can publish the 100Hz
-``/adas/target_ref`` stream used by bridge_dspace.  Motion output is guarded
-by the explicit ``enable_control`` parameter; visualization remains usable
-with control disabled.
+With ``enable_control`` set, this node drives the full manoeuvre once the
+vehicle is switched out of joystick mode: it commands a straight-ahead
+``/adas/target_ref`` at ``search_speed_mps`` while the detector hunts the
+LiDAR SLAM map for a gap, and the instant the first reachable square is
+confirmed it asserts an immediate stop, creates the fixed 3m-line/arc/2m-line
+path, holds for one second, then drives that path (forward align, then
+reverse park) at the 100Hz ``/adas/target_ref`` stream used by bridge_dspace.
+All motion output is guarded by the explicit ``enable_control`` parameter;
+visualization remains usable with control disabled, in which case both the
+search leg and the post-confirmation path are left to the driver/joystick.
 
 Does not touch stack_parking_node or space_detector.py — independent
 experiment, reads the same /parking/local_map + /parking/slam_pose that are
 already being published.
 
 Markers on /wall_gap/markers (ns):
+  vehicle_box — the vehicle footprint outline at the current LiDAR-localized
+               pose (same box multi_lidar_fusion's self-filter uses, see
+               vehicle_length_m/vehicle_width_m/vehicle_center_*_m params)
   walls      — one line per detected wall segment, left=blue right=orange,
                projected onto the map-fixed reference wall
   wall_reference — the first fitted wall, extended over the observed span
@@ -40,7 +47,7 @@ from std_msgs.msg import Bool, ColorRGBA, String
 from visualization_msgs.msg import Marker, MarkerArray
 from fma_interfaces.msg import RefPoint, TargetRef
 
-from .geometry import Pose2
+from .geometry import Pose2, transform_points
 from .reference_path import ReferencePath, build_reference_path
 from .wall_gap_controller import (
     ControlState,
@@ -93,12 +100,23 @@ class WallGapNode(Node):
         self.declare_parameter('target_topic', '/adas/target_ref')
         self.declare_parameter('command_rate_hz', 100.0)
         self.declare_parameter('hold_after_detection_s', 1.0)
-        self.declare_parameter('preview_distance_m', 1.0)
-        self.declare_parameter('forward_speed_mps', 0.3)
-        self.declare_parameter('reverse_speed_mps', 0.3)
-        self.declare_parameter('path_end_tolerance_m', 0.10)
+        self.declare_parameter('preview_distance_m', 1.5)
+        self.declare_parameter('forward_speed_mps', 0.75)
+        self.declare_parameter('reverse_speed_mps', 0.75)
+        self.declare_parameter('search_speed_mps', 0.75)
         self.declare_parameter('path_sample_step_m', 0.05)
         self.declare_parameter('pose_stale_timeout_s', 0.35)
+        # Vehicle footprint box for the RViz marker. Same figures as
+        # multi_lidar_fusion/config/fusion_params.yaml's self-filter box
+        # (length_m 0.85, width_m 0.62, wheelbase 0.595, front_overhang
+        # 0.165 -> base_link/rear-axle-center frame x=-0.090..0.760,
+        # y=-0.31..0.31, i.e. center_x=0.335, center_y=0.0) — kept as
+        # separate parameters here rather than a cross-package read so this
+        # node has no dependency on multi_lidar_fusion being installed.
+        self.declare_parameter('vehicle_length_m', 0.85)
+        self.declare_parameter('vehicle_width_m', 0.62)
+        self.declare_parameter('vehicle_center_x_m', 0.335)
+        self.declare_parameter('vehicle_center_y_m', 0.0)
 
         search_side = str(self.get_parameter('search_side').value).strip().lower()
         search_sides = (
@@ -142,6 +160,24 @@ class WallGapNode(Node):
         self.parallel_straight_m = float(
             self.get_parameter('parallel_straight_m').value)
         self.enable_control = bool(self.get_parameter('enable_control').value)
+        self.search_speed_mps = float(
+            self.get_parameter('search_speed_mps').value)
+        self.search_preview_m = float(
+            self.get_parameter('preview_distance_m').value)
+        self.searching = False
+        vehicle_length = float(self.get_parameter('vehicle_length_m').value)
+        vehicle_width = float(self.get_parameter('vehicle_width_m').value)
+        center_x = float(self.get_parameter('vehicle_center_x_m').value)
+        center_y = float(self.get_parameter('vehicle_center_y_m').value)
+        half_l, half_w = 0.5 * vehicle_length, 0.5 * vehicle_width
+        # Closed loop (5 points, first repeated) in vehicle/base_link frame.
+        self.vehicle_box_local = np.array([
+            [center_x - half_l, center_y - half_w],
+            [center_x + half_l, center_y - half_w],
+            [center_x + half_l, center_y + half_w],
+            [center_x - half_l, center_y + half_w],
+            [center_x - half_l, center_y - half_w],
+        ])
         self.controller = WallGapController(WallGapControlConfig(
             hold_s=float(self.get_parameter('hold_after_detection_s').value),
             preview_distance_m=float(
@@ -150,8 +186,6 @@ class WallGapNode(Node):
                 self.get_parameter('forward_speed_mps').value),
             reverse_speed_mps=float(
                 self.get_parameter('reverse_speed_mps').value),
-            path_end_tolerance_m=float(
-                self.get_parameter('path_end_tolerance_m').value),
             sample_step_m=float(
                 self.get_parameter('path_sample_step_m').value),
         ))
@@ -192,9 +226,10 @@ class WallGapNode(Node):
             1.0 / max(1.0, command_rate), self._command_tick)
         self.get_logger().info(
             'wall_gap_node ready: initial_band=%.2f..%.2f wall_offset=+/-%.2f '
-            'min_gap=%.2f square=%.2f control=%s'
+            'min_gap=%.2f square=%.2f control=%s search_speed=%.2f'
             % (cfg.near_m, cfg.far_m, cfg.wall_line_offset_m,
-               cfg.min_gap_m, cfg.square_size_m, self.enable_control))
+               cfg.min_gap_m, cfg.square_size_m, self.enable_control,
+               self.search_speed_mps))
         if not self.enable_control:
             self.get_logger().warn(
                 'control disabled: square confirmation will latch '
@@ -240,11 +275,52 @@ class WallGapNode(Node):
         msg.update = int(delta.update)
         self.target_pub.publish(msg)
 
+    def _publish_search_target(self) -> None:
+        """Straight-ahead command while hunting for the gap (pre-confirmation).
+
+        User directive (2026-09-03): switching the vehicle out of joystick
+        mode should immediately drive it straight along the wall — the
+        driver no longer commands the search leg by hand. Reference point is
+        already vehicle-local (straight ahead, zero curvature) so it needs no
+        pose transform, unlike the post-confirmation path in
+        ``_publish_target``.
+        """
+        msg = TargetRef()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.base_frame
+        msg.ref_points = [RefPoint(
+            x=float(self.search_preview_m), y=0.0, yaw=0.0, curvature=0.0)]
+        msg.v_ref = float(self.search_speed_mps)
+        msg.state = TargetRef.STATE_PARKING
+        self.target_pub.publish(msg)
+
     def _command_tick(self) -> None:
-        if not self.controller.active or self.latest_pose is None:
+        if self.latest_pose is None:
             self.stop_pub.publish(Bool(data=False))
             self.state_pub.publish(String(data=ControlState.IDLE.value))
             return
+
+        if not self.controller.active:
+            # Drive straight until a square is confirmed (self.confirmed_
+            # candidate flips in _tick(), which runs the detector). Once a
+            # candidate is confirmed — even if the reference-path build then
+            # fails — never resume the search leg; that failure needs a
+            # human, not another lap into the same spot.
+            if self.enable_control and self.confirmed_candidate is None:
+                if not self.searching:
+                    self.searching = True
+                    self.get_logger().info(
+                        'mode switched to autonomous: driving straight at '
+                        '%.2fm/s to search for the gap' % self.search_speed_mps)
+                self.stop_pub.publish(Bool(data=False))
+                self.state_pub.publish(String(data='searching_for_gap'))
+                self._publish_search_target()
+                return
+            self.searching = False
+            self.stop_pub.publish(Bool(data=False))
+            self.state_pub.publish(String(data=ControlState.IDLE.value))
+            return
+        self.searching = False
         # With control disabled, latch the confirmation stop for the manual
         # bench path.  In particular, never release T_Parking after one second
         # unless this node is also taking ownership of /adas/target_ref.
@@ -406,6 +482,21 @@ class WallGapNode(Node):
         delete.header.stamp = self.get_clock().now().to_msg()
         delete.action = Marker.DELETEALL
         array.markers.append(delete)
+
+        if self.latest_pose is not None:
+            box_map = transform_points(self.vehicle_box_local, self.latest_pose)
+            box_marker = Marker()
+            box_marker.header.frame_id = self.map_frame
+            box_marker.header.stamp = self.get_clock().now().to_msg()
+            box_marker.ns = 'vehicle_box'
+            box_marker.id = 0
+            box_marker.type = Marker.LINE_STRIP
+            box_marker.action = Marker.ADD
+            box_marker.scale.x = 0.04
+            box_marker.color = _rgba(1.0, 1.0, 1.0)
+            box_marker.points = [
+                Point(x=float(x), y=float(y), z=0.02) for x, y in box_map]
+            array.markers.append(box_marker)
 
         cfg = self.detector.config
         marker_id = 0

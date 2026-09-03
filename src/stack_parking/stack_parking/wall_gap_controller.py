@@ -40,10 +40,9 @@ class ControlState(str, enum.Enum):
 @dataclass(frozen=True)
 class WallGapControlConfig:
     hold_s: float = 1.0
-    preview_distance_m: float = 1.0
+    preview_distance_m: float = 1.5
     forward_speed_mps: float = 0.3
     reverse_speed_mps: float = 0.3
-    path_end_tolerance_m: float = 0.10
     sample_step_m: float = 0.05
 
 
@@ -93,6 +92,19 @@ class PoseDeltaTracker:
             (self._delta.update + 1) & ((1 << 64) - 1),
         )
         return self._delta
+
+
+def _can_local_reference(point: PathPoint, vehicle_pose: Pose2) -> PathPoint:
+    """``local_reference`` plus the sign flip the CAN-bound vehicle frame
+    needs for yaw/curvature (found on the vehicle, 2026-09-03: target_yaw
+    came out negative where it needed to be positive). x/y stay as
+    ``local_reference`` gives them — only yaw and curvature, which are the
+    same handedness-dependent quantity (curvature = dyaw/ds), are negated.
+    """
+    local = local_reference(point, vehicle_pose)
+    return PathPoint(
+        local.x, local.y,
+        wrap_angle(-local.yaw), -local.curvature, local.gear)
 
 
 def _sample_line(
@@ -243,7 +255,7 @@ class WallGapController:
         return WallGapControlOutput(
             self.state,
             chosen,
-            local_reference(chosen, pose) if chosen is not None else None,
+            _can_local_reference(chosen, pose) if chosen is not None else None,
             float(speed),
             status,
         )
@@ -288,15 +300,15 @@ class WallGapController:
             reference = self._preview(
                 self.reverse_path, self.reverse_lengths, current_pose_map)
             end = self.reverse_path[-1]
-            if (
-                self.progress >= len(self.reverse_path) - 2
-                and math.hypot(
-                    current_pose_map.x - end.x,
-                    current_pose_map.y - end.y,
-                ) <= self.config.path_end_tolerance_m
-            ):
-                # Never continue reversing beyond the finite 2m path even if
-                # the expected wall return is missing or miscalibrated.
+            # Same stop rule as the forward leg's own state switch: the
+            # preview point reaching the last straight segment's end,
+            # not the vehicle itself reaching it (user directive,
+            # 2026-09-03). Never continue reversing beyond the finite 2m
+            # path even if the expected wall return is missing or
+            # miscalibrated.
+            preview_at_end = math.hypot(
+                reference.x - end.x, reference.y - end.y) <= 1.0e-6
+            if preview_at_end:
                 self.state = ControlState.STOPPED
                 self.stop_reason = 'planned_path_end'
                 return self._output(
