@@ -65,6 +65,52 @@ class IcpSlamTest(unittest.TestCase):
         self.assertEqual(removed, 1)
         self.assertEqual(len(point_map), 0)
 
+    def test_voxel_crossing_boundary_is_one_confirmed_cell(self):
+        point_map = VoxelPointMap(0.08)
+        point_map.add(np.asarray([[0.079, 0.0]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.081, 0.0]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.078, 0.0]]), 0.06, confirm_hits=3)
+        self.assertEqual(len(point_map), 1)
+        self.assertEqual(point_map.state_counts(), (0, 1))
+
+    def test_same_voxel_observations_do_not_need_distance_match(self):
+        point_map = VoxelPointMap(0.08)
+        point_map.add(np.asarray([[0.001, 0.001]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.079, 0.079]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.002, 0.002]]), 0.06, confirm_hits=3)
+        self.assertEqual(len(point_map), 1)
+        self.assertEqual(point_map.state_counts(), (0, 1))
+
+    def test_confirmed_cell_requires_three_free_observations(self):
+        point_map = VoxelPointMap(0.02)
+        point = np.asarray([[1.0, 0.0]])
+        for _ in range(3):
+            point_map.add(point, 0.01, confirm_hits=3)
+        self.assertEqual(point_map.state_counts(), (0, 1))
+
+        farther = np.asarray([[2.0, 0.0]])
+        args = (Pose2(), farther, 4.0, math.radians(1.0), 0.02,
+                math.radians(1.5), 0.01, 3, 1, 3)
+        self.assertEqual(point_map.clear_freespace(*args), 0)
+        self.assertEqual(point_map.clear_freespace(*args), 0)
+        self.assertEqual(len(point_map), 1)
+        self.assertEqual(point_map.clear_freespace(*args), 1)
+        self.assertEqual(len(point_map), 0)
+
+    def test_confirmed_cell_is_not_missed_while_occluded(self):
+        point_map = VoxelPointMap(0.02)
+        point = np.asarray([[2.0, 0.0]])
+        for _ in range(3):
+            point_map.add(point, 0.01, confirm_hits=3)
+
+        common = (4.0, math.radians(1.0), 0.02,
+                  math.radians(1.5), 0.01, 3, 1, 3)
+        for _ in range(5):
+            removed = point_map.clear_freespace(
+                Pose2(), np.asarray([[1.0, 0.0]]), *common)
+            self.assertEqual(removed, 0)
+        self.assertEqual(len(point_map), 1)
+
     def _world(self):
         return np.vstack((
             synthetic_scene(MODE_PERPENDICULAR, SIDE_RIGHT),

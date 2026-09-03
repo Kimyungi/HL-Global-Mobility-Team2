@@ -72,8 +72,15 @@
     icp.freespace_clear_enabled: true
     icp.freespace_clear_radius_m: 4.0
     icp.freespace_bin_width_deg: 1.0
-    icp.freespace_margin_m: 0.10
+    icp.freespace_margin_m: 0.02
     icp.freespace_occlusion_padding_deg: 1.5
+    # Voxel occupancy state: new cells are tentative, become confirmed after
+    # three observations, and confirmed-free rays remove them after 1/3 misses.
+    # Missing or nearer (occluding) rays do not count as misses.
+    icp.observation_match_radius_m: 0.06
+    icp.tentative_confirm_hits: 3
+    icp.tentative_delete_misses: 1
+    icp.confirmed_delete_misses: 3
 
     # Existing GpsPath only has parking_zone (no type). The default below is
     # used on that rising edge. A GPS node that decides type should publish

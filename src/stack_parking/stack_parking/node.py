@@ -261,19 +261,11 @@ class StackParkingNode(Node):
             'lidar.rear_x_m': -0.055,
             'icp.scan_voxel_m': 0.06,
             'icp.max_scan_points': 900,
-            # 2026-09-02: 0.08 -> 0.20 (was 0.14 first, still visibly thick).
-            # A live map check found walls ~2.4cm thick (local-PCA
-            # perpendicular spread, not just along-wall point spacing) even
-            # though per-tick ICP rmse is ~1cm — that gap lines up with the
-            # b1/b2 extrinsic calibration residual already on file
-            # (lidar_fusion_v2/README.md: left 1.23cm RMS, right 0.5cm): the
-            # four sensors report the same wall a bit apart from each other,
-            # which ICP/clear_freespace can't fix since it isn't temporal
-            # drift. A coarser voxel folds those into one averaged point
-            # instead of deleting anything — the real fix is re-running
-            # wall_calibrator, this just trades map resolution for a
-            # thinner-looking wall in the meantime.
-            'icp.map_voxel_m': 0.20,
+            # Keep the fallback consistent with parking_params.yaml.  Eight
+            # centimetres preserves the parking-map detail needed around
+            # curbs and cones; calibration residuals should be fixed at the
+            # sensor extrinsics rather than hidden with a coarser map voxel.
+            'icp.map_voxel_m': 0.08,
             'icp.max_correspondence_m': 0.35,
             'icp.max_iterations': 18,
             'icp.min_correspondences': 24,
@@ -291,8 +283,12 @@ class StackParkingNode(Node):
             # currently 4.0m).
             'icp.freespace_clear_radius_m': 4.0,
             'icp.freespace_bin_width_deg': 1.0,
-            'icp.freespace_margin_m': 0.10,
+            'icp.freespace_margin_m': 0.02,
             'icp.freespace_occlusion_padding_deg': 1.5,
+            'icp.observation_match_radius_m': 0.06,
+            'icp.tentative_confirm_hits': 3,
+            'icp.tentative_delete_misses': 1,
+            'icp.confirmed_delete_misses': 3,
             # 2026-09-02: 0.42/1.05 -> 1.7/2.3, tuned to this test rig by
             # replaying the live map (see space_detector.py _mouth_clusters
             # docstring for why plain x-clustering couldn't see this bay at
@@ -351,6 +347,11 @@ class StackParkingNode(Node):
             freespace_margin_m=float(self._p('icp.freespace_margin_m')),
             freespace_occlusion_padding_rad=math.radians(
                 float(self._p('icp.freespace_occlusion_padding_deg'))),
+            observation_match_radius_m=float(
+                self._p('icp.observation_match_radius_m')),
+            tentative_confirm_hits=int(self._p('icp.tentative_confirm_hits')),
+            tentative_delete_misses=int(self._p('icp.tentative_delete_misses')),
+            confirmed_delete_misses=int(self._p('icp.confirmed_delete_misses')),
         )
 
     def _motion_prior_config(self) -> MotionPriorConfig:
@@ -1049,6 +1050,7 @@ class StackParkingNode(Node):
             if duration > 0.0:
                 slam_hz = (len(self.slam_update_times) - 1) / duration
         prior = self.prior.last_status
+        tentative_cells, confirmed_cells = self.slam.map.state_counts()
         values = {
             'pipeline_stage': self.pipeline.stage.value,
             'mission_state': output.state.value,
@@ -1062,6 +1064,8 @@ class StackParkingNode(Node):
             'icp_rmse_m': ('%.4f' % icp.rmse_m) if icp and math.isfinite(icp.rmse_m) else 'inf',
             'icp_matches': str(icp.correspondences if icp else 0),
             'map_points': str(len(self.slam.map)),
+            'map_tentative_cells': str(tentative_cells),
+            'map_confirmed_cells': str(confirmed_cells),
             'map_updates_enabled': str(self.pipeline.mapping_enabled),
             'slam_rate_hz': '%.2f' % slam_hz,
             'slam_rate_target_hz': str(float(self._p('slam_rate_hz'))),
