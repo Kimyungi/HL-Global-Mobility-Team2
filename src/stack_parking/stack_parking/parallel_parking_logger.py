@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Logger for the complete straight/reverse/forward parallel-parking test."""
+"""Logger for the complete five-motion parallel-parking test."""
 
 from __future__ import annotations
 
@@ -99,6 +99,9 @@ class ParallelParkingLogger(Node):
                 'parallel_path_rear_arc',
                 'parallel_path_front_arc',
                 'parallel_path_front_line',
+                'parallel_single_front_arc_path',
+                'parallel_single_rear_arc_path',
+                'parallel_reused_reference_path',
             )
             rows = []
             for marker in msg.markers:
@@ -110,8 +113,9 @@ class ParallelParkingLogger(Node):
                         0: 'rear_end',
                         1: 'rear_tangent',
                         2: 'P0',
-                        3: 'front_tangent',
-                        4: 'front_end',
+                        3: 'arc_origin',
+                        4: 'front_tangent',
+                        5: 'front_end',
                     }.get(marker.id, str(marker.id))
                     rows.append((
                         'parallel_path_points:' + label,

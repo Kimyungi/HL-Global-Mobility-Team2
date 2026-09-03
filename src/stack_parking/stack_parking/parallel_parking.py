@@ -2,10 +2,15 @@
 
 The valid point P0 is the midpoint between the two wall faces and the midpoint
 of the wall-side edge of a 1.5m x 0.7m validation rectangle.  The S-curve
-origin is shifted 0.25m from P0 along the wall tangent oriented toward the
+origin is shifted 0.5m from P0 along the wall tangent oriented toward the
 vehicle's travel direction; the vehicle yaw itself is not used as its slope. A
 45-degree arc of radius 1.12m is constructed there, then rotated 180 degrees
-about the shifted origin.  Two-metre wall-parallel lines extend both ends.
+about the shifted origin.  A 1.5-metre wall-parallel line extends from each end
+of the S.  The five-motion controller additionally isolates one arc into a
+line-arc-line path with two-metre straight sections and obtains the other
+line-arc-line by rotating the complete first shape 180 degrees about the shared
+arc origin.  The final reverse and forward phases reuse the original,
+unmodified S reference path.
 """
 
 from __future__ import annotations
@@ -58,11 +63,15 @@ class ParallelParkingConfig:
 
 class ParallelControlState(str, enum.Enum):
     IDLE = 'idle'
-    FORWARD = 'parallel_forward_lead'
-    FRONT_HOLD = 'parallel_front_end_hold'
-    REVERSE = 'parallel_reverse_park'
-    REAR_HOLD = 'parallel_reverse_end_hold'
-    FORWARD_RETURN = 'parallel_forward_return'
+    INITIAL_FORWARD = 'parallel_initial_reference_forward'
+    INITIAL_FORWARD_HOLD = 'parallel_initial_forward_hold'
+    SINGLE_ARC_REVERSE = 'parallel_single_arc_reverse'
+    SINGLE_ARC_REVERSE_HOLD = 'parallel_single_arc_reverse_hold'
+    OPPOSITE_ARC_FORWARD = 'parallel_opposite_arc_forward'
+    OPPOSITE_ARC_FORWARD_HOLD = 'parallel_opposite_arc_forward_hold'
+    REFERENCE_REVERSE = 'parallel_reference_reverse'
+    REFERENCE_REVERSE_HOLD = 'parallel_reference_reverse_hold'
+    REFERENCE_FORWARD = 'parallel_reference_forward'
     FINAL_HOLD = 'parallel_final_end_hold'
     STOPPED = 'parallel_stopped'
 
@@ -122,9 +131,9 @@ def build_parallel_reference_path(
     candidate: TrackedCandidate,
     vehicle_pose: Pose2,
     turn_radius_m: float = 1.12,
-    end_straight_m: float = 2.0,
+    end_straight_m: float = 1.5,
     arc_angle_deg: float = 45.0,
-    arc_start_offset_m: float = 0.25,
+    arc_start_offset_m: float = 0.5,
     arc_points: int = 24,
 ) -> Optional[ParallelReferencePath]:
     """Construct the point-symmetric S path requested for parallel parking."""
@@ -295,10 +304,96 @@ def parallel_controller_paths(
     return tuple(forward), reverse
 
 
+def parallel_single_arc_paths(
+    reference: ParallelReferencePath,
+    step_m: float = 0.05,
+    straight_m: float = 2.0,
+) -> tuple[tuple[PathPoint, ...], tuple[PathPoint, ...]]:
+    """Return the front line-arc-line path in both travel directions.
+
+    Both straight sections retain the phase-specific two-metre length.  The
+    reverse phase traverses outer-line -> arc -> inner-line; the following
+    forward phase traverses the same corridor in the opposite direction.
+    """
+    arc_origin = np.asarray(reference.arc_origin_map, dtype=np.float64)
+    front_tangent = np.asarray(
+        reference.front_tangent_map, dtype=np.float64)
+    front_end = np.asarray(reference.front_end_map, dtype=np.float64)
+    line_length = float(straight_m)
+    wall_direction = front_end - front_tangent
+    wall_direction_norm = float(np.linalg.norm(wall_direction))
+    if line_length <= 1.0e-9 or wall_direction_norm <= 1.0e-9:
+        return (), ()
+    wall_direction /= wall_direction_norm
+    outer_end = front_tangent + line_length * wall_direction
+
+    arc = _arc_path_points(
+        reference.front_arc_map,
+        np.asarray(reference.front_center_map),
+        reference.radius_m,
+        1,
+    )
+    if not arc:
+        return (), ()
+    inner_yaw = arc[0].yaw
+    inner_direction = np.asarray([
+        math.cos(inner_yaw), math.sin(inner_yaw)], dtype=np.float64)
+    inner_start = arc_origin - line_length * inner_direction
+    wall_yaw = math.atan2(wall_direction[1], wall_direction[0])
+
+    forward: list[PathPoint] = []
+    _append_without_duplicate(forward, _sample_line(
+        inner_start, arc_origin, inner_yaw, 1, step_m))
+    _append_without_duplicate(forward, arc)
+    _append_without_duplicate(forward, _sample_line(
+        front_tangent, outer_end, wall_yaw, 1, step_m))
+    reverse = tuple(PathPoint(
+        point.x, point.y, point.yaw, point.curvature, -1)
+        for point in reversed(forward))
+    return tuple(forward), reverse
+
+
+def parallel_opposite_single_arc_path(
+    reference: ParallelReferencePath,
+    step_m: float = 0.05,
+) -> tuple[PathPoint, ...]:
+    """Rotate the first line-arc-line 180 degrees about the arc origin.
+
+    Positions are point-reflected exactly.  Because this result is driven
+    forward while the source path is driven in reverse, vehicle yaw is kept
+    and curvature is negated.  Its arc points therefore coincide with the
+    other one of the two originally generated S arcs.
+    """
+    _, first_reverse = parallel_single_arc_paths(reference, step_m)
+    if not first_reverse:
+        return ()
+    origin_x, origin_y = reference.arc_origin_map
+    return tuple(PathPoint(
+        2.0 * origin_x - point.x,
+        2.0 * origin_y - point.y,
+        point.yaw,
+        -point.curvature,
+        1,
+    ) for point in first_reverse)
+
+
 class ParallelParkingController:
     def __init__(self, config: Optional[ParallelParkingConfig] = None):
         self.config = config or ParallelParkingConfig()
         self.state = ParallelControlState.IDLE
+        self.reference_forward_path: tuple[PathPoint, ...] = ()
+        self.reference_reverse_path: tuple[PathPoint, ...] = ()
+        self.initial_reference_forward_path: tuple[PathPoint, ...] = ()
+        self.single_arc_forward_path: tuple[PathPoint, ...] = ()
+        self.single_arc_reverse_path: tuple[PathPoint, ...] = ()
+        self.opposite_arc_forward_path: tuple[PathPoint, ...] = ()
+        self.reference_forward_lengths: list[float] = []
+        self.reference_reverse_lengths: list[float] = []
+        self.initial_reference_forward_lengths: list[float] = []
+        self.single_arc_forward_lengths: list[float] = []
+        self.single_arc_reverse_lengths: list[float] = []
+        self.opposite_arc_forward_lengths: list[float] = []
+        # Compatibility aliases used by older analysis tools.
         self.forward_path: tuple[PathPoint, ...] = ()
         self.reverse_path: tuple[PathPoint, ...] = ()
         self.forward_lengths: list[float] = []
@@ -320,18 +415,38 @@ class ParallelParkingController:
     ) -> bool:
         forward, reverse = parallel_controller_paths(
             path, self.config.sample_step_m)
-        if not forward or not reverse:
+        single_forward, single_reverse = parallel_single_arc_paths(
+            path, self.config.sample_step_m)
+        if (not forward or not reverse
+                or not single_forward or not single_reverse):
             return False
-        self.forward_path = forward
-        self.reverse_path = reverse
-        self.forward_lengths = cumulative_lengths(forward)
-        self.reverse_lengths = cumulative_lengths(reverse)
+        opposite_forward = parallel_opposite_single_arc_path(
+            path, self.config.sample_step_m)
+        if not opposite_forward:
+            return False
+        self.initial_reference_forward_path = forward
+        self.reference_forward_path = forward
+        self.reference_reverse_path = reverse
+        self.single_arc_forward_path = single_forward
+        self.single_arc_reverse_path = single_reverse
+        self.opposite_arc_forward_path = opposite_forward
+        self.initial_reference_forward_lengths = cumulative_lengths(forward)
+        self.reference_forward_lengths = cumulative_lengths(forward)
+        self.reference_reverse_lengths = cumulative_lengths(reverse)
+        self.single_arc_forward_lengths = cumulative_lengths(single_forward)
+        self.single_arc_reverse_lengths = cumulative_lengths(single_reverse)
+        self.opposite_arc_forward_lengths = cumulative_lengths(
+            opposite_forward)
+        self.forward_path = self.reference_forward_path
+        self.reverse_path = self.reference_reverse_path
+        self.forward_lengths = self.reference_forward_lengths
+        self.reverse_lengths = self.reference_reverse_lengths
         self.progress = closest_path_index(forward, current_pose_map)
-        self.state = ParallelControlState.FORWARD
+        self.state = ParallelControlState.INITIAL_FORWARD
         self.hold_started_at_s = float(now_s)
         self.stop_reason = ''
         self._last_reference_map = self._preview(
-            forward, self.forward_lengths, current_pose_map)
+            forward, self.initial_reference_forward_lengths, current_pose_map)
         return True
 
     def _preview(
@@ -362,6 +477,50 @@ class ParallelParkingController:
             status,
         )
 
+    def _activate(
+        self,
+        state: ParallelControlState,
+        path: Sequence[PathPoint],
+        current_pose_map: Pose2,
+    ) -> None:
+        self.state = state
+        self.progress = closest_path_index(path, current_pose_map)
+
+    def _holding(
+        self,
+        current_pose_map: Pose2,
+        reference: PathPoint,
+        now_s: float,
+        status: str,
+    ) -> Optional[WallGapControlOutput]:
+        elapsed = float(now_s) - self.hold_started_at_s
+        if elapsed + 1.0e-9 >= self.config.direction_change_hold_s:
+            return None
+        return self._output(
+            current_pose_map, reference, 0.0,
+            '%s:%.2f/%.2fs' % (
+                status,
+                max(0.0, elapsed),
+                self.config.direction_change_hold_s,
+            ),
+        )
+
+    def _start_hold(
+        self,
+        current_pose_map: Pose2,
+        reference: PathPoint,
+        now_s: float,
+        state: ParallelControlState,
+        status: str,
+    ) -> WallGapControlOutput:
+        self.state = state
+        self.hold_started_at_s = float(now_s)
+        return self._output(
+            current_pose_map, reference, 0.0,
+            '%s:0.00/%.2fs' % (
+                status, self.config.direction_change_hold_s),
+        )
+
     @staticmethod
     def _at_end(reference: PathPoint, path: Sequence[PathPoint]) -> bool:
         end = path[-1]
@@ -376,86 +535,161 @@ class ParallelParkingController:
         if self.state == ParallelControlState.IDLE:
             return self._output(current_pose_map, None, 0.0, 'idle')
 
-        if self.state == ParallelControlState.FORWARD:
+        if self.state == ParallelControlState.INITIAL_FORWARD:
             reference = self._preview(
-                self.forward_path, self.forward_lengths, current_pose_map)
-            if not self._at_end(reference, self.forward_path):
+                self.initial_reference_forward_path,
+                self.initial_reference_forward_lengths,
+                current_pose_map,
+            )
+            if not self._at_end(
+                    reference, self.initial_reference_forward_path):
                 return self._output(
                     current_pose_map, reference,
-                    self.config.forward_speed_mps, 'parallel_forward_lead')
-            self.state = ParallelControlState.FRONT_HOLD
-            self.hold_started_at_s = float(now_s)
-            return self._output(
-                current_pose_map, reference, 0.0,
-                'parallel_front_end_hold:0.00/%.2fs'
-                % self.config.direction_change_hold_s)
+                    self.config.forward_speed_mps,
+                    ParallelControlState.INITIAL_FORWARD.value,
+                )
+            return self._start_hold(
+                current_pose_map, reference, now_s,
+                ParallelControlState.INITIAL_FORWARD_HOLD,
+                ParallelControlState.INITIAL_FORWARD_HOLD.value,
+            )
 
-        if self.state == ParallelControlState.FRONT_HOLD:
-            reference = self.forward_path[-1]
-            elapsed = float(now_s) - self.hold_started_at_s
-            if elapsed < self.config.direction_change_hold_s:
-                return self._output(
-                    current_pose_map, reference, 0.0,
-                    'parallel_front_end_hold:%.2f/%.2fs' % (
-                        max(0.0, elapsed),
-                        self.config.direction_change_hold_s,
-                    ))
-            self.state = ParallelControlState.REVERSE
-            self.progress = closest_path_index(
-                self.reverse_path, current_pose_map)
+        if self.state == ParallelControlState.INITIAL_FORWARD_HOLD:
+            reference = self.initial_reference_forward_path[-1]
+            output = self._holding(
+                current_pose_map, reference, now_s,
+                ParallelControlState.INITIAL_FORWARD_HOLD.value,
+            )
+            if output is not None:
+                return output
+            self._activate(
+                ParallelControlState.SINGLE_ARC_REVERSE,
+                self.single_arc_reverse_path,
+                current_pose_map,
+            )
 
-        if self.state == ParallelControlState.REVERSE:
+        if self.state == ParallelControlState.SINGLE_ARC_REVERSE:
             reference = self._preview(
-                self.reverse_path, self.reverse_lengths, current_pose_map)
-            if not self._at_end(reference, self.reverse_path):
+                self.single_arc_reverse_path,
+                self.single_arc_reverse_lengths,
+                current_pose_map,
+            )
+            if not self._at_end(reference, self.single_arc_reverse_path):
                 return self._output(
                     current_pose_map, reference,
-                    -self.config.reverse_speed_mps, 'parallel_reverse_park')
-            self.state = ParallelControlState.REAR_HOLD
-            self.hold_started_at_s = float(now_s)
-            return self._output(
-                current_pose_map, reference, 0.0,
-                'parallel_reverse_end_hold:0.00/%.2fs'
-                % self.config.direction_change_hold_s)
+                    -self.config.reverse_speed_mps,
+                    ParallelControlState.SINGLE_ARC_REVERSE.value,
+                )
+            return self._start_hold(
+                current_pose_map, reference, now_s,
+                ParallelControlState.SINGLE_ARC_REVERSE_HOLD,
+                ParallelControlState.SINGLE_ARC_REVERSE_HOLD.value,
+            )
 
-        if self.state == ParallelControlState.REAR_HOLD:
-            reference = self.reverse_path[-1]
-            elapsed = float(now_s) - self.hold_started_at_s
-            if elapsed < self.config.direction_change_hold_s:
-                return self._output(
-                    current_pose_map, reference, 0.0,
-                    'parallel_reverse_end_hold:%.2f/%.2fs' % (
-                        max(0.0, elapsed),
-                        self.config.direction_change_hold_s,
-                    ))
-            self.state = ParallelControlState.FORWARD_RETURN
-            self.progress = closest_path_index(
-                self.forward_path, current_pose_map)
+        if self.state == ParallelControlState.SINGLE_ARC_REVERSE_HOLD:
+            reference = self.single_arc_reverse_path[-1]
+            output = self._holding(
+                current_pose_map, reference, now_s,
+                ParallelControlState.SINGLE_ARC_REVERSE_HOLD.value,
+            )
+            if output is not None:
+                return output
+            self._activate(
+                ParallelControlState.OPPOSITE_ARC_FORWARD,
+                self.opposite_arc_forward_path,
+                current_pose_map,
+            )
 
-        if self.state == ParallelControlState.FORWARD_RETURN:
+        if self.state == ParallelControlState.OPPOSITE_ARC_FORWARD:
             reference = self._preview(
-                self.forward_path, self.forward_lengths, current_pose_map)
-            if not self._at_end(reference, self.forward_path):
+                self.opposite_arc_forward_path,
+                self.opposite_arc_forward_lengths,
+                current_pose_map,
+            )
+            if not self._at_end(reference, self.opposite_arc_forward_path):
                 return self._output(
                     current_pose_map, reference,
-                    self.config.forward_speed_mps, 'parallel_forward_return')
-            self.state = ParallelControlState.FINAL_HOLD
-            self.hold_started_at_s = float(now_s)
-            return self._output(
-                current_pose_map, reference, 0.0,
-                'parallel_final_end_hold:0.00/%.2fs'
-                % self.config.direction_change_hold_s)
+                    self.config.forward_speed_mps,
+                    ParallelControlState.OPPOSITE_ARC_FORWARD.value,
+                )
+            return self._start_hold(
+                current_pose_map, reference, now_s,
+                ParallelControlState.OPPOSITE_ARC_FORWARD_HOLD,
+                ParallelControlState.OPPOSITE_ARC_FORWARD_HOLD.value,
+            )
+
+        if self.state == ParallelControlState.OPPOSITE_ARC_FORWARD_HOLD:
+            reference = self.opposite_arc_forward_path[-1]
+            output = self._holding(
+                current_pose_map, reference, now_s,
+                ParallelControlState.OPPOSITE_ARC_FORWARD_HOLD.value,
+            )
+            if output is not None:
+                return output
+            self._activate(
+                ParallelControlState.REFERENCE_REVERSE,
+                self.reference_reverse_path,
+                current_pose_map,
+            )
+
+        if self.state == ParallelControlState.REFERENCE_REVERSE:
+            reference = self._preview(
+                self.reference_reverse_path,
+                self.reference_reverse_lengths,
+                current_pose_map,
+            )
+            if not self._at_end(reference, self.reference_reverse_path):
+                return self._output(
+                    current_pose_map, reference,
+                    -self.config.reverse_speed_mps,
+                    ParallelControlState.REFERENCE_REVERSE.value,
+                )
+            return self._start_hold(
+                current_pose_map, reference, now_s,
+                ParallelControlState.REFERENCE_REVERSE_HOLD,
+                ParallelControlState.REFERENCE_REVERSE_HOLD.value,
+            )
+
+        if self.state == ParallelControlState.REFERENCE_REVERSE_HOLD:
+            reference = self.reference_reverse_path[-1]
+            output = self._holding(
+                current_pose_map, reference, now_s,
+                ParallelControlState.REFERENCE_REVERSE_HOLD.value,
+            )
+            if output is not None:
+                return output
+            self._activate(
+                ParallelControlState.REFERENCE_FORWARD,
+                self.reference_forward_path,
+                current_pose_map,
+            )
+
+        if self.state == ParallelControlState.REFERENCE_FORWARD:
+            reference = self._preview(
+                self.reference_forward_path,
+                self.reference_forward_lengths,
+                current_pose_map,
+            )
+            if not self._at_end(reference, self.reference_forward_path):
+                return self._output(
+                    current_pose_map, reference,
+                    self.config.forward_speed_mps,
+                    ParallelControlState.REFERENCE_FORWARD.value,
+                )
+            return self._start_hold(
+                current_pose_map, reference, now_s,
+                ParallelControlState.FINAL_HOLD,
+                ParallelControlState.FINAL_HOLD.value,
+            )
 
         if self.state == ParallelControlState.FINAL_HOLD:
-            reference = self.forward_path[-1]
-            elapsed = float(now_s) - self.hold_started_at_s
-            if elapsed < self.config.direction_change_hold_s:
-                return self._output(
-                    current_pose_map, reference, 0.0,
-                    'parallel_final_end_hold:%.2f/%.2fs' % (
-                        max(0.0, elapsed),
-                        self.config.direction_change_hold_s,
-                    ))
+            reference = self.reference_forward_path[-1]
+            output = self._holding(
+                current_pose_map, reference, now_s,
+                ParallelControlState.FINAL_HOLD.value,
+            )
+            if output is not None:
+                return output
             self.state = ParallelControlState.STOPPED
             self.stop_reason = 'parallel_parking_complete'
             return self._output(

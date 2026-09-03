@@ -60,9 +60,6 @@ def run_simulation(path):
         reverse_speed_mps=0.75,
         sample_step_m=0.05,
     ))
-    forward_samples = []
-    reverse_samples = []
-    return_samples = []
     full_forward, _ = parallel_controller_paths(path)
     p0_index = min(range(len(full_forward)), key=lambda index: math.hypot(
         full_forward[index].x - path.p0_map[0],
@@ -72,46 +69,77 @@ def run_simulation(path):
     if not controller.start(path, start_pose, 0.0):
         raise RuntimeError('parallel controller rejected the S path')
 
+    def drive_to_hold(reference_points, hold_state, now_s):
+        samples = []
+        for point in reference_points[controller.progress:]:
+            update_time_s = now_s
+            output = controller.update(pose(point), update_time_s)
+            samples.append((point.x, point.y))
+            now_s += 0.05
+            if output.state == hold_state:
+                return (
+                    np.asarray(samples), pose(point), update_time_s, now_s)
+        raise RuntimeError('%s was not reached' % hold_state.value)
+
+    def release_hold(stop_pose, hold_started_s, next_state):
+        output = controller.update(stop_pose, hold_started_s + 0.99)
+        if output.state == next_state:
+            raise RuntimeError('hold ended before one second')
+        output = controller.update(stop_pose, hold_started_s + 1.0)
+        if output.state != next_state:
+            raise RuntimeError(
+                'controller entered %s instead of %s'
+                % (output.state.value, next_state.value))
+        return hold_started_s + 1.0
+
+    phases = []
     now_s = 0.0
-    for point in controller.forward_path[controller.progress:]:
-        output = controller.update(pose(point), now_s)
-        forward_samples.append((point.x, point.y))
-        now_s += 0.05
-        if output.state == ParallelControlState.FRONT_HOLD:
-            front_stop = pose(point)
-            break
-    else:
-        raise RuntimeError('forward preview did not reach the front end')
+    samples, stop_pose, hold_started_s, now_s = drive_to_hold(
+        controller.initial_reference_forward_path,
+        ParallelControlState.INITIAL_FORWARD_HOLD,
+        now_s,
+    )
+    phases.append(('initial_forward', samples, stop_pose))
+    now_s = release_hold(
+        stop_pose, hold_started_s,
+        ParallelControlState.SINGLE_ARC_REVERSE)
 
-    now_s += 1.01
-    output = controller.update(front_stop, now_s)
-    if output.state != ParallelControlState.REVERSE:
-        raise RuntimeError('controller did not leave the first 1s hold')
-    for point in controller.reverse_path[controller.progress:]:
-        output = controller.update(pose(point), now_s)
-        reverse_samples.append((point.x, point.y))
-        now_s += 0.05
-        if output.state == ParallelControlState.REAR_HOLD:
-            rear_stop = pose(point)
-            break
-    else:
-        raise RuntimeError('reverse preview did not reach the rear end')
+    samples, stop_pose, hold_started_s, now_s = drive_to_hold(
+        controller.single_arc_reverse_path,
+        ParallelControlState.SINGLE_ARC_REVERSE_HOLD,
+        now_s,
+    )
+    phases.append(('single_arc_reverse', samples, stop_pose))
+    now_s = release_hold(
+        stop_pose, hold_started_s,
+        ParallelControlState.OPPOSITE_ARC_FORWARD)
 
-    now_s += 1.01
-    output = controller.update(rear_stop, now_s)
-    if output.state != ParallelControlState.FORWARD_RETURN:
-        raise RuntimeError('controller did not leave the reverse-end hold')
-    for point in controller.forward_path[controller.progress:]:
-        update_time_s = now_s
-        output = controller.update(pose(point), update_time_s)
-        return_samples.append((point.x, point.y))
-        now_s += 0.05
-        if output.state == ParallelControlState.FINAL_HOLD:
-            final_stop = pose(point)
-            final_hold_started_s = update_time_s
-            break
-    else:
-        raise RuntimeError('return preview did not reach the front end')
+    samples, stop_pose, hold_started_s, now_s = drive_to_hold(
+        controller.opposite_arc_forward_path,
+        ParallelControlState.OPPOSITE_ARC_FORWARD_HOLD,
+        now_s,
+    )
+    phases.append(('opposite_arc_forward', samples, stop_pose))
+    now_s = release_hold(
+        stop_pose, hold_started_s,
+        ParallelControlState.REFERENCE_REVERSE)
+
+    samples, stop_pose, hold_started_s, now_s = drive_to_hold(
+        controller.reference_reverse_path,
+        ParallelControlState.REFERENCE_REVERSE_HOLD,
+        now_s,
+    )
+    phases.append(('reference_reverse', samples, stop_pose))
+    now_s = release_hold(
+        stop_pose, hold_started_s,
+        ParallelControlState.REFERENCE_FORWARD)
+
+    samples, final_stop, final_hold_started_s, now_s = drive_to_hold(
+        controller.reference_forward_path,
+        ParallelControlState.FINAL_HOLD,
+        now_s,
+    )
+    phases.append(('reference_forward', samples, final_stop))
 
     output = controller.update(final_stop, final_hold_started_s + 0.99)
     if output.state != ParallelControlState.FINAL_HOLD:
@@ -123,11 +151,7 @@ def run_simulation(path):
 
     return {
         'controller': controller,
-        'forward': np.asarray(forward_samples),
-        'reverse': np.asarray(reverse_samples),
-        'return': np.asarray(return_samples),
-        'front_stop': front_stop,
-        'rear_stop': rear_stop,
+        'phases': phases,
         'final_stop': final_stop,
         'final_status': output.status,
     }
@@ -142,7 +166,7 @@ def arrowed(ax, points, color, label):
                                     'lw': 1.8, 'mutation_scale': 12})
 
 
-def context(ax, scene, rectangle, path):
+def context(ax, scene, rectangle, path, active_reference):
     ax.scatter(scene[:, 0], scene[:, 1], s=7, c='0.25', alpha=0.55,
                label='left-wall LiDAR points')
     ax.plot(rectangle[:, 0], rectangle[:, 1], color='gold', ls='--', lw=2,
@@ -158,7 +182,11 @@ def context(ax, scene, rectangle, path):
     ax.plot(path.p0_map[0], path.p0_map[1], 'mx', ms=10, mew=2,
             label='P0: wall-edge midpoint')
     ax.plot(path.arc_origin_map[0], path.arc_origin_map[1], 'g+', ms=12,
-            mew=2, label='arc origin: P0 + 0.25m wall-parallel forward')
+            mew=2, label='arc origin: P0 + 0.5m wall-parallel forward')
+    active_xy = np.asarray([
+        [point.x, point.y] for point in active_reference])
+    ax.plot(active_xy[:, 0], active_xy[:, 1], color='seagreen', ls='--',
+            lw=1.5, label='active reference for this phase')
     ax.set_aspect('equal', adjustable='box')
     ax.grid(True, alpha=0.25)
     ax.set_xlabel('parking_map x [m]')
@@ -204,26 +232,40 @@ def main() -> None:
         candidate,
         Pose2(0.1, 0.0, 0.0),
         turn_radius_m=1.12,
-        end_straight_m=2.0,
+        end_straight_m=1.5,
         arc_angle_deg=45.0,
-        arc_start_offset_m=0.25,
+        arc_start_offset_m=0.5,
     )
     if path is None:
         raise RuntimeError('parallel reference path was not created')
     simulation = run_simulation(path)
     rectangle = candidate_rectangle_corners(candidate, 1.5, 0.7)
 
-    fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True, sharey=True)
-    phases = (
-        ('1. Forward after passing P0\npreview at front end -> hold 1s',
-         simulation['forward'], 'royalblue', simulation['front_stop']),
-        ('2. Reverse on the same S path\npreview at rear end -> hold 1s',
-         simulation['reverse'], 'crimson', simulation['rear_stop']),
-        ('3. Forward on the same path\npreview at end -> hold 1s -> log stop',
-         simulation['return'], 'darkorange', simulation['final_stop']),
+    controller = simulation['controller']
+    fig, axes = plt.subplots(5, 1, figsize=(13, 20), sharex=True, sharey=True)
+    plot_phases = (
+        ('1. Initial full-S forward\npreview at end -> hold 1s',
+         simulation['phases'][0], 'royalblue',
+         controller.initial_reference_forward_path),
+        ('2. Reverse: 2.0m line - one arc - 2.0m line\n'
+         'preview at end -> hold 1s',
+         simulation['phases'][1], 'crimson',
+         controller.single_arc_reverse_path),
+        ('3. Forward: distinct opposite arc\n'
+         '2.0m line - one arc - 2.0m line -> hold 1s',
+         simulation['phases'][2], 'darkorange',
+         controller.opposite_arc_forward_path),
+        ('4. Full reference-S reverse\npreview at end -> hold 1s',
+         simulation['phases'][3], 'purple',
+         controller.reference_reverse_path),
+        ('5. Full reference-S forward\n'
+         'preview at end -> hold 1s -> log stop',
+         simulation['phases'][4], 'teal',
+         controller.reference_forward_path),
     )
-    for axis, (title, points, color, stop_pose) in zip(axes, phases):
-        context(axis, scene, rectangle, path)
+    for axis, (title, phase, color, active_path) in zip(axes, plot_phases):
+        _, points, stop_pose = phase
+        context(axis, scene, rectangle, path, active_path)
         arrowed(axis, points, color, title.split('\n')[0])
         axis.plot(stop_pose.x, stop_pose.y, marker='s', color='navy', ms=8,
                   label='vehicle stop (preview at end)')
@@ -233,8 +275,9 @@ def main() -> None:
         axis.set_ylabel('parking_map y [m]')
     fig.suptitle(
         'Parallel parking test: 1.5m x 0.7m slot, R=1.12m, '
-        'arc origin P0+0.25m wall-parallel forward\n'
-        'two 45deg arcs, 2m end lines',
+        'arc origin P0+0.5m wall-parallel forward\n'
+        'full-S forward -> two distinct single arcs -> '
+        'full-S reverse/forward',
         fontsize=15,
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
@@ -242,13 +285,16 @@ def main() -> None:
     fig.savefig(output, dpi=180)
     plt.close(fig)
 
-    print('state_sequence=forward>hold1s>reverse>hold1s>'
-          'same_path_forward>hold1s>parallel_parking_complete')
+    print('state_sequence=full_s_forward>hold1s>'
+          'single_arc_reverse>hold1s>opposite_arc_forward>hold1s>'
+          'full_s_reverse>hold1s>full_s_forward>hold1s>'
+          'parallel_parking_complete')
     print('rectangle_m=1.500x0.700')
     print('turn_radius_m=1.120')
-    print('arc_start_offset_m=0.250')
+    print('arc_start_offset_m=0.500')
     print('arc_angle_deg=45.000x2')
-    print('end_straight_m=2.000x2')
+    print('s_end_straight_m=1.500x2')
+    print('single_arc_straight_m=2.000x2')
     print('preview_distance_m=1.500')
     print('v_forward_mps=0.750')
     print('v_reverse_mps=-0.750')

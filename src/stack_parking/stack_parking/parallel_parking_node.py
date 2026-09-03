@@ -38,9 +38,9 @@ class ParallelParkingNode(WallGapNode):
         self.declare_parameter('rectangle_wall_length_m', 1.5)
         self.declare_parameter('rectangle_inward_depth_m', 0.7)
         self.declare_parameter('parallel_turn_radius_m', 1.12)
-        self.declare_parameter('parallel_end_straight_m', 2.0)
+        self.declare_parameter('parallel_end_straight_m', 1.5)
         self.declare_parameter('parallel_arc_angle_deg', 45.0)
-        self.declare_parameter('parallel_arc_start_offset_m', 0.25)
+        self.declare_parameter('parallel_arc_start_offset_m', 0.5)
 
         self.rectangle_wall_length_m = float(
             self.get_parameter('rectangle_wall_length_m').value)
@@ -278,6 +278,7 @@ class ParallelParkingNode(WallGapNode):
                         'parallel S path created after P0 pass: R=%.2fm, '
                         'origin=P0+%.2fm, arc=%.1fdeg x2, '
                         'straight=%.2fm x2, preview=%.2fm, '
+                        'sequence=S-F/front-arc-R/rear-arc-F/S-R/S-F, '
                         'v_forward=%.2f, v_reverse=%.2f'
                         % (
                             self.parallel_turn_radius_m,
@@ -412,6 +413,34 @@ class ParallelParkingNode(WallGapNode):
                 marker.points = [
                     Point(x=float(x), y=float(y), z=0.03)
                     for x, y in points]
+                array.markers.append(marker)
+
+            extra_paths = (
+                ('parallel_single_front_arc_path',
+                 self.controller.single_arc_forward_path,
+                 _rgba(0.1, 1.0, 0.3, 0.85)),
+                ('parallel_single_rear_arc_path',
+                 self.controller.opposite_arc_forward_path,
+                 _rgba(1.0, 0.55, 0.0, 0.85)),
+                ('parallel_reused_reference_path',
+                 self.controller.reference_forward_path,
+                 _rgba(0.6, 0.2, 1.0, 0.65)),
+            )
+            for ns, points, color in extra_paths:
+                if not points:
+                    continue
+                marker = Marker()
+                marker.header.frame_id = self.map_frame
+                marker.header.stamp = self.get_clock().now().to_msg()
+                marker.ns = ns
+                marker.id = 0
+                marker.type = Marker.LINE_STRIP
+                marker.action = Marker.ADD
+                marker.scale.x = 0.035
+                marker.color = color
+                marker.points = [
+                    Point(x=float(point.x), y=float(point.y), z=0.06)
+                    for point in points]
                 array.markers.append(marker)
 
             for point_id, point in enumerate((
