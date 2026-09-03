@@ -43,17 +43,37 @@
 #     안 바뀌었으면 아래 ID_PATH 그대로. 바뀌었으면 4대 다 뽑았다 하나씩 꽂아
 #     어느 ttyUSB가 나타나는지 보거나, SDK 시리얼로 위 표와 대조해서 재확인.
 #
+# ⚠⚠ 2026-09-03 재실측(2차): 09-03 오전에 ttyUSB 번호<->물리 위치 대응이
+#   유지된다고 가정하고 ID_PATH만 갱신했다가 **틀렸다** — a1(전방) 심링크가
+#   IMU(ttyUSB4, ID_MODEL=HandsFree_IMU_...)에, b2(우측) 심링크가 FT231X
+#   UART(ttyUSB5, 라이다 아님)에 걸려 있었다. 그래서 그 두 대가 "cannot
+#   retrieve Lidar health code"로 죽었고(라이다가 아니니 당연), 살아있던
+#   두 대(a2/b1 심링크)도 실제로는 서로 다른 물리 유닛이었다(아래 실측).
+#   **오늘은 라이다 4대가 전부 ttyUSB0~3(허브 포트 4.1~4.4.1)에 몰려 있고
+#   ttyUSB4/5는 라이다가 아니다** — ttyUSB 번호<->위치 대응 자체가 매번
+#   흔들리므로 이제 SDK 시리얼로만 확정한다(각 ttyUSBx에 드라이버를 잠깐
+#   띄워 로그의 "Serial:" 줄과 위 34~35번째 줄 표를 대조):
+#     ttyUSB0 (usb-0:4.1:1.0)   serial=2025110300090701 -> b1 좌측
+#     ttyUSB1 (usb-0:4.2:1.0)   serial=2026000800070152 -> a2 후방
+#     ttyUSB2 (usb-0:4.3:1.0)   serial=2026000800070184 -> a1 전방
+#     ttyUSB3 (usb-0:4.4.1:1.0) serial=2025110300090660 -> b2 우측
+#     ttyUSB4 (usb-0:2.1.4:1.0) HandsFree IMU — 라이다 아님, 규칙에서 제외
+#     ttyUSB5 (usb-0:2.2.1:1.0) FT231X USB UART — 라이다 아님, 규칙에서 제외
+#   이 PC는 ID_PATH 매칭 자체가 근본적으로 불안정하다(위 27번째 줄) — 다음에도
+#   또 바뀔 수 있다. **바뀔 때마다 ttyUSB 번호 재사용을 가정하지 말고 매번 SDK
+#   시리얼로 재확인할 것** — 그 가정이 이번 오답의 원인이었다.
+#
 # 설치: sudo cp 99-fma-lidars.rules /etc/udev/rules.d/
 #       sudo udevadm control --reload-rules && sudo udevadm trigger
 
-# a1 전방 T-mini Plus (ttyUSB4, serial 2026000800070184)
-SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:2.3:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="ttyUSB_LIDAR", SYMLINK+="lidar_front", SYMLINK+="ydlidar"
+# a1 전방 T-mini Plus (ttyUSB2, serial 2026000800070184)
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:4.3:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="ttyUSB_LIDAR", SYMLINK+="lidar_front", SYMLINK+="ydlidar"
 
-# a2 후방 T-mini Plus (ttyUSB3, serial 2026000800070152)
-SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:2.2:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_rear"
+# a2 후방 T-mini Plus (ttyUSB1, serial 2026000800070152)
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:4.2:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_rear"
 
-# b1 좌측 T-mini Plus (ttyUSB2, serial 2025110300090701 — 2026-09-02부터 RPLiDAR 아님)
-SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:2.1:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_left"
+# b1 좌측 T-mini Plus (ttyUSB0, serial 2025110300090701 — 2026-09-02부터 RPLiDAR 아님)
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:4.1:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_left"
 
-# b2 우측 T-mini Plus (ttyUSB5, serial 2025110300090660 — 2026-09-02부터 RPLiDAR 아님)
-SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:2.4.1:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_right"
+# b2 우측 T-mini Plus (ttyUSB3, serial 2025110300090660 — 2026-09-02부터 RPLiDAR 아님)
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:4.4.1:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_right"
