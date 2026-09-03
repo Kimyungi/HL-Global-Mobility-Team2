@@ -48,24 +48,22 @@ def main() -> None:
     detector.set_seed(Pose2(), SIDE_LEFT)
 
     confirmed = None
-    confirm_s = None
+    confirm_pose = None
     for along in np.arange(0.0, 3.0, 0.1):
         vehicle_xy = along * tangent
-        result = detector.update(scene, Pose2(
+        pose = Pose2(
             float(vehicle_xy[0]), float(vehicle_xy[1]),
-            math.radians(35.0) * math.sin(float(along))))
+            math.radians(35.0) * math.sin(float(along)))
+        result = detector.update(scene, pose)
         if result is not None:
             confirmed = result
-            confirm_s = float(along)
+            confirm_pose = pose
             break
-    if confirmed is None or confirm_s is None:
+    if confirmed is None or confirm_pose is None:
         raise SystemExit('no candidate confirmed')
 
-    advanced_xy = (confirm_s + 0.5) * tangent
-    advanced_pose = Pose2(
-        float(advanced_xy[0]), float(advanced_xy[1]), math.radians(30.0))
     path = build_reference_path(
-        confirmed, advanced_pose, cfg, min_turn_radius_m=1.15)
+        confirmed, confirm_pose, min_turn_radius_m=1.15)
     if path is None:
         raise SystemExit('reference path is degenerate')
 
@@ -93,8 +91,8 @@ def main() -> None:
             label='arc')
     ax.plot(path.straight2_map[:, 0], path.straight2_map[:, 1], 'r-', lw=2,
             label='straight 2')
-    ax.plot(advanced_pose.x, advanced_pose.y, 'r^', ms=12,
-            label='vehicle after 0.5m advance')
+    ax.plot(confirm_pose.x, confirm_pose.y, 'r^', ms=12,
+            label='vehicle when square is confirmed')
     ax.plot(*path.p0_map, 'mx', ms=10, mew=2, label='P0')
     ax.plot(*path.goal_map, 'r*', ms=14, label='goal')
     ax.set_aspect('equal', adjustable='datalim')

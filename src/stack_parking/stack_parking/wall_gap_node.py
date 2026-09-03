@@ -71,8 +71,9 @@ class WallGapNode(Node):
         self.declare_parameter('reach_tolerance_m', 0.3)
         self.declare_parameter('dedup_tolerance_m', 0.5)
         self.declare_parameter('publish_rate_hz', 5.0)
-        self.declare_parameter('advance_after_confirm_m', 0.5)
         self.declare_parameter('min_turn_radius_m', 1.15)
+        self.declare_parameter('inside_straight_m', 2.0)
+        self.declare_parameter('parallel_straight_m', 3.0)
         self.declare_parameter('search_side', 'left')
 
         search_side = str(self.get_parameter('search_side').value).strip().lower()
@@ -110,19 +111,16 @@ class WallGapNode(Node):
         self.last_reset_send_s = -1
         self.final_cancel_sent = False
         self.map_frame = str(self.get_parameter('map_frame').value)
-        self.advance_after_confirm_m = float(
-            self.get_parameter('advance_after_confirm_m').value)
         self.min_turn_radius_m = float(self.get_parameter('min_turn_radius_m').value)
+        self.inside_straight_m = float(
+            self.get_parameter('inside_straight_m').value)
+        self.parallel_straight_m = float(
+            self.get_parameter('parallel_straight_m').value)
 
         self.latest_map = np.empty((0, 2), dtype=np.float64)
         self.latest_pose = None
 
-        # Stop sequencing: SIDE_AUTO-style single pass through the states
-        # below. confirmed_at_pose is the pose at the tick a candidate was
-        # first cleared — advance_after_confirm_m is measured from there.
         self.confirmed_candidate = None
-        self.confirmed_at_pose: Pose2 | None = None
-        self.stopped = False
         self.reference_path: ReferencePath | None = None
 
         self.map_sub = self.create_subscription(
@@ -134,6 +132,9 @@ class WallGapNode(Node):
         self.marker_pub = self.create_publisher(
             MarkerArray, '/wall_gap/markers', 1)
         self.stop_pub = self.create_publisher(Bool, '/wall_gap/stop', 1)
+        # /wall_gap/stop is intentionally kept false for now. Final parking
+        # stop will be implemented from the rear LiDAR independently of path
+        # creation; confirming a square must not stop the forward alignment.
         # Every fresh test run must map from scratch (user directive,
         # 2026-09-02) — stack_parking_node already wipes its SLAM map on a
         # manual_command trigger when reset_map_on_mission_start is true
@@ -219,49 +220,37 @@ class WallGapNode(Node):
             self._publish_markers()
             return
 
-        if not self.stopped:
-            reference_sides_before = set(self.detector.reference_walls)
-            cleared = self.detector.update(self.latest_map, pose)
-            for side in set(self.detector.reference_walls) - reference_sides_before:
-                wall = self.detector.reference_walls[side]
-                self.get_logger().info(
-                    'reference wall locked in %s: side=%s yaw=%.1fdeg '
-                    'distance=%.2fm offset=+/-%.2fm'
-                    % (self.map_frame, side, math.degrees(wall.yaw),
-                       wall.distance_from_seed_m,
-                       self.detector.config.wall_line_offset_m))
-            if cleared is not None and self.confirmed_candidate is None:
-                self.confirmed_candidate = cleared
-                self.confirmed_at_pose = pose
+        reference_sides_before = set(self.detector.reference_walls)
+        cleared = self.detector.update(self.latest_map, pose)
+        for side in set(self.detector.reference_walls) - reference_sides_before:
+            wall = self.detector.reference_walls[side]
+            self.get_logger().info(
+                'reference wall locked in %s: side=%s yaw=%.1fdeg '
+                'distance=%.2fm offset=+/-%.2fm'
+                % (self.map_frame, side, math.degrees(wall.yaw),
+                   wall.distance_from_seed_m,
+                   self.detector.config.wall_line_offset_m))
+        if cleared is not None and self.confirmed_candidate is None:
+            self.confirmed_candidate = cleared
+            self.reference_path = build_reference_path(
+                cleared, pose, self.min_turn_radius_m,
+                inside_straight_m=self.inside_straight_m,
+                parallel_straight_m=self.parallel_straight_m,
+            )
+            if self.reference_path is None:
+                self.get_logger().error(
+                    'usable space confirmed, but reference-path parameters '
+                    'must all be positive')
+            else:
                 self.get_logger().info(
                     'usable space confirmed: side=%s map=(%.2f,%.2f) width=%.2fm '
-                    '— advancing %.2fm more before stopping'
+                    '— path ready immediately (parallel=%.2fm radius=%.2fm '
+                    'inside=%.2fm); rear-LiDAR stop pending'
                     % (cleared.side, cleared.map_x, cleared.map_y, cleared.width_m,
-                       self.advance_after_confirm_m))
-            elif self.confirmed_candidate is not None:
-                traveled = math.hypot(
-                    pose.x - self.confirmed_at_pose.x, pose.y - self.confirmed_at_pose.y)
-                if traveled >= self.advance_after_confirm_m:
-                    self.reference_path = build_reference_path(
-                        self.confirmed_candidate, pose, self.detector.config,
-                        self.min_turn_radius_m)
-                    self.stopped = True
-                    if self.reference_path is None:
-                        self.get_logger().error(
-                            'stopped, but reference path is degenerate '
-                            '(vehicle inside the turning circle) — no path to show')
-                    else:
-                        self.get_logger().info(
-                            'stopped: reference path built (P0=%.2f,%.2f goal=%.2f,%.2f)'
-                            % (self.reference_path.p0_map[0], self.reference_path.p0_map[1],
-                               self.reference_path.goal_map[0], self.reference_path.goal_map[1]))
-        else:
-            # Keep the detector's live view fresh for the wall/candidate
-            # markers even after stopping, but don't re-run the confirm
-            # sequencing.
-            self.detector.update(self.latest_map, pose)
+                       self.parallel_straight_m, self.min_turn_radius_m,
+                       self.inside_straight_m))
 
-        self.stop_pub.publish(Bool(data=self.stopped))
+        self.stop_pub.publish(Bool(data=False))
         self._publish_markers()
 
     def _line_marker(self, marker_id: int, p0, p1, color: ColorRGBA, ns: str,

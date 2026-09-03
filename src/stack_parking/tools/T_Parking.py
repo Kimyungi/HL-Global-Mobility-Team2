@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""T_Parking — bench test: synthetic straight-line CAN drive, stopped by
-wall_gap_node.py once it confirms and reports a parking space.
+"""T_Parking — bench test: synthetic straight-line CAN drive.
+
+WARNING: wall_gap_node no longer asserts ``/wall_gap/stop`` when a square is
+confirmed. Rear-LiDAR final-stop logic is pending, so do not run this tool
+unattended with the current wall-gap test stack.
 
 Publishes ``fma_interfaces/TargetRef`` on ``/adas/target_ref`` at the
 protocol's 10ms cadence (PROTOCOL.md §3 TX), standing in for adas_mgm so
@@ -13,16 +16,14 @@ bridge_dspace/dSPACE can be driven without the full MGM stack:
   - dx=1.0, dy=0.0, dyaw=0.0 — the equivalent straight-line GNSS delta.
   - update increments by 1 every 10 ticks (10Hz fix rate inside the 100Hz
     TX loop, same ratio as the real GPS-vs-CAN cadence).
-  - v_ref = target_speed_mps (0.3 by default) until ``/wall_gap/stop``
-    (std_msgs/Bool, published by wall_gap_node.py) goes true, then 0.0.
+  - v_ref = target_speed_mps (0.3 by default) until an independent publisher
+    asserts ``/wall_gap/stop``, then 0.0.
 
 ``counter`` is not part of TargetRef — bridge_dspace assigns it at send
 time (see can_bridge_node.cpp sendFrames()), one CAN cycle per call.
 
-Run alongside wall_gap_node.py, which does the actual space detection +
-inscribed-square check + reference-path publishing to RViz; this node's
-only job is providing the straight-line drive and reacting to its stop
-signal.
+This node only provides the straight-line drive and reacts to a stop signal;
+it does not decide when stopping is safe.
 """
 
 from __future__ import annotations

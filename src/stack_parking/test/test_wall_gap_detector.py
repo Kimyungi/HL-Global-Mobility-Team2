@@ -125,15 +125,48 @@ class FixedReferenceWallTest(unittest.TestCase):
         )
 
         path = build_reference_path(
-            candidate, vehicle_pose, detector.config, min_turn_radius_m=1.15)
+            candidate, vehicle_pose, min_turn_radius_m=1.15)
         self.assertIsNotNone(path)
         np.testing.assert_allclose(
             path.p0_map, [candidate.map_x, candidate.map_y], atol=1.0e-12)
         np.testing.assert_allclose(
             path.goal_map,
-            np.array([candidate.map_x, candidate.map_y]) + 0.5 * normal,
+            np.array([candidate.map_x, candidate.map_y]) + 2.0 * normal,
             atol=1.0e-9,
         )
+        self.assertAlmostEqual(
+            float(np.linalg.norm(
+                path.straight1_map[1] - path.straight1_map[0])),
+            3.0,
+            places=9,
+        )
+        self.assertAlmostEqual(
+            float(np.linalg.norm(
+                path.straight2_map[1] - path.straight2_map[0])),
+            2.0,
+            places=9,
+        )
+        # Both transitions are tangent-continuous: the outer line is wall
+        # parallel and the inner line follows the inward wall normal.
+        parallel_direction = (
+            path.straight1_map[1] - path.straight1_map[0]) / 3.0
+        inside_direction = (
+            path.straight2_map[1] - path.straight2_map[0]) / 2.0
+        self.assertAlmostEqual(abs(float(np.dot(parallel_direction, tangent))), 1.0)
+        np.testing.assert_allclose(inside_direction, normal, atol=1.0e-9)
+        np.testing.assert_allclose(path.arc_map[0], path.e_map, atol=1.0e-9)
+        np.testing.assert_allclose(path.arc_map[-1], path.p0_map, atol=1.0e-9)
+        radii = np.linalg.norm(
+            path.arc_map - np.asarray(path.center_map), axis=1)
+        np.testing.assert_allclose(radii, 1.15, atol=1.0e-9)
+        outer_radius = np.asarray(path.e_map) - np.asarray(path.center_map)
+        inner_radius = np.asarray(path.p0_map) - np.asarray(path.center_map)
+        self.assertAlmostEqual(
+            float(np.dot(outer_radius, parallel_direction)), 0.0, places=9)
+        self.assertAlmostEqual(
+            float(np.dot(inner_radius, inside_direction)), 0.0, places=9)
+        self.assertAlmostEqual(
+            float(np.dot(outer_radius, inner_radius)), 0.0, places=9)
 
 
 if __name__ == '__main__':

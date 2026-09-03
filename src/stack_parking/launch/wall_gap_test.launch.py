@@ -10,14 +10,16 @@ wall_gap_node (left-wall gap search + auto SLAM-map reset on every run, see
 wall_gap_node.py's docstring) and the wall_gap RViz view.
 
 Driving is manual (RC controller into dSPACE directly) — this launch does not
-publish any drive command. For a synthetic straight-line CAN drive instead
-(bench testing without a controller), run tools/T_Parking.py separately
-alongside this launch; it already reacts to wall_gap_node's /wall_gap/stop.
+publish any drive command. The old square-confirmation stop has been removed;
+/wall_gap/stop remains false until the planned rear-LiDAR final-stop logic is
+implemented. Do not run tools/T_Parking.py unattended expecting this node to
+stop it.
 
 Examples:
   ros2 launch stack_parking wall_gap_test.launch.py
   ros2 launch stack_parking wall_gap_test.launch.py search_side:=right
   ros2 launch stack_parking wall_gap_test.launch.py wall_line_offset_m:=0.15
+  ros2 launch stack_parking wall_gap_test.launch.py inside_straight_m:=2.0 parallel_straight_m:=3.0
   ros2 launch stack_parking wall_gap_test.launch.py start_multi_lidar:=false
   ros2 launch stack_parking wall_gap_test.launch.py start_can:=false
 """
@@ -46,6 +48,8 @@ def generate_launch_description():
     can_interface = LaunchConfiguration('can_interface')
     search_side = LaunchConfiguration('search_side')
     wall_line_offset_m = LaunchConfiguration('wall_line_offset_m')
+    inside_straight_m = LaunchConfiguration('inside_straight_m')
+    parallel_straight_m = LaunchConfiguration('parallel_straight_m')
     rviz = LaunchConfiguration('rviz')
 
     return LaunchDescription([
@@ -67,6 +71,12 @@ def generate_launch_description():
             'wall_line_offset_m', default_value='0.12',
             description=(
                 'Half-width in metres of the fixed reference-wall offset band')),
+        DeclareLaunchArgument(
+            'inside_straight_m', default_value='2.0',
+            description='Reference-path length from P0 into the parking bay'),
+        DeclareLaunchArgument(
+            'parallel_straight_m', default_value='3.0',
+            description='Wall-parallel reference-path length before the arc'),
         DeclareLaunchArgument(
             'rviz', default_value='true',
             description='Open the wall_gap RViz view'),
@@ -139,6 +149,10 @@ def generate_launch_description():
                 'search_side': search_side,
                 'wall_line_offset_m': ParameterValue(
                     wall_line_offset_m, value_type=float),
+                'inside_straight_m': ParameterValue(
+                    inside_straight_m, value_type=float),
+                'parallel_straight_m': ParameterValue(
+                    parallel_straight_m, value_type=float),
             }],
         ),
 

@@ -1,25 +1,19 @@
-"""Reference-path construction for a wall_gap_detector-confirmed space.
+"""Map-fixed reference path for a wall-gap candidate.
 
-2026-09-02 user spec, refined through two plotted iterations (both bugs are
-noted here so they don't get reintroduced):
-  P0 = centre of the confirmed square's near-wall edge (map position of the
-       candidate, pinned to the wall line depth near_m).
-  C  = P0 shifted by min_turn_radius_m horizontally *toward the vehicle*
-       (not away from it — the first version anchored C on the goal side by
-       reusing simple_entry_path.py's construction, which the user flagged
-       as backwards).
-  E  = the point where the tangent line *from the vehicle's actual position*
-       touches the circle (centre C, radius r) — not a fixed 90-degree
-       sweep from P0 (tried first: left a ~30 degree kink between the
-       straight approach and the arc, since a fixed-angle sweep from P0
-       generally doesn't land on the vehicle's tangent line).
-  goal = P0 pushed further into the bay by half the square size (the
-         square's own centre) — the final parking position.
-Path = straight(vehicle -> E) + arc(E -> P0) + straight(P0 -> goal).
-The confirmed candidate carries the map-fixed tangent and inward normal of
-the initially acquired wall. P0, the circle and the goal are constructed
-directly in that frame, so turning the vehicle after detection cannot rotate
-the space or move it away from the locked wall.
+Every coordinate is derived from P0, the midpoint of the confirmed square's
+wall-side edge:
+
+  S ---- 3m wall-parallel straight ---- E
+                                          ) 90-degree arc, radius R_min
+                                       P0
+                                        |
+                                        | 2m wall-normal straight into bay
+                                        G
+
+The geometric parking traversal is S -> E -> P0 -> G. At E the arc tangent
+is parallel to the wall; at P0 it is perpendicular to the wall and exactly
+collinear with P0 -> G. The vehicle yaw is used only to select which mirrored
+side of P0 contains S/E. It does not translate or rotate the map-fixed path.
 """
 
 from __future__ import annotations
@@ -31,7 +25,7 @@ from typing import Optional
 import numpy as np
 
 from .geometry import Pose2, wrap_angle
-from .wall_gap_detector import TrackedCandidate, WallGapConfig
+from .wall_gap_detector import TrackedCandidate
 
 
 @dataclass(frozen=True)
@@ -50,8 +44,9 @@ class ReferencePath:
 def build_reference_path(
     candidate: TrackedCandidate,
     vehicle_pose: Pose2,
-    cfg: WallGapConfig,
     min_turn_radius_m: float,
+    inside_straight_m: float = 2.0,
+    parallel_straight_m: float = 3.0,
     arc_points: int = 24,
 ) -> Optional[ReferencePath]:
     p0_map = np.array([candidate.map_x, candidate.map_y], dtype=np.float64)
@@ -59,45 +54,34 @@ def build_reference_path(
         candidate.wall_tangent_x, candidate.wall_tangent_y], dtype=np.float64)
     inward = np.array([
         candidate.wall_normal_x, candidate.wall_normal_y], dtype=np.float64)
-    vehicle_map = np.array([vehicle_pose.x, vehicle_pose.y], dtype=np.float64)
     r = float(min_turn_radius_m)
-    vehicle_along = float(np.dot(vehicle_map - p0_map, tangent))
-    direction = 1.0 if vehicle_along >= 0.0 else -1.0
-    center_map = p0_map + direction * r * tangent
+    inside_length = float(inside_straight_m)
+    parallel_length = float(parallel_straight_m)
+    if r <= 0.0 or inside_length <= 0.0 or parallel_length <= 0.0:
+        return None
 
-    to_vehicle = vehicle_map - center_map
-    d = float(np.linalg.norm(to_vehicle))
-    if d <= r:
-        return None  # vehicle is inside the turning circle — degenerate
-    angle_c = math.acos(min(1.0, r / d))
-    u = to_vehicle / d
-
-    def _rot(vec: np.ndarray, theta: float) -> np.ndarray:
-        c, s = math.cos(theta), math.sin(theta)
-        return np.array([c * vec[0] - s * vec[1], s * vec[0] + c * vec[1]])
-
-    tangent_candidates = [
-        center_map + r * _rot(u, angle_c),
-        center_map + r * _rot(u, -angle_c),
-    ]
+    # Candidate tangent is aligned with the startup vehicle direction. Use
+    # the live vehicle yaw only to select the forward mirrored construction.
     vehicle_forward = np.array([
         math.cos(vehicle_pose.yaw), math.sin(vehicle_pose.yaw)])
-    e_map = max(
-        tangent_candidates,
-        key=lambda point: float(np.dot(point - vehicle_map, vehicle_forward)),
-    )
+    direction = 1.0 if float(np.dot(vehicle_forward, tangent)) >= 0.0 else -1.0
+    center_map = p0_map + direction * r * tangent
+    e_map = center_map - r * inward
+    start_map = e_map + direction * parallel_length * tangent
 
-    a0 = math.atan2(p0_map[1] - center_map[1], p0_map[0] - center_map[0])
-    theta_end = math.atan2(e_map[1] - center_map[1], e_map[0] - center_map[0])
-    sweep = wrap_angle(theta_end - a0)
-    angles = a0 + np.linspace(0.0, sweep, arc_points)
+    theta_start = math.atan2(
+        e_map[1] - center_map[1], e_map[0] - center_map[0])
+    theta_end = math.atan2(
+        p0_map[1] - center_map[1], p0_map[0] - center_map[0])
+    sweep = wrap_angle(theta_end - theta_start)
+    angles = theta_start + np.linspace(0.0, sweep, max(2, int(arc_points)))
     arc_map = np.column_stack((
         center_map[0] + r * np.cos(angles),
         center_map[1] + r * np.sin(angles),
     ))
 
-    goal_map = p0_map + 0.5 * cfg.square_size_m * inward
-    straight1_map = np.array([vehicle_map, e_map])
+    goal_map = p0_map + inside_length * inward
+    straight1_map = np.array([start_map, e_map])
     straight2_map = np.array([p0_map, goal_map])
 
     return ReferencePath(
