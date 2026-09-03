@@ -13,9 +13,10 @@ Driving remains manual unless ``enable_control:=true`` is explicitly supplied.
 With control enabled, square confirmation immediately commands zero, holds for
 one second, drives forward at 0.3m/s until its 1m preview reaches the outer end
 of the 3m wall-parallel line, then reverses the line/arc/2m inward leg at
--0.3m/s. The raw rear LiDAR and the fused multi-LiDAR rear sector independently
-stop the vehicle at 0.2m. Do not run adas_mgm at the same time because this
-bench node owns /adas/target_ref after confirmation.
+-0.3m/s until the end of that fixed 2m path is reached. There is no
+rear-clearance stop during the reverse leg (removed by directive) — the only
+bound is the finite path length. Do not run adas_mgm at the same time because
+this bench node owns /adas/target_ref after confirmation.
 
 Examples:
   ros2 launch stack_parking wall_gap_test.launch.py
@@ -58,7 +59,6 @@ def generate_launch_description():
     reverse_speed_mps = LaunchConfiguration('reverse_speed_mps')
     preview_distance_m = LaunchConfiguration('preview_distance_m')
     hold_after_detection_s = LaunchConfiguration('hold_after_detection_s')
-    stop_clearance_m = LaunchConfiguration('stop_clearance_m')
     rviz = LaunchConfiguration('rviz')
 
     return LaunchDescription([
@@ -95,7 +95,6 @@ def generate_launch_description():
         DeclareLaunchArgument('reverse_speed_mps', default_value='0.3'),
         DeclareLaunchArgument('preview_distance_m', default_value='1.0'),
         DeclareLaunchArgument('hold_after_detection_s', default_value='1.0'),
-        DeclareLaunchArgument('stop_clearance_m', default_value='0.20'),
         DeclareLaunchArgument(
             'rviz', default_value='true',
             description='Open the wall_gap RViz view'),
@@ -183,9 +182,6 @@ def generate_launch_description():
                     preview_distance_m, value_type=float),
                 'hold_after_detection_s': ParameterValue(
                     hold_after_detection_s, value_type=float),
-                'stop_clearance_m': ParameterValue(
-                    stop_clearance_m, value_type=float),
-                'current_cloud_topic': merged_cloud_topic,
             }],
         ),
 

@@ -34,7 +34,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
 from geometry_msgs.msg import Point, PoseStamped
-from sensor_msgs.msg import LaserScan, PointCloud2
+from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, ColorRGBA, String
 from visualization_msgs.msg import Marker, MarkerArray
@@ -96,22 +96,9 @@ class WallGapNode(Node):
         self.declare_parameter('preview_distance_m', 1.0)
         self.declare_parameter('forward_speed_mps', 0.3)
         self.declare_parameter('reverse_speed_mps', 0.3)
-        self.declare_parameter('stop_clearance_m', 0.20)
         self.declare_parameter('path_end_tolerance_m', 0.10)
         self.declare_parameter('path_sample_step_m', 0.05)
-        self.declare_parameter('require_rear_clearance', True)
         self.declare_parameter('pose_stale_timeout_s', 0.35)
-        self.declare_parameter('rear_scan_topic', '/lidar/a2/scan')
-        self.declare_parameter('rear_scan_stale_timeout_s', 0.35)
-        self.declare_parameter('rear_scan_center_deg', -90.0)
-        self.declare_parameter('rear_scan_half_width_deg', 12.0)
-        self.declare_parameter('rear_range_offset_m', 0.069)
-        self.declare_parameter('rear_wall_min_points', 5)
-        self.declare_parameter('rear_wall_cluster_m', 0.04)
-        self.declare_parameter(
-            'current_cloud_topic', '/parking/nearest_merged_cloud')
-        self.declare_parameter('fused_cloud_stale_timeout_s', 0.35)
-        self.declare_parameter('rear_lidar_x_m', -0.055)
 
         search_side = str(self.get_parameter('search_side').value).strip().lower()
         search_sides = (
@@ -163,27 +150,18 @@ class WallGapNode(Node):
                 self.get_parameter('forward_speed_mps').value),
             reverse_speed_mps=float(
                 self.get_parameter('reverse_speed_mps').value),
-            stop_clearance_m=float(
-                self.get_parameter('stop_clearance_m').value),
             path_end_tolerance_m=float(
                 self.get_parameter('path_end_tolerance_m').value),
             sample_step_m=float(
                 self.get_parameter('path_sample_step_m').value),
-            require_rear_clearance=bool(
-                self.get_parameter('require_rear_clearance').value),
         ))
         self.delta_tracker = PoseDeltaTracker()
 
         self.latest_map = np.empty((0, 2), dtype=np.float64)
         self.latest_pose = None
         self.latest_pose_s = -math.inf
-        self.latest_rear_clearance_m = None
-        self.latest_rear_scan_s = -math.inf
-        self.latest_fused_clearance_m = None
-        self.latest_fused_cloud_s = -math.inf
         self.last_control_output: WallGapControlOutput | None = None
         self.last_control_state = ControlState.IDLE
-        self.fused_frame_warned = False
 
         self.confirmed_candidate = None
         self.reference_path: ReferencePath | None = None
@@ -194,12 +172,6 @@ class WallGapNode(Node):
         self.pose_sub = self.create_subscription(
             PoseStamped, str(self.get_parameter('pose_topic').value),
             self._on_pose, qos_profile_sensor_data)
-        self.rear_scan_sub = self.create_subscription(
-            LaserScan, str(self.get_parameter('rear_scan_topic').value),
-            self._on_rear_scan, qos_profile_sensor_data)
-        self.current_cloud_sub = self.create_subscription(
-            PointCloud2, str(self.get_parameter('current_cloud_topic').value),
-            self._on_current_cloud, qos_profile_sensor_data)
         self.marker_pub = self.create_publisher(
             MarkerArray, '/wall_gap/markers', 1)
         self.stop_pub = self.create_publisher(Bool, '/wall_gap/stop', 1)
@@ -246,95 +218,6 @@ class WallGapNode(Node):
         if self.controller.active:
             self.delta_tracker.update(pose)
 
-    @staticmethod
-    def _clustered_clearance(
-        values: list[float],
-        minimum_points: int,
-        cluster_m: float,
-    ) -> float | None:
-        if len(values) < minimum_points:
-            return None
-        values_array = np.asarray(values, dtype=np.float64)
-        candidate = float(np.percentile(values_array, 30.0))
-        support = int(np.count_nonzero(
-            np.abs(values_array - candidate) <= cluster_m))
-        return candidate if support >= minimum_points else None
-
-    def _on_rear_scan(self, msg: LaserScan) -> None:
-        center = math.radians(float(
-            self.get_parameter('rear_scan_center_deg').value))
-        half = math.radians(float(
-            self.get_parameter('rear_scan_half_width_deg').value))
-        offset = float(self.get_parameter('rear_range_offset_m').value)
-        values: list[float] = []
-        for index, raw in enumerate(msg.ranges):
-            angle = msg.angle_min + index * msg.angle_increment
-            angle_error = (angle - center + math.pi) % (2.0 * math.pi) - math.pi
-            if abs(angle_error) > half:
-                continue
-            if not math.isfinite(raw) or raw < msg.range_min or raw > msg.range_max:
-                continue
-            corrected = float(raw) - offset
-            if corrected > 0.0:
-                values.append(corrected)
-        self.latest_rear_clearance_m = self._clustered_clearance(
-            values,
-            int(self.get_parameter('rear_wall_min_points').value),
-            float(self.get_parameter('rear_wall_cluster_m').value),
-        )
-        self.latest_rear_scan_s = self._clock_s()
-
-    def _on_current_cloud(self, msg: PointCloud2) -> None:
-        """Measure the rear wall from any LiDAR represented in fused cloud."""
-        if msg.header.frame_id.lstrip('/') != self.base_frame.lstrip('/'):
-            self.latest_fused_clearance_m = None
-            self.latest_fused_cloud_s = self._clock_s()
-            if not self.fused_frame_warned:
-                self.fused_frame_warned = True
-                self.get_logger().error(
-                    'fused clearance cloud frame=%r rejected; expected %r'
-                    % (msg.header.frame_id, self.base_frame))
-            return
-        pts = point_cloud2.read_points_numpy(
-            msg, field_names=('x', 'y'), skip_nans=True)
-        xy = (
-            np.column_stack((pts['x'], pts['y'])) if pts.dtype.names
-            else np.asarray(pts).reshape((-1, 2)))
-        rear_x = float(self.get_parameter('rear_lidar_x_m').value)
-        half = math.radians(float(
-            self.get_parameter('rear_scan_half_width_deg').value))
-        if len(xy):
-            dx = xy[:, 0] - rear_x
-            behind = dx < 0.0
-            in_sector = np.abs(xy[:, 1]) <= (-dx) * math.tan(half)
-            selected = xy[behind & in_sector]
-            values = np.hypot(
-                selected[:, 0] - rear_x, selected[:, 1]).tolist()
-        else:
-            values = []
-        self.latest_fused_clearance_m = self._clustered_clearance(
-            values,
-            int(self.get_parameter('rear_wall_min_points').value),
-            float(self.get_parameter('rear_wall_cluster_m').value),
-        )
-        self.latest_fused_cloud_s = self._clock_s()
-
-    def _rear_clearance(self, now_s: float) -> float | None:
-        candidates = []
-        if (
-            now_s - self.latest_rear_scan_s
-            <= float(self.get_parameter('rear_scan_stale_timeout_s').value)
-            and self.latest_rear_clearance_m is not None
-        ):
-            candidates.append(float(self.latest_rear_clearance_m))
-        if (
-            now_s - self.latest_fused_cloud_s
-            <= float(self.get_parameter('fused_cloud_stale_timeout_s').value)
-            and self.latest_fused_clearance_m is not None
-        ):
-            candidates.append(float(self.latest_fused_clearance_m))
-        return min(candidates) if candidates else None
-
     def _publish_target(self, output: WallGapControlOutput) -> None:
         if not self.enable_control or output.reference_local is None:
             return
@@ -371,11 +254,7 @@ class WallGapNode(Node):
             return
 
         now_s = self._clock_s()
-        output = self.controller.update(
-            self.latest_pose,
-            now_s,
-            rear_clearance_m=self._rear_clearance(now_s),
-        )
+        output = self.controller.update(self.latest_pose, now_s)
         pose_stale = (
             now_s - self.latest_pose_s
             > float(self.get_parameter('pose_stale_timeout_s').value))
@@ -483,8 +362,7 @@ class WallGapNode(Node):
                     self.delta_tracker.reset(pose)
                     # Send the first zero-speed frame in this same detection
                     # callback; do not wait up to one more 10ms command tick.
-                    first_output = self.controller.update(
-                        pose, now_s, rear_clearance_m=self._rear_clearance(now_s))
+                    first_output = self.controller.update(pose, now_s)
                     self.last_control_output = first_output
                     self.stop_pub.publish(Bool(data=True))
                     self.state_pub.publish(String(data=first_output.status))
@@ -493,14 +371,13 @@ class WallGapNode(Node):
                         'usable space confirmed: side=%s map=(%.2f,%.2f) '
                         'width=%.2fm — immediate stop, hold=%.1fs, '
                         'preview=%.1fm, v_forward=%.2f, v_reverse=%.2f, '
-                        'rear stop<=%.2fm'
+                        'no rear-clearance stop (removed by directive)'
                         % (
                             cleared.side, cleared.map_x, cleared.map_y,
                             cleared.width_m, self.controller.config.hold_s,
                             self.controller.config.preview_distance_m,
                             self.controller.config.forward_speed_mps,
                             -self.controller.config.reverse_speed_mps,
-                            self.controller.config.stop_clearance_m,
                         ))
 
         self._publish_markers()

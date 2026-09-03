@@ -43,10 +43,8 @@ class WallGapControlConfig:
     preview_distance_m: float = 1.0
     forward_speed_mps: float = 0.3
     reverse_speed_mps: float = 0.3
-    stop_clearance_m: float = 0.20
     path_end_tolerance_m: float = 0.10
     sample_step_m: float = 0.05
-    require_rear_clearance: bool = True
 
 
 @dataclass(frozen=True)
@@ -254,7 +252,6 @@ class WallGapController:
         self,
         current_pose_map: Pose2,
         now_s: float,
-        rear_clearance_m: Optional[float] = None,
     ) -> WallGapControlOutput:
         if self.state == ControlState.IDLE:
             return self._output(current_pose_map, None, 0.0, 'idle')
@@ -290,20 +287,6 @@ class WallGapController:
         if self.state == ControlState.REVERSE:
             reference = self._preview(
                 self.reverse_path, self.reverse_lengths, current_pose_map)
-            if (
-                rear_clearance_m is not None
-                and rear_clearance_m <= self.config.stop_clearance_m + 1.0e-9
-            ):
-                self.state = ControlState.STOPPED
-                self.stop_reason = 'rear_wall_clearance'
-                return self._output(
-                    current_pose_map, reference, 0.0,
-                    'rear_wall_reached:%.3fm' % rear_clearance_m)
-            if rear_clearance_m is None and self.config.require_rear_clearance:
-                return self._output(
-                    current_pose_map, reference, 0.0,
-                    'rear_lidar_invalid_hold')
-
             end = self.reverse_path[-1]
             if (
                 self.progress >= len(self.reverse_path) - 2

@@ -76,10 +76,9 @@ def main() -> None:
         preview_distance_m=1.0,
         forward_speed_mps=0.3,
         reverse_speed_mps=0.3,
-        require_rear_clearance=False,
     ))
     controller.start(path, confirm_pose, now_s=0.0)
-    hold_output = controller.update(confirm_pose, 0.5, rear_clearance_m=2.0)
+    hold_output = controller.update(confirm_pose, 0.5)
     tangent_point = np.asarray(path.e_map)
     start = np.asarray(path.straight1_map[0])
     direction = (start - tangent_point) / np.linalg.norm(start - tangent_point)
@@ -87,8 +86,7 @@ def main() -> None:
     switch_pose = Pose2(
         float(switch_xy[0]), float(switch_xy[1]),
         math.atan2(direction[1], direction[0]))
-    reverse_output = controller.update(
-        switch_pose, 1.1, rear_clearance_m=2.0)
+    reverse_output = controller.update(switch_pose, 1.1)
 
     wall = detector.reference_walls[SIDE_LEFT]
     square = candidate_square_corners(confirmed, cfg)
