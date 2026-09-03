@@ -63,17 +63,26 @@
 #   또 바뀔 수 있다. **바뀔 때마다 ttyUSB 번호 재사용을 가정하지 말고 매번 SDK
 #   시리얼로 재확인할 것** — 그 가정이 이번 오답의 원인이었다.
 #
+# ⚠⚠ 2026-09-03 재실측(3차): 또 바뀌었다(예고된 대로). 이번엔 SDK 시리얼로
+#   먼저 확인하니 ttyUSB<->물리 위치 대응은 09-03 2차 실측과 동일했다 — 재배선
+#   없이 ID_PATH 표기만 다시 흔들린 케이스. 같은 ttyUSB 번호의 새 ID_PATH로
+#   갱신:
+#     ttyUSB0 (b1 좌) -> usb-0:2.1:1.0
+#     ttyUSB1 (a2 후) -> usb-0:2.2:1.0
+#     ttyUSB2 (a1 전) -> usb-0:2.3:1.0
+#     ttyUSB3 (b2 우) -> usb-0:2.4.1:1.0
+#
 # 설치: sudo cp 99-fma-lidars.rules /etc/udev/rules.d/
 #       sudo udevadm control --reload-rules && sudo udevadm trigger
 
 # a1 전방 T-mini Plus (ttyUSB2, serial 2026000800070184)
-SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:4.3:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="ttyUSB_LIDAR", SYMLINK+="lidar_front", SYMLINK+="ydlidar"
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:2.3:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="ttyUSB_LIDAR", SYMLINK+="lidar_front", SYMLINK+="ydlidar"
 
 # a2 후방 T-mini Plus (ttyUSB1, serial 2026000800070152)
-SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:4.2:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_rear"
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:2.2:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_rear"
 
 # b1 좌측 T-mini Plus (ttyUSB0, serial 2025110300090701 — 2026-09-02부터 RPLiDAR 아님)
-SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:4.1:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_left"
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:2.1:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_left"
 
 # b2 우측 T-mini Plus (ttyUSB3, serial 2025110300090660 — 2026-09-02부터 RPLiDAR 아님)
-SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:4.4.1:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_right"
+SUBSYSTEM=="tty", ENV{ID_PATH}=="pci-0000:00:14.0-usb-0:2.4.1:1.0", ATTRS{product}!="HandsFree IMU*", MODE:="0666", GROUP:="dialout", SYMLINK+="lidar_right"
