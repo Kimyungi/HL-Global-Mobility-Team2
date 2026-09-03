@@ -9,7 +9,7 @@ from stack_traffic.node import StackTrafficNode
 
 
 class FakeYolo:
-    names = {9: "traffic light"}
+    names = {0: "stop_line", 9: "traffic light"}
 
     def __init__(self, _model_path):
         self.predict_calls = 0

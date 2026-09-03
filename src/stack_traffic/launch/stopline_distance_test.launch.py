@@ -85,6 +85,8 @@ def build_node_parameters():
         "minimum_depth_valid_ratio": 0.10,
         "minimum_depth_valid_pixels": 80,
         "stopline_detection_enabled": True,
+        "stopline_confidence_threshold": 0.10,
+        "stopline_yolo_image_size": 640,
         "stopline_roi_x_min": 0.08,
         "stopline_roi_y_min": 0.48,
         "stopline_roi_x_max": 0.92,

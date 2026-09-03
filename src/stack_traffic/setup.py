@@ -13,7 +13,11 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (
             'share/' + package_name + '/models',
-            ['models/yolov8n.pt', 'models/README.md'],
+            [
+                'models/yolov8n.pt',
+                'models/stopline_yolov8s_seg.pt',
+                'models/README.md',
+            ],
         ),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
@@ -28,6 +32,10 @@ setup(
         'console_scripts': [
             'stack_traffic_node = stack_traffic.node:main',
             'stack_traffic_ml_preflight = stack_traffic.ml_preflight:main',
+            (
+                'compare_stopline_detectors = '
+                'stack_traffic.compare_stopline_detectors:main'
+            ),
         ],
     },
 )
