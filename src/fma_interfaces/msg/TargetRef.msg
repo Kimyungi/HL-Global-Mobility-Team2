@@ -11,8 +11,9 @@ RefPoint[] ref_points   # vehicle frame, 모든 모드 동일 포맷 (dSPACE는 
 float32 v_ref           # [m/s] 종방향 병합 최종 목표 속도. 정지 = 0
 uint8 state             # 현재 주행 스테이트 (flags의 state 부분)
 
-# Latest GNSS pose delta.  Held between GNSS updates while this message keeps
-# its 10ms publication contract.
+# Latest localization-pose delta in the previous vehicle frame. LANE,
+# WAYPOINT, and TRAFFIC use GNSS; PARKING may use LiDAR SLAM. Held between
+# source updates while this message keeps its 10ms publication contract.
 float64 dx
 float64 dy
 float64 dyaw

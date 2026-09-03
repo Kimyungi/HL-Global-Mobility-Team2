@@ -16,6 +16,10 @@ sys.path.insert(0, __file__.rsplit('/tools/', 1)[0])
 
 from stack_parking.geometry import Pose2  # noqa: E402
 from stack_parking.reference_path import build_reference_path  # noqa: E402
+from stack_parking.wall_gap_controller import (  # noqa: E402
+    WallGapControlConfig,
+    WallGapController,
+)
 from stack_parking.wall_gap_detector import (  # noqa: E402
     SIDE_LEFT,
     WallGapConfig,
@@ -67,6 +71,25 @@ def main() -> None:
     if path is None:
         raise SystemExit('reference path is degenerate')
 
+    controller = WallGapController(WallGapControlConfig(
+        hold_s=1.0,
+        preview_distance_m=1.0,
+        forward_speed_mps=0.3,
+        reverse_speed_mps=0.3,
+        require_rear_clearance=False,
+    ))
+    controller.start(path, confirm_pose, now_s=0.0)
+    hold_output = controller.update(confirm_pose, 0.5, rear_clearance_m=2.0)
+    tangent_point = np.asarray(path.e_map)
+    start = np.asarray(path.straight1_map[0])
+    direction = (start - tangent_point) / np.linalg.norm(start - tangent_point)
+    switch_xy = start - controller.config.preview_distance_m * direction
+    switch_pose = Pose2(
+        float(switch_xy[0]), float(switch_xy[1]),
+        math.atan2(direction[1], direction[0]))
+    reverse_output = controller.update(
+        switch_pose, 1.1, rear_clearance_m=2.0)
+
     wall = detector.reference_walls[SIDE_LEFT]
     square = candidate_square_corners(confirmed, cfg)
     reference = wall.to_map(np.array([[-1.5, 0.0], [4.8, 0.0]]))
@@ -94,12 +117,28 @@ def main() -> None:
     ax.plot(confirm_pose.x, confirm_pose.y, 'r^', ms=12,
             label='vehicle when square is confirmed')
     ax.plot(*path.p0_map, 'mx', ms=10, mew=2, label='P0')
+    ax.plot(*start, 'bo', ms=7, label='S: parallel-line end')
     ax.plot(*path.goal_map, 'r*', ms=14, label='goal')
+    ax.plot(*switch_xy, 'bv', ms=10, label='forward→reverse switch')
+    if hold_output.reference_map is not None:
+        ax.plot(
+            hold_output.reference_map.x, hold_output.reference_map.y,
+            'mo', ms=7, label='1m preview during hold/forward')
+    if reverse_output.reference_map is not None:
+        reverse_preview = reverse_output.reference_map
+        ax.plot(
+            reverse_preview.x, reverse_preview.y,
+            'm*', ms=11, label='1m rear preview after switch')
+        ax.annotate(
+            '', xy=(reverse_preview.x, reverse_preview.y), xytext=switch_xy,
+            arrowprops={'arrowstyle': '->', 'color': 'magenta', 'lw': 1.5})
     ax.set_aspect('equal', adjustable='datalim')
     ax.grid(True, alpha=0.3)
     ax.set_xlabel('parking_map x [m]')
     ax.set_ylabel('parking_map y [m]')
-    ax.set_title('fixed reference wall and parking path')
+    ax.set_title(
+        'hold 1s → forward +0.3m/s → reverse -0.3m/s '
+        '(1m preview, stop at 0.2m)')
     ax.legend(loc='best', fontsize=8)
     fig.tight_layout()
     output = Path.cwd() / 'reverse_entry_path.png'

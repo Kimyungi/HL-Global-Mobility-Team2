@@ -88,8 +88,9 @@ ros2 topic echo /parking/diagnostics
 
 출력:
 
-- `/perception/parking` — 기존 `ParkingStatus` 계약.
-- `/parking/slam_pose`, `/parking/slam_scan` — SLAM 단계.
+- `/perception/parking` — 기존 경로/속도와 함께 10Hz LiDAR SLAM
+  `dx/dy/dyaw/update`를 전달하는 `ParkingStatus` 계약.
+- `/parking/slam_pose` — 제어용 10Hz pose. `/parking/slam_scan`은 디버그 주기.
 - `/parking/local_map`, `/parking/debug_markers` — mapping/space 단계.
 - `/parking/reference_path`, `/parking/active_path` — map 위 경로 단계.
 - `/parking/pipeline_stage` — `slam|mapping|localization|parking`.

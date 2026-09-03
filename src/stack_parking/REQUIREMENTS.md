@@ -19,6 +19,8 @@
   - `path_blocked`: **동적 침범만**. 정적 경계(콘·연석)는 정지 트리거가 아니라 로컬맵 입력 (CLAUDE.md §4).
   - `points[]`: vehicle frame 주차 경로. 후진 구간 포함 — `v_suggest` 음수로 표현.
     **점 개수: 1개** (팀 합의 2026-07-29) — 현재 추종 목표점 하나만. 나머지는 dSPACE 궤적 생성이 채운다.
+  - `dx/dy/dyaw/update`: 연속 10Hz LiDAR SLAM pose의 이동량. 이동량은 직전
+    vehicle frame이며 MGM이 PARKING TargetRef에 그대로 전달하고 100Hz 사이에는 hold한다.
 - `/vehicle/vector`에서는 실속도 `v`만 motion prior와 정지 확인에 사용한다.
   x/y/yaw pose를 직접 쓰지 않는다. yaw prior는 `/perception/imu`의 상대 yaw,
   x/y drift 보정은 RTK FIXED `GpsPath` delta를 사용한다. **dSPACE는 parking

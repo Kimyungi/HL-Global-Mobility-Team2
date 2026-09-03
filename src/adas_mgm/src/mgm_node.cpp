@@ -718,10 +718,20 @@ private:
     msg.header.frame_id = "base_link";
     msg.state = out.state;
     msg.v_ref = out.v_ref;
-    msg.dx = m.gps.dx;
-    msg.dy = m.gps.dy;
-    msg.dyaw = m.gps.dyaw;
-    msg.update = m.gps.update;
+    // Pose delta follows the selected localization source. Parking reference
+    // points are LiDAR-SLAM-relative, so pairing them with GNSS deltas would
+    // mix frames even though both fields share the TargetRef wire layout.
+    if (out.state == MGM_STATE_PARKING) {
+      msg.dx = m.parking.dx;
+      msg.dy = m.parking.dy;
+      msg.dyaw = m.parking.dyaw;
+      msg.update = m.parking.update;
+    } else {
+      msg.dx = m.gps.dx;
+      msg.dy = m.gps.dy;
+      msg.dyaw = m.gps.dyaw;
+      msg.update = m.gps.update;
+    }
     msg.ref_points.resize(out.n_points);
     for (int32_t i = 0; i < out.n_points; ++i) {
       msg.ref_points[i].x = out.ref_points[i].x;

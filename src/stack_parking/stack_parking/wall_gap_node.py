@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""ROS wrapper for wall_gap_detector.py — runs against the live SLAM map,
-publishes RViz markers for the wall lines, gap candidates, and the
-inscribed-square feasibility test.
+"""Live fixed-wall gap detection, reference generation, and parking control.
+
+The detector runs against the LiDAR SLAM map.  Once the first reachable
+square is confirmed, the node asserts an immediate stop, creates the fixed
+3m-line/arc/2m-line path, holds for one second, and can publish the 100Hz
+``/adas/target_ref`` stream used by bridge_dspace.  Motion output is guarded
+by the explicit ``enable_control`` parameter; visualization remains usable
+with control disabled.
 
 Does not touch stack_parking_node or space_detector.py — independent
 experiment, reads the same /parking/local_map + /parking/slam_pose that are
@@ -29,13 +34,21 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
 from geometry_msgs.msg import Point, PoseStamped
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import LaserScan, PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, ColorRGBA, String
 from visualization_msgs.msg import Marker, MarkerArray
+from fma_interfaces.msg import RefPoint, TargetRef
 
 from .geometry import Pose2
 from .reference_path import ReferencePath, build_reference_path
+from .wall_gap_controller import (
+    ControlState,
+    PoseDeltaTracker,
+    WallGapControlConfig,
+    WallGapControlOutput,
+    WallGapController,
+)
 from .wall_gap_detector import (
     SIDE_LEFT,
     SIDE_RIGHT,
@@ -56,6 +69,7 @@ class WallGapNode(Node):
         self.declare_parameter('map_topic', '/parking/local_map')
         self.declare_parameter('pose_topic', '/parking/slam_pose')
         self.declare_parameter('map_frame', 'parking_map')
+        self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('near_m', 0.3)
         self.declare_parameter('far_m', 1.6)
         self.declare_parameter('wall_line_offset_m', 0.12)
@@ -75,6 +89,29 @@ class WallGapNode(Node):
         self.declare_parameter('inside_straight_m', 2.0)
         self.declare_parameter('parallel_straight_m', 3.0)
         self.declare_parameter('search_side', 'left')
+        self.declare_parameter('enable_control', False)
+        self.declare_parameter('target_topic', '/adas/target_ref')
+        self.declare_parameter('command_rate_hz', 100.0)
+        self.declare_parameter('hold_after_detection_s', 1.0)
+        self.declare_parameter('preview_distance_m', 1.0)
+        self.declare_parameter('forward_speed_mps', 0.3)
+        self.declare_parameter('reverse_speed_mps', 0.3)
+        self.declare_parameter('stop_clearance_m', 0.20)
+        self.declare_parameter('path_end_tolerance_m', 0.10)
+        self.declare_parameter('path_sample_step_m', 0.05)
+        self.declare_parameter('require_rear_clearance', True)
+        self.declare_parameter('pose_stale_timeout_s', 0.35)
+        self.declare_parameter('rear_scan_topic', '/lidar/a2/scan')
+        self.declare_parameter('rear_scan_stale_timeout_s', 0.35)
+        self.declare_parameter('rear_scan_center_deg', -90.0)
+        self.declare_parameter('rear_scan_half_width_deg', 12.0)
+        self.declare_parameter('rear_range_offset_m', 0.069)
+        self.declare_parameter('rear_wall_min_points', 5)
+        self.declare_parameter('rear_wall_cluster_m', 0.04)
+        self.declare_parameter(
+            'current_cloud_topic', '/parking/nearest_merged_cloud')
+        self.declare_parameter('fused_cloud_stale_timeout_s', 0.35)
+        self.declare_parameter('rear_lidar_x_m', -0.055)
 
         search_side = str(self.get_parameter('search_side').value).strip().lower()
         search_sides = (
@@ -111,14 +148,42 @@ class WallGapNode(Node):
         self.last_reset_send_s = -1
         self.final_cancel_sent = False
         self.map_frame = str(self.get_parameter('map_frame').value)
+        self.base_frame = str(self.get_parameter('base_frame').value)
         self.min_turn_radius_m = float(self.get_parameter('min_turn_radius_m').value)
         self.inside_straight_m = float(
             self.get_parameter('inside_straight_m').value)
         self.parallel_straight_m = float(
             self.get_parameter('parallel_straight_m').value)
+        self.enable_control = bool(self.get_parameter('enable_control').value)
+        self.controller = WallGapController(WallGapControlConfig(
+            hold_s=float(self.get_parameter('hold_after_detection_s').value),
+            preview_distance_m=float(
+                self.get_parameter('preview_distance_m').value),
+            forward_speed_mps=float(
+                self.get_parameter('forward_speed_mps').value),
+            reverse_speed_mps=float(
+                self.get_parameter('reverse_speed_mps').value),
+            stop_clearance_m=float(
+                self.get_parameter('stop_clearance_m').value),
+            path_end_tolerance_m=float(
+                self.get_parameter('path_end_tolerance_m').value),
+            sample_step_m=float(
+                self.get_parameter('path_sample_step_m').value),
+            require_rear_clearance=bool(
+                self.get_parameter('require_rear_clearance').value),
+        ))
+        self.delta_tracker = PoseDeltaTracker()
 
         self.latest_map = np.empty((0, 2), dtype=np.float64)
         self.latest_pose = None
+        self.latest_pose_s = -math.inf
+        self.latest_rear_clearance_m = None
+        self.latest_rear_scan_s = -math.inf
+        self.latest_fused_clearance_m = None
+        self.latest_fused_cloud_s = -math.inf
+        self.last_control_output: WallGapControlOutput | None = None
+        self.last_control_state = ControlState.IDLE
+        self.fused_frame_warned = False
 
         self.confirmed_candidate = None
         self.reference_path: ReferencePath | None = None
@@ -129,12 +194,18 @@ class WallGapNode(Node):
         self.pose_sub = self.create_subscription(
             PoseStamped, str(self.get_parameter('pose_topic').value),
             self._on_pose, qos_profile_sensor_data)
+        self.rear_scan_sub = self.create_subscription(
+            LaserScan, str(self.get_parameter('rear_scan_topic').value),
+            self._on_rear_scan, qos_profile_sensor_data)
+        self.current_cloud_sub = self.create_subscription(
+            PointCloud2, str(self.get_parameter('current_cloud_topic').value),
+            self._on_current_cloud, qos_profile_sensor_data)
         self.marker_pub = self.create_publisher(
             MarkerArray, '/wall_gap/markers', 1)
         self.stop_pub = self.create_publisher(Bool, '/wall_gap/stop', 1)
-        # /wall_gap/stop is intentionally kept false for now. Final parking
-        # stop will be implemented from the rear LiDAR independently of path
-        # creation; confirming a square must not stop the forward alignment.
+        self.state_pub = self.create_publisher(String, '/wall_gap/state', 10)
+        self.target_pub = self.create_publisher(
+            TargetRef, str(self.get_parameter('target_topic').value), 1)
         # Every fresh test run must map from scratch (user directive,
         # 2026-09-02) — stack_parking_node already wipes its SLAM map on a
         # manual_command trigger when reset_map_on_mission_start is true
@@ -144,11 +215,18 @@ class WallGapNode(Node):
 
         rate = float(self.get_parameter('publish_rate_hz').value)
         self.timer = self.create_timer(1.0 / max(1.0, rate), self._tick)
+        command_rate = float(self.get_parameter('command_rate_hz').value)
+        self.command_timer = self.create_timer(
+            1.0 / max(1.0, command_rate), self._command_tick)
         self.get_logger().info(
             'wall_gap_node ready: initial_band=%.2f..%.2f wall_offset=+/-%.2f '
-            'min_gap=%.2f square=%.2f'
+            'min_gap=%.2f square=%.2f control=%s'
             % (cfg.near_m, cfg.far_m, cfg.wall_line_offset_m,
-               cfg.min_gap_m, cfg.square_size_m))
+               cfg.min_gap_m, cfg.square_size_m, self.enable_control))
+        if not self.enable_control:
+            self.get_logger().warn(
+                'control disabled: square confirmation will latch '
+                '/wall_gap/stop, but no /adas/target_ref will be published')
 
     def _clock_s(self) -> float:
         return self.get_clock().now().nanoseconds * 1.0e-9
@@ -162,7 +240,163 @@ class WallGapNode(Node):
     def _on_pose(self, msg: PoseStamped) -> None:
         q = msg.pose.orientation
         yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
-        self.latest_pose = Pose2(msg.pose.position.x, msg.pose.position.y, yaw)
+        pose = Pose2(msg.pose.position.x, msg.pose.position.y, yaw)
+        self.latest_pose = pose
+        self.latest_pose_s = self._clock_s()
+        if self.controller.active:
+            self.delta_tracker.update(pose)
+
+    @staticmethod
+    def _clustered_clearance(
+        values: list[float],
+        minimum_points: int,
+        cluster_m: float,
+    ) -> float | None:
+        if len(values) < minimum_points:
+            return None
+        values_array = np.asarray(values, dtype=np.float64)
+        candidate = float(np.percentile(values_array, 30.0))
+        support = int(np.count_nonzero(
+            np.abs(values_array - candidate) <= cluster_m))
+        return candidate if support >= minimum_points else None
+
+    def _on_rear_scan(self, msg: LaserScan) -> None:
+        center = math.radians(float(
+            self.get_parameter('rear_scan_center_deg').value))
+        half = math.radians(float(
+            self.get_parameter('rear_scan_half_width_deg').value))
+        offset = float(self.get_parameter('rear_range_offset_m').value)
+        values: list[float] = []
+        for index, raw in enumerate(msg.ranges):
+            angle = msg.angle_min + index * msg.angle_increment
+            angle_error = (angle - center + math.pi) % (2.0 * math.pi) - math.pi
+            if abs(angle_error) > half:
+                continue
+            if not math.isfinite(raw) or raw < msg.range_min or raw > msg.range_max:
+                continue
+            corrected = float(raw) - offset
+            if corrected > 0.0:
+                values.append(corrected)
+        self.latest_rear_clearance_m = self._clustered_clearance(
+            values,
+            int(self.get_parameter('rear_wall_min_points').value),
+            float(self.get_parameter('rear_wall_cluster_m').value),
+        )
+        self.latest_rear_scan_s = self._clock_s()
+
+    def _on_current_cloud(self, msg: PointCloud2) -> None:
+        """Measure the rear wall from any LiDAR represented in fused cloud."""
+        if msg.header.frame_id.lstrip('/') != self.base_frame.lstrip('/'):
+            self.latest_fused_clearance_m = None
+            self.latest_fused_cloud_s = self._clock_s()
+            if not self.fused_frame_warned:
+                self.fused_frame_warned = True
+                self.get_logger().error(
+                    'fused clearance cloud frame=%r rejected; expected %r'
+                    % (msg.header.frame_id, self.base_frame))
+            return
+        pts = point_cloud2.read_points_numpy(
+            msg, field_names=('x', 'y'), skip_nans=True)
+        xy = (
+            np.column_stack((pts['x'], pts['y'])) if pts.dtype.names
+            else np.asarray(pts).reshape((-1, 2)))
+        rear_x = float(self.get_parameter('rear_lidar_x_m').value)
+        half = math.radians(float(
+            self.get_parameter('rear_scan_half_width_deg').value))
+        if len(xy):
+            dx = xy[:, 0] - rear_x
+            behind = dx < 0.0
+            in_sector = np.abs(xy[:, 1]) <= (-dx) * math.tan(half)
+            selected = xy[behind & in_sector]
+            values = np.hypot(
+                selected[:, 0] - rear_x, selected[:, 1]).tolist()
+        else:
+            values = []
+        self.latest_fused_clearance_m = self._clustered_clearance(
+            values,
+            int(self.get_parameter('rear_wall_min_points').value),
+            float(self.get_parameter('rear_wall_cluster_m').value),
+        )
+        self.latest_fused_cloud_s = self._clock_s()
+
+    def _rear_clearance(self, now_s: float) -> float | None:
+        candidates = []
+        if (
+            now_s - self.latest_rear_scan_s
+            <= float(self.get_parameter('rear_scan_stale_timeout_s').value)
+            and self.latest_rear_clearance_m is not None
+        ):
+            candidates.append(float(self.latest_rear_clearance_m))
+        if (
+            now_s - self.latest_fused_cloud_s
+            <= float(self.get_parameter('fused_cloud_stale_timeout_s').value)
+            and self.latest_fused_clearance_m is not None
+        ):
+            candidates.append(float(self.latest_fused_clearance_m))
+        return min(candidates) if candidates else None
+
+    def _publish_target(self, output: WallGapControlOutput) -> None:
+        if not self.enable_control or output.reference_local is None:
+            return
+        reference = output.reference_local
+        delta = self.delta_tracker.delta
+        msg = TargetRef()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.base_frame
+        msg.ref_points = [RefPoint(
+            x=float(reference.x),
+            y=float(reference.y),
+            yaw=float(reference.yaw),
+            curvature=float(reference.curvature),
+        )]
+        msg.v_ref = float(output.v_ref_mps)
+        msg.state = TargetRef.STATE_PARKING
+        msg.dx = float(delta.dx)
+        msg.dy = float(delta.dy)
+        msg.dyaw = float(delta.dyaw)
+        msg.update = int(delta.update)
+        self.target_pub.publish(msg)
+
+    def _command_tick(self) -> None:
+        if not self.controller.active or self.latest_pose is None:
+            self.stop_pub.publish(Bool(data=False))
+            self.state_pub.publish(String(data=ControlState.IDLE.value))
+            return
+        # With control disabled, latch the confirmation stop for the manual
+        # bench path.  In particular, never release T_Parking after one second
+        # unless this node is also taking ownership of /adas/target_ref.
+        if not self.enable_control:
+            self.stop_pub.publish(Bool(data=True))
+            self.state_pub.publish(String(data='confirmed_control_disabled'))
+            return
+
+        now_s = self._clock_s()
+        output = self.controller.update(
+            self.latest_pose,
+            now_s,
+            rear_clearance_m=self._rear_clearance(now_s),
+        )
+        pose_stale = (
+            now_s - self.latest_pose_s
+            > float(self.get_parameter('pose_stale_timeout_s').value))
+        if pose_stale:
+            output = WallGapControlOutput(
+                output.state,
+                output.reference_map,
+                output.reference_local,
+                0.0,
+                'lidar_pose_stale_hold',
+            )
+        self.last_control_output = output
+        self.stop_pub.publish(Bool(data=abs(output.v_ref_mps) < 1.0e-6))
+        self.state_pub.publish(String(data=output.status))
+        self._publish_target(output)
+        if output.state != self.last_control_state:
+            self.get_logger().info(
+                'parking control: %s -> %s (%s, v_ref=%.2f)'
+                % (self.last_control_state.value, output.state.value,
+                   output.status, output.v_ref_mps))
+            self.last_control_state = output.state
 
     def _tick(self) -> None:
         if self.latest_pose is None or len(self.latest_map) == 0:
@@ -216,7 +450,6 @@ class WallGapNode(Node):
                 % (self.map_frame, pose.x, pose.y, seed_side))
 
         if self.detector.seed_pose is None:
-            self.stop_pub.publish(Bool(data=False))
             self._publish_markers()
             return
 
@@ -242,15 +475,34 @@ class WallGapNode(Node):
                     'usable space confirmed, but reference-path parameters '
                     'must all be positive')
             else:
-                self.get_logger().info(
-                    'usable space confirmed: side=%s map=(%.2f,%.2f) width=%.2fm '
-                    '— path ready immediately (parallel=%.2fm radius=%.2fm '
-                    'inside=%.2fm); rear-LiDAR stop pending'
-                    % (cleared.side, cleared.map_x, cleared.map_y, cleared.width_m,
-                       self.parallel_straight_m, self.min_turn_radius_m,
-                       self.inside_straight_m))
+                now_s = self._clock_s()
+                if not self.controller.start(self.reference_path, pose, now_s):
+                    self.get_logger().error(
+                        'reference path exists, but controller sampling failed')
+                else:
+                    self.delta_tracker.reset(pose)
+                    # Send the first zero-speed frame in this same detection
+                    # callback; do not wait up to one more 10ms command tick.
+                    first_output = self.controller.update(
+                        pose, now_s, rear_clearance_m=self._rear_clearance(now_s))
+                    self.last_control_output = first_output
+                    self.stop_pub.publish(Bool(data=True))
+                    self.state_pub.publish(String(data=first_output.status))
+                    self._publish_target(first_output)
+                    self.get_logger().info(
+                        'usable space confirmed: side=%s map=(%.2f,%.2f) '
+                        'width=%.2fm — immediate stop, hold=%.1fs, '
+                        'preview=%.1fm, v_forward=%.2f, v_reverse=%.2f, '
+                        'rear stop<=%.2fm'
+                        % (
+                            cleared.side, cleared.map_x, cleared.map_y,
+                            cleared.width_m, self.controller.config.hold_s,
+                            self.controller.config.preview_distance_m,
+                            self.controller.config.forward_speed_mps,
+                            -self.controller.config.reverse_speed_mps,
+                            self.controller.config.stop_clearance_m,
+                        ))
 
-        self.stop_pub.publish(Bool(data=False))
         self._publish_markers()
 
     def _line_marker(self, marker_id: int, p0, p1, color: ColorRGBA, ns: str,
@@ -375,6 +627,7 @@ class WallGapNode(Node):
             for j, (label, pt, color) in enumerate((
                 ('P0', path.p0_map, _rgba(0.9, 0.2, 0.9)),
                 ('E', path.e_map, _rgba(0.0, 0.0, 0.0)),
+                ('S', path.straight1_map[0], _rgba(0.2, 0.4, 1.0)),
                 ('goal', path.goal_map, _rgba(1.0, 0.1, 0.1)),
             )):
                 marker = Marker()
@@ -390,6 +643,42 @@ class WallGapNode(Node):
                 marker.scale.x = marker.scale.y = marker.scale.z = 0.15
                 marker.color = color
                 array.markers.append(marker)
+
+        if (
+            self.last_control_output is not None
+            and self.last_control_output.reference_map is not None
+        ):
+            reference = self.last_control_output.reference_map
+            marker = Marker()
+            marker.header.frame_id = self.map_frame
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = 'preview_point'
+            marker.id = 0
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            marker.pose.position.x = float(reference.x)
+            marker.pose.position.y = float(reference.y)
+            marker.pose.position.z = 0.10
+            marker.scale.x = marker.scale.y = marker.scale.z = 0.22
+            marker.color = _rgba(0.9, 0.1, 1.0)
+            array.markers.append(marker)
+
+            text_marker = Marker()
+            text_marker.header = marker.header
+            text_marker.ns = 'control_state'
+            text_marker.id = 0
+            text_marker.type = Marker.TEXT_VIEW_FACING
+            text_marker.action = Marker.ADD
+            text_marker.pose.position.x = float(reference.x)
+            text_marker.pose.position.y = float(reference.y)
+            text_marker.pose.position.z = 0.45
+            text_marker.scale.z = 0.18
+            text_marker.color = _rgba(1.0, 1.0, 1.0)
+            text_marker.text = '%s  v=%.2f' % (
+                self.last_control_output.status,
+                self.last_control_output.v_ref_mps,
+            )
+            array.markers.append(text_marker)
 
         self.marker_pub.publish(array)
 

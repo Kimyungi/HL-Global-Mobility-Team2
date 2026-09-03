@@ -48,6 +48,7 @@ from .space_detector import (
     ParkingSpaceDetector,
     SpaceDetectorConfig,
 )
+from .wall_gap_controller import PoseDeltaTracker
 
 
 def _quaternion_z(yaw: float) -> tuple[float, float]:
@@ -79,6 +80,7 @@ class StackParkingNode(Node):
         detector = ParkingSpaceDetector(self._detector_config())
         planner = MinimumRadiusParkingPlanner(self._planner_config())
         self.mission = ParkingMission(detector, planner, self._mission_config())
+        self.pose_delta_tracker = PoseDeltaTracker()
 
         self.latest_vehicle: Optional[VehicleVector] = None
         self.latest_rear_clearance_m: Optional[float] = None
@@ -537,6 +539,7 @@ class StackParkingNode(Node):
         if bool(self._p('reset_map_on_mission_start')):
             self.slam.reset(Pose2())
             self.prior.reset(Pose2())
+            self.pose_delta_tracker = PoseDeltaTracker()
             self.cloud_pairer.clear()
             self.pipeline.reset()
             self.last_icp_accepted_s = -math.inf
@@ -677,6 +680,11 @@ class StackParkingNode(Node):
         self.slam_update_times.append(now_s)
         if result.accepted:
             self.last_icp_accepted_s = now_s
+        self.pose_delta_tracker.update(result.pose)
+        # Localization is a control input, not a debug visualization. Publish
+        # it at the configured SLAM rate (10Hz) so downstream preview/delta
+        # generation is not silently throttled by debug_publish_rate_hz (5Hz).
+        self._publish_slam_pose(self.get_clock().now().to_msg())
         prepared = voxel_downsample(points, 0.05)
         self.latest_scan_map = transform_points(prepared, result.pose)
         map_points = self.slam.map_points()
@@ -793,6 +801,11 @@ class StackParkingNode(Node):
         msg.path_blocked = output.path_blocked
         msg.done = output.done
         msg.v_suggest = float(output.v_suggest_mps)
+        delta = self.pose_delta_tracker.delta
+        msg.dx = float(delta.dx)
+        msg.dy = float(delta.dy)
+        msg.dyaw = float(delta.dyaw)
+        msg.update = int(delta.update)
         if output.reference_local is not None:
             point = RefPoint()
             point.x = float(output.reference_local.x)
@@ -837,7 +850,7 @@ class StackParkingNode(Node):
         header.frame_id = self.map_frame
         return header
 
-    def _publish_slam_debug(self, stamp) -> None:
+    def _publish_slam_pose(self, stamp) -> None:
         header = self._header(stamp)
         pose = PoseStamped()
         pose.header = header
@@ -847,6 +860,9 @@ class StackParkingNode(Node):
         pose.pose.orientation.z = qz
         pose.pose.orientation.w = qw
         self.pose_pub.publish(pose)
+
+    def _publish_slam_debug(self, stamp) -> None:
+        header = self._header(stamp)
         pose_text = Marker()
         pose_text.header = header
         pose_text.ns = 'slam_pose'

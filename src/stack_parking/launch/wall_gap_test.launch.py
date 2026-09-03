@@ -9,14 +9,17 @@ stack_parking_node's ICP SLAM gets real /vehicle/vector feedback, plus
 wall_gap_node (left-wall gap search + auto SLAM-map reset on every run, see
 wall_gap_node.py's docstring) and the wall_gap RViz view.
 
-Driving is manual (RC controller into dSPACE directly) — this launch does not
-publish any drive command. The old square-confirmation stop has been removed;
-/wall_gap/stop remains false until the planned rear-LiDAR final-stop logic is
-implemented. Do not run tools/T_Parking.py unattended expecting this node to
-stop it.
+Driving remains manual unless ``enable_control:=true`` is explicitly supplied.
+With control enabled, square confirmation immediately commands zero, holds for
+one second, drives forward at 0.3m/s until its 1m preview reaches the outer end
+of the 3m wall-parallel line, then reverses the line/arc/2m inward leg at
+-0.3m/s. The raw rear LiDAR and the fused multi-LiDAR rear sector independently
+stop the vehicle at 0.2m. Do not run adas_mgm at the same time because this
+bench node owns /adas/target_ref after confirmation.
 
 Examples:
   ros2 launch stack_parking wall_gap_test.launch.py
+  ros2 launch stack_parking wall_gap_test.launch.py enable_control:=true
   ros2 launch stack_parking wall_gap_test.launch.py search_side:=right
   ros2 launch stack_parking wall_gap_test.launch.py wall_line_offset_m:=0.15
   ros2 launch stack_parking wall_gap_test.launch.py inside_straight_m:=2.0 parallel_straight_m:=3.0
@@ -50,6 +53,12 @@ def generate_launch_description():
     wall_line_offset_m = LaunchConfiguration('wall_line_offset_m')
     inside_straight_m = LaunchConfiguration('inside_straight_m')
     parallel_straight_m = LaunchConfiguration('parallel_straight_m')
+    enable_control = LaunchConfiguration('enable_control')
+    forward_speed_mps = LaunchConfiguration('forward_speed_mps')
+    reverse_speed_mps = LaunchConfiguration('reverse_speed_mps')
+    preview_distance_m = LaunchConfiguration('preview_distance_m')
+    hold_after_detection_s = LaunchConfiguration('hold_after_detection_s')
+    stop_clearance_m = LaunchConfiguration('stop_clearance_m')
     rviz = LaunchConfiguration('rviz')
 
     return LaunchDescription([
@@ -77,6 +86,16 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'parallel_straight_m', default_value='3.0',
             description='Wall-parallel reference-path length before the arc'),
+        DeclareLaunchArgument(
+            'enable_control', default_value='false',
+            description=(
+                'After square confirmation, publish the 100Hz PARKING '
+                'TargetRef directly to dSPACE (never enable with adas_mgm)')),
+        DeclareLaunchArgument('forward_speed_mps', default_value='0.3'),
+        DeclareLaunchArgument('reverse_speed_mps', default_value='0.3'),
+        DeclareLaunchArgument('preview_distance_m', default_value='1.0'),
+        DeclareLaunchArgument('hold_after_detection_s', default_value='1.0'),
+        DeclareLaunchArgument('stop_clearance_m', default_value='0.20'),
         DeclareLaunchArgument(
             'rviz', default_value='true',
             description='Open the wall_gap RViz view'),
@@ -112,8 +131,9 @@ def generate_launch_description():
         ),
 
         # Real CAN bridge: /vehicle/vector.v and .str are the actual
-        # actuator_velocity / actuator_steering readback from dSPACE — driving
-        # is manual (RC controller into dSPACE), this launch only reads back.
+        # actuator_velocity / actuator_steering readback from dSPACE. With
+        # enable_control=false this launch only reads back; true lets
+        # wall_gap_node publish the post-confirmation PARKING TargetRef.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
                 bridge_share, 'launch', 'bridge.launch.py'])),
@@ -153,6 +173,19 @@ def generate_launch_description():
                     inside_straight_m, value_type=float),
                 'parallel_straight_m': ParameterValue(
                     parallel_straight_m, value_type=float),
+                'enable_control': ParameterValue(
+                    enable_control, value_type=bool),
+                'forward_speed_mps': ParameterValue(
+                    forward_speed_mps, value_type=float),
+                'reverse_speed_mps': ParameterValue(
+                    reverse_speed_mps, value_type=float),
+                'preview_distance_m': ParameterValue(
+                    preview_distance_m, value_type=float),
+                'hold_after_detection_s': ParameterValue(
+                    hold_after_detection_s, value_type=float),
+                'stop_clearance_m': ParameterValue(
+                    stop_clearance_m, value_type=float),
+                'current_cloud_topic': merged_cloud_topic,
             }],
         ),
 

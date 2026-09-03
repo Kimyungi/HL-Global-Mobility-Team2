@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
-"""T_Parking — bench test: synthetic straight-line CAN drive.
-
-WARNING: wall_gap_node no longer asserts ``/wall_gap/stop`` when a square is
-confirmed. Rear-LiDAR final-stop logic is pending, so do not run this tool
-unattended with the current wall-gap test stack.
+"""T_Parking — bench lead-in: synthetic straight-line CAN drive.
 
 Publishes ``fma_interfaces/TargetRef`` on ``/adas/target_ref`` at the
 protocol's 10ms cadence (PROTOCOL.md §3 TX), standing in for adas_mgm so
 bridge_dspace/dSPACE can be driven without the full MGM stack:
-  - state = STATE_LANE (0) — stateUsesGpsDelta() in can_protocol.hpp only
-    forwards dx/dy/dyaw/update for LANE/WAYPOINT/TRAFFIC, so LANE is the
-    state that actually carries them over CAN.
+  - state = STATE_LANE (0) — stateUsesPoseDelta() in can_protocol.hpp
+    forwards its synthetic pose delta over CAN.
   - ref_points = one point x=1.0, y=0.0, yaw=0.0, curvature=0.0 — a
     straight-ahead target 1m out, matching the v5 single-point contract.
   - dx=1.0, dy=0.0, dyaw=0.0 — the equivalent straight-line GNSS delta.
   - update increments by 1 every 10 ticks (10Hz fix rate inside the 100Hz
     TX loop, same ratio as the real GPS-vs-CAN cadence).
-  - v_ref = target_speed_mps (0.3 by default) until an independent publisher
-    asserts ``/wall_gap/stop``, then 0.0.
+  - v_ref = target_speed_mps (0.3 by default) until wall_gap_node confirms a
+    square and asserts ``/wall_gap/stop``.
+
+On that first stop edge this node sends one final zero-speed frame and then
+permanently stops publishing. That handoff leaves an enabled wall_gap_node as
+the sole ``/adas/target_ref`` publisher for the hold/alignment/reverse phases.
+Restart this process for a new run; do not run adas_mgm at the same time.
 
 ``counter`` is not part of TargetRef — bridge_dspace assigns it at send
 time (see can_bridge_node.cpp sendFrames()), one CAN cycle per call.
 
-This node only provides the straight-line drive and reacts to a stop signal;
-it does not decide when stopping is safe.
+This node only provides the straight-line lead-in. It does not decide when
+stopping or reversing is safe.
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ class TParkingNode(Node):
 
         self.target_speed = float(self.get_parameter('target_speed_mps').value)
         self.stopped = False
+        self.handed_off = False
 
         self.ref_pub = self.create_publisher(TargetRef, '/adas/target_ref', 1)
         self.stop_sub = self.create_subscription(
@@ -55,27 +56,33 @@ class TParkingNode(Node):
             'T_Parking ready: v=%.2fm/s, waiting on /wall_gap/stop' % self.target_speed)
 
     def _on_stop(self, msg: Bool) -> None:
-        if msg.data and not self.stopped:
+        if msg.data and not self.handed_off:
             self.stopped = True
-            self.get_logger().info('wall_gap_node reports space confirmed — stopping (v_ref -> 0)')
-        elif not msg.data and self.stopped:
-            # wall_gap_node restarted its search — resume driving.
-            self.stopped = False
-            self.get_logger().info('wall_gap_node cleared stop — resuming drive')
+            self._publish_once(0.0)
+            self.handed_off = True
+            self.timer.cancel()
+            self.get_logger().info(
+                'wall_gap_node confirmed a square — sent v_ref=0 once and '
+                'handed /adas/target_ref ownership to wall_gap_node')
 
-    def _tick(self) -> None:
+    def _publish_once(self, speed: float) -> None:
         self.tick_count += 1
         msg = TargetRef()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
-        msg.ref_points = [RefPoint(x=1.0, y=0.0, yaw=0.0, curvature=0.0)]
-        msg.v_ref = 0.0 if self.stopped else self.target_speed
+        msg.ref_points = [RefPoint(
+            x=1.0, y=0.0, yaw=0.0, curvature=0.0)]
+        msg.v_ref = float(speed)
         msg.state = TargetRef.STATE_LANE
         msg.dx = 1.0
         msg.dy = 0.0
         msg.dyaw = 0.0
         msg.update = self.tick_count // 10
         self.ref_pub.publish(msg)
+
+    def _tick(self) -> None:
+        if not self.handed_off:
+            self._publish_once(self.target_speed)
 
 
 def main(args=None):
