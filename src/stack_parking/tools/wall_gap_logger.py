@@ -19,8 +19,15 @@ between updates" convention the CAN protocol itself uses, CLAUDE.md §5.8).
 When the forward-exit preview reaches its final end point, the controller
 publishes ``exit_path_end_stop``; the logger then flushes/closes all files and
 shuts down automatically:
-  ticks.csv — stamp_s, ref_x, ref_y, ref_yaw, ref_curvature, target_str,
+  ticks.csv — stamp_s, state, stop_count, pose_x, pose_y, pose_yaw,
+              ref_x, ref_y, ref_yaw, ref_curvature, target_str,
               act_str, v_ref, act_v, dx, dy, dyaw
+
+``stop_count`` increments on every v_ref rising-edge-to-zero (the moment the
+vehicle actually stops, not a named status string) -- user directive,
+2026-09-04. Each stop also dumps the surrounding /parking/local_map to its
+own ``map_snapshot_stop<N>.csv`` in the same run directory. pose_x/y/yaw
+come from /parking/slam_pose.
 
 Files land in <repo_root>/log/wall_gap_reverse_test/<timestamp>/ (not
 /tmp — the scratchpad is wiped on session restart, same reasoning as
@@ -35,6 +42,7 @@ Usage:
 from __future__ import annotations
 
 import csv
+import math
 import time
 from pathlib import Path
 
@@ -42,6 +50,9 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import PointCloud2
+from sensor_msgs_py import point_cloud2
 from std_msgs.msg import String
 from visualization_msgs.msg import MarkerArray
 
@@ -79,7 +90,8 @@ class WallGapLogger(Node):
         self.ticks_file = open(self.ticks_path, 'w', newline='')
         self.ticks_writer = csv.writer(self.ticks_file)
         self.ticks_writer.writerow([
-            'stamp_s', 'ref_x', 'ref_y', 'ref_yaw', 'ref_curvature',
+            'stamp_s', 'state', 'stop_count', 'pose_x', 'pose_y', 'pose_yaw',
+            'ref_x', 'ref_y', 'ref_yaw', 'ref_curvature',
             'target_str', 'act_str', 'v_ref', 'act_v', 'dx', 'dy', 'dyaw',
         ])
         self.ticks_file.flush()
@@ -87,6 +99,14 @@ class WallGapLogger(Node):
 
         self.latest_ref: TargetRef | None = None
         self.latest_veh: VehicleVector | None = None
+        self.latest_state = 'idle'
+        self.latest_pose: PoseStamped | None = None
+        self.latest_map: PointCloud2 | None = None
+        # Stop counter: incremented on every v_ref rising-edge-to-zero,
+        # independent of which named status string it lands in (user
+        # directive, 2026-09-04). Each edge also snapshots the map.
+        self.stop_count = 0
+        self.was_moving = False
         self.logging_finished = False
 
         self.create_subscription(
@@ -98,6 +118,12 @@ class WallGapLogger(Node):
             qos_profile_sensor_data)
         self.create_subscription(
             String, '/wall_gap/state', self._on_state, 10)
+        self.create_subscription(
+            PoseStamped, '/parking/slam_pose', self._on_pose,
+            qos_profile_sensor_data)
+        self.create_subscription(
+            PointCloud2, '/parking/local_map', self._on_map,
+            qos_profile_sensor_data)
 
         # Fixed-period timer rather than writing off the /vehicle/vector
         # callback: guarantees a uniform 10ms row spacing (user directive,
@@ -185,7 +211,32 @@ class WallGapLogger(Node):
     def _on_vehicle_vector(self, msg: VehicleVector) -> None:
         self.latest_veh = msg
 
+    def _on_pose(self, msg: PoseStamped) -> None:
+        self.latest_pose = msg
+
+    def _on_map(self, msg: PointCloud2) -> None:
+        self.latest_map = msg
+
+    def _save_map_snapshot(self) -> None:
+        """Dump the current /parking/local_map to its own CSV at a stop."""
+        if self.latest_map is None:
+            return
+        points = point_cloud2.read_points_numpy(
+            self.latest_map, field_names=('x', 'y'), skip_nans=True)
+        path = self.out_dir / ('map_snapshot_stop%d.csv' % self.stop_count)
+        with open(path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['map_x', 'map_y'])
+            if points.dtype.names:
+                writer.writerows(zip(points['x'].tolist(), points['y'].tolist()))
+            else:
+                writer.writerows(points.reshape((-1, 2)).tolist())
+        self.get_logger().info(
+            'stop #%d map snapshot: %d points -> %s'
+            % (self.stop_count, len(points), path))
+
     def _on_state(self, msg: String) -> None:
+        self.latest_state = msg.data
         if self.logging_finished or msg.data != 'exit_path_end_stop':
             return
         self.logging_finished = True
@@ -210,15 +261,37 @@ class WallGapLogger(Node):
         ref = self.latest_ref
         point = ref.ref_points[0] if ref is not None and ref.ref_points else None
         msg = veh
+
+        v_ref = ref.v_ref if ref is not None else None
+        is_moving = v_ref is not None and abs(v_ref) > 1.0e-6
+        if self.was_moving and not is_moving:
+            self.stop_count += 1
+            self._save_map_snapshot()
+        self.was_moving = is_moving
+
+        pose = self.latest_pose
+        if pose is not None:
+            q = pose.pose.orientation
+            pose_x = pose.pose.position.x
+            pose_y = pose.pose.position.y
+            pose_yaw = math.atan2(
+                2.0 * (q.w * q.z + q.x * q.y),
+                1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        else:
+            pose_x = pose_y = pose_yaw = ''
+
         self.ticks_writer.writerow([
             self.get_clock().now().nanoseconds * 1.0e-9,
+            self.latest_state,
+            self.stop_count,
+            pose_x, pose_y, pose_yaw,
             point.x if point else '',
             point.y if point else '',
             point.yaw if point else '',
             point.curvature if point else '',
             msg.str_ref,
             msg.str,
-            ref.v_ref if ref is not None else '',
+            v_ref if v_ref is not None else '',
             msg.v,
             ref.dx if ref is not None else '',
             ref.dy if ref is not None else '',

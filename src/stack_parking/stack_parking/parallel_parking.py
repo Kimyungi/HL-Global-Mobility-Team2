@@ -11,6 +11,14 @@ line-arc-line path with two-metre straight sections and obtains the other
 line-arc-line by rotating the complete first shape 180 degrees about the shared
 arc origin.  The final reverse and forward phases reuse the original,
 unmodified S reference path.
+
+The front (entry) arc used for that isolated line-arc-line -- the one the
+vehicle actually backs into the bay on -- can take its own radius via
+``entry_radius_m``, independent of the rear arc's ``turn_radius_m`` used only
+by the full-S passes (user directive, 2026-09-04). The isolated line-arc-line
+also has two independently tunable straight lengths: ``entry_straight_m`` for
+backing in (kept at 2m) and ``opposite_straight_m`` for the forward nudge
+that follows (shortened to 1m).
 """
 
 from __future__ import annotations
@@ -37,7 +45,12 @@ from .wall_gap_detector import TrackedCandidate
 @dataclass(frozen=True)
 class ParallelReferencePath:
     side: str
-    radius_m: float
+    # front = the arc used to enter the bay (SINGLE_ARC_REVERSE); rear = the
+    # arc used only in the full S (INITIAL_FORWARD/REFERENCE_REVERSE/
+    # REFERENCE_FORWARD). Independent so the entry radius can be tuned
+    # without touching the inner one (user directive, 2026-09-04).
+    front_radius_m: float
+    rear_radius_m: float
     p0_map: tuple[float, float]
     arc_origin_map: tuple[float, float]
     front_center_map: tuple[float, float]
@@ -59,6 +72,14 @@ class ParallelParkingConfig:
     forward_speed_mps: float = 0.75
     reverse_speed_mps: float = 0.75
     sample_step_m: float = 0.05
+    # Straight length of the entry line-arc-line (SINGLE_ARC_REVERSE, backing
+    # into the bay) versus the following forward nudge (OPPOSITE_ARC_FORWARD)
+    # -- independently tunable (user directive, 2026-09-04). Both default to
+    # the original symmetric 2m; parallel_parking_node.py's own parameter
+    # default shortens the nudge to 1m -- kept symmetric here so a bare
+    # ParallelParkingConfig() (e.g. in tests) keeps its old behaviour.
+    entry_straight_m: float = 2.0
+    opposite_straight_m: float = 2.0
 
 
 class ParallelControlState(str, enum.Enum):
@@ -135,13 +156,23 @@ def build_parallel_reference_path(
     arc_angle_deg: float = 45.0,
     arc_start_offset_m: float = 0.5,
     arc_points: int = 24,
+    entry_radius_m: Optional[float] = None,
 ) -> Optional[ParallelReferencePath]:
-    """Construct the point-symmetric S path requested for parallel parking."""
+    """Construct the point-symmetric S path requested for parallel parking.
+
+    ``entry_radius_m`` overrides the radius of only the front/entry arc
+    (the one SINGLE_ARC_REVERSE backs the vehicle in on) -- e.g. doubling it
+    for a gentler entry sweep while ``turn_radius_m`` keeps sizing the rear
+    arc used by the full-S passes. Defaults to ``turn_radius_m`` (the
+    original single-radius S) when not given.
+    """
     radius = float(turn_radius_m)
+    front_radius = float(entry_radius_m) if entry_radius_m is not None else radius
     line_length = float(end_straight_m)
     arc_start_offset = float(arc_start_offset_m)
     arc_angle = math.radians(float(arc_angle_deg))
-    if (radius <= 0.0 or line_length <= 0.0 or arc_start_offset < 0.0
+    if (radius <= 0.0 or front_radius <= 0.0 or line_length <= 0.0
+            or arc_start_offset < 0.0
             or not 0.0 < arc_angle < math.pi / 2.0):
         return None
 
@@ -165,12 +196,12 @@ def build_parallel_reference_path(
     tangent = direction * wall_tangent
     arc_origin = p0 + arc_start_offset * tangent
 
-    # For 45 degrees, arc_origin->centre is radius/sqrt(2) along both the
-    # forward wall tangent and inward normal.  The formulation below also
-    # keeps the angle parameter explicit for geometry validation.
-    front_center = arc_origin + radius * (
-        math.cos(arc_angle) * tangent + math.sin(arc_angle) * inward)
-    front_tangent = front_center - radius * inward
+    # For 45 degrees, arc_origin->centre is front_radius/sqrt(2) along both
+    # the forward wall tangent and inward normal.  The formulation below
+    # also keeps the angle parameter explicit for geometry validation.
+    front_direction = math.cos(arc_angle) * tangent + math.sin(arc_angle) * inward
+    front_center = arc_origin + front_radius * front_direction
+    front_tangent = front_center - front_radius * inward
     radius_at_origin = arc_origin - front_center
     radius_at_end = front_tangent - front_center
     sweep = math.atan2(
@@ -184,18 +215,28 @@ def build_parallel_reference_path(
         for angle in angles
     ])
 
-    # The second arc is an exact 180-degree rotation of the first about the
-    # shifted origin. Reverse samples so the complete path is rear->front.
-    rear_center = 2.0 * arc_origin - front_center
-    rear_arc_from_origin = 2.0 * arc_origin - front_arc
+    # The rear arc is the same 180-degree-about-arc_origin construction, but
+    # built from its own radius (independent of front_radius) rather than by
+    # reflecting front_arc's points -- a point reflection only stays on a
+    # radius-rear circle when the two radii match. The sweep angle itself
+    # (a pure angle between unit directions) doesn't depend on either
+    # radius, so the same ``angles`` apply. Reverse samples so the complete
+    # path is rear->front.
+    rear_center = arc_origin - radius * front_direction
+    rear_tangent = rear_center + radius * inward
+    rear_radius_at_origin = arc_origin - rear_center
+    rear_arc_from_origin = np.asarray([
+        rear_center + _rotate(rear_radius_at_origin, float(angle))
+        for angle in angles
+    ])
     rear_arc = rear_arc_from_origin[::-1].copy()
-    rear_tangent = rear_arc[0]
     front_end = front_tangent + line_length * tangent
     rear_end = rear_tangent - line_length * tangent
 
     return ParallelReferencePath(
         side=candidate.side,
-        radius_m=radius,
+        front_radius_m=front_radius,
+        rear_radius_m=radius,
         p0_map=(float(p0[0]), float(p0[1])),
         arc_origin_map=(float(arc_origin[0]), float(arc_origin[1])),
         front_center_map=(float(front_center[0]), float(front_center[1])),
@@ -287,13 +328,13 @@ def parallel_controller_paths(
     _append_without_duplicate(forward, _arc_path_points(
         reference.rear_arc_map,
         np.asarray(reference.rear_center_map),
-        reference.radius_m,
+        reference.rear_radius_m,
         1,
     ))
     _append_without_duplicate(forward, _arc_path_points(
         reference.front_arc_map,
         np.asarray(reference.front_center_map),
-        reference.radius_m,
+        reference.front_radius_m,
         1,
     ))
     _append_without_duplicate(forward, _sample_line(
@@ -330,7 +371,7 @@ def parallel_single_arc_paths(
     arc = _arc_path_points(
         reference.front_arc_map,
         np.asarray(reference.front_center_map),
-        reference.radius_m,
+        reference.front_radius_m,
         1,
     )
     if not arc:
@@ -356,15 +397,17 @@ def parallel_single_arc_paths(
 def parallel_opposite_single_arc_path(
     reference: ParallelReferencePath,
     step_m: float = 0.05,
+    straight_m: float = 2.0,
 ) -> tuple[PathPoint, ...]:
     """Rotate the first line-arc-line 180 degrees about the arc origin.
 
     Positions are point-reflected exactly.  Because this result is driven
     forward while the source path is driven in reverse, vehicle yaw is kept
-    and curvature is negated.  Its arc points therefore coincide with the
-    other one of the two originally generated S arcs.
+    and curvature is negated.  ``straight_m`` is independent of the entry
+    line-arc-line's own straight length (user directive, 2026-09-04: the
+    entry stays 2m, this "nudge forward" leg can be shorter, e.g. 1m).
     """
-    _, first_reverse = parallel_single_arc_paths(reference, step_m)
+    _, first_reverse = parallel_single_arc_paths(reference, step_m, straight_m)
     if not first_reverse:
         return ()
     origin_x, origin_y = reference.arc_origin_map
@@ -416,12 +459,12 @@ class ParallelParkingController:
         forward, reverse = parallel_controller_paths(
             path, self.config.sample_step_m)
         single_forward, single_reverse = parallel_single_arc_paths(
-            path, self.config.sample_step_m)
+            path, self.config.sample_step_m, self.config.entry_straight_m)
         if (not forward or not reverse
                 or not single_forward or not single_reverse):
             return False
         opposite_forward = parallel_opposite_single_arc_path(
-            path, self.config.sample_step_m)
+            path, self.config.sample_step_m, self.config.opposite_straight_m)
         if not opposite_forward:
             return False
         self.initial_reference_forward_path = forward

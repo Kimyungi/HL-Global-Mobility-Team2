@@ -6,9 +6,12 @@ SLAM map data is retained. A clear 1.5m wall-parallel x 0.7m inward rectangle
 defines P0. Once the vehicle passes P0, the node shifts the arc origin 0.5m
 forward and creates the R=1.12m, 45deg+45deg point-symmetric S path with 1.5m
 lines at both ends. It then runs the full S forward, the front single-arc
-line-arc-line with two-metre straight sections in reverse, and the entire first
-shape rotated 180 degrees about the arc origin in forward. The last reverse and
-forward phases reuse the original full S without moving it. Every
+line-arc-line (entry radius parallel_entry_radius_m, default 2x
+parallel_turn_radius_m; entry straight parallel_entry_straight_m, default
+2m) in reverse, and the entire first shape rotated 180 degrees about the arc
+origin in forward (straight shortened to parallel_opposite_straight_m,
+default 1m). The last reverse and forward phases reuse the original full S
+(rear arc stays at parallel_turn_radius_m) without moving it. Every
 preview-at-end transition holds for one second. The logger flushes after the
 final hold.
 """
@@ -47,6 +50,11 @@ def generate_launch_description():
     parallel_end_straight_m = LaunchConfiguration('parallel_end_straight_m')
     parallel_arc_start_offset_m = LaunchConfiguration(
         'parallel_arc_start_offset_m')
+    parallel_entry_radius_m = LaunchConfiguration('parallel_entry_radius_m')
+    parallel_entry_straight_m = LaunchConfiguration(
+        'parallel_entry_straight_m')
+    parallel_opposite_straight_m = LaunchConfiguration(
+        'parallel_opposite_straight_m')
     rviz = LaunchConfiguration('rviz')
     logging = LaunchConfiguration('logging')
 
@@ -55,9 +63,9 @@ def generate_launch_description():
         DeclareLaunchArgument('start_can', default_value='true'),
         DeclareLaunchArgument('can_interface', default_value='can0'),
         DeclareLaunchArgument('enable_control', default_value='false'),
-        DeclareLaunchArgument('search_speed_mps', default_value='0.75'),
-        DeclareLaunchArgument('forward_speed_mps', default_value='0.75'),
-        DeclareLaunchArgument('reverse_speed_mps', default_value='0.75'),
+        DeclareLaunchArgument('search_speed_mps', default_value='0.5'),
+        DeclareLaunchArgument('forward_speed_mps', default_value='0.5'),
+        DeclareLaunchArgument('reverse_speed_mps', default_value='0.5'),
         DeclareLaunchArgument('preview_distance_m', default_value='1.5'),
         DeclareLaunchArgument('direction_change_hold_s', default_value='1.0'),
         DeclareLaunchArgument('rectangle_wall_length_m', default_value='1.5'),
@@ -65,7 +73,22 @@ def generate_launch_description():
         DeclareLaunchArgument('parallel_turn_radius_m', default_value='1.12'),
         DeclareLaunchArgument('parallel_end_straight_m', default_value='1.5'),
         DeclareLaunchArgument(
-            'parallel_arc_start_offset_m', default_value='0.5'),
+            'parallel_arc_start_offset_m', default_value='0.25'),
+        DeclareLaunchArgument(
+            'parallel_entry_radius_m', default_value='2.24',
+            description=(
+                'Radius of only the entry/front arc (SINGLE_ARC_REVERSE, '
+                'backing into the bay) -- independent of '
+                'parallel_turn_radius_m, which keeps sizing the rear arc '
+                'used by the full-S passes. 0.0 = same as turn_radius_m')),
+        DeclareLaunchArgument(
+            'parallel_entry_straight_m', default_value='2.0',
+            description='Straight length of the entry line-arc-line (backing in)'),
+        DeclareLaunchArgument(
+            'parallel_opposite_straight_m', default_value='1.0',
+            description=(
+                'Straight length of the forward nudge that follows the '
+                'entry (OPPOSITE_ARC_FORWARD)')),
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument(
             'logging', default_value='true',
@@ -139,7 +162,13 @@ def generate_launch_description():
                     parallel_end_straight_m, value_type=float),
                 'parallel_arc_start_offset_m': ParameterValue(
                     parallel_arc_start_offset_m, value_type=float),
-                'parallel_arc_angle_deg': 45.0,
+                'parallel_arc_angle_deg': 35.0,
+                'parallel_entry_radius_m': ParameterValue(
+                    parallel_entry_radius_m, value_type=float),
+                'parallel_entry_straight_m': ParameterValue(
+                    parallel_entry_straight_m, value_type=float),
+                'parallel_opposite_straight_m': ParameterValue(
+                    parallel_opposite_straight_m, value_type=float),
             }],
         ),
         Node(
