@@ -32,6 +32,13 @@ ros2 launch adas_mgm REAL_VEHICLE_indoor_traffic_stop.launch.py \
 
 별도 터미널에서 `/scan`, `/perception/lane_path`, `/perception/traffic_stop`,
 `/adas/target_ref`, `/vehicle/vector`가 수신되는지 확인한 다음 출발한다.
+주행 전에는 차량을 정지한 채 신호등과 정지선을 카메라에 보여주고,
+아래 출력에서 `red_active: true`와 `stopline_detected: true`가 둘 다 실제로
+한 번 이상 확인되어야 한다. 둘 중 하나라도 안 나오면 주행하지 않는다.
+
+```bash
+ros2 topic echo /perception/traffic_stop
+```
 
 ```bash
 ros2 run adas_mgm go --skip-gps --skip-avoid --require-traffic
