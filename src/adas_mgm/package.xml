@@ -27,6 +27,7 @@
   <exec_depend>stack_estop</exec_depend>
   <exec_depend>stack_gps</exec_depend>
   <exec_depend>stack_lane</exec_depend>
+  <exec_depend>stack_parking</exec_depend>
   <exec_depend>bridge_dspace</exec_depend>
   <exec_depend>ydlidar_ros2_driver</exec_depend>
   <exec_depend>rosbag2</exec_depend>

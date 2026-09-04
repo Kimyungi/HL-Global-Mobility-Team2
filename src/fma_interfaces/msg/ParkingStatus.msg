@@ -6,3 +6,11 @@ bool path_blocked       # 경로 침범(동적) → parking 스테이트에서 �
 bool done               # 주차 완료 → parking→lane 복귀
 RefPoint[] points       # 주차 경로
 float32 v_suggest       # [m/s] 주차 진행 권장 속도 (후진 = 음수)
+
+# Latest LiDAR SLAM pose delta. The translation is expressed in the previous
+# vehicle frame and held between 10Hz localization samples for MGM's 100Hz
+# TargetRef publication. First valid sample: zero delta with update=1.
+float64 dx
+float64 dy
+float64 dyaw
+uint64 update

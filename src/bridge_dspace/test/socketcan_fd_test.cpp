@@ -135,18 +135,20 @@ int main()
     std::memcpy(&upd, rx.data + 56, sizeof(upd));
     check(upd == 42, "update 필드 보존 (오프셋 56)");
   }
-  check(stateUsesGpsDelta(0), "LANE(camera)는 GPS delta 사용");
-  check(stateUsesGpsDelta(1), "WAYPOINT(GPS)는 GPS delta 사용");
-  check(!stateUsesGpsDelta(2), "AVOID는 GPS delta 미사용");
-  check(!stateUsesGpsDelta(3), "PARKING은 GPS delta 미사용");
-  check(stateUsesGpsDelta(4), "TRAFFIC은 lane 경로이므로 GPS delta 사용");
+  check(stateUsesPoseDelta(0), "LANE(camera)는 GPS delta 사용");
+  check(stateUsesPoseDelta(1), "WAYPOINT(GPS)는 GPS delta 사용");
+  check(!stateUsesPoseDelta(2), "AVOID는 pose delta 미사용");
+  check(stateUsesPoseDelta(3), "PARKING은 LiDAR pose delta 사용");
+  check(stateUsesPoseDelta(4), "TRAFFIC은 lane 경로이므로 GPS delta 사용");
   {
-    GpsDeltaUpdateGate gate;
+    PoseDeltaUpdateGate gate;
     check(gate.shouldApply(0, 42), "LANE의 새 update는 1회 적용");
     check(!gate.shouldApply(0, 42), "LANE의 반복 update는 재적용 금지");
     check(gate.shouldApply(1, 43), "WAYPOINT의 다음 update는 적용");
     check(!gate.shouldApply(2, 44), "AVOID update는 적용 금지");
-    check(!gate.shouldApply(3, 44), "PARKING update는 적용 금지");
+    check(gate.shouldApply(3, 44), "PARKING의 LiDAR update는 적용");
+    check(!gate.shouldApply(3, 44), "PARKING의 반복 update는 재적용 금지");
+    check(gate.shouldApply(1, 44), "pose 출처 상태 전환은 같은 update여도 적용");
   }
   {
     VehFeedbackFdPayload fb{};

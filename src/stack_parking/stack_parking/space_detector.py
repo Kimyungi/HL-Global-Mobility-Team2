@@ -15,6 +15,9 @@ MODE_PARALLEL = 'parallel'
 MODE_PERPENDICULAR = 'perpendicular'
 SIDE_LEFT = 'left'
 SIDE_RIGHT = 'right'
+# Search both sides and take whichever gap is encountered first (smallest
+# start_x_lane) — the caller doesn't have to know which side the space is on.
+SIDE_AUTO = 'auto'
 
 
 @dataclass
@@ -42,6 +45,15 @@ class SpaceDetectorConfig:
     candidate_max_behind_m: float = 2.5
     stable_frames: int = 3
     stable_edge_tolerance_m: float = 0.18
+    # A ㄷ/U-shaped bay is one *connected* wall (both arms + back wall meet
+    # at the corners) — boundary-band points get grouped into 2D-connected
+    # blobs first (real x/y adjacency, not just x) so an unrelated object
+    # sitting at a similar lateral distance elsewhere doesn't fuse into the
+    # same "wall" the way pure x-axis banding would. Each blob's near-mouth
+    # slice (points within this depth of boundary_near_m) is then clustered
+    # by x alone — that still splits the two arm bases apart even though
+    # the whole ㄷ is one blob, because the mouth itself has no points.
+    mouth_slice_depth_m: float = 0.4
 
 
 @dataclass(frozen=True)
@@ -81,13 +93,16 @@ class ParkingSpaceDetector:
     def __init__(self, config: Optional[SpaceDetectorConfig] = None):
         self.config = config or SpaceDetectorConfig()
         self._last_candidate: Optional[_Candidate] = None
+        self._last_side: Optional[str] = None
         self._stable_count = 0
 
     def reset(self) -> None:
         self._last_candidate = None
+        self._last_side = None
         self._stable_count = 0
 
-    def _clusters(self, x_values: np.ndarray) -> list[tuple[float, float, int]]:
+    def _group_by_x(self, x_values: np.ndarray) -> list[list[float]]:
+        """1D grouping by ``cluster_join_gap_m``, before any size filter."""
         if len(x_values) == 0:
             return []
         # Quantization prevents a dense wall from dominating while preserving
@@ -99,8 +114,13 @@ class ParkingSpaceDetector:
                 groups[-1].append(float(value))
             else:
                 groups.append([float(value)])
+        return groups
+
+    def _clusters(self, x_values: np.ndarray) -> list[tuple[float, float, int]]:
+        if len(x_values) == 0:
+            return []
         result: list[tuple[float, float, int]] = []
-        for group in groups:
+        for group in self._group_by_x(x_values):
             span = group[-1] - group[0]
             raw_count = int(np.count_nonzero(
                 (x_values >= group[0] - 0.03) & (x_values <= group[-1] + 0.03)))
@@ -109,6 +129,115 @@ class ParkingSpaceDetector:
                 and raw_count >= self.config.cluster_min_points
             ):
                 result.append((group[0], group[-1], raw_count))
+        return result
+
+    def _mouth_clusters(
+        self, boundary: np.ndarray, side_distance: np.ndarray,
+    ) -> list[tuple[float, float, int]]:
+        """Wall segments at the gap's mouth, 2D-blob-aware.
+
+        A ㄷ/U-shaped bay is *one* connected wall — both arms and the back
+        wall meet at the corners. Plain x-axis clustering (``_clusters``)
+        would either merge that whole connected wall with an unrelated
+        object sitting at a similar lateral distance elsewhere (nothing
+        stops x-only banding from bridging across y), or, if it doesn't,
+        still can't split "one connected wall" into the two arms needed to
+        find the gap between them.
+
+        Fix: cluster boundary points into real 2D-connected blobs first
+        (union-find over a grid, cell size = cluster_join_gap_m — a
+        distant clutter blob at a similar lateral distance no longer
+        merges with the arm just because x-banding ignored the y gap
+        between them). *Then*, within each blob, take only the points
+        within ``mouth_slice_depth_m`` of ``boundary_near_m`` (the slice
+        right at the opening) and cluster *that* by x — even a single
+        connected ㄷ blob still splits into two segments here, because the
+        open mouth itself has no points at all at that depth.
+        """
+        if len(boundary) == 0:
+            return []
+        coords = np.column_stack((boundary[:, 0], side_distance))
+        gap = self.config.cluster_join_gap_m
+        gap2 = gap * gap
+        # Bucket by a gap-sized grid for candidate lookup, but still verify
+        # the *actual* Euclidean distance before unioning — two points in
+        # diagonally adjacent cells can be up to ~2*gap*sqrt(2) apart, well
+        # past the intended join distance, and this data has real near-misses
+        # at almost exactly that scale (an unrelated object's edge sitting
+        # close to but not touching an arm's base).
+        cell = max(gap, 1.0e-3)
+        keys = np.floor(coords / cell).astype(np.int64)
+        cell_to_indices: dict[tuple[int, int], list[int]] = {}
+        for i, key in enumerate(map(tuple, keys)):
+            cell_to_indices.setdefault(key, []).append(i)
+
+        parent = list(range(len(boundary)))
+
+        def find(a: int) -> int:
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+
+        def union(a: int, b: int) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
+
+        for (cx, cy), idxs in cell_to_indices.items():
+            for i in idxs[1:]:
+                union(idxs[0], i)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    neighbor = cell_to_indices.get((cx + dx, cy + dy))
+                    if not neighbor:
+                        continue
+                    for i in idxs:
+                        if find(i) in {find(j) for j in neighbor}:
+                            continue
+                        for j in neighbor:
+                            d2 = float(np.sum((coords[i] - coords[j]) ** 2))
+                            if d2 <= gap2:
+                                union(i, j)
+                                break
+
+        blobs: dict[int, list[int]] = {}
+        for i in range(len(boundary)):
+            blobs.setdefault(find(i), []).append(i)
+
+        near_limit = self.config.boundary_near_m + self.config.mouth_slice_depth_m
+        result: list[tuple[float, float, int]] = []
+        for idxs in blobs.values():
+            member = np.asarray(idxs, dtype=np.int64)
+            mouth = member[side_distance[member] <= near_limit]
+            if len(mouth) < self.config.cluster_min_points:
+                continue
+            mouth_x = boundary[mouth, 0]
+            # A whole ㄷ (both arms + back wall) is one blob — group its
+            # mouth-slice x-values by cluster_join_gap_m *before* deciding
+            # validity, so the two arm bases (far apart in x) are judged
+            # separately rather than as a single min..max span across both.
+            for group in self._group_by_x(mouth_x):
+                span = group[-1] - group[0]
+                raw_count = int(np.count_nonzero(
+                    (mouth_x >= group[0] - 0.03) & (mouth_x <= group[-1] + 0.03)))
+                if raw_count < self.config.cluster_min_points:
+                    continue
+                if span >= self.config.cluster_min_span_m:
+                    result.append((group[0], group[-1], raw_count))
+                    continue
+                # Narrower than cluster_min_span_m in x — expected for a ㄷ
+                # arm, which runs *along* the depth axis (near-constant x,
+                # large y), not along the lane. The blob's own depth (not
+                # this mouth slice) is the right "is this actually a wall"
+                # signal for that case.
+                blob_depth = float(
+                    side_distance[member].max() - side_distance[member].min())
+                if blob_depth >= self.config.cluster_min_span_m:
+                    result.append((group[0], group[-1], raw_count))
+        result.sort(key=lambda item: item[0])
         return result
 
     def _back_wall_distance(
@@ -150,11 +279,12 @@ class ParkingSpaceDetector:
             return None
         side_sign = 1.0 if side == SIDE_LEFT else -1.0
         side_distance = side_sign * lane_points[:, 1]
-        boundary = lane_points[
+        boundary_mask = (
             (side_distance >= self.config.boundary_near_m)
             & (side_distance <= self.config.boundary_far_m)
-        ]
-        clusters = self._clusters(boundary[:, 0])
+        )
+        boundary = lane_points[boundary_mask]
+        clusters = self._mouth_clusters(boundary, side_distance[boundary_mask])
         minimum = (
             self.config.parallel_min_length_m
             if mode == MODE_PARALLEL
@@ -225,21 +355,31 @@ class ParkingSpaceDetector:
     ) -> Optional[ParkingSpace]:
         if mode not in (MODE_PARALLEL, MODE_PERPENDICULAR):
             raise ValueError(f'unsupported parking mode: {mode}')
-        if side not in (SIDE_LEFT, SIDE_RIGHT):
+        if side not in (SIDE_LEFT, SIDE_RIGHT, SIDE_AUTO):
             raise ValueError(f'unsupported parking side: {side}')
+        sides_to_search = (SIDE_LEFT, SIDE_RIGHT) if side == SIDE_AUTO else (side,)
 
         lane_points = points_in_frame(map_points, lane_pose_map)
         current_lane = points_in_frame(
             np.asarray([[current_pose_map.x, current_pose_map.y]]), lane_pose_map)[0]
-        candidate = self._find_candidate(
-            lane_points, float(current_lane[0]), mode, side)
-        if candidate is None:
+        per_side = [
+            (s, self._find_candidate(lane_points, float(current_lane[0]), mode, s))
+            for s in sides_to_search
+        ]
+        found = [(s, c) for s, c in per_side if c is not None]
+        if not found:
             self._last_candidate = None
+            self._last_side = None
             self._stable_count = 0
             return None
+        # Whichever gap is encountered first in the driving direction wins,
+        # even if the other side also has a (farther) candidate.
+        side, candidate = min(found, key=lambda item: item[1].start_x)
 
-        if self._last_candidate is not None and (
-            abs(candidate.start_x - self._last_candidate.start_x)
+        if (
+            self._last_candidate is not None
+            and self._last_side == side
+            and abs(candidate.start_x - self._last_candidate.start_x)
             <= self.config.stable_edge_tolerance_m
             and abs(candidate.end_x - self._last_candidate.end_x)
             <= self.config.stable_edge_tolerance_m
@@ -248,6 +388,7 @@ class ParkingSpaceDetector:
         else:
             self._stable_count = 1
         self._last_candidate = candidate
+        self._last_side = side
         if self._stable_count < self.config.stable_frames:
             return None
 

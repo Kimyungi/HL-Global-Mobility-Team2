@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Wall-gap reverse-parking test logger — records the fixed valid point,
+the built reference path, and every commanded-vs-actual sample.
+
+Run alongside wall_gap_test.launch.py (enable_control:=true). Reads only,
+no ownership of any topic — safe to start/stop independently of the launch.
+
+Written once per run (as soon as they appear on /wall_gap/markers):
+  valid_point.csv     — side, map_x, map_y, width_m, near_distance_m
+  reference_path.csv  — segment, index, map_x, map_y  (path_straight1,
+                         path_arc, path_straight2, path_points rows)
+  exit_reference_path.csv — the second, centreline-mirrored forward path
+
+Written continuously, one row every ``log_period_ms`` (default 10ms) on a
+fixed ROS timer — not off either topic's own callback, so row spacing stays
+uniform regardless of /adas/target_ref (100Hz) or /vehicle/vector arrival
+jitter/drops. Each row holds the latest cached sample of both (same "hold
+between updates" convention the CAN protocol itself uses, CLAUDE.md §5.8).
+When the forward-exit preview reaches its final end point, the controller
+publishes ``exit_path_end_stop``; the logger then flushes/closes all files and
+shuts down automatically:
+  ticks.csv — stamp_s, state, stop_count, pose_x, pose_y, pose_yaw,
+              ref_x, ref_y, ref_yaw, ref_curvature, target_str,
+              act_str, v_ref, act_v, dx, dy, dyaw
+
+``stop_count`` increments on every v_ref rising-edge-to-zero (the moment the
+vehicle actually stops, not a named status string) -- user directive,
+2026-09-04. Each stop also dumps the surrounding /parking/local_map to its
+own ``map_snapshot_stop<N>.csv`` in the same run directory. pose_x/y/yaw
+come from /parking/slam_pose.
+
+Files land in <repo_root>/log/wall_gap_reverse_test/<timestamp>/ (not
+/tmp — the scratchpad is wiped on session restart, same reasoning as
+bridge_dspace/tools/camera_traffic_ref_test.py).
+
+Usage:
+    python3 src/stack_parking/tools/wall_gap_logger.py
+    python3 src/stack_parking/tools/wall_gap_logger.py --ros-args -p out_dir:=/custom/path
+    python3 src/stack_parking/tools/wall_gap_logger.py --ros-args -p log_period_ms:=20
+"""
+
+from __future__ import annotations
+
+import csv
+import math
+import time
+from pathlib import Path
+
+import rclpy
+from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import PointCloud2
+from sensor_msgs_py import point_cloud2
+from std_msgs.msg import String
+from visualization_msgs.msg import MarkerArray
+
+from fma_interfaces.msg import TargetRef, VehicleVector
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_LOG_ROOT = REPO_ROOT / "log" / "wall_gap_reverse_test"
+
+# Matches wall_gap_node.py's candidate marker color for clear==True
+# (0.1, 0.9, 0.2) — see _publish_markers's candidates loop.
+_CLEAR_GREEN = (0.1, 0.9, 0.2)
+_COLOR_TOL = 0.02
+
+
+class WallGapLogger(Node):
+
+    def __init__(self) -> None:
+        super().__init__('wall_gap_logger')
+        self.declare_parameter('out_dir', '')
+        self.declare_parameter('log_period_ms', 10.0)
+
+        out_dir_param = str(self.get_parameter('out_dir').value).strip()
+        if out_dir_param:
+            self.out_dir = Path(out_dir_param).expanduser()
+        else:
+            stamp = time.strftime('%Y%m%d_%H%M%S')
+            self.out_dir = DEFAULT_LOG_ROOT / stamp
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+
+        self.valid_point_written = False
+        self.reference_path_written = False
+        self.exit_reference_path_written = False
+
+        self.ticks_path = self.out_dir / 'ticks.csv'
+        self.ticks_file = open(self.ticks_path, 'w', newline='')
+        self.ticks_writer = csv.writer(self.ticks_file)
+        self.ticks_writer.writerow([
+            'stamp_s', 'state', 'stop_count', 'pose_x', 'pose_y', 'pose_yaw',
+            'ref_x', 'ref_y', 'ref_yaw', 'ref_curvature',
+            'target_str', 'act_str', 'v_ref', 'act_v', 'dx', 'dy', 'dyaw',
+        ])
+        self.ticks_file.flush()
+        self.tick_count = 0
+
+        self.latest_ref: TargetRef | None = None
+        self.latest_veh: VehicleVector | None = None
+        self.latest_state = 'idle'
+        self.latest_pose: PoseStamped | None = None
+        self.latest_map: PointCloud2 | None = None
+        # Stop counter: incremented on every v_ref rising-edge-to-zero,
+        # independent of which named status string it lands in (user
+        # directive, 2026-09-04). Each edge also snapshots the map.
+        self.stop_count = 0
+        self.was_moving = False
+        self.logging_finished = False
+
+        self.create_subscription(
+            MarkerArray, '/wall_gap/markers', self._on_markers, 5)
+        self.create_subscription(
+            TargetRef, '/adas/target_ref', self._on_target_ref, 5)
+        self.create_subscription(
+            VehicleVector, '/vehicle/vector', self._on_vehicle_vector,
+            qos_profile_sensor_data)
+        self.create_subscription(
+            String, '/wall_gap/state', self._on_state, 10)
+        self.create_subscription(
+            PoseStamped, '/parking/slam_pose', self._on_pose,
+            qos_profile_sensor_data)
+        self.create_subscription(
+            PointCloud2, '/parking/local_map', self._on_map,
+            qos_profile_sensor_data)
+
+        # Fixed-period timer rather than writing off the /vehicle/vector
+        # callback: guarantees a uniform 10ms row spacing (user directive,
+        # 2026-09-03) independent of that topic's actual arrival jitter or
+        # any dropped frames -- each row just holds the latest cached sample
+        # of each topic, same "hold between updates" convention the CAN
+        # protocol itself uses (CLAUDE.md 5.8).
+        period_s = max(1.0, float(self.get_parameter('log_period_ms').value)) / 1000.0
+        self.log_timer = self.create_timer(period_s, self._on_log_tick)
+
+        self.get_logger().info(
+            'wall_gap_logger writing to %s (period=%.0fms)'
+            % (self.out_dir, period_s * 1000.0))
+
+    def _on_markers(self, msg: MarkerArray) -> None:
+        if not self.valid_point_written:
+            for marker in msg.markers:
+                if marker.ns != 'candidates':
+                    continue
+                color = (marker.color.r, marker.color.g, marker.color.b)
+                if all(abs(a - b) <= _COLOR_TOL for a, b in zip(color, _CLEAR_GREEN)):
+                    path = self.out_dir / 'valid_point.csv'
+                    with open(path, 'w', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(['map_x', 'map_y'])
+                        writer.writerow([
+                            marker.pose.position.x, marker.pose.position.y])
+                    self.valid_point_written = True
+                    self.get_logger().info(
+                        'valid point logged: (%.3f, %.3f) -> %s'
+                        % (marker.pose.position.x, marker.pose.position.y, path))
+                    break
+
+        if not self.reference_path_written:
+            segment_ns = ('path_straight1', 'path_arc', 'path_straight2')
+            rows = []
+            for marker in msg.markers:
+                if marker.ns in segment_ns:
+                    for i, point in enumerate(marker.points):
+                        rows.append((marker.ns, i, point.x, point.y))
+                elif marker.ns == 'path_points':
+                    label = {0: 'P0', 1: 'E', 2: 'S', 3: 'goal'}.get(
+                        marker.id, str(marker.id))
+                    rows.append((
+                        'path_points:' + label, 0,
+                        marker.pose.position.x, marker.pose.position.y))
+            if rows:
+                path = self.out_dir / 'reference_path.csv'
+                with open(path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['segment', 'index', 'map_x', 'map_y'])
+                    writer.writerows(rows)
+                self.reference_path_written = True
+                self.get_logger().info(
+                    'reference path logged: %d points -> %s' % (len(rows), path))
+
+        if not self.exit_reference_path_written:
+            segment_ns = (
+                'exit_path_straight2', 'exit_path_arc', 'exit_path_straight1')
+            rows = []
+            for marker in msg.markers:
+                if marker.ns in segment_ns:
+                    for i, point in enumerate(marker.points):
+                        rows.append((marker.ns, i, point.x, point.y))
+                elif marker.ns == 'exit_path_points':
+                    label = {0: 'start', 1: 'P0', 2: 'E', 3: 'end'}.get(
+                        marker.id, str(marker.id))
+                    rows.append((
+                        'exit_path_points:' + label, 0,
+                        marker.pose.position.x, marker.pose.position.y))
+            if rows:
+                path = self.out_dir / 'exit_reference_path.csv'
+                with open(path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['segment', 'index', 'map_x', 'map_y'])
+                    writer.writerows(rows)
+                self.exit_reference_path_written = True
+                self.get_logger().info(
+                    'exit reference path logged: %d points -> %s'
+                    % (len(rows), path))
+
+    def _on_target_ref(self, msg: TargetRef) -> None:
+        self.latest_ref = msg
+
+    def _on_vehicle_vector(self, msg: VehicleVector) -> None:
+        self.latest_veh = msg
+
+    def _on_pose(self, msg: PoseStamped) -> None:
+        self.latest_pose = msg
+
+    def _on_map(self, msg: PointCloud2) -> None:
+        self.latest_map = msg
+
+    def _save_map_snapshot(self) -> None:
+        """Dump the current /parking/local_map to its own CSV at a stop."""
+        if self.latest_map is None:
+            return
+        points = point_cloud2.read_points_numpy(
+            self.latest_map, field_names=('x', 'y'), skip_nans=True)
+        path = self.out_dir / ('map_snapshot_stop%d.csv' % self.stop_count)
+        with open(path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['map_x', 'map_y'])
+            if points.dtype.names:
+                writer.writerows(zip(points['x'].tolist(), points['y'].tolist()))
+            else:
+                writer.writerows(points.reshape((-1, 2)).tolist())
+        self.get_logger().info(
+            'stop #%d map snapshot: %d points -> %s'
+            % (self.stop_count, len(points), path))
+
+    def _on_state(self, msg: String) -> None:
+        self.latest_state = msg.data
+        if self.logging_finished or msg.data != 'exit_path_end_stop':
+            return
+        self.logging_finished = True
+        self.log_timer.cancel()
+        if not self.ticks_file.closed:
+            self.ticks_file.flush()
+            self.ticks_file.close()
+        self.get_logger().info(
+            'exit preview reached the reference-path end — logging complete')
+        # End the standalone logger process only after every buffered row has
+        # been committed. The controller keeps publishing its zero-speed final
+        # state independently.
+        if rclpy.ok():
+            rclpy.shutdown()
+
+    def _on_log_tick(self) -> None:
+        if self.logging_finished:
+            return
+        veh = self.latest_veh
+        if veh is None:
+            return
+        ref = self.latest_ref
+        point = ref.ref_points[0] if ref is not None and ref.ref_points else None
+        msg = veh
+
+        v_ref = ref.v_ref if ref is not None else None
+        is_moving = v_ref is not None and abs(v_ref) > 1.0e-6
+        if self.was_moving and not is_moving:
+            self.stop_count += 1
+            self._save_map_snapshot()
+        self.was_moving = is_moving
+
+        pose = self.latest_pose
+        if pose is not None:
+            q = pose.pose.orientation
+            pose_x = pose.pose.position.x
+            pose_y = pose.pose.position.y
+            pose_yaw = math.atan2(
+                2.0 * (q.w * q.z + q.x * q.y),
+                1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        else:
+            pose_x = pose_y = pose_yaw = ''
+
+        self.ticks_writer.writerow([
+            self.get_clock().now().nanoseconds * 1.0e-9,
+            self.latest_state,
+            self.stop_count,
+            pose_x, pose_y, pose_yaw,
+            point.x if point else '',
+            point.y if point else '',
+            point.yaw if point else '',
+            point.curvature if point else '',
+            msg.str_ref,
+            msg.str,
+            v_ref if v_ref is not None else '',
+            msg.v,
+            ref.dx if ref is not None else '',
+            ref.dy if ref is not None else '',
+            ref.dyaw if ref is not None else '',
+        ])
+        self.tick_count += 1
+        if self.tick_count % 500 == 0:
+            self.ticks_file.flush()
+            self.get_logger().info('%d ticks logged' % self.tick_count)
+
+    def destroy_node(self) -> bool:
+        if not self.ticks_file.closed:
+            self.ticks_file.flush()
+            self.ticks_file.close()
+        return super().destroy_node()
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = WallGapLogger()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        try:
+            node.destroy_node()
+        except (KeyboardInterrupt, ExternalShutdownException):
+            pass
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

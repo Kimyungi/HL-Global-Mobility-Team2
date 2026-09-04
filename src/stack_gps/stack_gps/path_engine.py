@@ -215,7 +215,8 @@ class PathEngine:
                  lookahead_m=0.0, rate_damp_s=None, full_cross_m=None,
                  target_max_m=None, target_min_m=None, e_lpf_s=None,
                  curve_ff=None, curve_margin=None,
-                 stop_ranges=(), avoid_ranges=(), gps_only_ranges=()):
+                 stop_ranges=(), avoid_ranges=(), gps_only_ranges=(),
+                 parallel_parking_ranges=()):
         """lookahead_m: ref 시작점을 최근접점이 아니라 이만큼 전방의 트랙
         점으로 민다. dSPACE는 첫 점만 목표로 쓰므로(stack_avoid 실측 주석)
         최근접점(차 옆구리, x≈0)을 주면 도달 곡률 κ=2y/(x²+y²)가 폭주해
@@ -230,6 +231,13 @@ class PathEngine:
         self.n_points = n_points
         self.accel_ranges = list(accel_ranges)
         self.parking_ranges = list(parking_ranges)
+        self.parallel_parking_ranges = list(parallel_parking_ranges)
+        for first in self.parking_ranges:
+            for second in self.parallel_parking_ranges:
+                if max(first[0], second[0]) <= min(first[1], second[1]):
+                    raise ValueError(
+                        'perpendicular and parallel parking ranges overlap: '
+                        f'{first} vs {second}')
         # 지정 정지 지점 / 회피 허용 구간 (2026-08-18). accel·parking과 같은
         # 인덱스 구간이지만 정지 쪽은 **구간 번호**를 내보낸다 — MGM이 지점별로
         # "이미 정지함"을 기억해야 하기 때문 (GpsPath.msg stop_zone 주석).
@@ -549,10 +557,16 @@ class PathEngine:
                     min(self.MAX_TARGET_BEARING_RAD, b))
             points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
 
+        perpendicular_parking = self._in_ranges(idx, self.parking_ranges)
+        parallel_parking = self._in_ranges(
+            idx, self.parallel_parking_ranges)
         return {
             "points": points,
             "accel_zone": self._in_ranges(idx, self.accel_ranges),
-            "parking_zone": self._in_ranges(idx, self.parking_ranges),
+            "parking_zone": perpendicular_parking or parallel_parking,
+            "parking_mode": (
+                "perpendicular" if perpendicular_parking
+                else "parallel" if parallel_parking else None),
             "stop_zone": self._zone_id(idx, self.stop_ranges),
             "avoid_zone": self._in_ranges(idx, self.avoid_ranges),
             "gps_only_zone": self._in_ranges(idx, self.gps_only_ranges),

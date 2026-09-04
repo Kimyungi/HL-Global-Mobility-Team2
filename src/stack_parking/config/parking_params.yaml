@@ -25,7 +25,9 @@
       stale_timeout_s: 0.35
       queue_size: 5
       min_range_m: 0.15
-      max_range_m: 12.0
+      # Parking-only cutoff. /unified_lidar/scan remains available at 12 m
+      # for avoidance, E-stop, and other shared consumers.
+      max_range_m: 4.0
       # Same rear-axle body box and margin as fusion_params.yaml.
       self_filter_margin_m: 0.02
 
@@ -64,6 +66,23 @@
       minimum_map_points: 80
     # Mapping starts at node startup and normally survives a parking trigger.
     reset_map_on_mission_start: false
+
+    # Endpoint clouds contain no explicit no-return rays. Free-space clearing
+    # therefore requires a farther measured endpoint; empty angular bins are
+    # treated as unknown. Padding lets a thin foreground cone occlude nearby
+    # bins too, preventing aligned cones behind it from being erased.
+    icp.freespace_clear_enabled: true
+    icp.freespace_clear_radius_m: 4.0
+    icp.freespace_bin_width_deg: 1.0
+    icp.freespace_margin_m: 0.02
+    icp.freespace_occlusion_padding_deg: 1.5
+    # Voxel occupancy state: new cells are tentative, become confirmed after
+    # three observations, and confirmed-free rays remove them after 1/3 misses.
+    # Missing or nearer (occluding) rays do not count as misses.
+    icp.observation_match_radius_m: 0.06
+    icp.tentative_confirm_hits: 3
+    icp.tentative_delete_misses: 1
+    icp.confirmed_delete_misses: 3
 
     # Existing GpsPath only has parking_zone (no type). The default below is
     # used on that rising edge. A GPS node that decides type should publish

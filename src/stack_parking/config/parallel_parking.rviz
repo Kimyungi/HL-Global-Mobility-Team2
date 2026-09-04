@@ -1,0 +1,49 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: local_map
+      Topic:
+        Value: /parking/local_map
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+      Color: 200; 200; 200
+      Size (Pixels): 3
+      Style: Points
+      Enabled: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: parallel_parking
+      Topic:
+        Value: /parallel_parking/markers
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+      Enabled: true
+    - Class: rviz_default_plugins/Pose
+      Name: vehicle_pose
+      Topic:
+        Value: /parking/slam_pose
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+      Shape: Arrow
+      Color: 255; 0; 0
+      Enabled: true
+  Global Options:
+    Fixed Frame: parking_map
+    Background Color: 20; 20; 20
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Scale: 60
+      Target Frame: <Fixed Frame>

@@ -181,7 +181,11 @@ class StackGpsNode(Node):
         self.declare_parameter('imu_publish_stale_s', 0.25)
         self.declare_parameter('fusion_alpha', 0.1)   # offset 저역통과 이득
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
-        self.declare_parameter('parking_zone_ranges', [0])  # 기본 [0] = 미설정(쌍 안 됨)
+        # Legacy parking_zone_ranges now means T/perpendicular parking.
+        # A separate range selects the parallel test case. The two sets must
+        # not overlap because one GPS position must select exactly one mode.
+        self.declare_parameter('parking_zone_ranges', [0])
+        self.declare_parameter('parallel_parking_zone_ranges', [0])
         # ── 트랙 위 지정 구간 (2026-08-18). 위경도 문자열로 받아 시작 시
         # 웨이포인트 인덱스 구간으로 변환한다 (_parse_latlon_spec 주석 참조).
         #   stop_points_latlon : "lat,lon" — 그 지점에서 정지(정지 시간 판단은 MGM).
@@ -217,6 +221,9 @@ class StackGpsNode(Node):
                              'accel_zone_ranges', self.get_logger())
         parking = _pair_ranges(p('parking_zone_ranges').value or [],
                                'parking_zone_ranges', self.get_logger())
+        parallel_parking = _pair_ranges(
+            p('parallel_parking_zone_ranges').value or [],
+            'parallel_parking_zone_ranges', self.get_logger())
 
         pts = load_waypoints_csv(csv_path, log=self.get_logger().warn)
         self.engine = PathEngine(pts, n_points=int(p('n_points').value),
@@ -228,7 +235,8 @@ class StackGpsNode(Node):
                                  target_min_m=float(p('rejoin_target_min_m').value),
                                  e_lpf_s=float(p('rejoin_e_lpf_s').value),
                                  curve_ff=float(p('rejoin_curve_ff').value),
-                                 curve_margin=float(p('rejoin_curve_margin').value))
+                                 curve_margin=float(p('rejoin_curve_margin').value),
+                                 parallel_parking_ranges=parallel_parking)
         self._setup_zones(p)
         self.add_on_set_parameters_callback(self._on_param)
         self.get_logger().info(
@@ -241,7 +249,8 @@ class StackGpsNode(Node):
             f"곡선ff {self.engine.curve_ff:.2f} 곡선당김 {self.engine.curve_margin:.1f}")
         self.get_logger().info(
             f"웨이포인트 {len(pts)}개 로드: {csv_path} "
-            f"(accel {accel or '없음'}, parking {parking or '없음'})")
+            f"(accel {accel or '없음'}, T parking {parking or '없음'}, "
+            f"parallel parking {parallel_parking or '없음'})")
 
         rtcm_host = p('rtcm_host').value
         if rtcm_host.lower() in ('off', 'none'):  # launch 인자는 빈 값 불가
@@ -451,6 +460,12 @@ class StackGpsNode(Node):
             msg.points.append(rp)
         msg.accel_zone = snap['accel_zone']
         msg.parking_zone = snap['parking_zone']
+        msg.parking_mode = (
+            GpsPath.PARKING_PERPENDICULAR
+            if snap['parking_mode'] == 'perpendicular'
+            else GpsPath.PARKING_PARALLEL
+            if snap['parking_mode'] == 'parallel'
+            else GpsPath.PARKING_NONE)
         msg.stop_zone = int(snap['stop_zone'])
         msg.avoid_zone = snap['avoid_zone']
         msg.gps_only_zone = snap['gps_only_zone']

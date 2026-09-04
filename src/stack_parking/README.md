@@ -1,9 +1,8 @@
 # stack_parking — 전·후 LiDAR ICP 주차
 
-옆 RPLiDAR가 빠져도 계속 동작하도록 `multi_lidar_fusion`의 전방
-`/lidar/a1/cloud`와 후방 `/lidar/a2/cloud`만 구독하는 주차 전용 스택이다. 두 토픽은
-extrinsic 적용이 끝난 `base_link` cloud여야 하며, 다른 frame은 조용히 섞지 않고
-거부한다. `adas_mgm`과 `fma_interfaces` 계약은 변경하지 않는다.
+`lidar_fusion_v2`의 4-LiDAR nearest-wins 스캔을 주차 전용 cloud로 변환해
+SLAM·공간 탐지·경로 제어에 사용한다. 주차 결과는 `/perception/parking`으로
+MGM에 넘기며 `/adas/target_ref`는 MGM만 발행한다.
 
 ## 파이프라인
 
@@ -13,7 +12,7 @@ extrinsic 적용이 끝난 `base_link` cloud여야 하며, 다른 frame은 조�
    `VehicleVector.v/str`의 자전거 모델로 ICP prior를 만들고,
    `VehicleVector.x/y/yaw`와 IMU는 사용하지 않는다. 필요 시 RTK FIXED `GpsPath`의 새 delta만
    innovation gate 뒤 x/y drift 보정에 쓴다.
-3. `GpsPath.parking_zone` 상승 에지 또는 문자열 명령에서 평행(1자)/직각(T자),
+3. `GpsPath.parking_zone` 상승 에지와 `parking_mode`에서 평행(1자)/직각(T자),
    좌/우를 결정한다. 양쪽 정적 경계가 있는 gap을 3 frame 연속 확인한다. 직각 주차는 gap 내부 후면
    벽 지지점까지 요구한다.
 4. **LOCALIZATION** — 후축 기준 최소 회전반경 1.15m의 원호 경로를 만들고 차량
@@ -27,14 +26,28 @@ extrinsic 적용이 끝난 `base_link` cloud여야 하며, 다른 frame은 조�
 7. 후방 a2 scan의 보정 거리에서 서로 가까운 5개 이상 ray가 0.20m 이하가 되면
    정지한다. 계획 끝까지 갔는데 이 조건이 없으면 자동 완료하지 않고 0속도로 멈춘다.
 8. 실제 속도가 정지한 뒤 5초 대기하고, 실제 후진해 온 경로를 역순/전진으로
-   재생한다. 끝에서 `done=true`, `space_found=false`를 보내 MGM이 LANE으로 간다.
+   재생한다. 끝에서 `done=true`, `space_found=false`를 보내 MGM이 주차 진입 전
+   주행 모드(LANE 또는 WAYPOINT)로 복귀한다.
 
 `path_blocked`는 계획 당시의 정적 벽·콘에는 쓰지 않는다. 계획 snapshot에 없던
 새 점이 진행 경로 footprint를 2 frame 연속 침범할 때만 true다.
 
 ## 명령
 
-GPS가 주차 형식을 결정할 수 있으면 `/parking/gps_command`에 다음 문자열을 보낸다.
+GPS 웨이포인트 구간으로 주차 형식을 선택한다. 기존
+`parking_zone_ranges`는 T자 주차, `parallel_parking_zone_ranges`는 평행
+주차로 발행된다. 예:
+
+```bash
+ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  waypoint_csv:=<course.csv> parking_enabled:=true \
+  t_parking_zone_ranges:="[120,140]" \
+  parallel_parking_zone_ranges:="[260,285]"
+```
+
+두 구간이 겹치면 잘못된 모드를 고르지 않고 `stack_gps` 기동을 중단한다.
+문자열 명령은 GPS 없는 벤치 테스트용으로 계속 사용할 수 있다.
 
 ```bash
 ros2 topic pub --once /parking/gps_command std_msgs/msg/String \
@@ -43,8 +56,8 @@ ros2 topic pub --once /parking/gps_command std_msgs/msg/String \
   "{data: 'start parallel left'}"
 ```
 
-현재 `GpsPath.msg`에는 `parking_zone` bool만 있고 형식 필드가 없다. 명시 문자열이
-없으면 `parking_params.yaml`의 `gps_default_mode`/`gps_default_side`를 사용한다.
+`parking_mode=NONE`인 기존/recorded `GpsPath` 메시지는
+`parking_params.yaml`의 `gps_default_mode`/`gps_default_side`를 사용해 호환한다.
 
 GPS 없는 단독 시험은 실제 `stack_gps`를 내린 뒤에만 실행한다. 이 launch는 기존
 MGM의 `gps_parking_zone && space_found` 게이트를 통과시키기 위해 test-only
@@ -77,8 +90,9 @@ ros2 topic echo /parking/diagnostics
 
 입력:
 
-- `/lidar/a1/cloud`, `/lidar/a2/cloud` — ICP/endpoint map. 반드시
-  `multi_lidar_fusion`의 `base_link` 센서별 출력. 좌·우 토픽은 구독하지 않는다.
+- `/unified_lidar/scan` → `/parking/nearest_merged_cloud` — 4-LiDAR
+  nearest-wins 통합 입력. 공용 스캔은 12m를 유지하고 주차 노드에서만
+  4m로 필터링한다.
 - `/lidar/a2/scan` — 후방 20cm 완료 조건.
 - `/vehicle/vector` — `v`만 motion prior와 정지 확인에 사용.
 - `/perception/imu` — `stack_gps`가 10Hz로 발행하는 자이로 적분 상대 yaw.
@@ -88,8 +102,9 @@ ros2 topic echo /parking/diagnostics
 
 출력:
 
-- `/perception/parking` — 기존 `ParkingStatus` 계약.
-- `/parking/slam_pose`, `/parking/slam_scan` — SLAM 단계.
+- `/perception/parking` — 기존 경로/속도와 함께 10Hz LiDAR SLAM
+  `dx/dy/dyaw/update`를 전달하는 `ParkingStatus` 계약.
+- `/parking/slam_pose` — 제어용 10Hz pose. `/parking/slam_scan`은 디버그 주기.
 - `/parking/local_map`, `/parking/debug_markers` — mapping/space 단계.
 - `/parking/reference_path`, `/parking/active_path` — map 위 경로 단계.
 - `/parking/pipeline_stage` — `slam|mapping|localization|parking`.

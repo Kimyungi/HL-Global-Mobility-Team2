@@ -42,11 +42,13 @@ from .path_planner import MinimumRadiusParkingPlanner, PlannerConfig
 from .space_detector import (
     MODE_PARALLEL,
     MODE_PERPENDICULAR,
+    SIDE_AUTO,
     SIDE_LEFT,
     SIDE_RIGHT,
     ParkingSpaceDetector,
     SpaceDetectorConfig,
 )
+from .wall_gap_controller import PoseDeltaTracker
 
 
 def _quaternion_z(yaw: float) -> tuple[float, float]:
@@ -78,6 +80,7 @@ class StackParkingNode(Node):
         detector = ParkingSpaceDetector(self._detector_config())
         planner = MinimumRadiusParkingPlanner(self._planner_config())
         self.mission = ParkingMission(detector, planner, self._mission_config())
+        self.pose_delta_tracker = PoseDeltaTracker()
 
         self.latest_vehicle: Optional[VehicleVector] = None
         self.latest_rear_clearance_m: Optional[float] = None
@@ -91,6 +94,7 @@ class StackParkingNode(Node):
         self.last_output: Optional[MissionOutput] = None
         self.latest_front_cloud_s = -math.inf
         self.latest_rear_cloud_s = -math.inf
+        self.latest_merged_cloud: Optional[StampedCloud] = None
         self.latest_imu_s = -math.inf
         self.latest_vehicle_s = -math.inf
         self.last_pair_skew_s = math.inf
@@ -123,15 +127,32 @@ class StackParkingNode(Node):
             self.manual_gate_pub = self.create_publisher(
                 GpsPath, '/perception/gps_path', 1)
 
+        # merged_cloud_topic (empty by default): when set, this single
+        # already-unified 4-sensor cloud (overlap resolved upstream, e.g.
+        # lidar_fusion_v2's nearest-per-bin /unified_lidar/scan) replaces the
+        # front/rear pairer entirely — front_cloud_topic/rear_cloud_topic are
+        # not subscribed in that mode. See §CLAUDE.md Parking pipeline note:
+        # front/rear-only was chosen because side RPLiDARs (b1/b2) kept
+        # dropping USB power; merged mode assumes that is now resolved.
+        merged_topic = str(self._p('merged_cloud_topic'))
+        self._merged_mode = bool(merged_topic)
         front_topic = str(self.get_parameter('front_cloud_topic').value)
         rear_cloud_topic = str(self.get_parameter('rear_cloud_topic').value)
         rear_topic = str(self.get_parameter('rear_scan_topic').value)
-        self.front_cloud_sub = self.create_subscription(
-            PointCloud2, front_topic, self._on_front_cloud,
-            qos_profile_sensor_data)
-        self.rear_cloud_sub = self.create_subscription(
-            PointCloud2, rear_cloud_topic, self._on_rear_cloud,
-            qos_profile_sensor_data)
+        self.merged_cloud_sub = None
+        self.front_cloud_sub = None
+        self.rear_cloud_sub = None
+        if self._merged_mode:
+            self.merged_cloud_sub = self.create_subscription(
+                PointCloud2, merged_topic, self._on_merged_cloud,
+                qos_profile_sensor_data)
+        else:
+            self.front_cloud_sub = self.create_subscription(
+                PointCloud2, front_topic, self._on_front_cloud,
+                qos_profile_sensor_data)
+            self.rear_cloud_sub = self.create_subscription(
+                PointCloud2, rear_cloud_topic, self._on_rear_cloud,
+                qos_profile_sensor_data)
         self.rear_sub = self.create_subscription(
             LaserScan, rear_topic, self._on_rear_scan, qos_profile_sensor_data)
         self.vehicle_sub = self.create_subscription(
@@ -154,12 +175,19 @@ class StackParkingNode(Node):
         slam_rate = float(self._p('slam_rate_hz'))
         self.slam_timer = self.create_timer(
             1.0 / max(1.0, slam_rate), self._process_slam)
-        self.get_logger().info(
-            'front/rear ICP parking ready: front=%s rear_cloud=%s rear_scan=%s '
-            'slam=%.1fHz stage=%s manual=/parking/manual_command '
-            '(start perpendicular right | start parallel right | cancel)'
-            % (front_topic, rear_cloud_topic, rear_topic, slam_rate,
-               self.pipeline.stage.value))
+        if self._merged_mode:
+            self.get_logger().info(
+                'merged-cloud ICP parking ready: merged=%s rear_scan=%s '
+                'slam=%.1fHz stage=%s manual=/parking/manual_command '
+                '(start perpendicular right | start parallel right | cancel)'
+                % (merged_topic, rear_topic, slam_rate, self.pipeline.stage.value))
+        else:
+            self.get_logger().info(
+                'front/rear ICP parking ready: front=%s rear_cloud=%s rear_scan=%s '
+                'slam=%.1fHz stage=%s manual=/parking/manual_command '
+                '(start perpendicular right | start parallel right | cancel)'
+                % (front_topic, rear_cloud_topic, rear_topic, slam_rate,
+                   self.pipeline.stage.value))
 
     def _declare_parameters(self) -> None:
         values = {
@@ -167,6 +195,9 @@ class StackParkingNode(Node):
             'base_frame': 'base_link',
             'front_cloud_topic': '/lidar/a1/cloud',
             'rear_cloud_topic': '/lidar/a2/cloud',
+            # Non-empty switches to single-source merged-cloud mode (see
+            # __init__) instead of the front/rear pairer.
+            'merged_cloud_topic': '',
             'rear_scan_topic': '/lidar/a2/scan',
             'vehicle_topic': '/vehicle/vector',
             'imu_topic': '/perception/imu',
@@ -178,7 +209,8 @@ class StackParkingNode(Node):
             'cloud.stale_timeout_s': 0.35,
             'cloud.queue_size': 5,
             'cloud.min_range_m': 0.15,
-            'cloud.max_range_m': 12.0,
+            # Parking-only cutoff; never shorten the shared fused scan.
+            'cloud.max_range_m': 4.0,
             'cloud.self_filter_margin_m': 0.02,
             'prior.velocity_timeout_s': 0.25,
             'prior.imu_timeout_s': 0.25,
@@ -202,10 +234,13 @@ class StackParkingNode(Node):
             'stage.slam_confirm_scans': 10,
             'stage.localization_confirm_scans': 3,
             'stage.minimum_map_points': 80,
-            'reset_map_on_mission_start': False,
+            # 2026-09-02 (user directive): parking mode starts a fresh map,
+            # it does not park against whatever the vehicle happened to map
+            # beforehand.
+            'reset_map_on_mission_start': True,
             'auto_trigger_gps_zone': True,
             'gps_default_mode': MODE_PERPENDICULAR,
-            'gps_default_side': SIDE_RIGHT,
+            'gps_default_side': SIDE_AUTO,
             # Test-only: synthesizes the existing MGM GPS gate after a manual
             # command. Never enable while the real stack_gps publisher runs.
             'manual_test_publish_gps_gate': False,
@@ -227,17 +262,49 @@ class StackParkingNode(Node):
             'lidar.rear_x_m': -0.110354,
             'icp.scan_voxel_m': 0.06,
             'icp.max_scan_points': 900,
+            # Keep the fallback consistent with parking_params.yaml.  Eight
+            # centimetres preserves the parking-map detail needed around
+            # curbs and cones; calibration residuals should be fixed at the
+            # sensor extrinsics rather than hidden with a coarser map voxel.
             'icp.map_voxel_m': 0.08,
             'icp.max_correspondence_m': 0.35,
             'icp.max_iterations': 18,
             'icp.min_correspondences': 24,
             'icp.max_rmse_m': 0.16,
             'icp.local_map_radius_m': 8.0,
-            'space.boundary_near_m': 0.42,
-            'space.boundary_far_m': 1.05,
+            # Below this matched-point angular span, ICP's yaw correction is
+            # discarded (kept at the odometry prior) — narrow-aperture views
+            # (e.g. one wall while turning) under-constrain rotation and can
+            # converge to a wrong-but-low-RMSE heading, duplicating that wall
+            # in the map at each mis-rotated pose.
+            'icp.min_yaw_observable_span_deg': 50.0,
+            'icp.freespace_clear_enabled': True,
+            # Match the parking-only cloud cutoff above. The public fused
+            # scan intentionally remains 12 m for other safety consumers.
+            'icp.freespace_clear_radius_m': 4.0,
+            'icp.freespace_bin_width_deg': 1.0,
+            'icp.freespace_margin_m': 0.02,
+            'icp.freespace_occlusion_padding_deg': 1.5,
+            'icp.observation_match_radius_m': 0.06,
+            'icp.tentative_confirm_hits': 3,
+            'icp.tentative_delete_misses': 1,
+            'icp.confirmed_delete_misses': 3,
+            # 2026-09-02: 0.42/1.05 -> 1.7/2.3, tuned to this test rig by
+            # replaying the live map (see space_detector.py _mouth_clusters
+            # docstring for why plain x-clustering couldn't see this bay at
+            # all). This room has other objects sitting at side_distance up
+            # to ~1.65m that aren't the bay; the bay's own arms start at
+            # ~1.7m and its back wall sits at ~2.7m. near/far must bracket
+            # the arms (catch them, exclude the clutter below) while staying
+            # under the back wall (so it's still classified as back-wall,
+            # not folded into the side-wall band). Re-tune for a different
+            # room/rig by replaying its map the same way.
+            'space.boundary_near_m': 1.7,
+            'space.boundary_far_m': 2.3,
             'space.parallel_min_length_m': 2.90,
-            'space.perpendicular_min_width_m': 0.86,
-            'space.perpendicular_min_depth_m': 1.35,
+            # 2026-09-02 (user directive): 1m x 1m minimum, first gap wins.
+            'space.perpendicular_min_width_m': 1.0,
+            'space.perpendicular_min_depth_m': 1.0,
             'space.stable_frames': 3,
             'path.sample_step_m': 0.06,
             'path.static_clearance_m': 0.035,
@@ -271,6 +338,20 @@ class StackParkingNode(Node):
             min_correspondences=int(self._p('icp.min_correspondences')),
             max_rmse_m=float(self._p('icp.max_rmse_m')),
             local_map_radius_m=float(self._p('icp.local_map_radius_m')),
+            min_yaw_observable_span_rad=math.radians(
+                float(self._p('icp.min_yaw_observable_span_deg'))),
+            freespace_clear_enabled=bool(self._p('icp.freespace_clear_enabled')),
+            freespace_clear_radius_m=float(self._p('icp.freespace_clear_radius_m')),
+            freespace_bin_width_rad=math.radians(
+                float(self._p('icp.freespace_bin_width_deg'))),
+            freespace_margin_m=float(self._p('icp.freespace_margin_m')),
+            freespace_occlusion_padding_rad=math.radians(
+                float(self._p('icp.freespace_occlusion_padding_deg'))),
+            observation_match_radius_m=float(
+                self._p('icp.observation_match_radius_m')),
+            tentative_confirm_hits=int(self._p('icp.tentative_confirm_hits')),
+            tentative_delete_misses=int(self._p('icp.tentative_delete_misses')),
+            confirmed_delete_misses=int(self._p('icp.confirmed_delete_misses')),
         )
 
     def _motion_prior_config(self) -> MotionPriorConfig:
@@ -397,12 +478,17 @@ class StackParkingNode(Node):
             return
         if self.gps_zone_armed:
             self.gps_zone_armed = False
+            mode_by_type = {
+                GpsPath.PARKING_PERPENDICULAR: MODE_PERPENDICULAR,
+                GpsPath.PARKING_PARALLEL: MODE_PARALLEL,
+            }
+            mode = mode_by_type.get(
+                int(getattr(msg, 'parking_mode', GpsPath.PARKING_NONE)),
+                str(self._p('gps_default_mode')))
             self._start_mission(
-                str(self._p('gps_default_mode')),
+                mode,
                 str(self._p('gps_default_side')),
-                source=(
-                    'GpsPath.parking_zone(default type; explicit type can use '
-                    '/parking/gps_command)'),
+                source='GpsPath.parking_zone:%s' % mode,
             )
 
     def _parse_command(self, command: str) -> tuple[str, str] | None:
@@ -423,7 +509,7 @@ class StackParkingNode(Node):
         mode = next((word for word in words if word in (
             MODE_PARALLEL, MODE_PERPENDICULAR, 't', '1', 't자', '1자')), None)
         side = next((word for word in words if word in (
-            SIDE_LEFT, SIDE_RIGHT, '좌측', '우측')), None)
+            SIDE_LEFT, SIDE_RIGHT, SIDE_AUTO, '좌측', '우측', '양쪽')), None)
         if mode in ('t', 't자'):
             mode = MODE_PERPENDICULAR
         elif mode in ('1', '1자'):
@@ -432,11 +518,29 @@ class StackParkingNode(Node):
             side = SIDE_LEFT
         elif side == '우측':
             side = SIDE_RIGHT
+        elif side == '양쪽':
+            side = SIDE_AUTO
         if mode is None:
             return None
-        return mode, side or str(self._p('gps_default_side'))
+        # No side given -> search both and take whichever gap comes first
+        # (user directive, 2026-09-02), not a fixed configured side.
+        return mode, side or SIDE_AUTO
 
     def _on_command(self, msg: String) -> None:
+        normalized = msg.data.lower().strip().replace('_', ' ').replace('-', ' ')
+        if normalized == 'freeze mapping':
+            # The dedicated wall-gap nodes own parking-space detection and
+            # send this as soon as their reference path is fixed. Stop the
+            # built-in detector as well as map growth, but keep ICP running
+            # against the frozen map for localization during parking.
+            self.mission.cancel()
+            changed = self.pipeline.freeze_mapping()
+            self.manual_gate_active = False
+            self.get_logger().info(
+                'parking map frozen by external reference path: stage=%s%s'
+                % (self.pipeline.stage.value,
+                   '' if changed else ' (already frozen)'))
+            return
         parsed = self._parse_command(msg.data)
         if parsed is None:
             if msg.data.lower().strip() not in ('cancel', 'reset', 'stop'):
@@ -448,13 +552,14 @@ class StackParkingNode(Node):
 
     def _start_mission(self, mode: str, side: str, source: str) -> None:
         if mode not in (MODE_PARALLEL, MODE_PERPENDICULAR) or side not in (
-            SIDE_LEFT, SIDE_RIGHT
+            SIDE_LEFT, SIDE_RIGHT, SIDE_AUTO
         ):
             self.get_logger().error('invalid parking type/side: %s %s' % (mode, side))
             return
         if bool(self._p('reset_map_on_mission_start')):
             self.slam.reset(Pose2())
             self.prior.reset(Pose2())
+            self.pose_delta_tracker = PoseDeltaTracker()
             self.cloud_pairer.clear()
             self.pipeline.reset()
             self.last_icp_accepted_s = -math.inf
@@ -480,7 +585,12 @@ class StackParkingNode(Node):
             if array.dtype.names:
                 return np.column_stack((array['x'], array['y'])).astype(np.float64)
             return np.asarray(array, dtype=np.float64).reshape((-1, 2))
-        except (AttributeError, TypeError, ValueError):
+        except (AttributeError, TypeError, ValueError, AssertionError):
+            # AssertionError: read_points_numpy requires every field in the
+            # message to share one datatype, not just the requested ones —
+            # any publisher that mixes e.g. float32 xyz with an int32
+            # intensity/index channel trips it. Fall back to the slower
+            # per-point reader, which has no such restriction.
             return np.asarray([
                 (float(point[0]), float(point[1]))
                 for point in point_cloud2.read_points(
@@ -506,6 +616,26 @@ class StackParkingNode(Node):
                <= 0.5 * float(self._p('vehicle.width_m')) + margin)
         )
         return points[valid & ~body]
+
+    def _on_merged_cloud(self, msg: PointCloud2) -> None:
+        now_s = self._clock_s()
+        frame_id = msg.header.frame_id.lstrip('/')
+        if frame_id != self.base_frame.lstrip('/'):
+            if now_s - self._last_frame_warning_s >= 5.0:
+                self._last_frame_warning_s = now_s
+                self.get_logger().error(
+                    'merged cloud frame=%r rejected; expected calibrated %r.'
+                    % (msg.header.frame_id, self.base_frame))
+            return
+        points = self._filter_cloud_points(self._cloud_xy(msg))
+        self.latest_merged_cloud = StampedCloud(
+            stamp_s=self._message_stamp_s(msg.header.stamp, now_s),
+            receipt_s=now_s,
+            frame_id=frame_id,
+            points=points,
+        )
+        self.latest_front_cloud_s = now_s
+        self.latest_rear_cloud_s = now_s
 
     def _on_front_cloud(self, msg: PointCloud2) -> None:
         self._on_sensor_cloud('front', msg)
@@ -539,18 +669,29 @@ class StackParkingNode(Node):
 
     def _process_slam(self) -> None:
         now_s = self._clock_s()
-        pair = self.cloud_pairer.pop(
-            now_s,
-            float(self._p('cloud.sync_tolerance_s')),
-            float(self._p('cloud.stale_timeout_s')),
-        )
-        if pair is None:
-            return
+        if self._merged_mode:
+            cloud = self.latest_merged_cloud
+            if cloud is None or now_s - cloud.receipt_s > float(
+                self._p('cloud.stale_timeout_s')
+            ):
+                return
+            self.latest_merged_cloud = None  # consume once
+            points, stamp_s = cloud.points, cloud.stamp_s
+            self.last_pair_skew_s = 0.0
+        else:
+            pair = self.cloud_pairer.pop(
+                now_s,
+                float(self._p('cloud.sync_tolerance_s')),
+                float(self._p('cloud.stale_timeout_s')),
+            )
+            if pair is None:
+                return
+            points, stamp_s = pair.points, pair.stamp_s
+            self.last_pair_skew_s = pair.skew_s
 
-        self.last_pair_skew_s = pair.skew_s
-        prior_pose = self.prior.predict(pair.stamp_s)
+        prior_pose = self.prior.predict(stamp_s)
         result = self.slam.update(
-            pair.points,
+            points,
             prior_pose,
             update_map=self.pipeline.mapping_enabled,
         )
@@ -559,7 +700,12 @@ class StackParkingNode(Node):
         self.slam_update_times.append(now_s)
         if result.accepted:
             self.last_icp_accepted_s = now_s
-        prepared = voxel_downsample(pair.points, 0.05)
+        self.pose_delta_tracker.update(result.pose)
+        # Localization is a control input, not a debug visualization. Publish
+        # it at the configured SLAM rate (10Hz) so downstream preview/delta
+        # generation is not silently throttled by debug_publish_rate_hz (5Hz).
+        self._publish_slam_pose(self.get_clock().now().to_msg())
+        prepared = voxel_downsample(points, 0.05)
         self.latest_scan_map = transform_points(prepared, result.pose)
         map_points = self.slam.map_points()
         previous_stage = self.pipeline.stage
@@ -675,6 +821,11 @@ class StackParkingNode(Node):
         msg.path_blocked = output.path_blocked
         msg.done = output.done
         msg.v_suggest = float(output.v_suggest_mps)
+        delta = self.pose_delta_tracker.delta
+        msg.dx = float(delta.dx)
+        msg.dy = float(delta.dy)
+        msg.dyaw = float(delta.dyaw)
+        msg.update = int(delta.update)
         if output.reference_local is not None:
             point = RefPoint()
             point.x = float(output.reference_local.x)
@@ -700,6 +851,10 @@ class StackParkingNode(Node):
         msg.header.stamp = stamp
         msg.header.frame_id = self.base_frame
         msg.parking_zone = self.manual_gate_active
+        msg.parking_mode = (
+            GpsPath.PARKING_PARALLEL
+            if self.mission.mode == MODE_PARALLEL
+            else GpsPath.PARKING_PERPENDICULAR)
         # A neutral one-metre point keeps the existing GpsPath freshness/data
         # contract valid before MGM changes into PARKING. It is never selected
         # as the parking path.
@@ -719,7 +874,7 @@ class StackParkingNode(Node):
         header.frame_id = self.map_frame
         return header
 
-    def _publish_slam_debug(self, stamp) -> None:
+    def _publish_slam_pose(self, stamp) -> None:
         header = self._header(stamp)
         pose = PoseStamped()
         pose.header = header
@@ -729,6 +884,9 @@ class StackParkingNode(Node):
         pose.pose.orientation.z = qz
         pose.pose.orientation.w = qw
         self.pose_pub.publish(pose)
+
+    def _publish_slam_debug(self, stamp) -> None:
+        header = self._header(stamp)
         pose_text = Marker()
         pose_text.header = header
         pose_text.ns = 'slam_pose'
@@ -915,6 +1073,7 @@ class StackParkingNode(Node):
             if duration > 0.0:
                 slam_hz = (len(self.slam_update_times) - 1) / duration
         prior = self.prior.last_status
+        tentative_cells, confirmed_cells = self.slam.map.state_counts()
         values = {
             'pipeline_stage': self.pipeline.stage.value,
             'mission_state': output.state.value,
@@ -924,9 +1083,12 @@ class StackParkingNode(Node):
                 self.slam.pose.x, self.slam.pose.y, self.slam.pose.yaw),
             'slam_valid': str(localization_ok),
             'icp_accepted': str(bool(icp.accepted) if icp else False),
+            'icp_reason': icp.reason if icp else 'no_scan_yet',
             'icp_rmse_m': ('%.4f' % icp.rmse_m) if icp and math.isfinite(icp.rmse_m) else 'inf',
             'icp_matches': str(icp.correspondences if icp else 0),
             'map_points': str(len(self.slam.map)),
+            'map_tentative_cells': str(tentative_cells),
+            'map_confirmed_cells': str(confirmed_cells),
             'map_updates_enabled': str(self.pipeline.mapping_enabled),
             'slam_rate_hz': '%.2f' % slam_hz,
             'slam_rate_target_hz': str(float(self._p('slam_rate_hz'))),

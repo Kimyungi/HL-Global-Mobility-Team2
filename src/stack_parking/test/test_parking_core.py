@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 
 from stack_parking.geometry import Pose2, between, compose, transform_points
-from stack_parking.icp_slam import IcpConfig, IcpSlam
+from stack_parking.icp_slam import IcpConfig, IcpSlam, VoxelPointMap
 from stack_parking.localization import (
     FrontRearCloudPairer,
     MotionPrior,
@@ -34,6 +34,82 @@ class GeometryTest(unittest.TestCase):
 
 
 class IcpSlamTest(unittest.TestCase):
+
+    def test_freespace_empty_bin_is_unknown(self):
+        point_map = VoxelPointMap(0.02)
+        point_map.add(np.asarray([[2.0, 0.0]]))
+        removed = point_map.clear_freespace(
+            Pose2(), np.empty((0, 2)), 4.0, math.radians(1.0), 0.10)
+        self.assertEqual(removed, 0)
+        self.assertEqual(len(point_map), 1)
+
+    def test_freespace_foreground_return_protects_adjacent_bins(self):
+        point_map = VoxelPointMap(0.02)
+        # Old cone is just across a 1-degree bin boundary from the visible
+        # foreground cone, but is farther away and therefore occluded.
+        bearing = math.radians(1.1)
+        point_map.add(np.asarray([[3.0 * math.cos(bearing),
+                                  3.0 * math.sin(bearing)]]))
+        removed = point_map.clear_freespace(
+            Pose2(), np.asarray([[1.0, 0.0]]), 4.0,
+            math.radians(1.0), 0.10, math.radians(1.5))
+        self.assertEqual(removed, 0)
+        self.assertEqual(len(point_map), 1)
+
+    def test_freespace_farther_return_clears_old_point(self):
+        point_map = VoxelPointMap(0.02)
+        point_map.add(np.asarray([[1.0, 0.0]]))
+        removed = point_map.clear_freespace(
+            Pose2(), np.asarray([[2.0, 0.0]]), 4.0,
+            math.radians(1.0), 0.10, math.radians(1.5))
+        self.assertEqual(removed, 1)
+        self.assertEqual(len(point_map), 0)
+
+    def test_voxel_crossing_boundary_is_one_confirmed_cell(self):
+        point_map = VoxelPointMap(0.08)
+        point_map.add(np.asarray([[0.079, 0.0]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.081, 0.0]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.078, 0.0]]), 0.06, confirm_hits=3)
+        self.assertEqual(len(point_map), 1)
+        self.assertEqual(point_map.state_counts(), (0, 1))
+
+    def test_same_voxel_observations_do_not_need_distance_match(self):
+        point_map = VoxelPointMap(0.08)
+        point_map.add(np.asarray([[0.001, 0.001]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.079, 0.079]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.002, 0.002]]), 0.06, confirm_hits=3)
+        self.assertEqual(len(point_map), 1)
+        self.assertEqual(point_map.state_counts(), (0, 1))
+
+    def test_confirmed_cell_requires_three_free_observations(self):
+        point_map = VoxelPointMap(0.02)
+        point = np.asarray([[1.0, 0.0]])
+        for _ in range(3):
+            point_map.add(point, 0.01, confirm_hits=3)
+        self.assertEqual(point_map.state_counts(), (0, 1))
+
+        farther = np.asarray([[2.0, 0.0]])
+        args = (Pose2(), farther, 4.0, math.radians(1.0), 0.02,
+                math.radians(1.5), 0.01, 3, 1, 3)
+        self.assertEqual(point_map.clear_freespace(*args), 0)
+        self.assertEqual(point_map.clear_freespace(*args), 0)
+        self.assertEqual(len(point_map), 1)
+        self.assertEqual(point_map.clear_freespace(*args), 1)
+        self.assertEqual(len(point_map), 0)
+
+    def test_confirmed_cell_is_not_missed_while_occluded(self):
+        point_map = VoxelPointMap(0.02)
+        point = np.asarray([[2.0, 0.0]])
+        for _ in range(3):
+            point_map.add(point, 0.01, confirm_hits=3)
+
+        common = (4.0, math.radians(1.0), 0.02,
+                  math.radians(1.5), 0.01, 3, 1, 3)
+        for _ in range(5):
+            removed = point_map.clear_freespace(
+                Pose2(), np.asarray([[1.0, 0.0]]), *common)
+            self.assertEqual(removed, 0)
+        self.assertEqual(len(point_map), 1)
 
     def _world(self):
         return np.vstack((
@@ -204,6 +280,7 @@ class FrontRearLocalizationTest(unittest.TestCase):
             wheelbase_m=1.0,
             steering_sign=-1.0,
             steering_deadband_rad=0.0,
+            max_steering_rad=math.radians(60.0),
         ))
         prior.update_vehicle(-1.0, -math.pi / 4.0, 0.0)
         prior.predict(0.0)
@@ -273,6 +350,21 @@ class FrontRearLocalizationTest(unittest.TestCase):
         self.assertTrue(pipeline.observe_slam(True, 5))
         self.assertEqual(pipeline.stage, PipelineStage.PARKING)
         self.assertTrue(pipeline.parking_enabled)
+
+    def test_external_reference_path_can_freeze_mapping(self):
+        pipeline = PipelineController(
+            slam_confirm_scans=10,
+            localization_confirm_scans=2,
+            minimum_map_points=5,
+        )
+        self.assertTrue(pipeline.mapping_enabled)
+        self.assertTrue(pipeline.freeze_mapping())
+        self.assertEqual(pipeline.stage, PipelineStage.LOCALIZATION)
+        self.assertFalse(pipeline.mapping_enabled)
+        self.assertFalse(pipeline.freeze_mapping())
+        self.assertFalse(pipeline.observe_slam(True, 5))
+        self.assertTrue(pipeline.observe_slam(True, 5))
+        self.assertEqual(pipeline.stage, PipelineStage.PARKING)
 
 
 class MissionSimulationTest(unittest.TestCase):

@@ -30,6 +30,33 @@ class IcpConfig:
     max_correction_m: float = 0.55
     max_correction_yaw_rad: float = math.radians(22.0)
     max_rmse_m: float = 0.16
+    # Free-space clearing: an old map point is dropped when the *current*
+    # accepted-pose scan looks straight through where it used to be and
+    # sees a farther return in the same direction. Empty endpoint-cloud bins
+    # are unknown, not confirmed free space. Nearby nearer returns are spread
+    # across a small angular padding so thin occluders protect points behind
+    # them even when scan/map samples land on opposite bin boundaries.
+    # Keep freespace_clear_radius_m within the upstream sensor cutoff
+    # (lidar_fusion_v2 max_range/scan.range_max, currently 4.0m), so clearing
+    # is limited to the sensor's useful mapped region.
+    freespace_clear_enabled: bool = True
+    freespace_clear_radius_m: float = 4.0
+    freespace_bin_width_rad: float = math.radians(1.0)
+    freespace_margin_m: float = 0.02
+    freespace_occlusion_padding_rad: float = math.radians(1.5)
+    observation_match_radius_m: float = 0.06
+    tentative_confirm_hits: int = 3
+    tentative_delete_misses: int = 1
+    confirmed_delete_misses: int = 3
+    # Point-to-point ICP under-constrains yaw when the matched points only
+    # span a narrow bearing arc (e.g. one nearby wall segment while turning):
+    # translation along that wall is still well fit, but rotation can drift
+    # to a nearby wrong local minimum with an equally low RMSE — the map
+    # then accumulates the same wall as several near-duplicate copies at
+    # slightly different headings. Below this matched-point angular span,
+    # the yaw correction is discarded (kept at the odometry prior's yaw)
+    # while the translation correction is still applied.
+    min_yaw_observable_span_rad: float = math.radians(50.0)
     min_scan_range_m: float = 0.12
     max_scan_range_m: float = 8.0
     local_map_radius_m: float = 8.0
@@ -51,10 +78,14 @@ class IcpResult:
 class VoxelPointMap:
     """Centroid voxel map with a hash-grid nearest-neighbour query."""
 
+    _TENTATIVE = 0.0
+    _CONFIRMED = 1.0
+
     def __init__(self, voxel_m: float, max_cells: int = 40000):
         self.voxel_m = max(float(voxel_m), 1.0e-3)
         self.max_cells = max(int(max_cells), 100)
-        # key -> [mean_x, mean_y, count, last_update]
+        # key -> [mean_x, mean_y, sample_count, last_update,
+        #         state, hit_count, consecutive_miss_count]
         self._cells: dict[tuple[int, int], list[float]] = {}
         self._update_counter = 0
 
@@ -71,14 +102,52 @@ class VoxelPointMap:
             int(math.floor(float(point[1]) / self.voxel_m)),
         )
 
-    def add(self, points: np.ndarray) -> None:
+    def _nearest_cell_key(
+        self,
+        point: np.ndarray,
+        match_radius_m: float,
+    ) -> Optional[tuple[int, int]]:
+        """Find a nearby cell across voxel boundaries."""
+        key = self._key(point)
+        # A voxel owns exactly one cell. The distance gate is only needed to
+        # associate observations that jitter across a voxel boundary.
+        if key in self._cells:
+            return key
+        if match_radius_m <= 0.0:
+            return None
+        cell_radius = max(1, int(math.ceil(match_radius_m / self.voxel_m)))
+        max_d2 = match_radius_m * match_radius_m
+        best_key: Optional[tuple[int, int]] = None
+        best_d2 = max_d2
+        for dx in range(-cell_radius, cell_radius + 1):
+            for dy in range(-cell_radius, cell_radius + 1):
+                candidate_key = (key[0] + dx, key[1] + dy)
+                cell = self._cells.get(candidate_key)
+                if cell is None:
+                    continue
+                d2 = ((cell[0] - float(point[0])) ** 2
+                      + (cell[1] - float(point[1])) ** 2)
+                if d2 <= best_d2:
+                    best_d2 = d2
+                    best_key = candidate_key
+        return best_key
+
+    def add(
+        self,
+        points: np.ndarray,
+        match_radius_m: float = 0.0,
+        record_hits: bool = True,
+        confirm_hits: int = 3,
+    ) -> None:
         self._update_counter += 1
         for point in np.asarray(points, dtype=np.float64):
             key = self._key(point)
-            cell = self._cells.get(key)
+            matched_key = self._nearest_cell_key(point, match_radius_m)
+            cell = self._cells.get(matched_key) if matched_key is not None else None
             if cell is None:
                 self._cells[key] = [float(point[0]), float(point[1]), 1.0,
-                                    float(self._update_counter)]
+                                    float(self._update_counter), self._TENTATIVE,
+                                    1.0, 0.0]
                 continue
             # A capped running mean prevents one repeatedly observed wall from
             # becoming numerically immutable.
@@ -88,7 +157,16 @@ class VoxelPointMap:
             cell[1] = (cell[1] * count + float(point[1])) / new_count
             cell[2] = new_count
             cell[3] = float(self._update_counter)
+            if record_hits:
+                cell[5] += 1.0
+                cell[6] = 0.0
+                if cell[5] >= max(1, int(confirm_hits)):
+                    cell[4] = self._CONFIRMED
         self._prune_if_needed()
+
+    def state_counts(self) -> tuple[int, int]:
+        tentative = sum(cell[4] == self._TENTATIVE for cell in self._cells.values())
+        return tentative, len(self._cells) - tentative
 
     def _prune_if_needed(self) -> None:
         excess = len(self._cells) - self.max_cells
@@ -153,6 +231,136 @@ class VoxelPointMap:
             np.asarray(distances, dtype=np.float64),
         )
 
+    def clear_freespace(
+        self,
+        pose: Pose2,
+        local_scan: np.ndarray,
+        clear_radius_m: float,
+        bin_width_rad: float,
+        margin_m: float,
+        occlusion_padding_rad: float = 0.0,
+        observation_match_radius_m: float = 0.0,
+        tentative_confirm_hits: int = 3,
+        tentative_delete_misses: int = 1,
+        confirmed_delete_misses: int = 3,
+    ) -> int:
+        """Drop map points the current scan shows are no longer there.
+
+        ``local_scan`` is the accepted-pose scan in *vehicle frame* (the same
+        points ``update()`` just matched), already range-limited upstream —
+        that limit is what bounds how far this may look, via
+        ``clear_radius_m`` (must not exceed it, see ``IcpConfig`` note).
+        Candidate map points are binned into vehicle-frame bearing bins and
+        compared against the nearest current-scan return in that bin. An old
+        point closer than that return by more than ``margin_m`` receives a
+        miss. Tentative cells are removed quickly; confirmed cells require
+        repeated misses. Nearby endpoints count as hits and promote a cell
+        from tentative to confirmed.
+        Empty bins are left untouched because an endpoint-only PointCloud2
+        cannot distinguish an actual no-return ray from missing coverage.
+        A point at or beyond the current return (same surface, or occluded
+        by something nearer now) receives no miss. ``occlusion_padding_rad``
+        extends nearer returns to neighboring bins to cover thin-object and
+        voxel/bin-boundary sampling differences.
+        """
+        if not self._cells or clear_radius_m <= 0.0:
+            return 0
+        keys = list(self._cells.keys())
+        values = np.asarray([[c[0], c[1]] for c in self._cells.values()],
+                            dtype=np.float64)
+        delta = values - np.asarray([pose.x, pose.y])
+        within = np.einsum('ij,ij->i', delta, delta) <= clear_radius_m * clear_radius_m
+        candidates = np.nonzero(within)[0]
+        if candidates.size == 0:
+            return 0
+
+        c, s = math.cos(-pose.yaw), math.sin(-pose.yaw)
+        dx = delta[candidates, 0]
+        dy = delta[candidates, 1]
+        local_x = c * dx - s * dy
+        local_y = s * dx + c * dy
+        local_range = np.hypot(local_x, local_y)
+        local_bearing = np.arctan2(local_y, local_x)
+
+        nbins = max(1, int(math.ceil(2.0 * math.pi / bin_width_rad)))
+
+        def bin_of(angles: np.ndarray) -> np.ndarray:
+            return np.clip(
+                np.floor((angles + math.pi) / bin_width_rad).astype(np.int64),
+                0, nbins - 1)
+
+        current_range = np.full(nbins, np.inf, dtype=np.float64)
+        scan = np.asarray(local_scan, dtype=np.float64)
+        if scan.size:
+            scan_range = np.hypot(scan[:, 0], scan[:, 1])
+            np.minimum.at(current_range, bin_of(np.arctan2(scan[:, 1], scan[:, 0])),
+                         scan_range)
+
+        padding_bins = max(0, int(math.ceil(
+            occlusion_padding_rad / bin_width_rad)))
+        if padding_bins:
+            raw_range = current_range.copy()
+            for offset in range(1, padding_bins + 1):
+                current_range = np.minimum(current_range, np.roll(raw_range, offset))
+                current_range = np.minimum(current_range, np.roll(raw_range, -offset))
+
+        # Endpoint proximity is checked in map coordinates and across adjacent
+        # voxel keys. This prevents a stable wall from alternating between
+        # tentative cells merely because pose noise crosses a voxel boundary.
+        scan_map = transform_points(scan[:, :2], pose) if scan.size else scan.reshape((-1, 2))
+        scan_bins: dict[tuple[int, int], list[np.ndarray]] = {}
+        for point in scan_map:
+            scan_bins.setdefault(self._key(point), []).append(point)
+
+        def endpoint_seen(point: np.ndarray) -> bool:
+            radius = max(0.0, observation_match_radius_m)
+            if radius <= 0.0:
+                return False
+            base = self._key(point)
+            if scan_bins.get(base):
+                return True
+            cell_radius = max(1, int(math.ceil(radius / self.voxel_m)))
+            radius2 = radius * radius
+            for gx in range(-cell_radius, cell_radius + 1):
+                for gy in range(-cell_radius, cell_radius + 1):
+                    for endpoint in scan_bins.get((base[0] + gx, base[1] + gy), ()):
+                        delta_point = endpoint - point
+                        if float(delta_point @ delta_point) <= radius2:
+                            return True
+            return False
+
+        observed = current_range[bin_of(local_bearing)]
+        confirmed_free = np.isfinite(observed) & (
+            local_range < (observed - margin_m))
+        removed = 0
+        for local_pos, pos in enumerate(candidates):
+            key = keys[pos]
+            cell = self._cells.get(key)
+            if cell is None:
+                continue
+            if endpoint_seen(values[pos]):
+                cell[5] += 1.0
+                cell[6] = 0.0
+                cell[3] = float(self._update_counter + 1)
+                if cell[5] >= max(1, int(tentative_confirm_hits)):
+                    cell[4] = self._CONFIRMED
+                continue
+            # No endpoint is not itself a miss: only a measured farther return
+            # proves that the ray passed through this old occupied location.
+            # A nearer return means occluded, and an empty bin means unknown.
+            if not confirmed_free[local_pos]:
+                continue
+            cell[6] += 1.0
+            delete_after = (
+                confirmed_delete_misses
+                if cell[4] == self._CONFIRMED
+                else tentative_delete_misses
+            )
+            if cell[6] >= max(1, int(delete_after)):
+                del self._cells[key]
+                removed += 1
+        return removed
+
 
 def voxel_downsample(points: np.ndarray, voxel_m: float) -> np.ndarray:
     points = np.asarray(points, dtype=np.float64)
@@ -161,6 +369,21 @@ def voxel_downsample(points: np.ndarray, voxel_m: float) -> np.ndarray:
     keys = np.floor(points[:, :2] / max(voxel_m, 1.0e-4)).astype(np.int64)
     _, first = np.unique(keys, axis=0, return_index=True)
     return points[np.sort(first), :2]
+
+
+def angular_span(bearings: np.ndarray) -> float:
+    """Angle subtended by *bearings* (rad), robust to the -pi/pi wrap.
+
+    Defined as ``2*pi`` minus the largest circular gap between consecutive
+    sorted bearings — i.e. the width of the smallest arc containing them all.
+    """
+    bearings = np.asarray(bearings, dtype=np.float64)
+    if bearings.size < 2:
+        return 0.0
+    sorted_b = np.sort(bearings)
+    gaps = np.diff(sorted_b)
+    wrap_gap = (sorted_b[0] + 2.0 * math.pi) - sorted_b[-1]
+    return float(2.0 * math.pi - max(np.max(gaps), wrap_gap))
 
 
 def best_fit_transform(source: np.ndarray, target: np.ndarray) -> Pose2:
@@ -245,7 +468,12 @@ class IcpSlam:
                 odom_pose is not None, 'mapping_disabled_uninitialized')
 
         if not self.initialized:
-            self.map.add(transform_points(scan, self.pose))
+            self.map.add(
+                transform_points(scan, self.pose),
+                self.config.observation_match_radius_m,
+                record_hits=False,
+                confirm_hits=self.config.tentative_confirm_hits,
+            )
             self.initialized = True
             self.last_odom = odom_pose
             return IcpResult(
@@ -295,6 +523,13 @@ class IcpSlam:
                 reason = 'converged'
                 break
 
+        yaw_observable = False
+        if match_count >= self.config.min_correspondences:
+            bearings = np.arctan2(scan[source_indices, 1], scan[source_indices, 0])
+            yaw_observable = angular_span(bearings) >= self.config.min_yaw_observable_span_rad
+        if not yaw_observable:
+            estimate = Pose2(estimate.x, estimate.y, guess.yaw)
+
         correction = between(guess, estimate)
         correction_m = math.hypot(correction.x, correction.y)
         accepted = (
@@ -307,7 +542,26 @@ class IcpSlam:
         if accepted:
             self.pose = estimate
             if update_map:
-                self.map.add(transform_points(scan, self.pose))
+                if self.config.freespace_clear_enabled:
+                    self.map.clear_freespace(
+                        self.pose, scan,
+                        self.config.freespace_clear_radius_m,
+                        self.config.freespace_bin_width_rad,
+                        self.config.freespace_margin_m,
+                        self.config.freespace_occlusion_padding_rad,
+                        self.config.observation_match_radius_m,
+                        self.config.tentative_confirm_hits,
+                        self.config.tentative_delete_misses,
+                        self.config.confirmed_delete_misses,
+                    )
+                # clear_freespace() already records this frame's hits. add()
+                # only updates centroids and creates unmatched tentative cells.
+                self.map.add(
+                    transform_points(scan, self.pose),
+                    self.config.observation_match_radius_m,
+                    record_hits=False,
+                    confirm_hits=self.config.tentative_confirm_hits,
+                )
         else:
             # Odometry is only a prediction.  A rejected ICP result must not
             # contaminate the point map; pose can follow a valid prior so the
@@ -317,6 +571,8 @@ class IcpSlam:
                 reason = 'rejected_using_odometry_prediction'
             elif reason == 'converged':
                 reason = 'rejected_quality_gate'
+        if accepted and not yaw_observable:
+            reason = 'accepted_yaw_locked_to_prior'
 
         return IcpResult(
             self.pose, accepted, True, match_count, rmse, iterations,

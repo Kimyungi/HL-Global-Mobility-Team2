@@ -157,6 +157,12 @@ if(BUILD_TESTING)
   target_link_libraries(traffic_state_test mgm_core)
   add_test(NAME traffic_state_test COMMAND traffic_state_test)
 
+  add_executable(parking_return_state_test test/parking_return_state_test.cpp)
+  target_include_directories(
+    parking_return_state_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(parking_return_state_test mgm_core)
+  add_test(NAME parking_return_state_test COMMAND parking_return_state_test)
+
   add_executable(
     transition_log_test
     test/transition_log_test.cpp

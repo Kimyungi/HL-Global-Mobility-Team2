@@ -133,6 +133,39 @@ def test_zones_and_end():
     assert s["at_end"]
 
 
+def test_gps_parking_ranges_select_t_or_parallel_mode():
+    track = make_track([(0.2 * i, 0.0) for i in range(80)])
+    eng = PathEngine(
+        track,
+        n_points=5,
+        parking_ranges=[(10, 20)],
+        parallel_parking_ranges=[(40, 50)],
+    )
+    t_zone = eng.snapshot(*en_to_latlon(3.0, 0.0))
+    parallel_zone = eng.snapshot(*en_to_latlon(9.0, 0.0))
+    road = eng.snapshot(*en_to_latlon(6.0, 0.0))
+    assert t_zone["parking_zone"]
+    assert t_zone["parking_mode"] == "perpendicular"
+    assert parallel_zone["parking_zone"]
+    assert parallel_zone["parking_mode"] == "parallel"
+    assert not road["parking_zone"]
+    assert road["parking_mode"] is None
+
+
+def test_overlapping_parking_modes_are_rejected():
+    track = make_track([(0.2 * i, 0.0) for i in range(40)])
+    try:
+        PathEngine(
+            track,
+            parking_ranges=[(10, 20)],
+            parallel_parking_ranges=[(20, 30)],
+        )
+    except ValueError as error:
+        assert "parking ranges overlap" in str(error)
+    else:
+        raise AssertionError("overlapping parking modes must fail closed")
+
+
 def test_csv_roundtrip():
     """record_waypoints 포맷 CSV 로드 (중복점 제거 포함)."""
     rows = ["idx,utc,lat,lon,height_m,east_m,north_m,quality"]

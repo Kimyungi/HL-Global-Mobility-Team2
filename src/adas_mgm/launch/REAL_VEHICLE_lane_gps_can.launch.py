@@ -32,6 +32,14 @@
       REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
       waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv
 
+  GPS 구간별 T자/평행 주차까지 통합:
+  ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
+      REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+      waypoint_csv:=$HOME/FMA_ws/src/stack_gps/waypoints/<코스>.csv \
+      parking_enabled:=true \
+      t_parking_zone_ranges:="[120,140]" \
+      parallel_parking_zone_ranges:="[260,285]"
+
   신호등까지 함께 (카메라 2대):
   ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
       REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
@@ -43,16 +51,20 @@
 import csv
 import os
 from datetime import datetime
+from typing import List
 
 import yaml
 
 from ament_index_python.packages import (
     PackageNotFoundError, get_package_share_directory)
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
-                            OpaqueFunction, SetLaunchConfiguration, Shutdown)
-from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
+                            IncludeLaunchDescription, LogInfo, OpaqueFunction,
+                            SetLaunchConfiguration, Shutdown)
+from launch.conditions import IfCondition, UnlessCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import (LaunchConfiguration, PathJoinSubstitution,
+                                  PythonExpression)
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -90,7 +102,9 @@ RECORD_TOPICS = [
     '/perception/lane_path', '/perception/gps_path', '/perception/gps_fix',
     '/perception/estop', '/perception/avoid', '/perception/parking',
     '/perception/traffic_stop', '/adas/target_ref', '/vehicle/vector',
-    '/scan', '/rosout', '/tf', '/tf_static',
+    '/scan', '/lidar/a1/scan', '/unified_lidar/scan',
+    '/parking/local_map', '/parking/slam_pose', '/parking/pipeline_stage',
+    '/rosout', '/tf', '/tf_static',
 ]
 
 # 실측 호모그래피 (2026-08-11 캘리브레이션, LOO RMS 0.041m) — 소스 트리 절대경로로
@@ -249,8 +263,11 @@ def validate(context):
     # 죽고 respawn=True 로 2초마다 되살아나기만 해 /scan 이 영영 0Hz 인데, 화면에는
     # "go 가 안 통과한다"로만 보여 원인이 라이다로 안 보인다 (2026-08-29: 기본값이
     # 없는 워크스페이스를 가리키고 있었다 — ydlidar_file() 주석 참조).
+    parking_enabled = (
+        LaunchConfiguration('parking_enabled').perform(context).lower()
+        in ('true', '1', 'yes', 'on'))
     ydlidar_params = LaunchConfiguration('ydlidar_params').perform(context)
-    if not os.path.isfile(ydlidar_params):
+    if not parking_enabled and not os.path.isfile(ydlidar_params):
         raise RuntimeError(
             f'라이다 파라미터 파일 없음: {ydlidar_params}\n'
             '  ydlidar_ros2_driver 를 빌드했는지 확인하거나 '
@@ -283,6 +300,18 @@ def generate_launch_description():
         DeclareLaunchArgument('waypoint_csv', default_value='',
                               description='코스 웨이포인트 CSV (필수)'),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
+        DeclareLaunchArgument(
+            'parking_enabled', default_value='true',
+            description=(
+                'Enable integrated four-LiDAR parking and replace this '
+                "launch's single front-LiDAR driver; false restores the "
+                'legacy lane/GPS/avoid-only sensor setup')),
+        DeclareLaunchArgument(
+            't_parking_zone_ranges', default_value='[0]',
+            description='T/perpendicular waypoint ranges [start,end,...]'),
+        DeclareLaunchArgument(
+            'parallel_parking_zone_ranges', default_value='[0]',
+            description='Parallel-parking waypoint ranges [start,end,...]'),
 
         # ── GPS 재합류 기하 (2026-08-17). 셋 다 "dSPACE 조향이 느리던 시절"의
         # 보상값이라 조향 PI 도입 후 재조정 대상이다. 주행 중에도 바꿀 수 있다:
@@ -540,6 +569,17 @@ def generate_launch_description():
             # 재시작으로 자가 회복. 출발 인가는 go 점검 ③(scan 수신)이 계속 막는다.
             respawn=True,
             respawn_delay=2.0,
+            condition=UnlessCondition(LaunchConfiguration('parking_enabled')),
+        ),
+
+        # Four-LiDAR mapping + parking producer. It publishes
+        # /perception/parking only; MGM remains the sole TargetRef owner.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(PathJoinSubstitution([
+                get_package_share_directory('stack_parking'),
+                'launch', 'parking.launch.py'])),
+            launch_arguments={'start_multi_lidar': 'true'}.items(),
+            condition=IfCondition(LaunchConfiguration('parking_enabled')),
         ),
 
         # laser_static_tf(placeholder)는 제거 — base_link→laser_frame 은 stack_avoid_node가
@@ -555,7 +595,13 @@ def generate_launch_description():
             executable='stack_avoid_node',
             name='stack_avoid_node',
             parameters=[os.path.join(
-                get_package_share_directory('stack_avoid'), 'config', 'params.yaml')],
+                get_package_share_directory('stack_avoid'), 'config', 'params.yaml'), {
+                    'scan_topic': PythonExpression([
+                        "'/lidar/a1/scan' if '",
+                        LaunchConfiguration('parking_enabled'),
+                        "' == 'true' else '/scan'",
+                    ]),
+                }],
             output='screen',
         ),
 
@@ -563,6 +609,11 @@ def generate_launch_description():
             package='stack_estop',
             executable='stack_estop_node',
             name='stack_estop_node',
+            remappings=[('/scan', PythonExpression([
+                "'/lidar/a1/scan' if '",
+                LaunchConfiguration('parking_enabled'),
+                "' == 'true' else '/scan'",
+            ]))],
             parameters=[{
                 'laser_yaw_in_base_rad': ParameterValue(
                     LaunchConfiguration('laser_yaw_in_base_rad'), value_type=float),
@@ -600,6 +651,12 @@ def generate_launch_description():
                     LaunchConfiguration('rejoin_target_min_m'), value_type=float),
                 'rejoin_e_lpf_s': ParameterValue(
                     LaunchConfiguration('rejoin_e_lpf_s'), value_type=float),
+                'parking_zone_ranges': ParameterValue(
+                    LaunchConfiguration('t_parking_zone_ranges'),
+                    value_type=List[int]),
+                'parallel_parking_zone_ranges': ParameterValue(
+                    LaunchConfiguration('parallel_parking_zone_ranges'),
+                    value_type=List[int]),
                 # 지정 구간 (위경도 문자열 → 노드가 인덱스 구간으로 변환)
                 # validate() 가 확정한 경로 (인자 지정 또는 트랙 CSV 옆 zones_*.yaml)
                 'zones_file': LaunchConfiguration('zones_file_resolved'),

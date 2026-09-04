@@ -95,38 +95,41 @@ struct MpcTargetFdPayload  // 0x101 MPC_TARGET_FD — 64 B
   double y;          // [m]
   double yaw;        // [rad]
   double curvature;  // [1/m]
-  // Consecutive valid GNSS poses: translation in the previous vehicle frame,
-  // wrapped yaw difference, and the GNSS sample sequence number.
+  // Consecutive valid localization poses: translation in the previous
+  // vehicle frame, wrapped yaw difference, and source sample sequence.
+  // LANE/WAYPOINT/TRAFFIC use GNSS; PARKING may use LiDAR SLAM.
   double dx;
   double dy;
   double dyaw;
   uint64_t update;
 };
 
-inline bool stateUsesGpsDelta(uint8_t state)
+inline bool stateUsesPoseDelta(uint8_t state)
 {
-  // TargetRef constants: 0=LANE(camera), 1=WAYPOINT(GPS), 4=TRAFFIC(lane path).
-  return state == 0U || state == 1U || state == 4U;
+  // TargetRef constants: 0=LANE, 1=WAYPOINT, 3=PARKING, 4=TRAFFIC.
+  return state == 0U || state == 1U || state == 3U || state == 4U;
 }
 
-class GpsDeltaUpdateGate
+class PoseDeltaUpdateGate
 {
 public:
   bool shouldApply(uint8_t state, uint64_t update)
   {
-    if (!stateUsesGpsDelta(state)) {
+    if (!stateUsesPoseDelta(state)) {
       return false;
     }
-    if (initialized_ && update == last_update_) {
+    if (initialized_ && state == last_state_ && update == last_update_) {
       return false;
     }
     initialized_ = true;
+    last_state_ = state;
     last_update_ = update;
     return true;
   }
 
 private:
   bool initialized_{false};
+  uint8_t last_state_{0};
   uint64_t last_update_{0};
 };
 

@@ -8,6 +8,8 @@
     scan:
       angle_increment_deg: 1.0
       range_min: 0.15
+      # Public fusion keeps the full shared sensing range. Parking applies
+      # its shorter cutoff only inside stack_parking's cloud filter.
       range_max: 12.0
     sensors:
       # a1을 고정 기준으로 두고 a2/b1/b2를 긴 벽 공동 보정으로 정렬한다.
