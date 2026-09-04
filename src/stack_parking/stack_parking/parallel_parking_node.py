@@ -137,8 +137,11 @@ class ParallelParkingNode(WallGapNode):
 
     def _command_tick(self) -> None:
         if self.latest_pose is None:
-            self.stop_pub.publish(Bool(data=False))
-            self.state_pub.publish(String(data=ParallelControlState.IDLE.value))
+            self._publish_zero_target()
+            self.stop_pub.publish(Bool(data=self.enable_control))
+            self.state_pub.publish(String(data=(
+                'lidar_pose_missing_hold'
+                if self.enable_control else ParallelControlState.IDLE.value)))
             return
 
         if not self.controller.active:
@@ -150,13 +153,13 @@ class ParallelParkingNode(WallGapNode):
                     self.get_logger().info(
                         'autonomous parallel test: straight search at %.2fm/s'
                         % self.search_speed_mps)
-                self.stop_pub.publish(Bool(data=False))
                 state = (
                     'parallel_waiting_to_pass_valid_point'
                     if self.confirmed_candidate is not None
                     else 'parallel_searching_for_gap')
-                self.state_pub.publish(String(data=state))
-                self._publish_search_target()
+                blocked, reason = self._publish_search_target()
+                self.stop_pub.publish(Bool(data=blocked))
+                self.state_pub.publish(String(data=reason or state))
                 return
             self.searching = False
             self.stop_pub.publish(Bool(data=True if self.path_failed else False))
@@ -183,6 +186,15 @@ class ParallelParkingNode(WallGapNode):
                 output.reference_local,
                 0.0,
                 'parallel_lidar_pose_stale_hold',
+            )
+        blocked, reason = self._safety_block()
+        if blocked:
+            output = WallGapControlOutput(
+                output.state,
+                output.reference_map,
+                output.reference_local,
+                0.0,
+                reason,
             )
         self.last_control_output = output
         self.stop_pub.publish(Bool(data=abs(output.v_ref_mps) < 1.0e-6))
@@ -296,10 +308,11 @@ class ParallelParkingNode(WallGapNode):
                     self.delta_tracker.reset(pose)
                     first_output = self.controller.update(pose, now_s)
                     self.last_control_output = first_output
-                    self.stop_pub.publish(Bool(
-                        data=abs(first_output.v_ref_mps) < 1.0e-6))
-                    self.state_pub.publish(String(data=first_output.status))
-                    self._publish_target(first_output)
+                    blocked, reason = self._publish_target(first_output)
+                    self.stop_pub.publish(Bool(data=(
+                        blocked or abs(first_output.v_ref_mps) < 1.0e-6)))
+                    self.state_pub.publish(String(data=(
+                        reason or first_output.status)))
                     self.get_logger().info(
                         'parallel S path created after P0 pass: rear R=%.2fm, '
                         'entry R=%.2fm, origin=P0+%.2fm, arc=%.1fdeg x2, '

@@ -209,7 +209,8 @@ class StackParkingNode(Node):
             'cloud.stale_timeout_s': 0.35,
             'cloud.queue_size': 5,
             'cloud.min_range_m': 0.15,
-            'cloud.max_range_m': 12.0,
+            # Parking-only cutoff; never shorten the shared fused scan.
+            'cloud.max_range_m': 4.0,
             'cloud.self_filter_margin_m': 0.02,
             'prior.velocity_timeout_s': 0.25,
             'prior.imu_timeout_s': 0.25,
@@ -278,9 +279,8 @@ class StackParkingNode(Node):
             # in the map at each mis-rotated pose.
             'icp.min_yaw_observable_span_deg': 50.0,
             'icp.freespace_clear_enabled': True,
-            # Keep within the upstream sensor cutoff (lidar_fusion_v2
-            # fixed_geometry.yaml scan.range_max/sensors.*.max_range,
-            # currently 4.0m).
+            # Match the parking-only cloud cutoff above. The public fused
+            # scan intentionally remains 12 m for other safety consumers.
             'icp.freespace_clear_radius_m': 4.0,
             'icp.freespace_bin_width_deg': 1.0,
             'icp.freespace_margin_m': 0.02,

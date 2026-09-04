@@ -25,7 +25,9 @@
       stale_timeout_s: 0.35
       queue_size: 5
       min_range_m: 0.15
-      max_range_m: 12.0
+      # Parking-only cutoff. /unified_lidar/scan remains available at 12 m
+      # for avoidance, E-stop, and other shared consumers.
+      max_range_m: 4.0
       # Same rear-axle body box and margin as fusion_params.yaml.
       self_filter_margin_m: 0.02
 

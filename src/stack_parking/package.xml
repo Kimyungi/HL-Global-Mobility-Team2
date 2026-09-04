@@ -18,6 +18,8 @@
   <depend>laser_geometry</depend>
   <exec_depend>multi_lidar_fusion</exec_depend>
   <exec_depend>lidar_fusion_v2</exec_depend>
+  <exec_depend>stack_avoid</exec_depend>
+  <exec_depend>stack_estop</exec_depend>
 
   <!-- tools/lidar_fov.py · tools/lidar_overlap.py 가 쓰는 것 -->
   <depend>sensor_msgs</depend>
@@ -30,6 +32,7 @@
 
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

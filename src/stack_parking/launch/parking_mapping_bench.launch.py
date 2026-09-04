@@ -57,10 +57,10 @@ def generate_launch_description():
                 'Start the four real LiDAR drivers + lidar_fusion_v2 '
                 '(false if already running)')),
         DeclareLaunchArgument(
-            'start_can', default_value='true',
+            'start_can', default_value='false',
             description=(
-                'Start can_bridge_node against the real dSPACE link so '
-                '/vehicle/vector carries real actuator v/str (false if already running)')),
+                'Explicit opt-in: start can_bridge_node against real dSPACE '
+                'for actuator v/str feedback; keep false if already running')),
         DeclareLaunchArgument('can_interface', default_value='can0'),
         DeclareLaunchArgument(
             'rviz', default_value='true',

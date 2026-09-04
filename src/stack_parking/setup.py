@@ -16,6 +16,7 @@ setup(
         ('share/' + package_name + '/config', glob('config/*')),
     ],
     install_requires=['setuptools'],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='손상민',
     maintainer_email='kyg100800@gmail.com',

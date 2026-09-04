@@ -50,6 +50,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, ColorRGBA, String
 from visualization_msgs.msg import Marker, MarkerArray
 from fma_interfaces.msg import RefPoint, TargetRef
+from stack_avoid.estop_gate import EstopGate
 
 from .geometry import Pose2, transform_points
 from .reference_path import ReferencePath, build_reference_path
@@ -110,6 +111,7 @@ class WallGapNode(Node):
         self.declare_parameter('search_speed_mps', 0.75)
         self.declare_parameter('path_sample_step_m', 0.05)
         self.declare_parameter('pose_stale_timeout_s', 0.35)
+        self.declare_parameter('estop_stale_timeout_s', 0.25)
         # Vehicle footprint box for the RViz marker. Same figures as
         # multi_lidar_fusion/config/fusion_params.yaml's self-filter box
         # (length_m 0.85, width_m 0.62, wheelbase 0.595, front_overhang
@@ -217,6 +219,12 @@ class WallGapNode(Node):
         self.state_pub = self.create_publisher(String, '/wall_gap/state', 10)
         self.target_pub = self.create_publisher(
             TargetRef, str(self.get_parameter('target_topic').value), 1)
+        self.estop_gate = EstopGate(
+            self,
+            enabled=True,
+            stale_s=float(
+                self.get_parameter('estop_stale_timeout_s').value),
+        )
         # Every fresh test run must map from scratch (user directive,
         # 2026-09-02) — stack_parking_node already wipes its SLAM map on a
         # manual_command trigger when reset_map_on_mission_start is true
@@ -235,6 +243,7 @@ class WallGapNode(Node):
             % (cfg.near_m, cfg.far_m, cfg.wall_line_offset_m,
                cfg.min_gap_m, cfg.square_size_m, self.enable_control,
                self.search_speed_mps))
+        self.get_logger().info(self.estop_gate.banner())
         if not self.enable_control:
             self.get_logger().warn(
                 'control disabled: square confirmation will latch '
@@ -258,9 +267,15 @@ class WallGapNode(Node):
         if self.controller.active:
             self.delta_tracker.update(pose)
 
-    def _publish_target(self, output: WallGapControlOutput) -> None:
+    def _safety_block(self):
+        blocked, reason = self.estop_gate.block()
+        self.estop_gate.log_reason(reason)
+        return blocked, reason
+
+    def _publish_target(self, output: WallGapControlOutput):
         if not self.enable_control or output.reference_local is None:
-            return
+            return False, None
+        blocked, reason = self._safety_block()
         reference = output.reference_local
         delta = self.delta_tracker.delta
         msg = TargetRef()
@@ -272,15 +287,16 @@ class WallGapNode(Node):
             yaw=float(reference.yaw),
             curvature=float(reference.curvature),
         )]
-        msg.v_ref = float(output.v_ref_mps)
+        msg.v_ref = 0.0 if blocked else float(output.v_ref_mps)
         msg.state = TargetRef.STATE_PARKING
         msg.dx = float(delta.dx)
         msg.dy = float(delta.dy)
         msg.dyaw = float(delta.dyaw)
         msg.update = int(delta.update)
         self.target_pub.publish(msg)
+        return blocked, reason
 
-    def _publish_search_target(self) -> None:
+    def _publish_search_target(self):
         """Straight-ahead command while hunting for the gap (pre-confirmation).
 
         User directive (2026-09-03): switching the vehicle out of joystick
@@ -290,19 +306,37 @@ class WallGapNode(Node):
         pose transform, unlike the post-confirmation path in
         ``_publish_target``.
         """
+        blocked, reason = self._safety_block()
         msg = TargetRef()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.base_frame
         msg.ref_points = [RefPoint(
             x=float(self.search_preview_m), y=0.0, yaw=0.0, curvature=0.0)]
-        msg.v_ref = float(self.search_speed_mps)
+        msg.v_ref = 0.0 if blocked else float(self.search_speed_mps)
+        msg.state = TargetRef.STATE_PARKING
+        self.target_pub.publish(msg)
+        return blocked, reason
+
+    def _publish_zero_target(self) -> None:
+        """Continuously command zero while a required control input is absent."""
+        if not self.enable_control:
+            return
+        msg = TargetRef()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.base_frame
+        msg.ref_points = [RefPoint(
+            x=float(self.search_preview_m), y=0.0, yaw=0.0, curvature=0.0)]
+        msg.v_ref = 0.0
         msg.state = TargetRef.STATE_PARKING
         self.target_pub.publish(msg)
 
     def _command_tick(self) -> None:
         if self.latest_pose is None:
-            self.stop_pub.publish(Bool(data=False))
-            self.state_pub.publish(String(data=ControlState.IDLE.value))
+            self._publish_zero_target()
+            self.stop_pub.publish(Bool(data=self.enable_control))
+            self.state_pub.publish(String(data=(
+                'lidar_pose_missing_hold'
+                if self.enable_control else ControlState.IDLE.value)))
             return
 
         if not self.controller.active:
@@ -317,9 +351,10 @@ class WallGapNode(Node):
                     self.get_logger().info(
                         'mode switched to autonomous: driving straight at '
                         '%.2fm/s to search for the gap' % self.search_speed_mps)
-                self.stop_pub.publish(Bool(data=False))
-                self.state_pub.publish(String(data='searching_for_gap'))
-                self._publish_search_target()
+                blocked, reason = self._publish_search_target()
+                self.stop_pub.publish(Bool(data=blocked))
+                self.state_pub.publish(String(data=(
+                    reason or 'searching_for_gap')))
                 return
             self.searching = False
             self.stop_pub.publish(Bool(data=False))
@@ -346,6 +381,15 @@ class WallGapNode(Node):
                 output.reference_local,
                 0.0,
                 'lidar_pose_stale_hold',
+            )
+        blocked, reason = self._safety_block()
+        if blocked:
+            output = WallGapControlOutput(
+                output.state,
+                output.reference_map,
+                output.reference_local,
+                0.0,
+                reason,
             )
         self.last_control_output = output
         self.stop_pub.publish(Bool(data=abs(output.v_ref_mps) < 1.0e-6))
@@ -446,10 +490,11 @@ class WallGapNode(Node):
                     # not insert the old one-second zero-speed hold.
                     first_output = self.controller.update(pose, now_s)
                     self.last_control_output = first_output
-                    self.stop_pub.publish(Bool(
-                        data=abs(first_output.v_ref_mps) < 1.0e-6))
-                    self.state_pub.publish(String(data=first_output.status))
-                    self._publish_target(first_output)
+                    blocked, reason = self._publish_target(first_output)
+                    self.stop_pub.publish(Bool(data=(
+                        blocked or abs(first_output.v_ref_mps) < 1.0e-6)))
+                    self.state_pub.publish(String(data=(
+                        reason or first_output.status)))
                     self.get_logger().info(
                         'usable space confirmed: side=%s map=(%.2f,%.2f) '
                         'width=%.2fm — no detection hold, direction-change '

@@ -36,6 +36,7 @@ def generate_launch_description():
     merged_cloud_topic = '/parking/nearest_merged_cloud'
 
     start_multi_lidar = LaunchConfiguration('start_multi_lidar')
+    start_estop = LaunchConfiguration('start_estop')
     start_can = LaunchConfiguration('start_can')
     can_interface = LaunchConfiguration('can_interface')
     enable_control = LaunchConfiguration('enable_control')
@@ -60,7 +61,16 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('start_multi_lidar', default_value='true'),
-        DeclareLaunchArgument('start_can', default_value='true'),
+        DeclareLaunchArgument(
+            'start_estop', default_value='true',
+            description=(
+                'Start stack_estop on /unified_lidar/scan; set false only '
+                'when /perception/estop already has an owner')),
+        DeclareLaunchArgument(
+            'start_can', default_value='false',
+            description=(
+                'Explicit opt-in for the real dSPACE CAN bridge; keep false '
+                'when another bridge/MGM stack is running')),
         DeclareLaunchArgument('can_interface', default_value='can0'),
         DeclareLaunchArgument('enable_control', default_value='false'),
         DeclareLaunchArgument('search_speed_mps', default_value='0.5'),
@@ -105,6 +115,15 @@ def generate_launch_description():
                 launch_arguments={'rviz': 'false'}.items())],
             scoped=True,
             condition=IfCondition(start_multi_lidar)),
+        Node(
+            package='stack_estop',
+            executable='stack_estop_node',
+            name='parallel_parking_stack_estop_node',
+            output='screen',
+            remappings=[('/scan', '/unified_lidar/scan')],
+            parameters=[{'laser_yaw_in_base_rad': 0.0}],
+            condition=IfCondition(start_estop),
+        ),
         Node(
             package='stack_parking',
             executable='scan_to_cloud',

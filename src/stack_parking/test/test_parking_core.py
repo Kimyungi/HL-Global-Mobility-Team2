@@ -280,6 +280,7 @@ class FrontRearLocalizationTest(unittest.TestCase):
             wheelbase_m=1.0,
             steering_sign=-1.0,
             steering_deadband_rad=0.0,
+            max_steering_rad=math.radians(60.0),
         ))
         prior.update_vehicle(-1.0, -math.pi / 4.0, 0.0)
         prior.predict(0.0)

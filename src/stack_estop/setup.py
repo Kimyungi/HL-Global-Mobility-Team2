@@ -17,6 +17,7 @@ setup(
             glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='박찬미',
     maintainer_email='kyg100800@gmail.com',
