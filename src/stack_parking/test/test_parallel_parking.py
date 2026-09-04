@@ -48,13 +48,6 @@ def _pose(point):
     return Pose2(point.x, point.y, point.yaw)
 
 
-def _preview_end_trigger(path, cumulative, preview_m):
-    for index, length in enumerate(cumulative):
-        if cumulative[-1] - length <= preview_m + 1.0e-9:
-            return path[index]
-    return path[-1]
-
-
 class ParallelParkingGeometryTest(unittest.TestCase):
 
     def test_validation_rectangle_is_1p5_by_0p7_at_gap_midpoint(self):
@@ -220,6 +213,32 @@ class ParallelParkingGeometryTest(unittest.TestCase):
 
 class ParallelParkingControllerTest(unittest.TestCase):
 
+    def test_inner_entry_extension_and_phase4_straight_are_shortened(self):
+        controller = ParallelParkingController(ParallelParkingConfig(
+            entry_straight_m=2.0,
+            entry_inner_straight_m=1.0,
+            reference_reverse_end_trim_m=1.0,
+        ))
+        path = _path()
+        full_forward, full_reverse = parallel_controller_paths(path)
+        self.assertTrue(controller.start(
+            path, _pose(full_forward[0]), now_s=0.0))
+
+        entry_start = controller.single_arc_reverse_path[0]
+        entry_end = controller.single_arc_reverse_path[-1]
+        self.assertAlmostEqual(math.hypot(
+            entry_start.x - path.front_tangent_map[0],
+            entry_start.y - path.front_tangent_map[1]), 2.0, places=9)
+        self.assertAlmostEqual(math.hypot(
+            entry_end.x - path.arc_origin_map[0],
+            entry_end.y - path.arc_origin_map[1]), 1.0, places=9)
+
+        full_length = sum(math.hypot(
+            current.x - previous.x, current.y - previous.y)
+            for previous, current in zip(full_reverse, full_reverse[1:]))
+        phase4_length = controller.reference_reverse_lengths[-1]
+        self.assertAlmostEqual(full_length - phase4_length, 1.0, places=9)
+
     def test_all_motion_arcs_use_the_same_symmetric_radius(self):
         controller = ParallelParkingController()
         path = _path()
@@ -244,7 +263,7 @@ class ParallelParkingControllerTest(unittest.TestCase):
     def test_five_motion_sequence_has_five_one_second_holds(self):
         controller = ParallelParkingController(ParallelParkingConfig(
             direction_change_hold_s=1.0,
-            preview_distance_m=1.5,
+            preview_distance_m=1.0,
             forward_speed_mps=0.75,
             reverse_speed_mps=0.75,
         ))
@@ -268,11 +287,7 @@ class ParallelParkingControllerTest(unittest.TestCase):
             output.state, ParallelControlState.INITIAL_FORWARD)
         self.assertEqual(output.v_ref_mps, 0.75)
 
-        front_trigger = _preview_end_trigger(
-            controller.initial_reference_forward_path,
-            controller.initial_reference_forward_lengths,
-            controller.config.preview_distance_m,
-        )
+        front_trigger = controller.initial_reference_forward_path[-1]
         output = controller.update(_pose(front_trigger), 1.0)
         self.assertEqual(
             output.state, ParallelControlState.INITIAL_FORWARD_HOLD)
@@ -288,11 +303,7 @@ class ParallelParkingControllerTest(unittest.TestCase):
             output.state, ParallelControlState.SINGLE_ARC_REVERSE)
         self.assertEqual(output.v_ref_mps, -0.75)
 
-        single_reverse_trigger = _preview_end_trigger(
-            controller.single_arc_reverse_path,
-            controller.single_arc_reverse_lengths,
-            controller.config.preview_distance_m,
-        )
+        single_reverse_trigger = controller.single_arc_reverse_path[-1]
         output = controller.update(_pose(single_reverse_trigger), 3.0)
         self.assertEqual(
             output.state, ParallelControlState.SINGLE_ARC_REVERSE_HOLD)
@@ -303,11 +314,7 @@ class ParallelParkingControllerTest(unittest.TestCase):
             output.state, ParallelControlState.OPPOSITE_ARC_FORWARD)
         self.assertEqual(output.v_ref_mps, 0.75)
 
-        single_forward_trigger = _preview_end_trigger(
-            controller.opposite_arc_forward_path,
-            controller.opposite_arc_forward_lengths,
-            controller.config.preview_distance_m,
-        )
+        single_forward_trigger = controller.opposite_arc_forward_path[-1]
         output = controller.update(_pose(single_forward_trigger), 5.0)
         self.assertEqual(
             output.state, ParallelControlState.OPPOSITE_ARC_FORWARD_HOLD)
@@ -318,11 +325,7 @@ class ParallelParkingControllerTest(unittest.TestCase):
             output.state, ParallelControlState.REFERENCE_REVERSE)
         self.assertEqual(output.v_ref_mps, -0.75)
 
-        reference_reverse_trigger = _preview_end_trigger(
-            controller.reference_reverse_path,
-            controller.reference_reverse_lengths,
-            controller.config.preview_distance_m,
-        )
+        reference_reverse_trigger = controller.reference_reverse_path[-1]
         output = controller.update(_pose(reference_reverse_trigger), 7.0)
         self.assertEqual(
             output.state, ParallelControlState.REFERENCE_REVERSE_HOLD)
@@ -333,11 +336,7 @@ class ParallelParkingControllerTest(unittest.TestCase):
             output.state, ParallelControlState.REFERENCE_FORWARD)
         self.assertEqual(output.v_ref_mps, 0.75)
 
-        final_forward_trigger = _preview_end_trigger(
-            controller.reference_forward_path,
-            controller.reference_forward_lengths,
-            controller.config.preview_distance_m,
-        )
+        final_forward_trigger = controller.reference_forward_path[-1]
         output = controller.update(_pose(final_forward_trigger), 9.0)
         self.assertEqual(output.state, ParallelControlState.FINAL_HOLD)
         self.assertEqual(output.v_ref_mps, 0.0)

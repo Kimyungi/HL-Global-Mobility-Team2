@@ -1,18 +1,18 @@
 """Single-command real-stack test for the left-wall parallel-parking case.
 
 With control enabled, switching the vehicle from joystick to auto lets this
-node command the same 1.5m preview and 0.75m/s speeds as the T test. Existing
+node commands a 1.0m preview and the same 0.75m/s speeds as the T test. Existing
 SLAM map data is retained. A clear 1.5m wall-parallel x 0.7m inward rectangle
 defines P0. Once the vehicle passes P0, the node shifts the arc origin 0.5m
 forward and 0.25m clockwise-normal, then creates the R=2.0m, 50deg+50deg
 point-symmetric S path with 1.5m
 lines at both ends. It then runs the full S forward, a single-arc
-line-arc-line (entry straight parallel_entry_straight_m, default 2m) in
+line-arc-line (2m outer straight and 1m inner extension) in
 reverse, and its same-radius symmetric arc in forward
 (straight shortened to parallel_opposite_straight_m,
 default 1m). The last reverse and forward phases reuse the original symmetric
-full S (both arcs stay at parallel_turn_radius_m) without moving it. Every
-preview-at-end transition holds for one second. The logger flushes after the
+full S, with only phase 4's final straight shortened by 1m. Every transition
+holds for one second after the vehicle reaches the path end. The logger flushes after the
 final hold.
 """
 
@@ -55,8 +55,14 @@ def generate_launch_description():
         'parallel_arc_clockwise_offset_m')
     parallel_entry_straight_m = LaunchConfiguration(
         'parallel_entry_straight_m')
+    parallel_entry_inner_straight_m = LaunchConfiguration(
+        'parallel_entry_inner_straight_m')
     parallel_opposite_straight_m = LaunchConfiguration(
         'parallel_opposite_straight_m')
+    parallel_reference_reverse_end_trim_m = LaunchConfiguration(
+        'parallel_reference_reverse_end_trim_m')
+    parallel_phase_end_tolerance_m = LaunchConfiguration(
+        'parallel_phase_end_tolerance_m')
     rviz = LaunchConfiguration('rviz')
     logging = LaunchConfiguration('logging')
 
@@ -77,7 +83,7 @@ def generate_launch_description():
         DeclareLaunchArgument('search_speed_mps', default_value='0.5'),
         DeclareLaunchArgument('forward_speed_mps', default_value='0.5'),
         DeclareLaunchArgument('reverse_speed_mps', default_value='0.5'),
-        DeclareLaunchArgument('preview_distance_m', default_value='1.5'),
+        DeclareLaunchArgument('preview_distance_m', default_value='1.0'),
         DeclareLaunchArgument('direction_change_hold_s', default_value='1.0'),
         DeclareLaunchArgument('rectangle_wall_length_m', default_value='1.5'),
         DeclareLaunchArgument('rectangle_inward_depth_m', default_value='0.7'),
@@ -89,12 +95,21 @@ def generate_launch_description():
             'parallel_arc_clockwise_offset_m', default_value='0.25'),
         DeclareLaunchArgument(
             'parallel_entry_straight_m', default_value='2.0',
-            description='Straight length of the entry line-arc-line (backing in)'),
+            description='Outer straight length of the reverse entry'),
+        DeclareLaunchArgument(
+            'parallel_entry_inner_straight_m', default_value='1.0',
+            description='Inner arc-extension length of the reverse entry'),
         DeclareLaunchArgument(
             'parallel_opposite_straight_m', default_value='1.0',
             description=(
                 'Straight length of the forward nudge that follows the '
                 'entry (OPPOSITE_ARC_FORWARD)')),
+        DeclareLaunchArgument(
+            'parallel_reference_reverse_end_trim_m', default_value='1.0',
+            description='Distance removed from phase 4 final straight'),
+        DeclareLaunchArgument(
+            'parallel_phase_end_tolerance_m', default_value='0.1',
+            description='Vehicle distance tolerance for completing each phase'),
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument(
             'logging', default_value='true',
@@ -182,8 +197,14 @@ def generate_launch_description():
                 'parallel_arc_angle_deg': 50.0,
                 'parallel_entry_straight_m': ParameterValue(
                     parallel_entry_straight_m, value_type=float),
+                'parallel_entry_inner_straight_m': ParameterValue(
+                    parallel_entry_inner_straight_m, value_type=float),
                 'parallel_opposite_straight_m': ParameterValue(
                     parallel_opposite_straight_m, value_type=float),
+                'parallel_reference_reverse_end_trim_m': ParameterValue(
+                    parallel_reference_reverse_end_trim_m, value_type=float),
+                'parallel_phase_end_tolerance_m': ParameterValue(
+                    parallel_phase_end_tolerance_m, value_type=float),
             }],
         ),
         Node(

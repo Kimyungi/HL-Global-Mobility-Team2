@@ -76,7 +76,11 @@ def _rgba(r: float, g: float, b: float, a: float = 1.0) -> ColorRGBA:
 
 class WallGapNode(Node):
 
-    def __init__(self, node_name: str = 'wall_gap_node'):
+    def __init__(
+        self,
+        node_name: str = 'wall_gap_node',
+        preview_distance_default_m: float = 1.5,
+    ):
         super().__init__(node_name)
         self.declare_parameter('map_topic', '/parking/local_map')
         self.declare_parameter('pose_topic', '/parking/slam_pose')
@@ -105,7 +109,8 @@ class WallGapNode(Node):
         self.declare_parameter('target_topic', '/adas/target_ref')
         self.declare_parameter('command_rate_hz', 100.0)
         self.declare_parameter('direction_change_hold_s', 1.0)
-        self.declare_parameter('preview_distance_m', 1.5)
+        self.declare_parameter(
+            'preview_distance_m', float(preview_distance_default_m))
         self.declare_parameter('forward_speed_mps', 0.75)
         self.declare_parameter('reverse_speed_mps', 0.75)
         self.declare_parameter('search_speed_mps', 0.75)

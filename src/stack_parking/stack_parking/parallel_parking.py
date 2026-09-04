@@ -55,18 +55,19 @@ class ParallelReferencePath:
 @dataclass(frozen=True)
 class ParallelParkingConfig:
     direction_change_hold_s: float = 1.0
-    preview_distance_m: float = 1.5
+    preview_distance_m: float = 1.0
     forward_speed_mps: float = 0.75
     reverse_speed_mps: float = 0.75
     sample_step_m: float = 0.05
-    # Straight length of the entry line-arc-line (SINGLE_ARC_REVERSE, backing
-    # into the bay) versus the following forward nudge (OPPOSITE_ARC_FORWARD)
-    # -- independently tunable (user directive, 2026-09-04). Both default to
-    # the original symmetric 2m; parallel_parking_node.py's own parameter
-    # default shortens the nudge to 1m -- kept symmetric here so a bare
-    # ParallelParkingConfig() (e.g. in tests) keeps its old behaviour.
+    # The reverse entry keeps a 2m outer straight but shortens only the inner
+    # arc extension to 1m. The following forward nudge retains its own length.
     entry_straight_m: float = 2.0
-    opposite_straight_m: float = 2.0
+    entry_inner_straight_m: float = 1.0
+    opposite_straight_m: float = 1.0
+    # Phase 4 alone stops 1m before the end of the original reverse reference;
+    # phases 1 and 5 continue to use the untrimmed full-S path.
+    reference_reverse_end_trim_m: float = 1.0
+    phase_end_tolerance_m: float = 0.1
 
 
 class ParallelControlState(str, enum.Enum):
@@ -282,6 +283,40 @@ def _append_without_duplicate(
         target.append(point)
 
 
+def _trim_path_end(
+    path: Sequence[PathPoint], trim_m: float,
+) -> tuple[PathPoint, ...]:
+    """Return ``path`` with an exact arc-length amount removed from its end."""
+    points = tuple(path)
+    trim = max(0.0, float(trim_m))
+    if not points or trim <= 1.0e-9:
+        return points
+    lengths = cumulative_lengths(points)
+    target = lengths[-1] - trim
+    if target <= 1.0e-9:
+        return ()
+    right = int(np.searchsorted(np.asarray(lengths), target, side='left'))
+    if right >= len(points):
+        return points
+    if abs(lengths[right] - target) <= 1.0e-9:
+        return points[:right + 1]
+    left = max(0, right - 1)
+    span = lengths[right] - lengths[left]
+    if span <= 1.0e-9:
+        return points[:right]
+    alpha = (target - lengths[left]) / span
+    first = points[left]
+    second = points[right]
+    boundary = PathPoint(
+        first.x + alpha * (second.x - first.x),
+        first.y + alpha * (second.y - first.y),
+        wrap_angle(first.yaw + alpha * wrap_angle(second.yaw - first.yaw)),
+        first.curvature + alpha * (second.curvature - first.curvature),
+        first.gear,
+    )
+    return points[:left + 1] + (boundary,)
+
+
 def parallel_controller_paths(
     reference: ParallelReferencePath,
     step_m: float = 0.05,
@@ -325,21 +360,26 @@ def parallel_single_arc_paths(
     reference: ParallelReferencePath,
     step_m: float = 0.05,
     straight_m: float = 2.0,
+    inner_straight_m: Optional[float] = None,
 ) -> tuple[tuple[PathPoint, ...], tuple[PathPoint, ...]]:
     """Return the front line-arc-line path in both travel directions.
 
-    Both straight sections retain the phase-specific two-metre length.  The
-    reverse phase traverses outer-line -> arc -> inner-line; the following
-    forward phase traverses the same corridor in the opposite direction.
+    The reverse phase traverses outer-line -> arc -> inner-line.  The inner
+    extension can be shorter than the outer line without changing the arc.
     """
     arc_origin = np.asarray(reference.arc_origin_map, dtype=np.float64)
     front_tangent = np.asarray(
         reference.front_tangent_map, dtype=np.float64)
     front_end = np.asarray(reference.front_end_map, dtype=np.float64)
     line_length = float(straight_m)
+    inner_line_length = (
+        line_length if inner_straight_m is None
+        else float(inner_straight_m)
+    )
     wall_direction = front_end - front_tangent
     wall_direction_norm = float(np.linalg.norm(wall_direction))
-    if line_length <= 1.0e-9 or wall_direction_norm <= 1.0e-9:
+    if (line_length <= 1.0e-9 or inner_line_length <= 1.0e-9
+            or wall_direction_norm <= 1.0e-9):
         return (), ()
     wall_direction /= wall_direction_norm
     outer_end = front_tangent + line_length * wall_direction
@@ -355,7 +395,7 @@ def parallel_single_arc_paths(
     inner_yaw = arc[0].yaw
     inner_direction = np.asarray([
         math.cos(inner_yaw), math.sin(inner_yaw)], dtype=np.float64)
-    inner_start = arc_origin - line_length * inner_direction
+    inner_start = arc_origin - inner_line_length * inner_direction
     wall_yaw = math.atan2(wall_direction[1], wall_direction[0])
 
     forward: list[PathPoint] = []
@@ -438,7 +478,10 @@ class ParallelParkingController:
             path,
             self.config.sample_step_m,
             self.config.entry_straight_m,
+            self.config.entry_inner_straight_m,
         )
+        reverse = _trim_path_end(
+            reverse, self.config.reference_reverse_end_trim_m)
         if (not forward or not reverse
                 or not single_forward or not single_reverse):
             return False
@@ -546,11 +589,11 @@ class ParallelParkingController:
                 status, self.config.direction_change_hold_s),
         )
 
-    @staticmethod
-    def _at_end(reference: PathPoint, path: Sequence[PathPoint]) -> bool:
+    def _at_end(self, pose: Pose2, path: Sequence[PathPoint]) -> bool:
         end = path[-1]
         return math.hypot(
-            reference.x - end.x, reference.y - end.y) <= 1.0e-6
+            pose.x - end.x, pose.y - end.y
+        ) <= self.config.phase_end_tolerance_m
 
     def update(
         self,
@@ -567,7 +610,7 @@ class ParallelParkingController:
                 current_pose_map,
             )
             if not self._at_end(
-                    reference, self.initial_reference_forward_path):
+                    current_pose_map, self.initial_reference_forward_path):
                 return self._output(
                     current_pose_map, reference,
                     self.config.forward_speed_mps,
@@ -599,7 +642,8 @@ class ParallelParkingController:
                 self.single_arc_reverse_lengths,
                 current_pose_map,
             )
-            if not self._at_end(reference, self.single_arc_reverse_path):
+            if not self._at_end(
+                    current_pose_map, self.single_arc_reverse_path):
                 return self._output(
                     current_pose_map, reference,
                     -self.config.reverse_speed_mps,
@@ -631,7 +675,8 @@ class ParallelParkingController:
                 self.opposite_arc_forward_lengths,
                 current_pose_map,
             )
-            if not self._at_end(reference, self.opposite_arc_forward_path):
+            if not self._at_end(
+                    current_pose_map, self.opposite_arc_forward_path):
                 return self._output(
                     current_pose_map, reference,
                     self.config.forward_speed_mps,
@@ -663,7 +708,8 @@ class ParallelParkingController:
                 self.reference_reverse_lengths,
                 current_pose_map,
             )
-            if not self._at_end(reference, self.reference_reverse_path):
+            if not self._at_end(
+                    current_pose_map, self.reference_reverse_path):
                 return self._output(
                     current_pose_map, reference,
                     -self.config.reverse_speed_mps,
@@ -695,7 +741,8 @@ class ParallelParkingController:
                 self.reference_forward_lengths,
                 current_pose_map,
             )
-            if not self._at_end(reference, self.reference_forward_path):
+            if not self._at_end(
+                    current_pose_map, self.reference_forward_path):
                 return self._output(
                     current_pose_map, reference,
                     self.config.forward_speed_mps,

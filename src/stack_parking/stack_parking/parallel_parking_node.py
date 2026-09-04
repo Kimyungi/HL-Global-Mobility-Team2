@@ -33,7 +33,8 @@ class ParallelParkingNode(WallGapNode):
 
     def __init__(self) -> None:
         # Timers created by the base class bind these overridden callbacks.
-        super().__init__('parallel_parking_node')
+        super().__init__(
+            'parallel_parking_node', preview_distance_default_m=1.0)
 
         self.declare_parameter('rectangle_wall_length_m', 1.5)
         self.declare_parameter('rectangle_inward_depth_m', 0.7)
@@ -42,11 +43,14 @@ class ParallelParkingNode(WallGapNode):
         self.declare_parameter('parallel_arc_angle_deg', 50.0)
         self.declare_parameter('parallel_arc_start_offset_m', 0.5)
         self.declare_parameter('parallel_arc_clockwise_offset_m', 0.25)
-        # Entry line-arc-line straight (backing in) vs. the forward nudge
-        # that follows it -- independently tunable (user directive,
-        # 2026-09-04: entry stays 2m, nudge shortened to 1m).
+        # Keep the outer entry straight at 2m; shorten only the extension on
+        # the inside of the arc to 1m. Phase 4's final straight is also trimmed
+        # independently, leaving phases 1 and 5 on the full reference path.
         self.declare_parameter('parallel_entry_straight_m', 2.0)
+        self.declare_parameter('parallel_entry_inner_straight_m', 1.0)
         self.declare_parameter('parallel_opposite_straight_m', 1.0)
+        self.declare_parameter('parallel_reference_reverse_end_trim_m', 1.0)
+        self.declare_parameter('parallel_phase_end_tolerance_m', 0.1)
 
         self.rectangle_wall_length_m = float(
             self.get_parameter('rectangle_wall_length_m').value)
@@ -64,8 +68,14 @@ class ParallelParkingNode(WallGapNode):
             self.get_parameter('parallel_arc_clockwise_offset_m').value)
         self.parallel_entry_straight_m = float(
             self.get_parameter('parallel_entry_straight_m').value)
+        self.parallel_entry_inner_straight_m = float(
+            self.get_parameter('parallel_entry_inner_straight_m').value)
         self.parallel_opposite_straight_m = float(
             self.get_parameter('parallel_opposite_straight_m').value)
+        self.parallel_reference_reverse_end_trim_m = float(self.get_parameter(
+            'parallel_reference_reverse_end_trim_m').value)
+        self.parallel_phase_end_tolerance_m = float(
+            self.get_parameter('parallel_phase_end_tolerance_m').value)
 
         # A 1.5m wall opening is required.  The common detector's 0.7m square
         # precheck is a necessary subset of our 1.5m x 0.7m rectangle; newly
@@ -88,7 +98,11 @@ class ParallelParkingNode(WallGapNode):
             sample_step_m=float(
                 self.get_parameter('path_sample_step_m').value),
             entry_straight_m=self.parallel_entry_straight_m,
+            entry_inner_straight_m=self.parallel_entry_inner_straight_m,
             opposite_straight_m=self.parallel_opposite_straight_m,
+            reference_reverse_end_trim_m=(
+                self.parallel_reference_reverse_end_trim_m),
+            phase_end_tolerance_m=self.parallel_phase_end_tolerance_m,
         ))
         self.delta_tracker = PoseDeltaTracker()
         self.reference_path: ParallelReferencePath | None = None
@@ -115,7 +129,8 @@ class ParallelParkingNode(WallGapNode):
             'parallel parking ready: left wall, rectangle=%.2fm x %.2fm, '
             'symmetric R=%.2fm, arc origin=P0+%.2fm forward+%.2fm CW, '
             'arcs=%.1fdeg, '
-            'end lines=%.2fm, entry straight=%.2fm, nudge straight=%.2fm, '
+            'end lines=%.2fm, entry outer/inner=%.2f/%.2fm, '
+            'nudge straight=%.2fm, phase4 end trim=%.2fm, preview=%.2fm, '
             'previous map accepted'
             % (
                 self.rectangle_wall_length_m,
@@ -126,7 +141,10 @@ class ParallelParkingNode(WallGapNode):
                 self.parallel_arc_angle_deg,
                 self.parallel_end_straight_m,
                 self.parallel_entry_straight_m,
+                self.parallel_entry_inner_straight_m,
                 self.parallel_opposite_straight_m,
+                self.parallel_reference_reverse_end_trim_m,
+                self.controller.config.preview_distance_m,
             ))
 
     def _command_tick(self) -> None:
@@ -311,8 +329,9 @@ class ParallelParkingNode(WallGapNode):
                         'parallel S path created after P0 pass: symmetric '
                         'R=%.2fm, origin=P0+%.2fm forward+%.2fm CW, '
                         'arc=%.1fdeg x2, '
-                        'end straight=%.2fm x2, entry straight=%.2fm, '
-                        'nudge straight=%.2fm, preview=%.2fm, '
+                        'end straight=%.2fm x2, entry outer/inner=%.2f/%.2fm, '
+                        'nudge straight=%.2fm, phase4 end trim=%.2fm, '
+                        'preview=%.2fm, '
                         'sequence=S-F/front-arc-R/rear-arc-F/S-R/S-F, '
                         'v_forward=%.2f, v_reverse=%.2f'
                         % (
@@ -322,7 +341,9 @@ class ParallelParkingNode(WallGapNode):
                             self.parallel_arc_angle_deg,
                             self.parallel_end_straight_m,
                             self.parallel_entry_straight_m,
+                            self.parallel_entry_inner_straight_m,
                             self.parallel_opposite_straight_m,
+                            self.parallel_reference_reverse_end_trim_m,
                             self.controller.config.preview_distance_m,
                             self.controller.config.forward_speed_mps,
                             -self.controller.config.reverse_speed_mps,
