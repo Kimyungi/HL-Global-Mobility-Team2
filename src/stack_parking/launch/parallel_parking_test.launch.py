@@ -3,8 +3,9 @@
 With control enabled, switching the vehicle from joystick to auto lets this
 node command the same 1.5m preview and 0.75m/s speeds as the T test. Existing
 SLAM map data is retained. A clear 1.5m wall-parallel x 0.7m inward rectangle
-defines P0. Once the vehicle passes P0, the node shifts the arc origin 0.5m
-forward and creates the R=1.12m, 45deg+45deg point-symmetric S path with 1.5m
+defines P0. Once the vehicle passes P0, the node shifts the arc origin 0.75m
+forward and 0.5m clockwise-normal, then creates the R=1.5m, 30deg+30deg
+point-symmetric S path with 1.5m
 lines at both ends. It then runs the full S forward, a single-arc
 line-arc-line (entry straight parallel_entry_straight_m, default 2m) in
 reverse, and its same-radius symmetric arc in forward
@@ -50,6 +51,8 @@ def generate_launch_description():
     parallel_end_straight_m = LaunchConfiguration('parallel_end_straight_m')
     parallel_arc_start_offset_m = LaunchConfiguration(
         'parallel_arc_start_offset_m')
+    parallel_arc_clockwise_offset_m = LaunchConfiguration(
+        'parallel_arc_clockwise_offset_m')
     parallel_entry_straight_m = LaunchConfiguration(
         'parallel_entry_straight_m')
     parallel_opposite_straight_m = LaunchConfiguration(
@@ -78,10 +81,12 @@ def generate_launch_description():
         DeclareLaunchArgument('direction_change_hold_s', default_value='1.0'),
         DeclareLaunchArgument('rectangle_wall_length_m', default_value='1.5'),
         DeclareLaunchArgument('rectangle_inward_depth_m', default_value='0.7'),
-        DeclareLaunchArgument('parallel_turn_radius_m', default_value='1.12'),
+        DeclareLaunchArgument('parallel_turn_radius_m', default_value='1.5'),
         DeclareLaunchArgument('parallel_end_straight_m', default_value='1.5'),
         DeclareLaunchArgument(
-            'parallel_arc_start_offset_m', default_value='0.25'),
+            'parallel_arc_start_offset_m', default_value='0.75'),
+        DeclareLaunchArgument(
+            'parallel_arc_clockwise_offset_m', default_value='0.5'),
         DeclareLaunchArgument(
             'parallel_entry_straight_m', default_value='2.0',
             description='Straight length of the entry line-arc-line (backing in)'),
@@ -172,7 +177,9 @@ def generate_launch_description():
                     parallel_end_straight_m, value_type=float),
                 'parallel_arc_start_offset_m': ParameterValue(
                     parallel_arc_start_offset_m, value_type=float),
-                'parallel_arc_angle_deg': 35.0,
+                'parallel_arc_clockwise_offset_m': ParameterValue(
+                    parallel_arc_clockwise_offset_m, value_type=float),
+                'parallel_arc_angle_deg': 30.0,
                 'parallel_entry_straight_m': ParameterValue(
                     parallel_entry_straight_m, value_type=float),
                 'parallel_opposite_straight_m': ParameterValue(

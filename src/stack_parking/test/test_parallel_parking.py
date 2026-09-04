@@ -36,9 +36,9 @@ def _candidate() -> TrackedCandidate:
 
 def _path():
     path = build_parallel_reference_path(
-        _candidate(), Pose2(), turn_radius_m=1.12,
-        end_straight_m=1.5, arc_angle_deg=45.0,
-        arc_start_offset_m=0.5)
+        _candidate(), Pose2(), turn_radius_m=1.5,
+        end_straight_m=1.5, arc_angle_deg=30.0,
+        arc_start_offset_m=0.75, arc_clockwise_offset_m=0.5)
     if path is None:
         raise AssertionError('parallel path was not built')
     return path
@@ -78,24 +78,26 @@ class ParallelParkingGeometryTest(unittest.TestCase):
         self.assertFalse(rectangle_is_clear(
             np.asarray([[0.7, 0.5]]), 0.0, 1.5, 0.7))
 
-    def test_radius_1p12_arcs_are_symmetric_about_shifted_origin(self):
+    def test_radius_1p5_arcs_are_symmetric_about_shifted_origin(self):
         path = _path()
         p0 = np.asarray(path.p0_map)
         arc_origin = np.asarray(path.arc_origin_map)
         front_center = np.asarray(path.front_center_map)
-        np.testing.assert_allclose(arc_origin, p0 + [0.5, 0.0])
+        np.testing.assert_allclose(arc_origin, p0 + [0.75, -0.5])
         center_direction = (
             (front_center - arc_origin)
             / np.linalg.norm(front_center - arc_origin))
-        self.assertAlmostEqual(center_direction[0], math.sqrt(0.5), places=9)
-        self.assertAlmostEqual(center_direction[1], math.sqrt(0.5), places=9)
+        self.assertAlmostEqual(
+            center_direction[0], math.sin(math.radians(30.0)), places=9)
+        self.assertAlmostEqual(
+            center_direction[1], math.cos(math.radians(30.0)), places=9)
 
         front_radii = np.linalg.norm(
             path.front_arc_map - front_center, axis=1)
         rear_radii = np.linalg.norm(
             path.rear_arc_map - np.asarray(path.rear_center_map), axis=1)
-        np.testing.assert_allclose(front_radii, 1.12, atol=1.0e-9)
-        np.testing.assert_allclose(rear_radii, 1.12, atol=1.0e-9)
+        np.testing.assert_allclose(front_radii, 1.5, atol=1.0e-9)
+        np.testing.assert_allclose(rear_radii, 1.5, atol=1.0e-9)
         np.testing.assert_allclose(
             path.rear_arc_map,
             2.0 * arc_origin - path.front_arc_map[::-1],
@@ -173,13 +175,14 @@ class ParallelParkingGeometryTest(unittest.TestCase):
                            current.y - previous.y)
                 for previous, current in zip(
                     opposite_forward, opposite_forward[1:])),
-            4.0 + 1.12 * math.radians(45.0),
+            4.0 + 1.5 * math.radians(30.0),
             places=3,
         )
 
     def test_arc_origin_uses_wall_slope_and_vehicle_only_selects_direction(self):
         angle = math.radians(6.0)
         wall_tangent = np.asarray([math.cos(angle), math.sin(angle)])
+        clockwise = np.asarray([wall_tangent[1], -wall_tangent[0]])
         candidate = TrackedCandidate(
             side='left',
             map_x=2.0,
@@ -200,7 +203,7 @@ class ParallelParkingGeometryTest(unittest.TestCase):
         self.assertIsNotNone(path)
         np.testing.assert_allclose(
             np.asarray(path.arc_origin_map) - np.asarray(path.p0_map),
-            0.5 * wall_tangent,
+            0.75 * wall_tangent + 0.5 * clockwise,
             atol=1.0e-9,
         )
 
@@ -210,7 +213,7 @@ class ParallelParkingGeometryTest(unittest.TestCase):
         np.testing.assert_allclose(
             np.asarray(reverse_direction_path.arc_origin_map)
             - np.asarray(reverse_direction_path.p0_map),
-            -0.5 * wall_tangent,
+            -0.75 * wall_tangent - 0.5 * clockwise,
             atol=1.0e-9,
         )
 

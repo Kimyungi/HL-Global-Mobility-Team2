@@ -2,9 +2,10 @@
 
 The valid point P0 is the midpoint between the two wall faces and the midpoint
 of the wall-side edge of a 1.5m x 0.7m validation rectangle.  The S-curve
-origin is shifted 0.5m from P0 along the wall tangent oriented toward the
-vehicle's travel direction; the vehicle yaw itself is not used as its slope. A
-45-degree arc of radius 1.12m is constructed there, then rotated 180 degrees
+origin is shifted 0.75m from P0 along the wall tangent oriented toward the
+vehicle's travel direction, then another 0.5m along that direction rotated 90
+degrees clockwise; the vehicle yaw itself is not used as its slope. A
+30-degree arc of radius 1.5m is constructed there, then rotated 180 degrees
 about the shifted origin.  A 1.5-metre wall-parallel line extends from each end
 of the S.  The five-motion controller additionally isolates one arc into a
 line-arc-line path and obtains the other by rotating it 180 degrees about the
@@ -137,18 +138,21 @@ def _rotate(vector: np.ndarray, angle: float) -> np.ndarray:
 def build_parallel_reference_path(
     candidate: TrackedCandidate,
     vehicle_pose: Pose2,
-    turn_radius_m: float = 1.12,
+    turn_radius_m: float = 1.5,
     end_straight_m: float = 1.5,
-    arc_angle_deg: float = 45.0,
-    arc_start_offset_m: float = 0.5,
+    arc_angle_deg: float = 30.0,
+    arc_start_offset_m: float = 0.75,
+    arc_clockwise_offset_m: float = 0.5,
     arc_points: int = 24,
 ) -> Optional[ParallelReferencePath]:
     """Construct the point-symmetric S path requested for parallel parking."""
     radius = float(turn_radius_m)
     line_length = float(end_straight_m)
     arc_start_offset = float(arc_start_offset_m)
+    arc_clockwise_offset = float(arc_clockwise_offset_m)
     arc_angle = math.radians(float(arc_angle_deg))
     if (radius <= 0.0 or line_length <= 0.0 or arc_start_offset < 0.0
+            or arc_clockwise_offset < 0.0
             or not 0.0 < arc_angle < math.pi / 2.0):
         return None
 
@@ -170,12 +174,18 @@ def build_parallel_reference_path(
     # two wall-tangent directions is the forward-travel direction.
     direction = 1.0 if float(np.dot(vehicle_forward, wall_tangent)) >= 0.0 else -1.0
     tangent = direction * wall_tangent
-    arc_origin = p0 + arc_start_offset * tangent
+    clockwise = _rotate(tangent, -math.pi / 2.0)
+    arc_origin = (
+        p0
+        + arc_start_offset * tangent
+        + arc_clockwise_offset * clockwise
+    )
 
-    # For 45 degrees, arc_origin->centre is radius/sqrt(2) along both
-    # the forward wall tangent and inward normal.  The formulation below
-    # also keeps the angle parameter explicit for geometry validation.
-    front_direction = math.cos(arc_angle) * tangent + math.sin(arc_angle) * inward
+    # The radius at the wall-tangent end points opposite ``inward``.  Place
+    # the centre so the rotation from the origin radius to that end radius is
+    # exactly ``arc_angle`` (the former cos/sin order only happened to be
+    # correct at 45 degrees and turned a requested 30-degree arc into 60).
+    front_direction = math.sin(arc_angle) * tangent + math.cos(arc_angle) * inward
     front_center = arc_origin + radius * front_direction
     front_tangent = front_center - radius * inward
     radius_at_origin = arc_origin - front_center
