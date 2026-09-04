@@ -527,6 +527,20 @@ class StackParkingNode(Node):
         return mode, side or SIDE_AUTO
 
     def _on_command(self, msg: String) -> None:
+        normalized = msg.data.lower().strip().replace('_', ' ').replace('-', ' ')
+        if normalized == 'freeze mapping':
+            # The dedicated wall-gap nodes own parking-space detection and
+            # send this as soon as their reference path is fixed. Stop the
+            # built-in detector as well as map growth, but keep ICP running
+            # against the frozen map for localization during parking.
+            self.mission.cancel()
+            changed = self.pipeline.freeze_mapping()
+            self.manual_gate_active = False
+            self.get_logger().info(
+                'parking map frozen by external reference path: stage=%s%s'
+                % (self.pipeline.stage.value,
+                   '' if changed else ' (already frozen)'))
+            return
         parsed = self._parse_command(msg.data)
         if parsed is None:
             if msg.data.lower().strip() not in ('cancel', 'reset', 'stop'):

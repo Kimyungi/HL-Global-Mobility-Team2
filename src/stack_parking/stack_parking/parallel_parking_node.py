@@ -237,15 +237,25 @@ class ParallelParkingNode(WallGapNode):
             return
         pose = self.latest_pose
 
+        if self.detection_frozen:
+            self._publish_markers()
+            return
+
         if not self.seeded:
             # Unlike the T test, keep all map data accumulated before auto
             # mode.  Only the current pose is needed to orient the first fixed
             # left-wall reference in the vehicle's travel direction.
             self.seeded = True
             self.detector.set_seed(pose, side=SIDE_LEFT)
+            self._arm_wall_acquisition()
             self.get_logger().info(
-                'parallel left-wall acquisition seeded without map reset at '
-                '(%.2f,%.2f)' % (pose.x, pose.y))
+                'parallel left-wall acquisition armed at (%.2f,%.2f); '
+                'waiting for %d map frames'
+                % (pose.x, pose.y, self.wall_acquisition_delay_frames))
+
+        if not self._wall_acquisition_ready():
+            self._publish_markers()
+            return
 
         tested_before = {id(candidate) for candidate in self.detector.tracked
                          if candidate.tested}
@@ -306,6 +316,7 @@ class ParallelParkingNode(WallGapNode):
                 self.get_logger().error(
                     'parallel reference-path parameters are degenerate')
             else:
+                self._freeze_mapping_and_detection()
                 now_s = self._clock_s()
                 if not self.controller.start(self.reference_path, pose, now_s):
                     self.path_failed = True

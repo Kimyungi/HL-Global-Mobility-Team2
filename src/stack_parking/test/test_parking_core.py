@@ -351,6 +351,21 @@ class FrontRearLocalizationTest(unittest.TestCase):
         self.assertEqual(pipeline.stage, PipelineStage.PARKING)
         self.assertTrue(pipeline.parking_enabled)
 
+    def test_external_reference_path_can_freeze_mapping(self):
+        pipeline = PipelineController(
+            slam_confirm_scans=10,
+            localization_confirm_scans=2,
+            minimum_map_points=5,
+        )
+        self.assertTrue(pipeline.mapping_enabled)
+        self.assertTrue(pipeline.freeze_mapping())
+        self.assertEqual(pipeline.stage, PipelineStage.LOCALIZATION)
+        self.assertFalse(pipeline.mapping_enabled)
+        self.assertFalse(pipeline.freeze_mapping())
+        self.assertFalse(pipeline.observe_slam(True, 5))
+        self.assertTrue(pipeline.observe_slam(True, 5))
+        self.assertEqual(pipeline.stage, PipelineStage.PARKING)
+
 
 class MissionSimulationTest(unittest.TestCase):
 

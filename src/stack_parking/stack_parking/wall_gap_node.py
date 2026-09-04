@@ -14,9 +14,9 @@ All motion output is guarded by the explicit ``enable_control`` parameter;
 visualization remains usable with control disabled, in which case both the
 search leg and the post-confirmation path are left to the driver/joystick.
 
-Does not touch stack_parking_node or space_detector.py — independent
-experiment, reads the same /parking/local_map + /parking/slam_pose that are
-already being published.
+Uses the same /parking/local_map + /parking/slam_pose published by
+stack_parking_node. Once its own reference path is fixed, it asks that node to
+freeze map growth while scan-to-map localization continues.
 
 Markers on /wall_gap/markers (ns):
   vehicle_box — the vehicle footprint outline at the current LiDAR-localized
@@ -92,6 +92,7 @@ class WallGapNode(Node):
         self.declare_parameter('initial_wall_min_points', 6)
         self.declare_parameter('initial_wall_min_length_m', 0.5)
         self.declare_parameter('initial_wall_max_angle_deg', 45.0)
+        self.declare_parameter('wall_acquisition_delay_frames', 5)
         self.declare_parameter('join_gap_m', 0.3)
         self.declare_parameter('min_segment_points', 3)
         self.declare_parameter('min_gap_m', 1.2)
@@ -163,6 +164,12 @@ class WallGapNode(Node):
         self.seeded_at_s = 0.0
         self.last_reset_send_s = -1
         self.final_cancel_sent = False
+        self.map_frames_received = 0
+        self.wall_acquisition_armed_frame: int | None = None
+        self.wall_acquisition_delay_frames = max(
+            0, int(self.get_parameter('wall_acquisition_delay_frames').value))
+        self.detection_frozen = False
+        self.mapping_freeze_sent = False
         self.map_frame = str(self.get_parameter('map_frame').value)
         self.base_frame = str(self.get_parameter('base_frame').value)
         self.min_turn_radius_m = float(self.get_parameter('min_turn_radius_m').value)
@@ -262,6 +269,28 @@ class WallGapNode(Node):
         self.latest_map = (
             np.column_stack((pts['x'], pts['y'])) if pts.dtype.names
             else np.asarray(pts).reshape((-1, 2)))
+        self.map_frames_received += 1
+
+    def _arm_wall_acquisition(self) -> None:
+        self.wall_acquisition_armed_frame = self.map_frames_received
+
+    def _wall_acquisition_ready(self) -> bool:
+        if self.wall_acquisition_armed_frame is None:
+            return False
+        return (
+            self.map_frames_received - self.wall_acquisition_armed_frame
+            >= self.wall_acquisition_delay_frames
+        )
+
+    def _freeze_mapping_and_detection(self) -> None:
+        """Latch the chosen space/path and stop all further map growth."""
+        self.detection_frozen = True
+        if self.mapping_freeze_sent:
+            return
+        self.mapping_freeze_sent = True
+        self.command_pub.publish(String(data='freeze mapping'))
+        self.get_logger().info(
+            'reference path fixed: mapping and parking-space search frozen')
 
     def _on_pose(self, msg: PoseStamped) -> None:
         q = msg.pose.orientation
@@ -412,6 +441,10 @@ class WallGapNode(Node):
             return
         pose = self.latest_pose
 
+        if self.detection_frozen:
+            self._publish_markers()
+            return
+
         if not self.seeded:
             self.seeded = True
             self.seeded_at_s = self._clock_s()
@@ -453,12 +486,18 @@ class WallGapNode(Node):
             # a pre-reset pose could be mixed with post-reset map points.
             seed_side = self.detector.config.search_sides[0]
             self.detector.set_seed(pose, side=seed_side)
+            self._arm_wall_acquisition()
             self.get_logger().info(
-                'reference-wall acquisition seeded in fresh %s at '
-                '(%.2f,%.2f), side=%s'
-                % (self.map_frame, pose.x, pose.y, seed_side))
+                'reference-wall acquisition armed in fresh %s at '
+                '(%.2f,%.2f), side=%s; waiting for %d map frames'
+                % (self.map_frame, pose.x, pose.y, seed_side,
+                   self.wall_acquisition_delay_frames))
 
         if self.detector.seed_pose is None:
+            self._publish_markers()
+            return
+
+        if not self._wall_acquisition_ready():
             self._publish_markers()
             return
 
@@ -484,6 +523,7 @@ class WallGapNode(Node):
                     'usable space confirmed, but reference-path parameters '
                     'must all be positive')
             else:
+                self._freeze_mapping_and_detection()
                 now_s = self._clock_s()
                 if not self.controller.start(self.reference_path, pose, now_s):
                     self.get_logger().error(

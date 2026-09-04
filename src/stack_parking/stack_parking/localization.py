@@ -427,6 +427,14 @@ class PipelineController:
         self.localization_accepted = 0
         return True
 
+    def freeze_mapping(self) -> bool:
+        """Stop map growth while keeping scan-to-map localization active."""
+        previous = self.stage
+        if self.stage in (PipelineStage.SLAM, PipelineStage.MAPPING):
+            self.stage = PipelineStage.LOCALIZATION
+            self.localization_accepted = 0
+        return self.stage != previous
+
     def return_to_mapping(self, map_initialized: bool) -> None:
         self.stage = (
             PipelineStage.MAPPING if map_initialized else PipelineStage.SLAM)
