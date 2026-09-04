@@ -59,3 +59,39 @@ ros2 run adas_mgm go --skip-gps --skip-avoid --require-traffic
 노드 종료, 조향 이상 중 하나라도 발생하면 즉시 종료하고 실패로 기록한다.
 
 로그는 `~/FMA_ws/drive_logs/indoor_traffic_<시각>/`에 저장된다.
+
+## 2026-09-04 추론 주기 진단
+
+실차 PC(`Intel Core Ultra 9 288V`, 논리 CPU 8개, RAM 30GiB)에서 설치된
+PyTorch 모델을 `640x360` 입력, `imgsz=640`, CPU 장치로 각각 2회 준비 실행 후
+10회 측정했다.
+
+| 모델 | 용도 | 파라미터 | 파일 크기 | CPU 추론 지연(min/median/max) |
+|---|---|---:|---:|---:|
+| `yolov8n.pt` | 신호등 bbox 검출 | 3,157,200 | 6.25MiB | 98.3/192.1/244.4ms |
+| `stopline_yolov8s_seg.pt` | 정지선 segmentation | 11,791,257 | 22.74MiB | 377.3/473.9/625.1ms |
+
+현재 launch의 카메라와 처리 타이머는 모두 10Hz이므로 한 프레임의 처리 예산은
+100ms다. 적색이 확정되면 `stack_traffic_node`의 동일 timer callback 안에서
+정지선 segmentation을 먼저 실행하고 신호등 detection을 이어서 실행한다. 두
+모델의 CPU 중앙 지연 합계만 약 666ms이므로, 후처리를 제외해도 목표 10Hz를
+달성할 수 없다.
+
+MGM의 `traffic_stale_timeout_sec`는 0.5초다. 현장 실행 중 아래 경고가
+반복됐으며, 모델 추론이 callback과 `/perception/traffic_stop` 발행을 함께
+지연시키는 현상과 일치한다.
+
+```text
+traffic_stop 신선도 초과 — 정지 요구 강제 (stack_traffic 확인 필요)
+```
+
+또한 화면에서 `stopline score=0.32`, `y_max=270px`, `stable=1`이었지만,
+OAK-D depth가 `accepted=0`이고 유효 픽셀 비율이 약 0~1%여서 최종
+`stopline_detected=false`가 발행됐다. 이는 YOLO 미검출이 아니라 현재 메시지
+출력 조건이 안정 YOLO 검출과 유효 depth를 모두 요구하기 때문이다.
+
+따라서 다음 두 문제가 해결되고 10Hz 발행 및 0.5초 watchdog 여유가 실측되기
+전에는 `go`를 실행하지 않는다.
+
+1. CPU에서 직렬 실행되는 두 YOLO 모델의 처리 주기 초과
+2. 합의된 정지선 소실 기반 제어와 최종 `stopline_detected` depth gate의 불일치
