@@ -105,6 +105,184 @@ def _empty_detection(
     )
 
 
+def _result_class_name(names, class_id: int) -> str:
+    if isinstance(names, dict):
+        return str(names.get(class_id, class_id))
+    if isinstance(names, (list, tuple)) and 0 <= class_id < len(names):
+        return str(names[class_id])
+    return str(class_id)
+
+
+def _normalized_class_name(value: str) -> str:
+    return value.lower().replace("_", " ").replace("-", " ").strip()
+
+
+def _result_scalar(values, index: int) -> float:
+    value = values[index]
+    if hasattr(value, "item"):
+        value = value.item()
+    return float(value)
+
+
+def detect_stop_line_from_yolo_result(
+    result,
+    frame_shape: Tuple[int, ...],
+    roi_bbox: BBox,
+    confidence_threshold: float = 0.35,
+    class_name: str = "stop_line",
+) -> StopLineDetection:
+    """YOLO segmentation 결과를 기존 거리 판단용 형식으로 변환한다.
+
+    ``result``는 전체 영상 또는 ``roi_bbox``로 자른 영상에 대한 Ultralytics
+    Result다. ``result.orig_shape``가 전체 영상 크기이면 전체 마스크 중 ROI와
+    겹치는 부분만 사용한다. 모델은 정지선의 의미를 판별하고, 이 함수는
+    마스크에서 차량 쪽 경계와 전체 영상 좌표를 계산한다. 여러 정지선이 있으면
+    신뢰도와 영상 아래쪽 위치를 함께 보아 차량에 가까운 후보를 우선한다.
+    """
+    if len(frame_shape) < 2:
+        raise ValueError("frame_shape에는 높이와 폭이 있어야 합니다.")
+    if not 0.0 <= confidence_threshold <= 1.0:
+        raise ValueError("confidence_threshold는 0~1이어야 합니다.")
+
+    frame_height, frame_width = frame_shape[:2]
+    roi_x1, roi_y1, roi_x2, roi_y2 = roi_bbox
+    if not (
+        0 <= roi_x1 < roi_x2 <= frame_width
+        and 0 <= roi_y1 < roi_y2 <= frame_height
+    ):
+        raise ValueError("roi_bbox가 영상 범위를 벗어났습니다.")
+    roi_width = roi_x2 - roi_x1
+    roi_height = roi_y2 - roi_y1
+    empty_mask = np.zeros((roi_height, roi_width), dtype=np.uint8)
+
+    boxes = getattr(result, "boxes", None) if result is not None else None
+    masks = getattr(result, "masks", None) if result is not None else None
+    if boxes is None or masks is None:
+        return _empty_detection(roi_bbox, empty_mask)
+
+    classes = getattr(boxes, "cls", None)
+    confidences = getattr(boxes, "conf", None)
+    polygons = getattr(masks, "xy", None)
+    if classes is None or confidences is None or polygons is None:
+        return _empty_detection(roi_bbox, empty_mask)
+
+    target_name = _normalized_class_name(class_name)
+    names = getattr(result, "names", {})
+    result_shape = tuple(getattr(result, "orig_shape", (roi_height, roi_width)))
+    full_frame_coordinates = result_shape[:2] == (frame_height, frame_width)
+    best = None
+    best_selection_score = -1.0
+    candidate_count = min(len(polygons), len(classes), len(confidences))
+    for index in range(candidate_count):
+        class_id = int(round(_result_scalar(classes, index)))
+        detected_name = _normalized_class_name(
+            _result_class_name(names, class_id)
+        )
+        confidence = _result_scalar(confidences, index)
+        if detected_name != target_name or confidence < confidence_threshold:
+            continue
+
+        polygon = np.asarray(polygons[index], dtype=np.float32).copy()
+        if polygon.ndim != 2 or polygon.shape[0] < 3 or polygon.shape[1] != 2:
+            continue
+        if not np.isfinite(polygon).all():
+            continue
+        coordinate_width = frame_width if full_frame_coordinates else roi_width
+        coordinate_height = frame_height if full_frame_coordinates else roi_height
+        polygon[:, 0] = np.clip(polygon[:, 0], 0, coordinate_width - 1)
+        polygon[:, 1] = np.clip(polygon[:, 1], 0, coordinate_height - 1)
+        raw_contour = np.rint(polygon).astype(np.int32).reshape((-1, 1, 2))
+        if full_frame_coordinates:
+            full_mask = np.zeros((frame_height, frame_width), dtype=np.uint8)
+            cv2.fillPoly(full_mask, [raw_contour], 255)
+            candidate_mask = np.ascontiguousarray(
+                full_mask[roi_y1:roi_y2, roi_x1:roi_x2]
+            )
+            clipped_contours, _ = cv2.findContours(
+                candidate_mask,
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE,
+            )
+            if not clipped_contours:
+                continue
+            contour = max(clipped_contours, key=cv2.contourArea)
+        else:
+            contour = raw_contour
+            candidate_mask = np.zeros_like(empty_mask)
+            cv2.fillPoly(candidate_mask, [contour], 255)
+        if not np.any(candidate_mask):
+            continue
+
+        x, y, width, height = cv2.boundingRect(contour)
+        rect = cv2.minAreaRect(contour)
+        (_, _), (rect_width, rect_height), _ = rect
+        long_side = max(float(rect_width), float(rect_height))
+        short_side = max(1.0, min(float(rect_width), float(rect_height)))
+        width_ratio = long_side / float(max(1, roi_width))
+        aspect_ratio = long_side / short_side
+        fill_ratio = float(np.count_nonzero(candidate_mask)) / float(
+            max(1.0, long_side * short_side)
+        )
+        angle_deg = _long_axis_angle(rect)
+        near_edge_y = _near_edge_y_at_center(rect)
+        maximum_edge_y = _maximum_near_edge_y(rect)
+        near_edge_ratio = maximum_edge_y / float(max(1, roi_height))
+        selection_score = 0.75 * confidence + 0.25 * near_edge_ratio
+        if selection_score <= best_selection_score:
+            continue
+        best_selection_score = selection_score
+        best = (
+            x,
+            y,
+            width,
+            height,
+            confidence,
+            width_ratio,
+            aspect_ratio,
+            fill_ratio,
+            angle_deg,
+            near_edge_y,
+            maximum_edge_y,
+            candidate_mask,
+        )
+
+    if best is None:
+        return _empty_detection(roi_bbox, empty_mask)
+
+    (
+        x,
+        y,
+        width,
+        height,
+        confidence,
+        width_ratio,
+        aspect_ratio,
+        fill_ratio,
+        angle_deg,
+        near_edge_y,
+        maximum_edge_y,
+        selected_mask,
+    ) = best
+    return StopLineDetection(
+        detected=True,
+        bbox=(
+            roi_x1 + x,
+            roi_y1 + y,
+            roi_x1 + x + width,
+            roi_y1 + y + height,
+        ),
+        near_edge_y_px=float(roi_y1 + near_edge_y),
+        maximum_edge_y_px=float(roi_y1 + maximum_edge_y),
+        score=float(confidence),
+        width_ratio=float(width_ratio),
+        aspect_ratio=float(aspect_ratio),
+        fill_ratio=float(fill_ratio),
+        angle_deg=float(angle_deg),
+        roi_bbox=roi_bbox,
+        white_mask=selected_mask,
+    )
+
+
 def detect_stop_line(
     frame: np.ndarray,
     roi_x_min: float = 0.08,

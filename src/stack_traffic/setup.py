@@ -13,7 +13,11 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (
             'share/' + package_name + '/models',
-            ['models/yolov8n.pt', 'models/README.md'],
+            [
+                'models/yolov8n.pt',
+                'models/stopline_yolov8s_seg.pt',
+                'models/README.md',
+            ],
         ),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
