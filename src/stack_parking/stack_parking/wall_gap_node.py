@@ -79,7 +79,7 @@ class WallGapNode(Node):
     def __init__(
         self,
         node_name: str = 'wall_gap_node',
-        preview_distance_default_m: float = 1.5,
+        preview_distance_default_m: float = 1.0,
     ):
         super().__init__(node_name)
         self.declare_parameter('map_topic', '/parking/local_map')
@@ -103,8 +103,8 @@ class WallGapNode(Node):
         self.declare_parameter('dedup_tolerance_m', 0.5)
         self.declare_parameter('publish_rate_hz', 5.0)
         self.declare_parameter('min_turn_radius_m', 1.15)
-        self.declare_parameter('inside_straight_m', 2.0)
-        self.declare_parameter('parallel_straight_m', 2.0)
+        self.declare_parameter('inside_straight_m', 1.5)
+        self.declare_parameter('parallel_straight_m', 1.5)
         self.declare_parameter('search_side', 'left')
         self.declare_parameter('enable_control', False)
         self.declare_parameter('target_topic', '/adas/target_ref')

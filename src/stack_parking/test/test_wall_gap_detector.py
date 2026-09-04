@@ -131,27 +131,27 @@ class FixedReferenceWallTest(unittest.TestCase):
             path.p0_map, [candidate.map_x, candidate.map_y], atol=1.0e-12)
         np.testing.assert_allclose(
             path.goal_map,
-            np.array([candidate.map_x, candidate.map_y]) + 2.0 * normal,
+            np.array([candidate.map_x, candidate.map_y]) + 1.5 * normal,
             atol=1.0e-9,
         )
         self.assertAlmostEqual(
             float(np.linalg.norm(
                 path.straight1_map[1] - path.straight1_map[0])),
-            2.0,
+            1.5,
             places=9,
         )
         self.assertAlmostEqual(
             float(np.linalg.norm(
                 path.straight2_map[1] - path.straight2_map[0])),
-            2.0,
+            1.5,
             places=9,
         )
         # Both transitions are tangent-continuous: the outer line is wall
         # parallel and the inner line follows the inward wall normal.
         parallel_direction = (
-            path.straight1_map[1] - path.straight1_map[0]) / 2.0
+            path.straight1_map[1] - path.straight1_map[0]) / 1.5
         inside_direction = (
-            path.straight2_map[1] - path.straight2_map[0]) / 2.0
+            path.straight2_map[1] - path.straight2_map[0]) / 1.5
         self.assertAlmostEqual(abs(float(np.dot(parallel_direction, tangent))), 1.0)
         np.testing.assert_allclose(inside_direction, normal, atol=1.0e-9)
         np.testing.assert_allclose(path.arc_map[0], path.e_map, atol=1.0e-9)

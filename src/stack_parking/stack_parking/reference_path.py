@@ -3,11 +3,11 @@
 Every coordinate is derived from P0, the midpoint of the confirmed square's
 wall-side edge:
 
-  S ---- 2m wall-parallel straight ---- E
+  S --- 1.5m wall-parallel straight --- E
                                           ) 90-degree arc, radius R_min
                                        P0
                                         |
-                                        | 2m wall-normal straight into bay
+                                        | 1.5m wall-normal straight into bay
                                         G
 
 The geometric parking traversal is S -> E -> P0 -> G. At E the arc tangent
@@ -45,8 +45,8 @@ def build_reference_path(
     candidate: TrackedCandidate,
     vehicle_pose: Pose2,
     min_turn_radius_m: float,
-    inside_straight_m: float = 2.0,
-    parallel_straight_m: float = 2.0,
+    inside_straight_m: float = 1.5,
+    parallel_straight_m: float = 1.5,
     arc_points: int = 24,
 ) -> Optional[ReferencePath]:
     p0_map = np.array([candidate.map_x, candidate.map_y], dtype=np.float64)

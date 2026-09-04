@@ -195,8 +195,8 @@ def main() -> None:
         confirmed,
         confirm_pose,
         min_turn_radius_m=1.15,
-        inside_straight_m=2.0,
-        parallel_straight_m=2.0,
+        inside_straight_m=1.5,
+        parallel_straight_m=1.5,
     )
     if path is None:
         raise SystemExit('reference path is degenerate')
@@ -243,7 +243,7 @@ def main() -> None:
     _finish_axes(
         ax,
         'Reference path 1: immediate alignment, 1s hold, reverse parking\n'
-        'wall-parallel segment shortened from 3.0m to 2.0m',
+        'wall-parallel and inward straights = 1.5m',
     )
     fig.tight_layout()
     entry_output = args.output_dir / 'parking_reference_path_1.png'

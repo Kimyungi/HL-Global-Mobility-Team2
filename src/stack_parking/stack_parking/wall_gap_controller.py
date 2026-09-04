@@ -46,7 +46,7 @@ class ControlState(str, enum.Enum):
 @dataclass(frozen=True)
 class WallGapControlConfig:
     direction_change_hold_s: float = 1.0
-    preview_distance_m: float = 1.5
+    preview_distance_m: float = 1.0
     forward_speed_mps: float = 0.3
     reverse_speed_mps: float = 0.3
     sample_step_m: float = 0.05
