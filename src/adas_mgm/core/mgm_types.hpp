@@ -114,8 +114,8 @@ struct CoreSnapshot
   bool traffic_stop_required;
   bool traffic_red_active;
   bool traffic_green_active;
-  // 이번 틱에 화면에서 정지선이 안정 검출됐는가(TrafficStop.stopline_detected
-  // — stable AND depth 유효). 확정 적색과 함께 MGM_STATE_TRAFFIC 진입을
+  // 이번 틱에 화면에서 정지선이 안정 검출됐는가(TrafficStop.stopline_detected).
+  // depth 유효성과 독립이며, 확정 적색과 함께 MGM_STATE_TRAFFIC 진입을
   // 게이트하고, 진입 뒤에는 정지선 소실 edge 기반 거리 추적에 쓴다.
   bool traffic_stopline_detected;
   float traffic_stop_distance;  // [m], 유효하지 않으면 음수
@@ -304,11 +304,11 @@ struct CoreState
   // 10초 뒤 차가 스스로 뒤로 물러난다. 한 번이라도 굴러간 뒤에만 "갇혔다"고
   // 말할 수 있다.
   bool escape_armed;
-  // ── 신호등 정지 (§4, MGM_STATE_TRAFFIC). TRAFFIC 진입 전 주행 상태 — 현재
-  // 계약은 green에서 LANE으로 복귀하지만 로그와 향후 정책 검증을 위해 보존한다.
+  // ── 신호등 정지 (§4, MGM_STATE_TRAFFIC). TRAFFIC 진입 전 주행 상태.
+  // 정지 중 횡방향 경로와 green 해제 뒤 복귀 상태를 동일하게 결정한다.
   uint8_t traffic_entry_state;
   // 정지선 소실 edge(true→false)를 한 번이라도 봤는가. false인 동안은
-  // 거리를 모른다는 뜻이라 prioritize()가 즉시 정지로 폴백한다.
+  // 거리를 모른다는 뜻이라 현재 시험 계약에서는 prioritize()가 v_base를 유지한다.
   bool traffic_distance_latched;
   // [m] 차량→정지선 거리. 정지선 검출이 true→false로 떨어지는 순간
   // traffic_ramp_distance_m(시드)으로 리셋되고, 그 뒤로는 vehicle_speed로

@@ -123,6 +123,11 @@ class TestNodeInitialization(unittest.TestCase):
             self.assertTrue(node.resume_on_green)
             self.assertFalse(node.resume_on_red_clear)
             self.assertFalse(node.show_debug)
+            self.assertEqual(node.red_phase_yolo_inference_interval, 3)
+            # 카메라를 열기 전에 두 모델을 한 번씩 준비해 첫 주행 프레임의
+            # cold-start 지연을 제거한다.
+            self.assertEqual(traffic_model.predict_calls, 1)
+            self.assertEqual(stopline_model.predict_calls, 1)
 
             published_stops = []
             node._publish = (
@@ -142,7 +147,10 @@ class TestNodeInitialization(unittest.TestCase):
                 node.tick()
 
             self.assertEqual(node.frame_index, expected_frames)
-            self.assertEqual(node.model.predict_calls, node.vote_window)
+            self.assertEqual(
+                node.model.predict_calls,
+                node.vote_window + 1,
+            )
             self.assertTrue(all(published_stops[:-1]))
             self.assertFalse(published_stops[-1])
             self.assertFalse(node.startup_hold_latched)
@@ -199,7 +207,7 @@ class TestNodeInitialization(unittest.TestCase):
                 None,
             )
             self.assertFalse(runtime.detection.detected)
-            self.assertEqual(stopline_model.predict_calls, 1)
+            self.assertEqual(stopline_model.predict_calls, 2)
         finally:
             if node is not None:
                 node.destroy_node()

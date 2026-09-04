@@ -42,6 +42,9 @@ public:
   int32_t returnHoldLeft() const;
   bool trafficDistanceLatched() const;
   float trafficStoplineDistance() const;
+  // TRAFFIC이 종방향 overlay로 덮기 전의 주행 상태. wrapper가 같은 경로의
+  // freshness watchdog을 적용하기 위한 읽기 전용 관찰자다.
+  uint8_t trafficEntryState() const;
   const CoreParams & params() const {return params_;}
   const std::string & name() const;
   bool faulted() const;

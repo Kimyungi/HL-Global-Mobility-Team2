@@ -213,7 +213,7 @@ void testFailSafeOnMissingVehicleSpeed()
     "TRAFFIC에서 실차속도 피드백이 없으면 fail-safe 정지해야 한다");
 }
 
-void testEntryFromWaypointAndExitToLane()
+void testWaypointTrafficKeepsGpsPathAndReturnsToWaypoint()
 {
   CoreState state{};
   mgm_init(state, params());
@@ -225,12 +225,18 @@ void testEntryFromWaypointAndExitToLane()
   check(
     out.state == MGM_STATE_TRAFFIC,
     "WAYPOINT에서도 확정 적색과 정지선이 함께 있으면 TRAFFIC으로 진입해야 한다");
+  check(
+    out.path_source == MGM_SRC_GPS,
+    "WAYPOINT에서 진입한 TRAFFIC은 정지 중에도 GPS 경로를 유지해야 한다");
   s.traffic_red_active = false;
   s.traffic_green_active = true;
   out = mgm_step(s, state);
   check(
-    out.state == MGM_STATE_LANE,
-    "진입 전 상태와 관계없이 확정 초록은 LANE으로 복귀해야 한다");
+    out.state == MGM_STATE_WAYPOINT,
+    "WAYPOINT에서 진입한 TRAFFIC은 확정 초록 뒤 WAYPOINT로 복귀해야 한다");
+  check(
+    out.path_source == MGM_SRC_GPS,
+    "TRAFFIC 해제 틱에도 GPS 경로가 끊기면 안 된다");
 }
 
 }  // namespace
@@ -244,7 +250,7 @@ int main()
   testStaleDistanceBeforeRedIsHeldAtSeed();
   testGreenExitsAndResetsLatch();
   testFailSafeOnMissingVehicleSpeed();
-  testEntryFromWaypointAndExitToLane();
+  testWaypointTrafficKeepsGpsPathAndReturnsToWaypoint();
 
   if (failures != 0) {
     std::fprintf(stderr, "traffic_state_test: %d 개 실패\n", failures);
