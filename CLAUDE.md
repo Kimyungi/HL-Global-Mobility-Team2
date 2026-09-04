@@ -87,7 +87,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 | avoid → 복귀 | 기동 완료 → **waypoint로 복귀** (2026-08-12 개정, 팀장 — 회피 기동 직후 차는 차선을 벗어나 있어 차선 검출을 곧바로 신뢰할 수 없다. GPS 트랙으로 재합류 후 차선 신뢰도 회복 히스테리시스로 lane 자동 재전이. 구 "진입했던 스테이트로 복귀(복귀처 변수)"는 폐기. **§5.5 이중 트랙: Simulink 모델(김재민)도 동일 반영 필요**) |
 | lane → parking | GPS 주차구간 AND 주차공간 인식 |
 | parking → lane | 주차 완료 |
-| lane·waypoint → traffic | `TrafficStop.red_active=true`(적색 투표 확정). 정지선 검출 전이라도 즉시 진입 |
+| lane·waypoint → traffic | `TrafficStop.red_active=true AND stopline_detected=true`(적색 투표 확정 + 현재의 안정 정지선·유효 depth 검출). 둘 중 하나만 성립하면 진입하지 않음 (PR #78, 2026-09-04) |
 | traffic → lane | `TrafficStop.green_active=true`(초록 투표 확정). 적색/정지선 거리 래치를 폐기하고 즉시 복귀 |
 
 **스테이트별 우선권 (매 10ms, 스테이트 내부에서 결정 — 전역 min/max 규칙 금지):**

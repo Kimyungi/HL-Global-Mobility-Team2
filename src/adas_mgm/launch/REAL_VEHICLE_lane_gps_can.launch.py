@@ -274,10 +274,18 @@ def generate_launch_description():
         _yaml = yaml.safe_load(_f)['mgm_node']['ros__parameters']
     lane_exit_default = float(_yaml['lane_conf_exit'])
     lane_return_default = float(_yaml['lane_conf_return'])
+    v_base_default = float(_yaml['v_base'])
+    escape_after_cycles_default = int(_yaml['escape_after_cycles'])
 
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
         DeclareLaunchArgument('can_interface', default_value='can0'),
+        DeclareLaunchArgument(
+            'v_base', default_value=str(v_base_default),
+            description='MGM normal target speed [m/s]'),
+        DeclareLaunchArgument(
+            'escape_after_cycles', default_value=str(escape_after_cycles_default),
+            description='Consecutive E-stop ticks before reverse escape; 0 disables escape'),
 
         # ── stack_gps (DRIVE_GUIDE.md V2와 동일 인자)
         DeclareLaunchArgument('waypoint_csv', default_value='',
@@ -701,6 +709,14 @@ def generate_launch_description():
                 # 출발 인가 게이트 — launch 직후 정지 대기, `ros2 run adas_mgm go`
                 # (RTK FIXED 등 점검 통과 시)로 출발 (2026-08-11)
                 'wait_go': True,
+                # 시험별 목표속도. 기본은 params.yaml 값을 그대로 따르며, 실차 시험에서
+                # 명시적으로 낮출 때만 launch 인자로 덮어쓴다.
+                'v_base': ParameterValue(
+                    LaunchConfiguration('v_base'), value_type=float),
+                # E-stop 자체를 실패로 판정하는 시험에서는 반드시 0으로 두어, 장시간
+                # 정지 후 후진 탈출이 시험 결과를 바꾸지 못하게 한다.
+                'escape_after_cycles': ParameterValue(
+                    LaunchConfiguration('escape_after_cycles'), value_type=int),
                 # gps_only 시 LANE 전이 불가 임계로 상향 (위 gps_only 인자 참조).
                 # 평상시 값은 params.yaml에서 읽은 것 — 여기 숫자를 박지 말 것.
                 'lane_conf_exit': ParameterValue(PythonExpression(
