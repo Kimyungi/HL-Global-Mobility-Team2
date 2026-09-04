@@ -70,7 +70,7 @@ class TestNodeInitialization(unittest.TestCase):
         finally:
             rclpy.shutdown()
 
-    def test_oak_y_only_node_initializes_without_optional_models(self):
+    def test_oak_y_only_node_initializes_with_stopline_yolo(self):
         os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
         rclpy.init(
             args=[
@@ -90,12 +90,18 @@ class TestNodeInitialization(unittest.TestCase):
             ]
         )
         node = None
+        traffic_model = FakeYolo("traffic")
+        stopline_model = FakeStopLineYolo("stopline")
         try:
             with (
-                patch("stack_traffic.node.YOLO", FakeYolo),
+                patch(
+                    "stack_traffic.node.YOLO",
+                    side_effect=[traffic_model, stopline_model],
+                ),
                 patch("stack_traffic.node.OakRgbdCamera", FakeOakCamera),
             ):
                 node = StackTrafficNode()
+            self.assertIs(node.stopline_model, stopline_model)
             self.assertFalse(node.oak_depth_enabled)
             self.assertEqual(node.oak_mxid, "traffic-oak-mxid")
             self.assertEqual(node.oak_usb_speed, "high")
@@ -152,7 +158,7 @@ class TestNodeInitialization(unittest.TestCase):
                 node.destroy_node()
             rclpy.shutdown()
 
-    def test_yolo_seg_stopline_model_is_loaded_only_when_selected(self):
+    def test_stopline_model_is_loaded_when_detection_is_enabled(self):
         os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
         weights = (
             Path(__file__).parents[1]
@@ -168,8 +174,6 @@ class TestNodeInitialization(unittest.TestCase):
                 "oak_depth_enabled:=false",
                 "-p",
                 "stopline_detection_enabled:=true",
-                "-p",
-                "stopline_detector_type:=yolo_seg",
                 "-p",
                 f"stopline_model_path:={weights}",
             ]
