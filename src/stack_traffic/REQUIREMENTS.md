@@ -180,7 +180,8 @@ y_raw, y_ratio, y_med, line_z, z_med, stable, accepted
 - 실제 주행은 유효한 E-stop heartbeat와 경로 입력이 있어야 한다.
 - `dummy_ref_publisher`와 MGM을 동시에 실행하지 않는다.
 - 적색과 안정 정지선 검출이 동시에 참이면 LANE/WAYPOINT에서 TRAFFIC으로
-  전이하며, 초록은 LANE으로 복귀한다.
+  전이한다. TRAFFIC 중 횡방향은 진입 전 lane/GPS 경로를 유지하며, 초록은
+  같은 진입 전 상태로 복귀한다.
 
 실행 명령과 터미널 배치는
 `src/adas_mgm/RUNBOOK_full_operation_20260830.md`를 따른다.

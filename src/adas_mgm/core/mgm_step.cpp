@@ -349,11 +349,17 @@ void transition(const CoreSnapshot & s, CoreState & st)
       break;
 
     case MGM_STATE_TRAFFIC:
-      // 적색/미검출은 해제 근거가 아니다. 확정 초록만 즉시 LANE으로 복귀시킨다.
-      // estop/fail-safe가 동시에 참이어도 상태 전이는 수행하고 LANE 우선권에서
-      // 계속 정지한다. 즉 "초록이면 상태 탈출"과 "고장 중 출발 금지"가 양립한다.
+      // 적색/미검출은 해제 근거가 아니다. 확정 초록에서 진입 전 주행 상태로
+      // 복귀한다. WAYPOINT에서 들어왔는데 LANE으로 고정 복귀하면 GPS 전용
+      // 구간에서도 한 틱 동안 신뢰하지 않는 차선 경로가 출력되고 다음 틱 다시
+      // WAYPOINT로 튀는 문제가 생긴다. 저장값은 TRAFFIC의 유일한 진입원인
+      // LANE/WAYPOINT만 허용하고, 손상된 값은 안전한 기존 기본인 LANE으로 둔다.
+      // estop/fail-safe가 동시에 참이어도 상태 전이는 수행하고 복귀 상태의
+      // 우선권에서 계속 정지한다. 즉 "초록이면 상태 탈출"과 "고장 중 출발 금지"가
+      // 양립한다.
       if (s.traffic_green_active && !s.traffic_red_active) {
-        st.state = MGM_STATE_LANE;
+        st.state = st.traffic_entry_state == MGM_STATE_WAYPOINT ?
+          MGM_STATE_WAYPOINT : MGM_STATE_LANE;
       }
       break;
 
@@ -518,8 +524,11 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       break;
 
     case MGM_STATE_TRAFFIC: {
-      // 횡방향은 계속 카메라 차선을 따른다. 종방향만 정지선 거리가 맡는다.
-      out.path_source = MGM_SRC_LANE;
+      // 종방향만 정지선 거리가 맡고, 횡방향은 TRAFFIC 진입 전 주행 소스를
+      // 그대로 유지한다. GPS 전용 구간의 WAYPOINT에서 들어온 경우 카메라
+      // 차선으로 바꾸면 안 된다. 잘못된 저장값은 LANE으로 fail-closed한다.
+      out.path_source = st.traffic_entry_state == MGM_STATE_WAYPOINT ?
+        MGM_SRC_GPS : MGM_SRC_LANE;
       if (s.estop || s.traffic_fail_safe_stop || !s.vehicle_speed_valid) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
@@ -711,6 +720,7 @@ void mgm_init(CoreState & st, const CoreParams & params)
   st = CoreState{};
   st.params = params;
   st.state = MGM_STATE_LANE;
+  st.traffic_entry_state = MGM_STATE_LANE;
   st.last_src = MGM_SRC_LANE;
   st.n_out = 1;
   // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)

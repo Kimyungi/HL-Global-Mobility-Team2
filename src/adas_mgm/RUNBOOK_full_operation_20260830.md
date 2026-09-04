@@ -7,7 +7,7 @@
 > 브리지 프로세스 자체가 종료돼도 0-command 가드 뒤 1초 후 자동 재기동하므로 현장
 > 수동 재시작은 필요하지 않다. 반복 분리는 케이블·커넥터 결함이므로 출발 전에 제거한다.
 
-> **현재 적용 후보: `traffic_stop_y_ratio=0.60`**
+> **과거 진단 후보: `traffic_stop_y_ratio=0.60`**
 > 근거 run: `drive_logs/run_0830_175528`. 1 m/s 접근 중 첫 안정 정지선 검출이
 > `y_med=0.600`에서 성립했고 당시 코스 종점까지 경로상 약 5.41 m였다. 다음 안정
 > 검출은 `0.687`/약 1.69 m, `0.729`/약 0.66 m여서 검출 누락과 제동 여유를 고려해
@@ -29,16 +29,15 @@
 `RUNBOOK_full_measurement_20260830.md`에서 현장별 신호등 임계값을 얻고 정지·재출발까지
 검증한 뒤에만 사용한다.
 
-> **출발 금지 조건:** 검증된 `traffic_stop_y_ratio`가 없거나 0이면 이 런북을 실행하지
-> 않는다. 측정 런북으로 돌아간다. 예시 숫자를 다른 장착 상태나 코스에 복사하지 않는다.
+> **현재 제어 계약:** MGM의 TRAFFIC 진입은 `red_active && stopline_detected`다.
+> `traffic_stop_y_ratio`는 구 노드 내부 `stop_required`용 보조 진단값이며 현재
+> TRAFFIC 진입·감속 게이트가 아니다. 출발 전에는 숫자 파일이 아니라 실제 토픽에서
+> 적색과 안정 정지선이 동시에 확인되는지를 검사한다.
 
 ## 처음 하는 사람은 여기만 순서대로 실행
 
-전제 조건은 `RUNBOOK_full_measurement_20260830.md`를 완료해 다음 파일이 존재하는 것이다.
-
-```text
-$HOME/FMA_ws/traffic_stop_y_ratio.txt
-```
+전제 조건은 `RUNBOOK_full_measurement_20260830.md`를 완료해 현재 카메라 장착에서
+적색과 안정 정지선 segmentation이 반복 검출됨을 확인한 것이다.
 
 아래는 **한라대학교 코스 기준**이다. 원주 운전면허시험장이면 V2 블록의 `COURSE=`
 한 줄만 `waypoints_wonju_license_20260818_160511.csv`로 바꾼다.
@@ -56,10 +55,9 @@ source $HOME/FMA_ws/install/setup.bash
 ros2 run stack_traffic stack_traffic_ml_preflight
 $HOME/FMA_ws/src/bridge_dspace/tools/can_setup/install.sh --check
 python3 $HOME/FMA_ws/src/multi_lidar_fusion/tools/check_sensors.py --no-ros
-python3 -c 'import os; p=os.path.expanduser("~/FMA_ws/traffic_stop_y_ratio.txt"); v=float(open(p).read()); assert 0.0 < v <= 1.10; print("운영 임계값:", v)'
 ```
 
-각각 `ML_RUNTIME_READY`, `✔ 점검 통과`, `== 전 항목 통과 ==`, `운영 임계값:`이
+각각 `ML_RUNTIME_READY`, `✔ 점검 통과`, `== 전 항목 통과 ==`가
 나와야 한다. 하나라도 실패하면 이후 명령을 실행하지 않는다.
 
 ### 3단계 — B1: 베이스 PC에서 실행
@@ -85,17 +83,14 @@ RTK가 안정화되도록 5~10분 기다리는 동안 다음 단계를 진행한
 source /opt/ros/humble/setup.bash
 source "$HOME/FMA_ws/install/setup.bash"
 COURSE="$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv"
-FMA_TRAFFIC_STOP_Y_RATIO="$(tr -d '[:space:]' < "$HOME/FMA_ws/traffic_stop_y_ratio.txt")"
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
   waypoint_csv:="$COURSE" \
-  traffic_enabled:=true \
-  traffic_require_stop_gate:=true \
-  traffic_stop_y_ratio:="$FMA_TRAFFIC_STOP_Y_RATIO"
+  traffic_enabled:=true
 ```
 
-이 명령부터 CAN TX가 활성화된다. 아직 `go`를 실행하지 않는다. 임계값 파일이 잘못되면
-launch가 `운영 신호등 정지 게이트가 비활성` 오류로 종료되는 것이 정상 안전 동작이다.
+이 명령부터 CAN TX가 활성화된다. 아직 `go`를 실행하지 않는다. traffic 노드가
+기동·warm-up되고 실제 토픽 판정이 확인되기 전에는 출발하지 않는다.
 
 ### 5-1단계 — 신호등 노드 자동복구 확인
 
@@ -137,16 +132,15 @@ timeout 12 ros2 topic hz /perception/avoid
 timeout 12 ros2 topic hz /perception/traffic_stop
 timeout 12 ros2 topic hz /adas/target_ref
 timeout 12 ros2 topic hz /vehicle/vector
-ros2 param get /stack_traffic_node stopline_stop_y_ratio
 ```
 
-앞의 네 토픽은 약 10 Hz, 뒤의 두 토픽은 약 100 Hz여야 한다. 마지막 값은 저장했던
-0보다 큰 임계값과 같아야 한다.
+앞의 네 토픽은 약 10 Hz, 뒤의 두 토픽은 약 100 Hz여야 한다.
 
 차량이 정지한 상태에서 먼저 적색을 보여 `red_phase=1`을 만든 다음 정지선을
-카메라에 보여 준다. V2 로그에서 `red_phase=1`, `stopline=1`, `y_ok=1`,
-`FINAL_STOP=1`을 확인한다. 이어 초록을 보여
-`green_votes=3/5`와 `FINAL_STOP=0`을 확인한다. 둘 중 하나라도 확인하지 못하면 출발하지 않는다.
+카메라에 보여 준다. V2 로그에서 `red_phase=1`, `stopline=1`, `stable=1`을
+확인하고, 토픽의 `red_active=true`, `stopline_detected=true`를 함께 확인한다.
+이어 초록을 보여 `green_votes=3/5`, `red_active=false`, `green_active=true`를
+확인한다. 둘 중 하나라도 확인하지 못하면 출발하지 않는다.
 
 ### 7단계 — V3: 출발 직전에 물리 비상정지를 해제하고 실행(t5)
 
@@ -230,18 +224,11 @@ python3 $HOME/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 
 10초 로그가 `RTCM ~580 B/s` 근처인지 확인한다.
 
-## 3. 검증된 신호등 임계값 설정
+## 3. 신호등·정지선 인지 확인 준비
 
-측정 런북에서 결정하고 실제 정지 위치까지 검증한 값을 넣는다.
-
-```bash
-export FMA_TRAFFIC_STOP_Y_RATIO=<검증된_0보다_큰_값>
-python3 -c 'import os; v=float(os.environ["FMA_TRAFFIC_STOP_Y_RATIO"]); assert 0.0 < v <= 1.10, v; print("traffic gate OK:", v)'
-```
-
-검증 명령이 실패하면 출발하지 않는다. 노드의 거리 파라미터명은
-`stopline_stop_distance_m`이지만, 현재 통합 launch는 RGB-only라 거리 게이트를
-노출하거나 사용하지 않는다.
+현재 통합 launch는 RGB-only이며 depth와 y-ratio를 정지 조건에 사용하지 않는다.
+다음 단계에서 `/perception/traffic_stop`의 `red_active`와
+`stopline_detected`를 실제 표적으로 확인한다.
 
 ## 4. V2 — 통합 launch 한 번만 실행
 
@@ -249,17 +236,13 @@ python3 -c 'import os; v=float(os.environ["FMA_TRAFFIC_STOP_Y_RATIO"]); assert 0
 source /opt/ros/humble/setup.bash
 source "$HOME/FMA_ws/install/setup.bash"
 COURSE="$HOME/FMA_ws/src/stack_gps/waypoints/waypoints_halla_univ_20260819_182657.csv"
-FMA_TRAFFIC_STOP_Y_RATIO="$(tr -d '[:space:]' < "$HOME/FMA_ws/traffic_stop_y_ratio.txt")"
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
   waypoint_csv:="$COURSE" \
-  traffic_enabled:=true \
-  traffic_require_stop_gate:=true \
-  traffic_stop_y_ratio:="$FMA_TRAFFIC_STOP_Y_RATIO"
+  traffic_enabled:=true
 ```
 
-`traffic_require_stop_gate:=true`는 신호등 노드가 꺼졌거나 임계값이 0/범위 밖이면
-launch 전체를 거부한다. 확인 토큰이 없을 때도 launch 전체가 거부된다. 토큰이 있어도 MGM의 `wait_go=true` 때문에
+확인 토큰이 없으면 launch 전체가 거부된다. 토큰이 있어도 MGM의 `wait_go=true` 때문에
 `go` 전까지 `v_ref=0`이다. 다만 CAN TX는 이미 활성화되므로 물리 비상정지에 손을 둔다.
 
 ## 5. 출발 전 필수 게이트
@@ -275,15 +258,17 @@ ros2 param get /stack_traffic_node stopline_stop_y_ratio
 ```
 
 기대값은 `/scan`, lane, avoid, traffic이 약 10 Hz, target_ref와 vehicle/vector가 약
-100 Hz다. 마지막 파라미터가 설정한 0보다 큰 값과 같아야 한다.
+100 Hz다.
 
 정지 상태에서 실제 신호등과 정지선을 보여 다음 로그를 확인한다.
 
 ```text
-red_phase=1 ... stopline=1 stable=1 ... y_ok=1 gate=y ... FINAL_STOP=1
+red_phase=1 ... stopline=1 stable=1
 ```
 
-이어 초록을 보여 `green_votes=3/5` 이후 `FINAL_STOP=0`으로 해제되는지 확인한다.
+동시에 `/perception/traffic_stop`에서 `red_active: true`와
+`stopline_detected: true`를 확인한다. 이어 초록을 보여 `green_votes=3/5` 이후
+`red_active: false`, `green_active: true`로 해제되는지 확인한다.
 카메라 사망, bbox 소실, 정지선 소실은 정지 래치 해제 조건이 아니다.
 
 하나라도 실패하면 `go`를 실행하지 말고 V2를 Ctrl-C로 종료한다.
@@ -302,7 +287,7 @@ GPS 경로+RTK FIXED, lane, 전방 `/scan`, target_ref, avoid와 traffic_stop을
 
 - 적색 확정과 안정 정지선 검출이 동시에 성립할 때 TRAFFIC으로 전이한다.
   이후 정지선 소실 edge에서 시드한 거리를 `/vehicle/vector.v`로 적분해
-  갱신하며 감속하고 초록에서 LANE으로 복귀한다.
+  갱신하며 감속하고 초록에서 TRAFFIC 진입 전 LANE/WAYPOINT로 복귀한다.
 - traffic_stop이 0.5초, TRAFFIC 중 vehicle/vector가 0.2초 stale이면 정지를 강제한다.
 - 소프트웨어 정지는 **V2 Ctrl-C**다. 정상 종료 경로의 `can_zero`가 목표값 0을 보낸다.
 - `kill -9`, PC 전원 차단, CAN 케이블 분리는 정지 수단이 아니다. dSPACE counter
@@ -333,11 +318,11 @@ B에서 다음 명령을 동시에 실행해 확인한다.
 
 ```bash
 ros2 topic echo /rosout --field msg | \
-  grep --line-buffered -E 'FINAL_STOP|red_votes|green_votes|y_ratio='
+  grep --line-buffered -E 'red_phase|stopline|red_votes|green_votes|proc_ms'
 ```
 
-`/perception/traffic_stop`, `FINAL_STOP=1`, 초록 해제, MGM의 최종 `v_ref=0` 시점이
-일관되는지 확인한다.
+`/perception/traffic_stop`의 적색+정지선, TRAFFIC 전이, 최종 `v_ref=0`, 초록
+해제 시점이 일관되는지 확인한다.
 
 ## 참조
 

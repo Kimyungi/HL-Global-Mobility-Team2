@@ -88,7 +88,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 | lane → parking | GPS 주차구간 AND 주차공간 인식 |
 | parking → lane | 주차 완료 |
 | lane·waypoint → traffic | `TrafficStop.red_active=true AND stopline_detected=true`(적색 투표 확정 + 최근 3/5 안정 정지선 segmentation). depth는 진단용 거리이며 진입 게이트가 아님. 둘 중 하나만 성립하면 진입하지 않음 (PR #78, 2026-09-04) |
-| traffic → lane | `TrafficStop.green_active=true`(초록 투표 확정). 적색/정지선 거리 래치를 폐기하고 즉시 복귀 |
+| traffic → lane·waypoint | `TrafficStop.green_active=true`(초록 투표 확정). 적색/정지선 거리 래치를 폐기하고 TRAFFIC 진입 전 주행 상태로 즉시 복귀 |
 
 **스테이트별 우선권 (매 10ms, 스테이트 내부에서 결정 — 전역 min/max 규칙 금지):**
 
@@ -102,6 +102,11 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
   **미결 2건** — ⓐ `EstopRequest.rear_clear`를 채우는 구현이 stack_estop에 **없다**(후방/4-LiDAR 통합은 이기돈 판단). 없으면 항상 false라 기본 설정에서 기능이 자연히 잠긴다. ⓑ **실차 미검증** — 음수 v_ref에 대한 dSPACE MPC·하위 PI 동작은 팀 확인(2026-08-24)이나 실차 재확인 권장. 되돌리려면 `ros2 param set /adas_mgm_node escape_after_cycles 0`. 단위시험: `adas_mgm/test/escape_reverse_test.cpp`(9종 — 절반이 "후진하지 않아야 하는 경우"를 고정한다). **§5.5 이중 트랙: Simulink 모델도 동일 반영 필요.**
 - **parking** — 경로 침범 정지 > 주차 진행. 신호등·가속구간 요구 비활성. 정적 경계(콘·연석)는 정지 트리거가 아니라 로컬맵 입력
 - **traffic** — 횡방향은 lane 경로 유지. **거리 추적은 2026-09-02 개정(사용자 지정)으로 "정지선 소실 edge" 기준으로 확정됐다** — 그 전 두 시도(① 진입 시점 거리·속도로 고정한 운동학적 제동곡선 `v=sqrt(2·a·remaining)`, ② 안정 검출되는 매 틱 새 값을 계속 신뢰)는 정지선 인식이 간헐적으로만 성공하는 조건(2026-09-01 해질녘 실측: YOLO/HSV 후보조차 못 찾는 완전 실패 포함)에서 검증이 더 필요하다는 판단으로 모두 이 방식으로 되돌아갔다. 카메라 optical-Z 거리(`stop_distance`)는 검출이 불안정하면 즉시 무효가 돼 연속 신뢰 기준으로 못 쓴다 — 대신 `stopline_detected`가 true→false로 떨어지는 순간(=정지선이 화면에서 사라짐)을 "카메라 장착 기준 대략 고정된 거리" 시드(`traffic_ramp_distance_m`, 기본 1.5m)로 삼고, 그 뒤로는 dSPACE→PC `/vehicle/vector.v`로 dead-reckoning 감쇠한다. **이 추적은 스테이트와 무관하게 항상 돈다** — 빨간불이 아직 확정 안 된 채(=`traffic_red_active=false`) 감쇠값이 `traffic_stop_offset_m`(2026-09-02 사용자 지정으로 0.5→0.2→1.0m 순으로 조정. 1.0m는 seed와의 차 0.5m가 그대로 제동 여유라 빡빡함을 확인 후 결정 — 2m/s 목표속도 검토 시 `traffic_ramp_distance_m`도 같이 올릴지 재검토 필요) 이하로 떨어지면, 무관한 정지선을 스쳐 지나가며 쌓인 낡은 값이 나중에 빨간불이 뜨는 순간 그대로 급정지로 이어지는 걸 막기 위해 시드로 되돌리고 그 상태를 붙잡아둔다(=실질적으로 "시드에서 0.5m 이상 진행한 상태로 빨간불이 확정돼야만" 실제 정지가 성립). 빨간불 확정 후에는 같은 문턱 이하에서 완전 정지(`v_ref=0`), 그 위에서는 `v_ref = clamp01(traffic_stopline_distance / traffic_ramp_distance_m) × v_base`. **정지선 소실 edge를 한 번도 못 봤으면(=거리를 모르면, 정지선 미인지) v_base로 그냥 통과한다**(2026-09-02 확정, 사용자 지정). 한때 "안전 쪽 폴백"으로 즉시 정지를 넣었었는데, 검증 단계인 지금은 정지선 인지 자체가 미덥지 않아(위 해질녘 완전 실패 사례) "못 봤으면 무조건 정지"가 관련 없는 곳에서 잦은 오정지를 만든다는 판단으로 되돌렸다. traffic 또는 실차속도 입력이 stale이면 fail-safe 정지. 확정 초록만 상태를 해제하며(다음 신호를 위해 거리·래치 폐기) 미검출/unknown은 유지 근거다. 생성 `ADAS_MGR2 v1.88`에는 이 상태가 없으므로 `traffic_state_enabled=true`에서는 generated backend 기동을 거부하고, 모델 재생성 전까지 production core만 사용한다. bridge_dspace/tools/camera_traffic_ref_test.py로 벤치에서 먼저 검증한 방식. **실차 미검증** — 카메라 장착 고정 후 `traffic_ramp_distance_m`/`traffic_stop_offset_m` 재보정 권장.
+
+  **통합 경로 보완(2026-09-04):** 위 항목 첫 문장의 “횡방향은 lane 경로 유지”는
+  폐기됐다. TRAFFIC은 종방향 overlay이므로 LANE에서 진입하면 lane, WAYPOINT에서
+  진입하면 GPS 경로를 유지하고 초록에서도 같은 상태로 복귀한다. MGM wrapper도
+  실제로 선택된 lane/GPS 소스의 freshness와 GPS 유효성을 감시한다.
 
 **Parking 인지 파이프라인 (2026-09-01):** 옆 RPLiDAR의 반복적인 USB 전원
 탈락 때문에 주차 SLAM 입력은 `multi_lidar_fusion`이 `base_link`로 보정해 발행하는
