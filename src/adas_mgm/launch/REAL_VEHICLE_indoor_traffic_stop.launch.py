@@ -102,6 +102,7 @@ def generate_launch_description():
                 'oak_fps': 10.0, 'oak_width': 640, 'oak_height': 360,
                 'oak_depth_enabled': True,
                 'stopline_detection_enabled': True,
+                'stopline_yolo_confidence_threshold': 0.10,
                 'stopline_stop_y_ratio': 0.0,
                 'resume_on_green': False,
                 'resume_on_red_clear': False,
