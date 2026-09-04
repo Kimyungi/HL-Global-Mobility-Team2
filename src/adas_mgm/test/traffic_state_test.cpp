@@ -67,7 +67,7 @@ void triggerStoplineLostEdge(CoreState & st, CoreSnapshot & s)
   mgm_step(s, st);
 }
 
-void testRedEntersTraffic()
+void testRedAndStoplineEnterTraffic()
 {
   CoreState state{};
   mgm_init(state, params());
@@ -77,31 +77,35 @@ void testRedEntersTraffic()
     mgm_step(s, state);
   }
   s.traffic_red_active = true;
+  s.traffic_stopline_detected = true;
   CoreOutput out = mgm_step(s, state);
-  check(out.state == MGM_STATE_TRAFFIC, "확정 적색이면 즉시 TRAFFIC에 진입해야 한다");
+  check(
+    out.state == MGM_STATE_TRAFFIC,
+    "확정 적색과 정지선 검출이 동시에 참이면 TRAFFIC에 진입해야 한다");
   check(out.path_source == MGM_SRC_LANE, "TRAFFIC은 차선 경로를 유지해야 한다");
   check(!state.traffic_distance_latched, "소실 edge 전에는 거리를 래치하면 안 된다");
 }
 
-// 2026-09-02 확정(사용자 지정): 정지선 소실 edge를 한 번도 못 봤으면(=거리를
-// 모르면, 정지선 미인지 상태) 감속 없이 v_base로 그냥 통과해야 한다. 검증
-// 단계인 지금은 정지선 인지 자체가 미덥지 않아 "못 봤으면 무조건 정지"가
-// 관련 없는 곳에서 잦은 오정지를 만든다는 판단이다.
-void testNeverDetectedPassesThroughAtVBase()
+void testRedWithoutStoplineDoesNotEnterTraffic()
 {
   CoreState state{};
   mgm_init(state, params());
   CoreSnapshot s = input();
   s.traffic_red_active = true;
 
-  for (int tick = 0; tick < 300; ++tick) {
-    CoreOutput out = mgm_step(s, state);
-    check(out.state == MGM_STATE_TRAFFIC, "정지선을 못 봐도 TRAFFIC은 유지돼야 한다");
-    check(
-      out.v_ref == state.params.v_base,
-      "소실 edge를 한 번도 못 봤으면(dist 모름) v_base로 그냥 통과해야 한다");
-    check(!state.traffic_distance_latched, "관측이 없었으니 래치도 없어야 한다");
-  }
+  CoreOutput out = mgm_step(s, state);
+  check(out.state == MGM_STATE_LANE, "확정 적색만으로 TRAFFIC에 진입하면 안 된다");
+}
+
+void testStoplineWithoutRedDoesNotEnterTraffic()
+{
+  CoreState state{};
+  mgm_init(state, params());
+  CoreSnapshot s = input();
+  s.traffic_stopline_detected = true;
+
+  CoreOutput out = mgm_step(s, state);
+  check(out.state == MGM_STATE_LANE, "정지선 검출만으로 TRAFFIC에 진입하면 안 된다");
 }
 
 // 소실 edge가 거리를 시드(1.5m)로 세팅하고, 실측 차속으로 dead-reckoning
@@ -113,7 +117,6 @@ void testEdgeSeedsThenDecaysAndFloorsAtZero()
   mgm_init(state, p);
   CoreSnapshot s = input();
   s.traffic_red_active = true;
-  mgm_step(s, state);
 
   triggerStoplineLostEdge(state, s);
   check(
@@ -160,14 +163,24 @@ void testStaleDistanceBeforeRedIsHeldAtSeed()
       "빨간불 확정 전에는 거리가 stop_offset 밑으로 못 내려간다(가드가 시드로 되돌림)");
   }
 
-  // 이제서야 실제로 빨간불이 확정됐다고 가정 — 낡은 감쇠값이 아니라 시드
-  // 근방에서 다시 시작해야 하므로 급정지(v_ref=0)가 아니어야 한다.
+  // 이제서야 실제로 빨간불이 확정돼도 현재 정지선이 없으면 TRAFFIC에
+  // 진입하지 않는다. 과거 정지선 거리만으로 늦게 진입하거나 급정지하면 안 된다.
   s.traffic_red_active = true;
   s.vehicle_speed = 0.0f;
   CoreOutput out = mgm_step(s, state);
   check(
+    out.state == MGM_STATE_LANE,
+    "과거 정지선 이력과 현재 적색만으로 TRAFFIC에 진입하면 안 된다");
+  check(
     out.v_ref > 0.0f,
     "빨간불 확정 시 낡은 감쇠값 때문에 급정지(v_ref=0)하면 안 된다");
+
+  // 현재 정지선을 다시 검출한 시점에는 두 조건이 동시에 만족되므로 진입한다.
+  s.traffic_stopline_detected = true;
+  out = mgm_step(s, state);
+  check(
+    out.state == MGM_STATE_TRAFFIC,
+    "현재 적색과 새 정지선 검출이 함께 있으면 TRAFFIC에 진입해야 한다");
 }
 
 void testGreenExitsAndResetsLatch()
@@ -176,7 +189,6 @@ void testGreenExitsAndResetsLatch()
   mgm_init(state, params());
   CoreSnapshot s = input();
   s.traffic_red_active = true;
-  mgm_step(s, state);
   triggerStoplineLostEdge(state, s);
   check(state.traffic_distance_latched, "사전 조건: 이 시점엔 래치돼 있어야 한다");
 
@@ -193,6 +205,7 @@ void testFailSafeOnMissingVehicleSpeed()
   mgm_init(state, params());
   CoreSnapshot s = input();
   s.traffic_red_active = true;
+  s.traffic_stopline_detected = true;
   s.vehicle_speed_valid = false;
   CoreOutput out = mgm_step(s, state);
   check(
@@ -207,10 +220,11 @@ void testEntryFromWaypointAndExitToLane()
   state.state = MGM_STATE_WAYPOINT;
   CoreSnapshot s = input();
   s.traffic_red_active = true;
+  s.traffic_stopline_detected = true;
   CoreOutput out = mgm_step(s, state);
   check(
     out.state == MGM_STATE_TRAFFIC,
-    "WAYPOINT에서도 확정 적색이면 TRAFFIC으로 진입해야 한다");
+    "WAYPOINT에서도 확정 적색과 정지선이 함께 있으면 TRAFFIC으로 진입해야 한다");
   s.traffic_red_active = false;
   s.traffic_green_active = true;
   out = mgm_step(s, state);
@@ -223,8 +237,9 @@ void testEntryFromWaypointAndExitToLane()
 
 int main()
 {
-  testRedEntersTraffic();
-  testNeverDetectedPassesThroughAtVBase();
+  testRedAndStoplineEnterTraffic();
+  testRedWithoutStoplineDoesNotEnterTraffic();
+  testStoplineWithoutRedDoesNotEnterTraffic();
   testEdgeSeedsThenDecaysAndFloorsAtZero();
   testStaleDistanceBeforeRedIsHeldAtSeed();
   testGreenExitsAndResetsLatch();

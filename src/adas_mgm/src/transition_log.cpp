@@ -88,8 +88,8 @@ TransitionRecord explainTransition(
       lane_high_cnt_before >= n - 1 && cross_ok && !s.gps_gps_only_zone &&
       return_hold_left_before <= 1;
   } else if (to == MGM_STATE_TRAFFIC) {
-    r.rule = "lane/waypoint→traffic: 확정 적색";
-    r.spec_match = s.traffic_red_active;
+    r.rule = "lane/waypoint→traffic: 확정 적색 + 정지선 검출";
+    r.spec_match = s.traffic_red_active && s.traffic_stopline_detected;
   } else if (from == MGM_STATE_TRAFFIC && to == MGM_STATE_LANE) {
     r.rule = "traffic→lane: 확정 초록";
     r.spec_match = s.traffic_green_active;

@@ -252,8 +252,12 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // 되레 멈춰 세운다. 래치하지 않는다 — 위치로 정해지는 값이라 구간을 벗어나면
   // 평소 히스테리시스(신뢰도 N주기 + 트랙 재합류)로 자연 복귀한다.
   const bool gps_only_zone = s.gps_gps_only_zone && s.gps_path.n > 0;
+  // 신호등 정지 상태는 확정 적색과 현재의 안정적인 정지선 검출이 동시에
+  // 성립할 때만 진입한다. 적색만 보인 교차로나 정지선만 보인 일반 노면에서
+  // TRAFFIC으로 잘못 전이하지 않는다. 진입 후에는 정지선이 카메라 아래로
+  // 사라져도 거리 적분을 계속해야 하므로, 해제 조건은 기존처럼 확정 초록이다.
   const bool traffic_entry = st.params.traffic_state_enabled != 0 &&
-    s.traffic_red_active;
+    s.traffic_red_active && s.traffic_stopline_detected;
   // ★ 구간 안에서는 LANE 복귀 카운터를 **세지 않는다**(0으로 묶는다).
   //   안 그러면 구간을 지나는 내내 쌓인 값으로 **벗어나는 순간 한 틱 만에** LANE이
   //   된다 — 차선을 못 믿겠다고 지정한 구간을 막 빠져나온 참에, 그 구간 동안의
