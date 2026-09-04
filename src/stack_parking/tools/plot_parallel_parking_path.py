@@ -178,11 +178,11 @@ def context(ax, scene, rectangle, path, active_reference):
     ax.plot(path.front_arc_map[:, 0], path.front_arc_map[:, 1],
             color='0.65', ls=':', lw=1.5)
     ax.plot(path.front_line_map[:, 0], path.front_line_map[:, 1],
-            color='0.65', ls=':', lw=1.5, label='R1.5m S reference path')
+            color='0.65', ls=':', lw=1.5, label='R2.0m S reference path')
     ax.plot(path.p0_map[0], path.p0_map[1], 'mx', ms=10, mew=2,
             label='P0: wall-edge midpoint')
     ax.plot(path.arc_origin_map[0], path.arc_origin_map[1], 'g+', ms=12,
-            mew=2, label='arc origin: P0 + 0.75m forward + 0.5m CW')
+            mew=2, label='arc origin: P0 + 0.5m forward + 0.25m CW')
     active_xy = np.asarray([
         [point.x, point.y] for point in active_reference])
     ax.plot(active_xy[:, 0], active_xy[:, 1], color='seagreen', ls='--',
@@ -231,11 +231,11 @@ def main() -> None:
     path = build_parallel_reference_path(
         candidate,
         Pose2(0.1, 0.0, 0.0),
-        turn_radius_m=1.5,
+        turn_radius_m=2.0,
         end_straight_m=1.5,
-        arc_angle_deg=60.0,
-        arc_start_offset_m=0.75,
-        arc_clockwise_offset_m=0.5,
+        arc_angle_deg=50.0,
+        arc_start_offset_m=0.5,
+        arc_clockwise_offset_m=0.25,
     )
     if path is None:
         raise RuntimeError('parallel reference path was not created')
@@ -275,8 +275,8 @@ def main() -> None:
     for axis in axes:
         axis.set_ylabel('parking_map y [m]')
     fig.suptitle(
-        'Parallel parking test: 1.5m x 0.7m slot, R=1.5m, 60deg arcs, '
-        'origin P0+0.75m forward+0.5m clockwise\n'
+        'Parallel parking test: 1.5m x 0.7m slot, R=2.0m, 50deg arcs, '
+        'origin P0+0.5m forward+0.25m clockwise\n'
         'full-S forward -> two distinct single arcs -> '
         'full-S reverse/forward',
         fontsize=15,
@@ -291,10 +291,10 @@ def main() -> None:
           'full_s_reverse>hold1s>full_s_forward>hold1s>'
           'parallel_parking_complete')
     print('rectangle_m=1.500x0.700')
-    print('turn_radius_m=1.500')
-    print('arc_start_offset_m=0.750')
-    print('arc_clockwise_offset_m=0.500')
-    print('arc_angle_deg=60.000x2')
+    print('turn_radius_m=2.000')
+    print('arc_start_offset_m=0.500')
+    print('arc_clockwise_offset_m=0.250')
+    print('arc_angle_deg=50.000x2')
     print('s_end_straight_m=1.500x2')
     print('single_arc_straight_m=2.000x2')
     print('preview_distance_m=1.500')

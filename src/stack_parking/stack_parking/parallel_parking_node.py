@@ -37,11 +37,11 @@ class ParallelParkingNode(WallGapNode):
 
         self.declare_parameter('rectangle_wall_length_m', 1.5)
         self.declare_parameter('rectangle_inward_depth_m', 0.7)
-        self.declare_parameter('parallel_turn_radius_m', 1.5)
+        self.declare_parameter('parallel_turn_radius_m', 2.0)
         self.declare_parameter('parallel_end_straight_m', 1.5)
-        self.declare_parameter('parallel_arc_angle_deg', 60.0)
-        self.declare_parameter('parallel_arc_start_offset_m', 0.75)
-        self.declare_parameter('parallel_arc_clockwise_offset_m', 0.5)
+        self.declare_parameter('parallel_arc_angle_deg', 50.0)
+        self.declare_parameter('parallel_arc_start_offset_m', 0.5)
+        self.declare_parameter('parallel_arc_clockwise_offset_m', 0.25)
         # Entry line-arc-line straight (backing in) vs. the forward nudge
         # that follows it -- independently tunable (user directive,
         # 2026-09-04: entry stays 2m, nudge shortened to 1m).

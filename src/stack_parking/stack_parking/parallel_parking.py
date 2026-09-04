@@ -2,10 +2,10 @@
 
 The valid point P0 is the midpoint between the two wall faces and the midpoint
 of the wall-side edge of a 1.5m x 0.7m validation rectangle.  The S-curve
-origin is shifted 0.75m from P0 along the wall tangent oriented toward the
-vehicle's travel direction, then another 0.5m along that direction rotated 90
+origin is shifted 0.5m from P0 along the wall tangent oriented toward the
+vehicle's travel direction, then another 0.25m along that direction rotated 90
 degrees clockwise; the vehicle yaw itself is not used as its slope. A
-60-degree arc of radius 1.5m is constructed there, then rotated 180 degrees
+50-degree arc of radius 2.0m is constructed there, then rotated 180 degrees
 about the shifted origin.  A 1.5-metre wall-parallel line extends from each end
 of the S.  The five-motion controller additionally isolates one arc into a
 line-arc-line path and obtains the other by rotating it 180 degrees about the
@@ -138,11 +138,11 @@ def _rotate(vector: np.ndarray, angle: float) -> np.ndarray:
 def build_parallel_reference_path(
     candidate: TrackedCandidate,
     vehicle_pose: Pose2,
-    turn_radius_m: float = 1.5,
+    turn_radius_m: float = 2.0,
     end_straight_m: float = 1.5,
-    arc_angle_deg: float = 60.0,
-    arc_start_offset_m: float = 0.75,
-    arc_clockwise_offset_m: float = 0.5,
+    arc_angle_deg: float = 50.0,
+    arc_start_offset_m: float = 0.5,
+    arc_clockwise_offset_m: float = 0.25,
     arc_points: int = 24,
 ) -> Optional[ParallelReferencePath]:
     """Construct the point-symmetric S path requested for parallel parking."""
