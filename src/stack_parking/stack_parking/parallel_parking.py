@@ -5,7 +5,7 @@ of the wall-side edge of a 1.5m x 0.7m validation rectangle.  The S-curve
 origin is shifted 0.75m from P0 along the wall tangent oriented toward the
 vehicle's travel direction, then another 0.5m along that direction rotated 90
 degrees clockwise; the vehicle yaw itself is not used as its slope. A
-30-degree arc of radius 1.5m is constructed there, then rotated 180 degrees
+60-degree arc of radius 1.5m is constructed there, then rotated 180 degrees
 about the shifted origin.  A 1.5-metre wall-parallel line extends from each end
 of the S.  The five-motion controller additionally isolates one arc into a
 line-arc-line path and obtains the other by rotating it 180 degrees about the
@@ -140,7 +140,7 @@ def build_parallel_reference_path(
     vehicle_pose: Pose2,
     turn_radius_m: float = 1.5,
     end_straight_m: float = 1.5,
-    arc_angle_deg: float = 30.0,
+    arc_angle_deg: float = 60.0,
     arc_start_offset_m: float = 0.75,
     arc_clockwise_offset_m: float = 0.5,
     arc_points: int = 24,
@@ -184,7 +184,7 @@ def build_parallel_reference_path(
     # The radius at the wall-tangent end points opposite ``inward``.  Place
     # the centre so the rotation from the origin radius to that end radius is
     # exactly ``arc_angle`` (the former cos/sin order only happened to be
-    # correct at 45 degrees and turned a requested 30-degree arc into 60).
+    # correct at 45 degrees and otherwise produced the complementary angle).
     front_direction = math.sin(arc_angle) * tangent + math.cos(arc_angle) * inward
     front_center = arc_origin + radius * front_direction
     front_tangent = front_center - radius * inward

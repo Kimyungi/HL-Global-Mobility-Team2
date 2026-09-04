@@ -233,7 +233,7 @@ def main() -> None:
         Pose2(0.1, 0.0, 0.0),
         turn_radius_m=1.5,
         end_straight_m=1.5,
-        arc_angle_deg=30.0,
+        arc_angle_deg=60.0,
         arc_start_offset_m=0.75,
         arc_clockwise_offset_m=0.5,
     )
@@ -275,7 +275,7 @@ def main() -> None:
     for axis in axes:
         axis.set_ylabel('parking_map y [m]')
     fig.suptitle(
-        'Parallel parking test: 1.5m x 0.7m slot, R=1.5m, 30deg arcs, '
+        'Parallel parking test: 1.5m x 0.7m slot, R=1.5m, 60deg arcs, '
         'origin P0+0.75m forward+0.5m clockwise\n'
         'full-S forward -> two distinct single arcs -> '
         'full-S reverse/forward',
@@ -294,7 +294,7 @@ def main() -> None:
     print('turn_radius_m=1.500')
     print('arc_start_offset_m=0.750')
     print('arc_clockwise_offset_m=0.500')
-    print('arc_angle_deg=30.000x2')
+    print('arc_angle_deg=60.000x2')
     print('s_end_straight_m=1.500x2')
     print('single_arc_straight_m=2.000x2')
     print('preview_distance_m=1.500')

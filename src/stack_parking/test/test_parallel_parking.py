@@ -37,7 +37,7 @@ def _candidate() -> TrackedCandidate:
 def _path():
     path = build_parallel_reference_path(
         _candidate(), Pose2(), turn_radius_m=1.5,
-        end_straight_m=1.5, arc_angle_deg=30.0,
+        end_straight_m=1.5, arc_angle_deg=60.0,
         arc_start_offset_m=0.75, arc_clockwise_offset_m=0.5)
     if path is None:
         raise AssertionError('parallel path was not built')
@@ -88,9 +88,9 @@ class ParallelParkingGeometryTest(unittest.TestCase):
             (front_center - arc_origin)
             / np.linalg.norm(front_center - arc_origin))
         self.assertAlmostEqual(
-            center_direction[0], math.sin(math.radians(30.0)), places=9)
+            center_direction[0], math.sin(math.radians(60.0)), places=9)
         self.assertAlmostEqual(
-            center_direction[1], math.cos(math.radians(30.0)), places=9)
+            center_direction[1], math.cos(math.radians(60.0)), places=9)
 
         front_radii = np.linalg.norm(
             path.front_arc_map - front_center, axis=1)
@@ -175,7 +175,7 @@ class ParallelParkingGeometryTest(unittest.TestCase):
                            current.y - previous.y)
                 for previous, current in zip(
                     opposite_forward, opposite_forward[1:])),
-            4.0 + 1.5 * math.radians(30.0),
+            4.0 + 1.5 * math.radians(60.0),
             places=3,
         )
 
