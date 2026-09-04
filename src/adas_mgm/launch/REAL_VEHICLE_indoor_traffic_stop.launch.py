@@ -105,6 +105,7 @@ def generate_launch_description():
                 'stopline_stop_y_ratio': 0.0,
                 'resume_on_green': False,
                 'resume_on_red_clear': False,
+                'show_debug': True,
             }],
             on_exit=Shutdown(reason='stack_traffic stopped')),
 
