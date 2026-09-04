@@ -66,7 +66,7 @@ avoidable이 안 서면 → 콘이 통로(±0.46m) 밖이거나 ttc<1.5 (§5 표
 ## 2. 회피 주행 (차선 포함 full 통합)
 
 > 아래 블록은 회피 기능 시험에 초점을 둔 구성이다. 신호등 실제 정지를 함께 시험할
-> 때는 `RUNBOOK_full_operation_20260830.md`의 `traffic_enabled:=true`,
+> 때는 `RUNBOOK_full_operation_20260904.md`의 `traffic_enabled:=true`,
 > `traffic_require_stop_gate:=true`, `traffic_stop_y_ratio:=...` 인자를 동일 launch에 추가한다.
 
 차선·GPS·회피를 모두 켜고 **lane ↔ waypoint ↔ avoid** 전이를 함께 본다:

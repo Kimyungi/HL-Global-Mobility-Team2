@@ -168,4 +168,4 @@ y_raw, y_ratio, y_med, line_z, z_med, stable, accepted
 - 적색은 LANE/WAYPOINT에서 TRAFFIC으로 전이하며, 초록은 LANE으로 복귀한다.
 
 실행 명령과 터미널 배치는
-`src/adas_mgm/RUNBOOK_full_operation_20260830.md`를 따른다.
+`src/adas_mgm/RUNBOOK_full_operation_20260904.md`를 따른다.

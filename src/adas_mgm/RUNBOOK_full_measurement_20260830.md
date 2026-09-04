@@ -4,7 +4,7 @@
 
 > 이 문서는 **측정 전용**이다. 기본 `traffic_stop_y_ratio:=0.0`에서는 신호등이
 > 차를 세우지 않는다. 검증된 임계값으로 실제 정지까지 시험하려면
-> `RUNBOOK_full_operation_20260830.md`를 사용한다.
+> `RUNBOOK_full_operation_20260904.md`를 사용한다.
 
 ## 처음 하는 사람은 여기만 순서대로 실행
 
@@ -124,7 +124,7 @@ python3 -c 'import os; v=float(os.environ["FMA_TRAFFIC_STOP_Y_RATIO"]); assert 0
 python3 -c 'import os; p=os.path.expanduser("~/FMA_ws/traffic_stop_y_ratio.txt"); v=float(open(p).read()); print("저장된 임계값:", v)'
 ```
 
-이제 `RUNBOOK_full_operation_20260830.md`의 초보자 절차로 이동한다.
+이제 `RUNBOOK_full_operation_20260904.md`의 초보자 절차로 이동한다.
 
 ---
 
@@ -152,7 +152,7 @@ CLAUDE.md §1 의 시나리오 6종 기준:
 | GPS(waypoint) 주행 | ✅ | `stack_gps` → WAYPOINT |
 | 장애물 회피 | ✅ | `stack_avoid` → AVOID |
 | 신호등·정지선 인지·임계값 측정 | ✅ **정지 요구는 비활성** | `stack_traffic` 측정 로그 |
-| 신호등·정지선 실제 정지 | ❌ | `RUNBOOK_full_operation_20260830.md` |
+| 신호등·정지선 실제 정지 | ❌ | `RUNBOOK_full_operation_20260904.md` |
 | 돌발 장애물 긴급 정지 | ✅ | `stack_estop` → v_ref 0 |
 | **라이다 주차** | ❌ | `stack_parking` — 아래 참조 |
 
@@ -436,7 +436,7 @@ TX 프레임/헤더 = 2.00          ← v5. 21.00 이면 옛 v3 코드가 도는
 3. **정차 위치의 값을 그대로 쓰지 않는다.** 그 위치에서야 감속을 시작하므로 지나친다.
    조금 이른 값(작은 y_ratio)을 고른다.
 4. 선택한 값과 근거 run을 기록한다.
-5. 실제 정지·재출발 검증은 `RUNBOOK_full_operation_20260830.md`를 따른다.
+5. 실제 정지·재출발 검증은 `RUNBOOK_full_operation_20260904.md`를 따른다.
 
 **정지 우선권** (CLAUDE.md §4): `긴급정지 > 신호등 정지 > 트랙 종점 > 역방향 > 지정
 지점 정지 > 가속구간 > 기본 속도`. 신호등이 걸려도 estop 이 이긴다.
@@ -515,7 +515,7 @@ column -s, -t $RUN/transitions.csv | cut -c1-160
 
 ## 참조
 
-- `RUNBOOK_full_operation_20260830.md` — 검증된 임계값으로 신호등 정지까지 수행
+- `RUNBOOK_full_operation_20260904.md` — 검증된 임계값으로 신호등 정지까지 수행
 - `RUNBOOK_lane_gps.md` — 신호등 없는 같은 구성 (베이스·RTCM·go·일반 진단의 원본)
 - `RUNBOOK_avoid_field_test.md` — 회피 판정 기준·튜닝 노브·구간 찍기 §2-1
 - `RUNBOOK_mbd_lane_gps.md` — 생성 C(MBD) 검증. **동시 실행 금지**

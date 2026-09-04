@@ -40,4 +40,4 @@ ros2 launch stack_traffic stopline_distance_test.launch.py \
 가지지만 실제 제공 학습 라벨에는 `stop_line`만 존재한다. 검증 영상도 두 개의
 연속 촬영에서 나뉜 것이므로, 다양한 날씨·시간·도로에서 별도 test 세트를 만든
 뒤 실차 정지 제어를 승인해야 한다. 실제 실행과 안전 확인은
-[`RUNBOOK_full_operation_20260830.md`](../../adas_mgm/RUNBOOK_full_operation_20260830.md)를 따른다.
+[`RUNBOOK_full_operation_20260904.md`](../../adas_mgm/RUNBOOK_full_operation_20260904.md)를 따른다.

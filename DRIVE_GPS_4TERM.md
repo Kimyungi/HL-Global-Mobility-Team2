@@ -1,7 +1,7 @@
 # GPS 단독 주행 — 터미널 4개 현장 카드 (2026-08-25, 한라대)
 
 > **GPS 단독 점검용 문서다.** 신호등·정지선까지 포함한 현재 실차 통합 시험에는
-> [`RUNBOOK_full_operation_20260830.md`](src/adas_mgm/RUNBOOK_full_operation_20260830.md)의
+> [`RUNBOOK_full_operation_20260904.md`](src/adas_mgm/RUNBOOK_full_operation_20260904.md)의
 > `REAL_VEHICLE_lane_gps_can.launch.py` 명령 블록을 사용한다.
 
 출처: `stack_gps/DRIVE_GUIDE.md` · `COMMANDS.md` · `HANDOVER.md` · `CLAUDE.md` §5.7

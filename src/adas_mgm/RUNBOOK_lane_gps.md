@@ -69,7 +69,7 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 ## 3. V2 [차량 PC] — 통합 launch
 
 > 아래 블록은 신호등을 사용하지 않는 lane/GPS 시험이다. 신호등 실제 정지를 포함한
-> 현재 표준 운용은 `RUNBOOK_full_operation_20260830.md`의 launch 블록을 그대로 사용한다.
+> 현재 표준 운용은 `RUNBOOK_full_operation_20260904.md`의 launch 블록을 그대로 사용한다.
 
 ```bash
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
@@ -168,7 +168,7 @@ ros2 run adas_mgm go
 ## 참조
 
 - **신호등 임계값 측정:** `RUNBOOK_full_measurement_20260830.md`
-- **검증된 임계값으로 실제 통합 운영:** `RUNBOOK_full_operation_20260830.md`
+- **검증된 임계값으로 실제 통합 운영:** `RUNBOOK_full_operation_20260904.md`
   — `traffic_enabled:=true`로 신호등·정지선이 추가되며, 운영 런북은 정지 게이트를 강제한다.
 - **회피 통합 실차 시험 (첫 검증 절차·판정 기준·튜닝 노브): `RUNBOOK_avoid_field_test.md`**
 - GPS 단독 주행·코스 기록·현장 검증 절차: `src/stack_gps/DRIVE_GUIDE.md` (PART A)

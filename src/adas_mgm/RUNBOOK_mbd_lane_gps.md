@@ -1,7 +1,7 @@
 # MBD(생성 C) MGM 실차 시험 런북 — ADAS_MGR2 v1.88 4상태
 
 > **MBD 생성 C 비교시험 전용 문서다.** 최신 운영 C++ 코어와 신호등·정지선까지
-> 함께 시험할 때는 [`RUNBOOK_full_operation_20260830.md`](RUNBOOK_full_operation_20260830.md)의
+> 함께 시험할 때는 [`RUNBOOK_full_operation_20260904.md`](RUNBOOK_full_operation_20260904.md)의
 > `REAL_VEHICLE_lane_gps_can.launch.py` 명령 블록을 사용한다.
 
 **launch: `adas_mgm/launch/MBD_lane_gps_can.launch.py`**
@@ -504,7 +504,7 @@ back-to-back parity(`parity_replay`).
 ## 참조
 
 - `RUNBOOK_full_measurement_20260830.md` — 운영 C++ 코어의 신호등 임계값 측정 런북.
-- `RUNBOOK_full_operation_20260830.md` — 운영 C++ 코어의 주차 제외 실제 통합 런북.
+- `RUNBOOK_full_operation_20260904.md` — 운영 C++ 코어의 실제 통합 런북.
   두 문서의 운영 launch와 **이 문서의 launch를 동시에 띄우지 말 것** (estop·mgm·bridge 중복)
 - [`base_station/BASE_SURVEY.md`](../stack_gps/tools/base_station/BASE_SURVEY.md) — 베이스 좌표 측량
 - [`base_station/BASE_MOVE.md`](../stack_gps/tools/base_station/BASE_MOVE.md) — 지점 이동

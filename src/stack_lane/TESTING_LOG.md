@@ -1,7 +1,7 @@
 # stack_lane 구현·테스트 정리 (2026-08-07~08, 조향 미반응 원인 규명·해결 포함)
 
 > **과거 구현·시험 기록이다.** 현재 신호등·정지선은 `stack_traffic`이 담당하며,
-> 실차 통합 실행은 [`RUNBOOK_full_operation_20260830.md`](../adas_mgm/RUNBOOK_full_operation_20260830.md)의
+> 실차 통합 실행은 [`RUNBOOK_full_operation_20260904.md`](../adas_mgm/RUNBOOK_full_operation_20260904.md)의
 > `REAL_VEHICLE_lane_gps_can.launch.py` 명령을 사용한다.
 
 > 설계 결정 이력의 원본은 [`PROJECT_BRIEF.md`](PROJECT_BRIEF.md)(§1~§15). 이 문서는
