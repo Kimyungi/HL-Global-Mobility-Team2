@@ -5,13 +5,13 @@ node command the same 1.5m preview and 0.75m/s speeds as the T test. Existing
 SLAM map data is retained. A clear 1.5m wall-parallel x 0.7m inward rectangle
 defines P0. Once the vehicle passes P0, the node shifts the arc origin 0.5m
 forward and creates the R=1.12m, 45deg+45deg point-symmetric S path with 1.5m
-lines at both ends. It then runs the full S forward, the front single-arc
+lines at both ends. It then runs the full S forward, a separate single-arc
 line-arc-line (entry radius parallel_entry_radius_m, default 2x
 parallel_turn_radius_m; entry straight parallel_entry_straight_m, default
-2m) in reverse, and the entire first shape rotated 180 degrees about the arc
-origin in forward (straight shortened to parallel_opposite_straight_m,
-default 1m). The last reverse and forward phases reuse the original full S
-(rear arc stays at parallel_turn_radius_m) without moving it. Every
+2m) in reverse, and the smaller original-radius symmetric arc in forward
+(straight shortened to parallel_opposite_straight_m,
+default 1m). The last reverse and forward phases reuse the original symmetric
+full S (both arcs stay at parallel_turn_radius_m) without moving it. Every
 preview-at-end transition holds for one second. The logger flushes after the
 final hold.
 """
@@ -87,10 +87,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'parallel_entry_radius_m', default_value='2.24',
             description=(
-                'Radius of only the entry/front arc (SINGLE_ARC_REVERSE, '
-                'backing into the bay) -- independent of '
-                'parallel_turn_radius_m, which keeps sizing the rear arc '
-                'used by the full-S passes. 0.0 = same as turn_radius_m')),
+                'Radius used only by SINGLE_ARC_REVERSE; its symmetric '
+                'forward arc and the full-S reference stay at '
+                'parallel_turn_radius_m. 0.0 = same as turn_radius_m')),
         DeclareLaunchArgument(
             'parallel_entry_straight_m', default_value='2.0',
             description='Straight length of the entry line-arc-line (backing in)'),

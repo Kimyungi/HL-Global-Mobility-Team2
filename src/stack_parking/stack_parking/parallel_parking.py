@@ -6,11 +6,11 @@ origin is shifted 0.5m from P0 along the wall tangent oriented toward the
 vehicle's travel direction; the vehicle yaw itself is not used as its slope. A
 45-degree arc of radius 1.12m is constructed there, then rotated 180 degrees
 about the shifted origin.  A 1.5-metre wall-parallel line extends from each end
-of the S.  The five-motion controller additionally isolates one arc into a
-line-arc-line path with two-metre straight sections and obtains the other
-line-arc-line by rotating the complete first shape 180 degrees about the shared
-arc origin.  The final reverse and forward phases reuse the original,
-unmodified S reference path.
+of the S.  The five-motion controller additionally accepts a separate entry
+reference and isolates its larger first arc into a line-arc-line path with
+two-metre straight sections.  The following forward line-arc-line uses the
+smaller, original-radius arc from the symmetric S.  The final reverse and
+forward phases reuse that original, unmodified S reference path.
 
 The front (entry) arc used for that isolated line-arc-line -- the one the
 vehicle actually backs into the bay on -- can take its own radius via
@@ -45,10 +45,10 @@ from .wall_gap_detector import TrackedCandidate
 @dataclass(frozen=True)
 class ParallelReferencePath:
     side: str
-    # front = the arc used to enter the bay (SINGLE_ARC_REVERSE); rear = the
-    # arc used only in the full S (INITIAL_FORWARD/REFERENCE_REVERSE/
-    # REFERENCE_FORWARD). Independent so the entry radius can be tuned
-    # without touching the inner one (user directive, 2026-09-04).
+    # A reference may be symmetric (the original full S) or have an overridden
+    # front radius (the separate SINGLE_ARC_REVERSE entry geometry).  The
+    # controller never uses the overridden entry reference for its full-S
+    # INITIAL_FORWARD/REFERENCE_REVERSE/REFERENCE_FORWARD phases.
     front_radius_m: float
     rear_radius_m: float
     p0_map: tuple[float, float]
@@ -455,16 +455,27 @@ class ParallelParkingController:
         path: ParallelReferencePath,
         current_pose_map: Pose2,
         now_s: float,
+        entry_path: Optional[ParallelReferencePath] = None,
     ) -> bool:
+        entry_reference = entry_path if entry_path is not None else path
         forward, reverse = parallel_controller_paths(
             path, self.config.sample_step_m)
         single_forward, single_reverse = parallel_single_arc_paths(
-            path, self.config.sample_step_m, self.config.entry_straight_m)
+            entry_reference,
+            self.config.sample_step_m,
+            self.config.entry_straight_m,
+        )
         if (not forward or not reverse
                 or not single_forward or not single_reverse):
             return False
+        # The entry arc alone may be larger.  Phase 3 must use the smaller arc
+        # generated symmetrically from the original reference, not a reflected
+        # copy of that enlarged entry arc.
         opposite_forward = parallel_opposite_single_arc_path(
-            path, self.config.sample_step_m, self.config.opposite_straight_m)
+            path,
+            self.config.sample_step_m,
+            self.config.opposite_straight_m,
+        )
         if not opposite_forward:
             return False
         self.initial_reference_forward_path = forward

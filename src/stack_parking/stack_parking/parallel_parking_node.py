@@ -38,10 +38,9 @@ class ParallelParkingNode(WallGapNode):
         self.declare_parameter('rectangle_wall_length_m', 1.5)
         self.declare_parameter('rectangle_inward_depth_m', 0.7)
         self.declare_parameter('parallel_turn_radius_m', 1.12)
-        # Entry (front) arc radius -- the arc SINGLE_ARC_REVERSE actually
-        # backs the vehicle in on. Independent of parallel_turn_radius_m,
-        # which now only sizes the rear arc used by the full-S passes
-        # (user directive, 2026-09-04). 0.0 means "same as turn_radius_m".
+        # Entry arc radius -- used only by SINGLE_ARC_REVERSE.  The symmetric
+        # OPPOSITE_ARC_FORWARD arc and the original full-S reference remain at
+        # parallel_turn_radius_m. 0.0 means "same as turn_radius_m".
         self.declare_parameter('parallel_entry_radius_m', 0.0)
         self.declare_parameter('parallel_end_straight_m', 1.5)
         self.declare_parameter('parallel_arc_angle_deg', 35.0)
@@ -284,7 +283,15 @@ class ParallelParkingNode(WallGapNode):
                 and self.reference_path is None
                 and not self.path_failed
                 and self._candidate_passed(pose)):
-            self.reference_path = build_parallel_reference_path(
+            reference_path = build_parallel_reference_path(
+                self.confirmed_candidate,
+                pose,
+                turn_radius_m=self.parallel_turn_radius_m,
+                end_straight_m=self.parallel_end_straight_m,
+                arc_angle_deg=self.parallel_arc_angle_deg,
+                arc_start_offset_m=self.parallel_arc_start_offset_m,
+            )
+            entry_path = build_parallel_reference_path(
                 self.confirmed_candidate,
                 pose,
                 turn_radius_m=self.parallel_turn_radius_m,
@@ -293,13 +300,16 @@ class ParallelParkingNode(WallGapNode):
                 arc_start_offset_m=self.parallel_arc_start_offset_m,
                 entry_radius_m=self.parallel_entry_radius_m,
             )
-            if self.reference_path is None:
+            if reference_path is None or entry_path is None:
                 self.path_failed = True
                 self.get_logger().error(
                     'parallel reference-path parameters are degenerate')
             else:
+                self.reference_path = reference_path
                 now_s = self._clock_s()
-                if not self.controller.start(self.reference_path, pose, now_s):
+                if not self.controller.start(
+                        self.reference_path, pose, now_s,
+                        entry_path=entry_path):
                     self.path_failed = True
                     self.get_logger().error(
                         'parallel controller could not sample the reference path')
