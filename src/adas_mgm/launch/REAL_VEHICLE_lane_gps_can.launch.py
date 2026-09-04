@@ -301,10 +301,11 @@ def generate_launch_description():
                               description='코스 웨이포인트 CSV (필수)'),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
         DeclareLaunchArgument(
-            'parking_enabled', default_value='false',
+            'parking_enabled', default_value='true',
             description=(
                 'Enable integrated four-LiDAR parking and replace this '
-                "launch's single front-LiDAR driver")),
+                "launch's single front-LiDAR driver; false restores the "
+                'legacy lane/GPS/avoid-only sensor setup')),
         DeclareLaunchArgument(
             't_parking_zone_ranges', default_value='[0]',
             description='T/perpendicular waypoint ranges [start,end,...]'),
