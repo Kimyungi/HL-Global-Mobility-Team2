@@ -304,6 +304,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
     case MGM_STATE_WAYPOINT:
       if (traffic_entry) {
         st.state = MGM_STATE_TRAFFIC;
+      } else if (s.gps_parking_zone && s.parking_space_found) {
+        st.state = MGM_STATE_PARKING;
       } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
       } else if (!gps_only_zone && st.return_hold_left == 0 &&
@@ -340,7 +342,9 @@ void transition(const CoreSnapshot & s, CoreState & st)
     case MGM_STATE_PARKING:
       // parking→avoid 전이 없음 = 주차 중 회피 금지가 구조적으로 보장 (§4)
       if (s.parking_done) {
-        st.state = MGM_STATE_LANE;
+        st.state = (
+          st.parking_entry_state == MGM_STATE_WAYPOINT ?
+          MGM_STATE_WAYPOINT : MGM_STATE_LANE);
       }
       break;
 
@@ -404,6 +408,9 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // 기동 중 lane_high_cnt가 500~900까지 누적 → waypoint 복귀 한 틱 만에 lane 전이,
   // 110초에 전이 22회·횡오차 8m 발산).
   if (st.state != prev_state) {
+    if (st.state == MGM_STATE_PARKING) {
+      st.parking_entry_state = prev_state;
+    }
     st.lane_low_cnt = 0;
     st.lane_high_cnt = 0;
     st.wrongway_cnt = 0;

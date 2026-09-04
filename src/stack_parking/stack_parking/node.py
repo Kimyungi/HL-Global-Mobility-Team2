@@ -478,12 +478,17 @@ class StackParkingNode(Node):
             return
         if self.gps_zone_armed:
             self.gps_zone_armed = False
+            mode_by_type = {
+                GpsPath.PARKING_PERPENDICULAR: MODE_PERPENDICULAR,
+                GpsPath.PARKING_PARALLEL: MODE_PARALLEL,
+            }
+            mode = mode_by_type.get(
+                int(getattr(msg, 'parking_mode', GpsPath.PARKING_NONE)),
+                str(self._p('gps_default_mode')))
             self._start_mission(
-                str(self._p('gps_default_mode')),
+                mode,
                 str(self._p('gps_default_side')),
-                source=(
-                    'GpsPath.parking_zone(default type; explicit type can use '
-                    '/parking/gps_command)'),
+                source='GpsPath.parking_zone:%s' % mode,
             )
 
     def _parse_command(self, command: str) -> tuple[str, str] | None:
@@ -832,6 +837,10 @@ class StackParkingNode(Node):
         msg.header.stamp = stamp
         msg.header.frame_id = self.base_frame
         msg.parking_zone = self.manual_gate_active
+        msg.parking_mode = (
+            GpsPath.PARKING_PARALLEL
+            if self.mission.mode == MODE_PARALLEL
+            else GpsPath.PARKING_PERPENDICULAR)
         # A neutral one-metre point keeps the existing GpsPath freshness/data
         # contract valid before MGM changes into PARKING. It is never selected
         # as the parking path.

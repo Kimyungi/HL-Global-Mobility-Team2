@@ -271,6 +271,8 @@ struct CoreState
   bool wrongway_latched;                  // 역방향 래치 (§4) — 신뢰 가능한 정렬로만 해제
   int32_t return_hold_left;               // >0이면 waypoint→lane 전이 보류 (avoid 복귀 직후)
   int32_t avoid_ticks;                    // AVOID 지속 틱 (avoid_max_cycles 상한 판정)
+  // PARKING 진입 직전 주행 상태. 주차 완료 후 같은 소스로 복귀한다.
+  uint8_t parking_entry_state;
   bool at_end_latched;                    // 종점 도달 래치 — estop 인가 시 해제 (§4)
   // 지정 지점 정지 (2026-08-18) — §4 우선권 표의 "지정 정지"
   bool stop_zone_holding;                 // 정지 유지 중 (v_ref 0 요구)

@@ -3,6 +3,12 @@ std_msgs/Header header
 RefPoint[] points
 bool accel_zone      # 가속구간 (종방향 ↑ 요구의 원천 — 적용 여부는 스테이트 우선권이 결정)
 bool parking_zone    # GPS 주차구간 (lane→parking 전이 조건의 절반)
+# GPS parking-zone type. NONE preserves the legacy boolean-only contract;
+# stack_parking then uses its configured gps_default_mode.
+uint8 PARKING_NONE = 0
+uint8 PARKING_PERPENDICULAR = 1
+uint8 PARKING_PARALLEL = 2
+uint8 parking_mode
 bool at_end          # 트랙 종점 도달 — waypoint 스테이트의 종점 정지 요구 원천 (§4)
 uint8 fix_quality    # 0=invalid, 1=GPS, 2=DGPS, 4=RTK fixed, 5=RTK float
 # 트랙까지의 **수직거리** [m] — "지금 트랙 위에 있나"의 측정값.
