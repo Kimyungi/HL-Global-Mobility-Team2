@@ -43,11 +43,11 @@ class ParallelParkingNode(WallGapNode):
         self.declare_parameter('parallel_arc_angle_deg', 50.0)
         self.declare_parameter('parallel_arc_start_offset_m', 0.5)
         self.declare_parameter('parallel_arc_clockwise_offset_m', 0.25)
-        # Keep the outer entry straight at 2m; shorten only the extension on
-        # the inside of the arc to 1m. Phase 4's final straight is also trimmed
-        # independently, leaving phases 1 and 5 on the full reference path.
+        # Use 2m entry straights on both sides of the arc. Phase 4's final
+        # straight is trimmed independently, leaving phases 1 and 5 on the
+        # full reference path.
         self.declare_parameter('parallel_entry_straight_m', 2.0)
-        self.declare_parameter('parallel_entry_inner_straight_m', 1.0)
+        self.declare_parameter('parallel_entry_inner_straight_m', 2.0)
         self.declare_parameter('parallel_opposite_straight_m', 1.0)
         self.declare_parameter('parallel_reference_reverse_end_trim_m', 1.0)
 

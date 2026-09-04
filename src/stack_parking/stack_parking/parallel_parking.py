@@ -59,10 +59,10 @@ class ParallelParkingConfig:
     forward_speed_mps: float = 0.75
     reverse_speed_mps: float = 0.75
     sample_step_m: float = 0.05
-    # The reverse entry keeps a 2m outer straight but shortens only the inner
-    # arc extension to 1m. The following forward nudge retains its own length.
+    # The reverse entry uses 2m straights on both sides of the arc. The
+    # following forward nudge retains its own independently tunable length.
     entry_straight_m: float = 2.0
-    entry_inner_straight_m: float = 1.0
+    entry_inner_straight_m: float = 2.0
     opposite_straight_m: float = 1.0
     # Phase 4 alone stops 1m before the end of the original reverse reference;
     # phases 1 and 5 continue to use the untrimmed full-S path.

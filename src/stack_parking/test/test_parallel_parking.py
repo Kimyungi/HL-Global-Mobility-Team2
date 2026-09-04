@@ -213,10 +213,10 @@ class ParallelParkingGeometryTest(unittest.TestCase):
 
 class ParallelParkingControllerTest(unittest.TestCase):
 
-    def test_inner_entry_extension_and_phase4_straight_are_shortened(self):
+    def test_entry_straights_are_two_metres_and_phase4_is_shortened(self):
         controller = ParallelParkingController(ParallelParkingConfig(
             entry_straight_m=2.0,
-            entry_inner_straight_m=1.0,
+            entry_inner_straight_m=2.0,
             reference_reverse_end_trim_m=1.0,
         ))
         path = _path()
@@ -231,7 +231,7 @@ class ParallelParkingControllerTest(unittest.TestCase):
             entry_start.y - path.front_tangent_map[1]), 2.0, places=9)
         self.assertAlmostEqual(math.hypot(
             entry_end.x - path.arc_origin_map[0],
-            entry_end.y - path.arc_origin_map[1]), 1.0, places=9)
+            entry_end.y - path.arc_origin_map[1]), 2.0, places=9)
 
         full_length = sum(math.hypot(
             current.x - previous.x, current.y - previous.y)

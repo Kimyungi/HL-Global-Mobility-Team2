@@ -60,7 +60,7 @@ def run_simulation(path):
         reverse_speed_mps=0.75,
         sample_step_m=0.05,
         entry_straight_m=2.0,
-        entry_inner_straight_m=1.0,
+        entry_inner_straight_m=2.0,
         opposite_straight_m=1.0,
         reference_reverse_end_trim_m=1.0,
     ))
@@ -252,7 +252,7 @@ def main() -> None:
         ('1. Initial full-S forward\npreview at end -> hold 1s',
          simulation['phases'][0], 'royalblue',
          controller.initial_reference_forward_path),
-        ('2. Reverse: 2.0m outer - one arc - 1.0m inner\n'
+        ('2. Reverse: 2.0m outer - one arc - 2.0m inner\n'
          'preview at end -> hold 1s',
          simulation['phases'][1], 'crimson',
          controller.single_arc_reverse_path),
@@ -301,7 +301,7 @@ def main() -> None:
     print('arc_angle_deg=50.000x2')
     print('s_end_straight_m=1.500x2')
     print('entry_outer_straight_m=2.000')
-    print('entry_inner_straight_m=1.000')
+    print('entry_inner_straight_m=2.000')
     print('opposite_straight_m=1.000x2')
     print('phase4_end_trim_m=1.000')
     print('preview_distance_m=1.000')

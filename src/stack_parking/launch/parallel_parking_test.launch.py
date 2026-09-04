@@ -7,7 +7,7 @@ defines P0. Once the vehicle passes P0, the node shifts the arc origin 0.5m
 forward and 0.25m clockwise-normal, then creates the R=2.0m, 50deg+50deg
 point-symmetric S path with 1.5m
 lines at both ends. It then runs the full S forward, a single-arc
-line-arc-line (2m outer straight and 1m inner extension) in
+line-arc-line (2m outer straight and 2m inner extension) in
 reverse, and its same-radius symmetric arc in forward
 (straight shortened to parallel_opposite_straight_m,
 default 1m). The last reverse and forward phases reuse the original symmetric
@@ -95,7 +95,7 @@ def generate_launch_description():
             'parallel_entry_straight_m', default_value='2.0',
             description='Outer straight length of the reverse entry'),
         DeclareLaunchArgument(
-            'parallel_entry_inner_straight_m', default_value='1.0',
+            'parallel_entry_inner_straight_m', default_value='2.0',
             description='Inner arc-extension length of the reverse entry'),
         DeclareLaunchArgument(
             'parallel_opposite_straight_m', default_value='1.0',
