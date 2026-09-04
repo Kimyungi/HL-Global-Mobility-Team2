@@ -115,8 +115,8 @@ struct CoreSnapshot
   bool traffic_red_active;
   bool traffic_green_active;
   // 이번 틱에 화면에서 정지선이 안정 검출됐는가(TrafficStop.stopline_detected
-  // — stable AND depth 유효). MGM_STATE_TRAFFIC이 이 값이 참인 매 틱마다
-  // traffic_stop_distance를 새로 신뢰하는 데 쓴다 (아래 CoreParams 주석 참조).
+  // — stable AND depth 유효). 확정 적색과 함께 MGM_STATE_TRAFFIC 진입을
+  // 게이트하고, 진입 뒤에는 정지선 소실 edge 기반 거리 추적에 쓴다.
   bool traffic_stopline_detected;
   float traffic_stop_distance;  // [m], 유효하지 않으면 음수
   bool traffic_fail_safe_stop;

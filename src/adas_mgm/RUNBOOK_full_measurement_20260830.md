@@ -161,9 +161,9 @@ producer 가 없어 `/perception/parking` 발행자가 0 이고, PARKING 스테�
 전이 조건(`GPS 주차구간 AND 주차공간 인식`)이 성립하지 않는다. 4-LiDAR ICP 파이프라인은
 아직 PR #45(draft)로 main 밖에 있다(P0 6건 중 후방 각도 1건만 해소).
 
-적색 확정 시 MGM은 TRAFFIC으로 전이한다. metric 정지선 거리가 유효하면 이를
-래치해 실차속도 적분 감속을 시작한다. 정지 동작 없이 영상만 측정하려면 MGM의
-`traffic_state_enabled:=false`를 함께 지정해야 한다.
+적색 확정과 안정 정지선 검출이 동시에 성립할 때 MGM은 TRAFFIC으로 전이한다.
+정지선 소실 edge에서 거리를 시드해 실차속도 적분 감속을 시작한다. 정지 동작
+없이 영상만 측정하려면 MGM의 `traffic_state_enabled:=false`를 함께 지정해야 한다.
 
 ---
 

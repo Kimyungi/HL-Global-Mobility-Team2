@@ -13,8 +13,9 @@
 5. 적색/초록 상태와 최초 래치용 metric 정지선 거리를 `/perception/traffic_stop`으로 발행
 
 외부 `/perception/stopline`은 구독하지 않는다. CAN과 `v_ref`도 직접 만들지
-않는다. MGM은 적색에서 TRAFFIC 상태에 진입하고, 최초 유효 정지선 거리를 래치한
-뒤 `/vehicle/vector.v`를 적분해 정지선 소실 이후의 남은 거리를 계산한다.
+않는다. MGM은 적색과 안정 정지선 검출이 동시에 성립할 때만 TRAFFIC 상태에
+진입한다. 이후 정지선 소실 edge에서 남은 거리를 시드하고
+`/vehicle/vector.v`를 적분해 정지선 소실 이후의 남은 거리를 계산한다.
 `bridge_dspace`가 목표속도를 CAN으로 전송하고 dSPACE 실차속도를 다시 돌려준다.
 
 ## 신호등 판정
@@ -165,7 +166,8 @@ y_raw, y_ratio, y_med, line_z, z_med, stable, accepted
 - dSPACE의 CAN counter watchdog이 실제로 동작하는지 먼저 확인한다.
 - 실제 주행은 유효한 E-stop heartbeat와 경로 입력이 있어야 한다.
 - `dummy_ref_publisher`와 MGM을 동시에 실행하지 않는다.
-- 적색은 LANE/WAYPOINT에서 TRAFFIC으로 전이하며, 초록은 LANE으로 복귀한다.
+- 적색과 안정 정지선 검출이 동시에 참이면 LANE/WAYPOINT에서 TRAFFIC으로
+  전이하며, 초록은 LANE으로 복귀한다.
 
 실행 명령과 터미널 배치는
 `src/adas_mgm/RUNBOOK_full_operation_20260830.md`를 따른다.

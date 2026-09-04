@@ -300,8 +300,9 @@ GPS 경로+RTK FIXED, lane, 전방 `/scan`, target_ref, avoid와 traffic_stop을
 
 ## 7. 주행 중 판정과 정지
 
-- 적색 확정 즉시 TRAFFIC으로 전이하고, 최초 metric 정지선 거리를 래치한다.
-  이후 `/vehicle/vector.v` 적분으로 남은 거리를 갱신하며 감속하고 초록에서 LANE으로 복귀한다.
+- 적색 확정과 안정 정지선 검출이 동시에 성립할 때 TRAFFIC으로 전이한다.
+  이후 정지선 소실 edge에서 시드한 거리를 `/vehicle/vector.v`로 적분해
+  갱신하며 감속하고 초록에서 LANE으로 복귀한다.
 - traffic_stop이 0.5초, TRAFFIC 중 vehicle/vector가 0.2초 stale이면 정지를 강제한다.
 - 소프트웨어 정지는 **V2 Ctrl-C**다. 정상 종료 경로의 `can_zero`가 목표값 0을 보낸다.
 - `kill -9`, PC 전원 차단, CAN 케이블 분리는 정지 수단이 아니다. dSPACE counter
