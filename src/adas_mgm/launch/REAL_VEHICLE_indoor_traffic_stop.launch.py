@@ -61,6 +61,8 @@ def generate_launch_description():
         DeclareLaunchArgument('v_base', default_value='1.0'),
         DeclareLaunchArgument('estop_on_distance_m', default_value='1.0'),
         DeclareLaunchArgument('estop_off_distance_m', default_value='1.15'),
+        DeclareLaunchArgument('confidence_threshold', default_value='0.20'),
+        DeclareLaunchArgument('tracking_confidence_threshold', default_value='0.10'),
         OpaqueFunction(function=validate),
 
         LifecycleNode(
@@ -100,6 +102,10 @@ def generate_launch_description():
                 'oak_mxid': LaunchConfiguration('traffic_mxid'),
                 'oak_usb_speed': LaunchConfiguration('usb_speed'),
                 'oak_fps': 10.0, 'oak_width': 640, 'oak_height': 360,
+                'confidence_threshold': ParameterValue(
+                    LaunchConfiguration('confidence_threshold'), value_type=float),
+                'tracking_confidence_threshold': ParameterValue(
+                    LaunchConfiguration('tracking_confidence_threshold'), value_type=float),
                 # depth는 정지 조건이 아닌 진단값이다. 단일 정지 시험도 RGB-only로
                 # 두어 USB·CPU 부하와 depth 불량의 영향을 제거한다.
                 'oak_depth_enabled': False,
