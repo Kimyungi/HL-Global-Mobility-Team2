@@ -50,7 +50,6 @@ class ParallelParkingNode(WallGapNode):
         self.declare_parameter('parallel_entry_inner_straight_m', 1.0)
         self.declare_parameter('parallel_opposite_straight_m', 1.0)
         self.declare_parameter('parallel_reference_reverse_end_trim_m', 1.0)
-        self.declare_parameter('parallel_phase_end_tolerance_m', 0.1)
 
         self.rectangle_wall_length_m = float(
             self.get_parameter('rectangle_wall_length_m').value)
@@ -74,8 +73,6 @@ class ParallelParkingNode(WallGapNode):
             self.get_parameter('parallel_opposite_straight_m').value)
         self.parallel_reference_reverse_end_trim_m = float(self.get_parameter(
             'parallel_reference_reverse_end_trim_m').value)
-        self.parallel_phase_end_tolerance_m = float(
-            self.get_parameter('parallel_phase_end_tolerance_m').value)
 
         # A 1.5m wall opening is required.  The common detector's 0.7m square
         # precheck is a necessary subset of our 1.5m x 0.7m rectangle; newly
@@ -102,7 +99,6 @@ class ParallelParkingNode(WallGapNode):
             opposite_straight_m=self.parallel_opposite_straight_m,
             reference_reverse_end_trim_m=(
                 self.parallel_reference_reverse_end_trim_m),
-            phase_end_tolerance_m=self.parallel_phase_end_tolerance_m,
         ))
         self.delta_tracker = PoseDeltaTracker()
         self.reference_path: ParallelReferencePath | None = None

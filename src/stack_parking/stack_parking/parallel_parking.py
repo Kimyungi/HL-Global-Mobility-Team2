@@ -67,7 +67,6 @@ class ParallelParkingConfig:
     # Phase 4 alone stops 1m before the end of the original reverse reference;
     # phases 1 and 5 continue to use the untrimmed full-S path.
     reference_reverse_end_trim_m: float = 1.0
-    phase_end_tolerance_m: float = 0.1
 
 
 class ParallelControlState(str, enum.Enum):
@@ -589,11 +588,11 @@ class ParallelParkingController:
                 status, self.config.direction_change_hold_s),
         )
 
-    def _at_end(self, pose: Pose2, path: Sequence[PathPoint]) -> bool:
+    @staticmethod
+    def _at_end(reference: PathPoint, path: Sequence[PathPoint]) -> bool:
         end = path[-1]
         return math.hypot(
-            pose.x - end.x, pose.y - end.y
-        ) <= self.config.phase_end_tolerance_m
+            reference.x - end.x, reference.y - end.y) <= 1.0e-6
 
     def update(
         self,
@@ -610,7 +609,7 @@ class ParallelParkingController:
                 current_pose_map,
             )
             if not self._at_end(
-                    current_pose_map, self.initial_reference_forward_path):
+                    reference, self.initial_reference_forward_path):
                 return self._output(
                     current_pose_map, reference,
                     self.config.forward_speed_mps,
@@ -643,7 +642,7 @@ class ParallelParkingController:
                 current_pose_map,
             )
             if not self._at_end(
-                    current_pose_map, self.single_arc_reverse_path):
+                    reference, self.single_arc_reverse_path):
                 return self._output(
                     current_pose_map, reference,
                     -self.config.reverse_speed_mps,
@@ -676,7 +675,7 @@ class ParallelParkingController:
                 current_pose_map,
             )
             if not self._at_end(
-                    current_pose_map, self.opposite_arc_forward_path):
+                    reference, self.opposite_arc_forward_path):
                 return self._output(
                     current_pose_map, reference,
                     self.config.forward_speed_mps,
@@ -709,7 +708,7 @@ class ParallelParkingController:
                 current_pose_map,
             )
             if not self._at_end(
-                    current_pose_map, self.reference_reverse_path):
+                    reference, self.reference_reverse_path):
                 return self._output(
                     current_pose_map, reference,
                     -self.config.reverse_speed_mps,
@@ -742,7 +741,7 @@ class ParallelParkingController:
                 current_pose_map,
             )
             if not self._at_end(
-                    current_pose_map, self.reference_forward_path):
+                    reference, self.reference_forward_path):
                 return self._output(
                     current_pose_map, reference,
                     self.config.forward_speed_mps,

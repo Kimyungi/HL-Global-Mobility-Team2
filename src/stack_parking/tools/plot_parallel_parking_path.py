@@ -249,22 +249,22 @@ def main() -> None:
     controller = simulation['controller']
     fig, axes = plt.subplots(5, 1, figsize=(13, 20), sharex=True, sharey=True)
     plot_phases = (
-        ('1. Initial full-S forward\nvehicle at end -> hold 1s',
+        ('1. Initial full-S forward\npreview at end -> hold 1s',
          simulation['phases'][0], 'royalblue',
          controller.initial_reference_forward_path),
         ('2. Reverse: 2.0m outer - one arc - 1.0m inner\n'
-         'vehicle at end -> hold 1s',
+         'preview at end -> hold 1s',
          simulation['phases'][1], 'crimson',
          controller.single_arc_reverse_path),
         ('3. Forward: distinct opposite arc\n'
-         '1.0m line - one arc - 1.0m line -> vehicle-end hold 1s',
+         '1.0m line - one arc - 1.0m line -> hold 1s',
          simulation['phases'][2], 'darkorange',
          controller.opposite_arc_forward_path),
         ('4. Reference-S reverse\nfinal straight shortened 1.0m -> hold 1s',
          simulation['phases'][3], 'purple',
          controller.reference_reverse_path),
         ('5. Full reference-S forward\n'
-         'vehicle at end -> hold 1s -> log stop',
+         'preview at end -> hold 1s -> log stop',
          simulation['phases'][4], 'teal',
          controller.reference_forward_path),
     )
@@ -273,7 +273,7 @@ def main() -> None:
         context(axis, scene, rectangle, path, active_path)
         arrowed(axis, points, color, title.split('\n')[0])
         axis.plot(stop_pose.x, stop_pose.y, marker='s', color='navy', ms=8,
-                  label='vehicle stop (path end)')
+                  label='vehicle stop (preview at end)')
         axis.set_title(title)
         axis.legend(loc='best', fontsize=7)
     for axis in axes:

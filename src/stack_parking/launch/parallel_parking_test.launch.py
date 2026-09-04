@@ -11,8 +11,8 @@ line-arc-line (2m outer straight and 1m inner extension) in
 reverse, and its same-radius symmetric arc in forward
 (straight shortened to parallel_opposite_straight_m,
 default 1m). The last reverse and forward phases reuse the original symmetric
-full S, with only phase 4's final straight shortened by 1m. Every transition
-holds for one second after the vehicle reaches the path end. The logger flushes after the
+full S, with only phase 4's final straight shortened by 1m. Every
+preview-at-end transition holds for one second. The logger flushes after the
 final hold.
 """
 
@@ -61,8 +61,6 @@ def generate_launch_description():
         'parallel_opposite_straight_m')
     parallel_reference_reverse_end_trim_m = LaunchConfiguration(
         'parallel_reference_reverse_end_trim_m')
-    parallel_phase_end_tolerance_m = LaunchConfiguration(
-        'parallel_phase_end_tolerance_m')
     rviz = LaunchConfiguration('rviz')
     logging = LaunchConfiguration('logging')
 
@@ -107,9 +105,6 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'parallel_reference_reverse_end_trim_m', default_value='1.0',
             description='Distance removed from phase 4 final straight'),
-        DeclareLaunchArgument(
-            'parallel_phase_end_tolerance_m', default_value='0.1',
-            description='Vehicle distance tolerance for completing each phase'),
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument(
             'logging', default_value='true',
@@ -203,8 +198,6 @@ def generate_launch_description():
                     parallel_opposite_straight_m, value_type=float),
                 'parallel_reference_reverse_end_trim_m': ParameterValue(
                     parallel_reference_reverse_end_trim_m, value_type=float),
-                'parallel_phase_end_tolerance_m': ParameterValue(
-                    parallel_phase_end_tolerance_m, value_type=float),
             }],
         ),
         Node(
