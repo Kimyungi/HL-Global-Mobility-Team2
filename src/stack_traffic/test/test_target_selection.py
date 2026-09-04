@@ -1,11 +1,14 @@
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
 from stack_traffic.node import (
     choose_target_traffic_light,
     get_traffic_light_class_ids,
+    should_freeze_signal_phase,
     should_run_yolo,
+    stopline_message_values,
 )
 
 
@@ -53,6 +56,36 @@ class TestTargetSelection(unittest.TestCase):
             [True, False, True, False, True, False],
         )
         self.assertTrue(should_run_yolo(4, 1))
+
+    def test_signal_phase_freezes_only_for_single_stop_trial(self):
+        self.assertTrue(should_freeze_signal_phase(True, False, False))
+        self.assertFalse(should_freeze_signal_phase(False, False, False))
+        self.assertFalse(should_freeze_signal_phase(True, True, False))
+        self.assertFalse(should_freeze_signal_phase(True, False, True))
+
+    def test_stopline_control_detection_does_not_require_depth(self):
+        runtime = SimpleNamespace(
+            stable=True,
+            depth=SimpleNamespace(accepted=False),
+            median_camera_z_m=float("nan"),
+        )
+
+        detected, distance_m = stopline_message_values(runtime)
+
+        self.assertTrue(detected)
+        self.assertEqual(distance_m, -1.0)
+
+    def test_valid_depth_is_kept_as_diagnostic_distance(self):
+        runtime = SimpleNamespace(
+            stable=True,
+            depth=SimpleNamespace(accepted=True),
+            median_camera_z_m=2.4,
+        )
+
+        detected, distance_m = stopline_message_values(runtime)
+
+        self.assertTrue(detected)
+        self.assertAlmostEqual(distance_m, 2.4)
 
     def test_traffic_light_class_ids_are_discovered_from_model_names(self):
         self.assertEqual(

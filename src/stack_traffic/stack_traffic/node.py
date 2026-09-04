@@ -108,6 +108,20 @@ class StopLineRuntime:
     near: bool
 
 
+def stopline_message_values(runtime: StopLineRuntime) -> tuple[bool, float]:
+    """제어용 영상 검출과 선택적 depth 진단값을 서로 독립시킨다."""
+    distance_m = (
+        runtime.median_camera_z_m
+        if (
+            runtime.stable
+            and runtime.depth.accepted
+            and math.isfinite(runtime.median_camera_z_m)
+        )
+        else -1.0
+    )
+    return bool(runtime.stable), distance_m
+
+
 def parse_camera_source(value: str) -> CameraSource:
     value = value.strip()
     if value.lstrip("-").isdigit():
@@ -122,6 +136,19 @@ def should_run_yolo(frame_index: int, inference_interval: int) -> bool:
             "frame_index와 inference_interval은 1 이상이어야 합니다."
         )
     return (frame_index - 1) % inference_interval == 0
+
+
+def should_freeze_signal_phase(
+    red_phase_latched: bool,
+    resume_on_green: bool,
+    resume_on_red_clear: bool,
+) -> bool:
+    """재출발을 쓰지 않는 단일 정지 시험이면 적색 확정 뒤 신호 판단을 고정한다."""
+    return bool(
+        red_phase_latched
+        and not resume_on_green
+        and not resume_on_red_clear
+    )
 
 
 def get_class_name(names, class_id: int) -> str:
@@ -1581,7 +1608,11 @@ class StackTrafficNode(Node):
                 * self.stopline_maximum_backward_step_ratio
             ),
         )
-        stable = bool(detection.detected and history_stable)
+        # 최근 3/5 안정화 결과 자체를 제어용 검출 상태로 쓴다. 현재 한 프레임의
+        # YOLO miss를 즉시 소실 edge로 바꾸면 MGM이 1.5m 거리 시드를 너무 일찍
+        # 시작한다. history에는 miss가 NaN으로 들어가므로 실제 소실은 투표창이
+        # 무너질 때 자연스럽게 false가 된다.
+        stable = bool(history_stable)
         frame_height = max(1, frame.shape[0])
         current_y_ratio = (
             detection.maximum_edge_y_px / float(frame_height)
@@ -1888,9 +1919,17 @@ class StackTrafficNode(Node):
         # CPU 환경에서는 YOLO가 가장 비싸다. 첫 프레임과 지정 간격의
         # 프레임에서만 추론하고, 사이 프레임은 아래 template 추적기로
         # 이어 간다. 건너뛴 프레임은 YOLO miss로 세지 않는다.
-        yolo_ran = should_run_yolo(
-            self.frame_index,
-            self.yolo_inference_interval,
+        signal_phase_frozen = should_freeze_signal_phase(
+            self.red_phase_latched,
+            self.resume_on_green,
+            self.resume_on_red_clear,
+        )
+        yolo_ran = bool(
+            not signal_phase_frozen
+            and should_run_yolo(
+                self.frame_index,
+                self.yolo_inference_interval,
+            )
         )
         if yolo_ran:
             detection_frame, detection_roi_bbox = (
@@ -2153,6 +2192,13 @@ class StackTrafficNode(Node):
         red_active = int(red_votes >= self.minimum_red_votes)
         green_active = int(green_votes >= self.minimum_green_votes)
 
+        # resume 경로를 모두 끈 실내 단일 정지 시험에서는 적색 확정 뒤 신호
+        # 페이즈를 그대로 유지한다. 이 상태에서 신호등 YOLO는 더 이상 상태를
+        # 바꾸지 않으므로 생략하고, CPU를 정지선 segmentation에 우선 배정한다.
+        if signal_phase_frozen:
+            red_active = 0
+            green_active = 0
+
         # 확정 적색을 실제로 보던 housing 위치를 저장한다. 적색 추적이 이어지는
         # 동안 갱신해 차량 접근에 따른 화면상 이동을 따라가고, stopline 프레임에서
         # bbox가 사라져도 같은 위치의 비원형 초록 점등을 확인할 수 있게 한다.
@@ -2222,28 +2268,18 @@ class StackTrafficNode(Node):
             or self.camera_fault_latched
             or self.startup_hold_latched
         )
-        published_stopline_distance = (
-            stopline_runtime.median_camera_z_m
-            if (
-                stopline_runtime.stable
-                and stopline_runtime.depth.accepted
-                and math.isfinite(
-                    stopline_runtime.median_camera_z_m
-                )
-            )
-            else -1.0
-        )
-        metric_stopline_detected = bool(
-            stopline_runtime.stable
-            and stopline_runtime.depth.accepted
-            and math.isfinite(published_stopline_distance)
+        (
+            stable_stopline_detected,
+            published_stopline_distance,
+        ) = stopline_message_values(
+            stopline_runtime
         )
         self._publish(
             bool(final_stop),
             published_stopline_distance,
             red_active=bool(self.red_phase_latched),
             green_active=bool(green_active and not self.red_phase_latched),
-            stopline_detected=metric_stopline_detected,
+            stopline_detected=stable_stopline_detected,
             fail_safe_stop=bool(
                 self.camera_fault_latched or self.startup_hold_latched
             ),

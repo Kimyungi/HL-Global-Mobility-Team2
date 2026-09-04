@@ -8,9 +8,9 @@
 
 1. RGB 상단 ROI에서 YOLOv8n으로 주행 대상 신호등 bbox 검출
 2. bbox 내부 HSV 비율로 적색·초록색 판정
-3. 적색 확정 뒤 RGB 하단 ROI에서 주간 흰색·야간 국소 대비·평행 에지 쌍으로 횡방향 정지선 검출
+3. 적색 확정 뒤 RGB 하단 ROI에서 YOLO segmentation으로 횡방향 정지선 검출
 4. 선택적 저해상도 depth 진단에서 정지선 인접 노면의 optical-Z 측정
-5. 적색/초록 상태와 최초 래치용 metric 정지선 거리를 `/perception/traffic_stop`으로 발행
+5. 적색/초록 상태, 안정 정지선 검출과 진단용 metric 거리를 `/perception/traffic_stop`으로 발행
 
 외부 `/perception/stopline`은 구독하지 않는다. CAN과 `v_ref`도 직접 만들지
 않는다. MGM은 적색과 안정 정지선 검출이 동시에 성립할 때만 TRAFFIC 상태에
@@ -22,8 +22,9 @@
 
 - 설치 모델은 `models/yolov8n.pt` 하나다. 별도 ONNX 색상 분류기는 사용하지
   않는다.
-- YOLO는 기본 2프레임마다 실행한다. 중간 프레임은 짧은 template 추적으로
-  화면 표시와 적색 유지에만 사용한다.
+- YOLO 실행 간격은 `yolo_inference_interval`로 정한다. CPU 실내 시험은
+  2프레임마다 실행하고, 중간 프레임은 짧은 template 추적으로 화면 표시와
+  적색 유지에만 사용한다.
 - 신규 bbox는 `confidence_threshold`, 기존 bbox와 이어지는 후보는 더 낮은
   `tracking_confidence_threshold`를 사용한다.
 - template 추적은 fresh YOLO 검출 뒤 최대 age와 연속 실패 제한 안에서만
@@ -40,17 +41,17 @@
   fresh YOLO bbox 또는 확정 적색 anchor 안의 최신 프레임에서만 허용한다.
 - 패키지와 실차·실험 launch 모두 위 조건의 초록 3/5에서 즉시 해제하는
   `resume_on_green=true`를 기본으로 둔다. `resume_on_red_clear`는 끈다.
+- 재출발 조건을 모두 끈 단일 정지 시험은 적색 확정 뒤 신호 페이즈를 고정하고
+  신호등 YOLO를 생략해 정지선 segmentation에 CPU를 우선 배정한다.
 
 ## 정지선 판정
 
-- 하단 ROI에서 기존 저채도·고명도 마스크와 CLAHE 기반 국소 대비 마스크를 OR 결합한다.
-  야간 기본값은 LAB 명도 60 이상, 주변 노면 대비 25 이상이다.
-- 색상 마스크와 별도로 Canny/Hough로 위·아래 수평 에지 쌍을 찾는다. 각 에지는 ROI
-  폭의 35% 이상, 절대 각도 ±12도, 상호 각도 차 4도 이내여야 하며 두 에지 사이가
-  위·아래 노면보다 밝기 8 이상이어야 한다. 단일 에지·그림자는 후보가 아니다.
-- 폭, 가로세로비, 중심 통과, 각도, 두께, 채움률 조건으로 분리된 횡단보도
-  무늬와 차선 오검출을 거른다.
+- `models/stopline_yolov8s_seg.pt`의 `stop_line` segmentation만 사용한다.
+  삭제된 색상·CLAHE·Canny/Hough 검출 경로로 폴백하지 않는다.
+- 전체 프레임 문맥으로 추론한 뒤 하단 search ROI와 겹치는 정지선 mask만 사용한다.
 - 최근 5프레임 중 최소 3프레임에서 차량 쪽 경계 y가 안정적이어야 한다.
+- 현재 한 프레임이 미검출이어도 3/5 안정 이력이 유지되면 검출 상태를 유지한다.
+  3/5 이력이 무너지는 시점이 MGM의 정지선 소실 edge다.
 - 흰 도색 자체의 stereo 무효값을 피하기 위해 정지선 주변 노면 depth를 쓰고,
   행별 중앙값에 `1/Z` 모델을 맞춘다. 기울기·잔차·일관성 검사를 통과한 값만
   최근 depth 중앙값에 넣는다.
@@ -69,20 +70,21 @@
 조기 정지를 막기 위해 두 조건을 모두 만족해야 한다. 둘 다 `0`이면 측정
 전용 모드라서 정지 요구를 만들지 않는다.
 
-TRAFFIC 상태 진입은 정지선과 무관하게 다음 조건 하나다.
+TRAFFIC 상태 진입은 다음 두 조건이 동시에 성립해야 한다.
 
 ```text
-red_phase_latched
+red_phase_latched AND stable_stopline
 ```
 
-진입 뒤에만 정지선 검출을 수행한다. 최초 `stable_stopline`과 유효 depth 거리가
-확정되면 MGM이 그 거리를 한 번 래치한다. 약 1m 안쪽에서 정지선이 검출되지 않아도
-정상이며, 그 뒤에는 영상 거리 대신 실차속도 적분값을 사용한다. 확정 초록은
-TRAFFIC을 즉시 해제한다.
+적색 페이즈가 확정된 뒤에만 정지선 검출을 수행한다. 안정 정지선이 화면에서
+사라져 `stopline_detected`가 true에서 false가 되면 MGM이 남은 거리를
+`traffic_ramp_distance_m`으로 시드한다. 그 뒤에는 영상 거리 대신 실차속도
+적분값을 사용한다. 확정 초록은 TRAFFIC을 즉시 해제한다.
 
 `TrafficStop.stop_distance`에는 유효한 optical-Z 미터 값만 넣고 frame id를
 `oak_rgb_optical_frame`으로 표시한다. depth가 무효하면 `-1.0`이다. y ratio를
-거리 필드에 넣지 않는다.
+거리 필드에 넣지 않는다. `stopline_detected`는 안정 segmentation만 나타내며
+depth 유효성과 독립이다.
 
 ## 카메라와 성능
 
@@ -112,8 +114,7 @@ TRAFFIC을 즉시 해제한다.
   같은 해상도의 RGBD는 46.08 MB/s라 거부하고, depth 진단은
   640x360@10 RGBD(11.52 MB/s)를 사용한다.
 - y-only 실차 모드에서는 stereo depth를 장치 단계에서 꺼 RGB 처리량을
-  우선한다. depth gate를 사용할 때만 저해상도 프로필로 다시 켜고 y/z 임계값을
-  그 프로필에서 다시 보정한다.
+  우선한다. optical-Z 진단이 필요할 때만 저해상도 프로필로 다시 켠다.
 - 산업용 PC 기동 전
   `ros2 run stack_traffic stack_traffic_ml_preflight`로 torch/torchvision native
   op와 실제 NMS, Ultralytics, DepthAI API 세대를 확인한다. 같은 호스트에서

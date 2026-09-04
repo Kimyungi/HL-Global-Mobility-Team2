@@ -32,8 +32,8 @@ def validate(context):
     speed = float(LaunchConfiguration('v_base').perform(context))
     if not 0.0 < on < off:
         raise RuntimeError('Require 0 < estop_on_distance_m < estop_off_distance_m')
-    if not 0.0 < speed <= 0.833334:
-        raise RuntimeError('Indoor test requires 0 < v_base <= 0.833334 m/s (3 km/h)')
+    if not 0.0 < speed <= 1.0:
+        raise RuntimeError('Indoor test requires 0 < v_base <= 1.0 m/s')
     lidar_params = LaunchConfiguration('ydlidar_params').perform(context)
     if not os.path.isfile(lidar_params):
         raise RuntimeError(f'LiDAR parameter file not found: {lidar_params}')
@@ -58,7 +58,7 @@ def generate_launch_description():
         DeclareLaunchArgument('ydlidar_params', default_value=lidar_params),
         DeclareLaunchArgument('traffic_mxid', default_value='14442C10B167CFD200'),
         DeclareLaunchArgument('usb_speed', default_value='high'),
-        DeclareLaunchArgument('v_base', default_value='0.8333333333'),
+        DeclareLaunchArgument('v_base', default_value='1.0'),
         DeclareLaunchArgument('estop_on_distance_m', default_value='1.0'),
         DeclareLaunchArgument('estop_off_distance_m', default_value='1.15'),
         OpaqueFunction(function=validate),
@@ -101,8 +101,14 @@ def generate_launch_description():
                 'oak_usb_speed': LaunchConfiguration('usb_speed'),
                 'oak_fps': 10.0, 'oak_width': 640, 'oak_height': 360,
                 'oak_depth_enabled': True,
+                # CPU 직렬 추론이 traffic watchdog(0.5s)을 넘지 않도록 기존
+                # 저해상도·간격 실행 경로를 사용한다. 적색 확정 뒤에는 아래
+                # resume 설정에 따라 신호등 YOLO가 멈추고 정지선에 집중한다.
+                'yolo_image_size': 320,
+                'yolo_inference_interval': 2,
                 'stopline_detection_enabled': True,
                 'stopline_yolo_confidence_threshold': 0.10,
+                'stopline_yolo_image_size': 320,
                 'stopline_stop_y_ratio': 0.0,
                 'resume_on_green': False,
                 'resume_on_red_clear': False,

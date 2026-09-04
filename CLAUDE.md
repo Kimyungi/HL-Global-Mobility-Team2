@@ -87,7 +87,7 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 | avoid → 복귀 | 기동 완료 → **waypoint로 복귀** (2026-08-12 개정, 팀장 — 회피 기동 직후 차는 차선을 벗어나 있어 차선 검출을 곧바로 신뢰할 수 없다. GPS 트랙으로 재합류 후 차선 신뢰도 회복 히스테리시스로 lane 자동 재전이. 구 "진입했던 스테이트로 복귀(복귀처 변수)"는 폐기. **§5.5 이중 트랙: Simulink 모델(김재민)도 동일 반영 필요**) |
 | lane → parking | GPS 주차구간 AND 주차공간 인식 |
 | parking → lane | 주차 완료 |
-| lane·waypoint → traffic | `TrafficStop.red_active=true AND stopline_detected=true`(적색 투표 확정 + 현재의 안정 정지선·유효 depth 검출). 둘 중 하나만 성립하면 진입하지 않음 (PR #78, 2026-09-04) |
+| lane·waypoint → traffic | `TrafficStop.red_active=true AND stopline_detected=true`(적색 투표 확정 + 최근 3/5 안정 정지선 segmentation). depth는 진단용 거리이며 진입 게이트가 아님. 둘 중 하나만 성립하면 진입하지 않음 (PR #78, 2026-09-04) |
 | traffic → lane | `TrafficStop.green_active=true`(초록 투표 확정). 적색/정지선 거리 래치를 폐기하고 즉시 복귀 |
 
 **스테이트별 우선권 (매 10ms, 스테이트 내부에서 결정 — 전역 min/max 규칙 금지):**
@@ -182,8 +182,8 @@ adas_ws/src/
 - 각 스택의 출력은 `common_interfaces`에 정의된 토픽/메시지로만 — MGM은 그 토픽들만 구독.
 - **신호등·정지선 (2026-08-08 개정, PR #21·#28 — 구 stack_lane→stack_traffic 정지선 전달은 폐기):**
   stack_traffic(김재민)이 OAK-D RGB 한 대에서 신호등(YOLOv8n 상단 ROI + HSV 적/녹)과
-  정지선(하단 ROI의 주간 흰색 + 야간 국소 대비 + 평행 에지 쌍, 이후 공통 기하·3/5
-  안정성 검사와 y비율 게이트)을 **모두 자체 검출**한다. stack_lane은 정지선을
+  정지선(하단 ROI의 YOLO segmentation + 3/5 안정성 검사)을 **모두 자체 검출**한다.
+  정지선 depth는 진단용이며 `stopline_detected`의 조건이 아니다. stack_lane은 정지선을
   발행하지 않는다. `StopLine.msg`는 발행자·구독자 모두 소멸 — 삭제 여부 미결.
   신호 페이즈 래치: 적색 3/5 확정 시 `red_phase_latched=true`와 해당 bbox anchor를
   저장하고, **fresh YOLO bbox 또는 저장된 적색 anchor 안의 초록 3/5에서만 false**.

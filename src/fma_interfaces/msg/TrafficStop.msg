@@ -8,9 +8,10 @@ float32 stop_distance   # [m] 정지선까지 카메라 optical-Z 거리 (모르
 # 신호등 상태 머신 입력. red_active와 stopline_detected가 동시에 true일 때만
 # MGM은 TRAFFIC에 진입한다. 진입 후에는 정지선이 화면에서 사라져도 확정 초록
 # 전까지 TRAFFIC 상태를 유지한다.
-# stopline_detected는 안정 영상 검출과 유효 depth가 함께 성립한 현재 관측이다.
-# 이 값이 true에서 false로 바뀌면 MGM이 남은 거리를 시드하고, 이후 dSPACE
-# 실차속도 적분으로 거리를 추정한다. green_active는 TRAFFIC을 즉시 해제한다.
+# stopline_detected는 최근 영상 투표창에서 성립한 안정 segmentation 검출이다.
+# metric depth는 요구하지 않으며 stop_distance와 독립이다. 이 값이 true에서
+# false로 바뀌면 MGM이 남은 거리를 시드하고, 이후 dSPACE 실차속도 적분으로
+# 거리를 추정한다. green_active는 TRAFFIC을 즉시 해제한다.
 bool red_active
 bool green_active
 bool stopline_detected
