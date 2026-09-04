@@ -252,8 +252,12 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // 되레 멈춰 세운다. 래치하지 않는다 — 위치로 정해지는 값이라 구간을 벗어나면
   // 평소 히스테리시스(신뢰도 N주기 + 트랙 재합류)로 자연 복귀한다.
   const bool gps_only_zone = s.gps_gps_only_zone && s.gps_path.n > 0;
+  // 신호등 정지 상태는 확정 적색과 현재의 안정적인 정지선 검출이 동시에
+  // 성립할 때만 진입한다. 적색만 보인 교차로나 정지선만 보인 일반 노면에서
+  // TRAFFIC으로 잘못 전이하지 않는다. 진입 후에는 정지선이 카메라 아래로
+  // 사라져도 거리 적분을 계속해야 하므로, 해제 조건은 기존처럼 확정 초록이다.
   const bool traffic_entry = st.params.traffic_state_enabled != 0 &&
-    s.traffic_red_active;
+    s.traffic_red_active && s.traffic_stopline_detected;
   // ★ 구간 안에서는 LANE 복귀 카운터를 **세지 않는다**(0으로 묶는다).
   //   안 그러면 구간을 지나는 내내 쌓인 값으로 **벗어나는 순간 한 틱 만에** LANE이
   //   된다 — 차선을 못 믿겠다고 지정한 구간을 막 빠져나온 참에, 그 구간 동안의
@@ -349,11 +353,17 @@ void transition(const CoreSnapshot & s, CoreState & st)
       break;
 
     case MGM_STATE_TRAFFIC:
-      // 적색/미검출은 해제 근거가 아니다. 확정 초록만 즉시 LANE으로 복귀시킨다.
-      // estop/fail-safe가 동시에 참이어도 상태 전이는 수행하고 LANE 우선권에서
-      // 계속 정지한다. 즉 "초록이면 상태 탈출"과 "고장 중 출발 금지"가 양립한다.
+      // 적색/미검출은 해제 근거가 아니다. 확정 초록에서 진입 전 주행 상태로
+      // 복귀한다. WAYPOINT에서 들어왔는데 LANE으로 고정 복귀하면 GPS 전용
+      // 구간에서도 한 틱 동안 신뢰하지 않는 차선 경로가 출력되고 다음 틱 다시
+      // WAYPOINT로 튀는 문제가 생긴다. 저장값은 TRAFFIC의 유일한 진입원인
+      // LANE/WAYPOINT만 허용하고, 손상된 값은 안전한 기존 기본인 LANE으로 둔다.
+      // estop/fail-safe가 동시에 참이어도 상태 전이는 수행하고 복귀 상태의
+      // 우선권에서 계속 정지한다. 즉 "초록이면 상태 탈출"과 "고장 중 출발 금지"가
+      // 양립한다.
       if (s.traffic_green_active && !s.traffic_red_active) {
-        st.state = MGM_STATE_LANE;
+        st.state = st.traffic_entry_state == MGM_STATE_WAYPOINT ?
+          MGM_STATE_WAYPOINT : MGM_STATE_LANE;
       }
       break;
 
@@ -521,8 +531,11 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       break;
 
     case MGM_STATE_TRAFFIC: {
-      // 횡방향은 계속 카메라 차선을 따른다. 종방향만 정지선 거리가 맡는다.
-      out.path_source = MGM_SRC_LANE;
+      // 종방향만 정지선 거리가 맡고, 횡방향은 TRAFFIC 진입 전 주행 소스를
+      // 그대로 유지한다. GPS 전용 구간의 WAYPOINT에서 들어온 경우 카메라
+      // 차선으로 바꾸면 안 된다. 잘못된 저장값은 LANE으로 fail-closed한다.
+      out.path_source = st.traffic_entry_state == MGM_STATE_WAYPOINT ?
+        MGM_SRC_GPS : MGM_SRC_LANE;
       if (s.estop || s.traffic_fail_safe_stop || !s.vehicle_speed_valid) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
@@ -714,6 +727,7 @@ void mgm_init(CoreState & st, const CoreParams & params)
   st = CoreState{};
   st.params = params;
   st.state = MGM_STATE_LANE;
+  st.traffic_entry_state = MGM_STATE_LANE;
   st.last_src = MGM_SRC_LANE;
   st.n_out = 1;
   // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)

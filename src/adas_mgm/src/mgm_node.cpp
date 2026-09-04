@@ -509,19 +509,26 @@ private:
         "출발 대기 중 — 점검 완료 후 `ros2 run adas_mgm go` 로 출발");
     }
     // lane_path 입력 신선도 watchdog (2026-08-07 실차 테스트에서 발견) — state가
-    // 현재 LANE일 때만 적용(다른 스테이트는 lane_path를 안 씀). stack_lane이
+    // 현재 LANE이거나 LANE에서 진입한 TRAFFIC일 때 적용한다. stack_lane이
     // 죽었는데도 MGM이 마지막 값을 계속 재사용해 주행을 계속하던 문제를 막는다.
     // estop 경로를 그대로 재사용 — 새 판단 로직을 추가하는 게 아니라 기존
     // "estop=true → 전 스테이트 정지" 판단에 태우는 것 (§5.1 준수).
+    const uint8_t active_state = backend_->activeState();
+    const uint8_t traffic_entry_state = backend_->trafficEntryState();
+    const bool traffic_uses_gps = active_state == MGM_STATE_TRAFFIC &&
+      traffic_entry_state == MGM_STATE_WAYPOINT;
     const bool lane_stale = lane_rx_ns < 0 || monotonicNs() - lane_rx_ns > lane_stale_ns_;
-    if ((backend_->activeState() == MGM_STATE_LANE ||
-      backend_->activeState() == MGM_STATE_TRAFFIC) && lane_stale && !estop_stale)
+    if ((active_state == MGM_STATE_LANE ||
+      (active_state == MGM_STATE_TRAFFIC && !traffic_uses_gps)) &&
+      lane_stale && !estop_stale)
     {
       m.estop.estop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-        "lane_path 신선도 초과(state=lane/traffic) — estop 강제 (stack_lane 확인 필요)");
+        "lane_path 신선도 초과(state=lane/traffic-lane) — estop 강제 "
+        "(stack_lane 확인 필요)");
     }
-    // gps_path 신선도 watchdog — lane과 대칭. waypoint 스테이트가 gps_path 없이도
+    // gps_path 신선도 watchdog — lane과 대칭. WAYPOINT 또는 그 상태에서 진입한
+    // TRAFFIC이 gps_path 없이도
     // v_base로 계속 주행하던 문제 방지 (실제로 lane→waypoint 자동 전이 후 이
     // 경로로 재현됨, 2026-08-07).
     // fix 상실도 동일 취급 (2026-08-11 통합 점검에서 발견): stack_gps는 fix가
@@ -531,13 +538,15 @@ private:
     // 태운다 — 새 판단이 아니라 입력 컨디셔닝(§5.7 ②의 확장).
     const bool gps_stale = gps_rx_ns < 0 || monotonicNs() - gps_rx_ns > gps_stale_ns_;
     const bool gps_no_fix = m.gps.fix_quality == 0 || m.gps.points.empty();
-    if (backend_->activeState() == MGM_STATE_WAYPOINT &&
+    if ((active_state == MGM_STATE_WAYPOINT || traffic_uses_gps) &&
       (gps_stale || gps_no_fix) && !estop_stale)
     {
       m.estop.estop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-        gps_stale ? "gps_path 신선도 초과(state=waypoint) — estop 강제 (stack_gps 확인 필요)"
-                  : "gps fix 상실(state=waypoint, fix_quality=0/빈 경로) — estop 강제 (RTK 확인 필요)");
+        gps_stale ? "gps_path 신선도 초과(state=waypoint/traffic-gps) — "
+          "estop 강제 (stack_gps 확인 필요)"
+                  : "gps fix 상실(state=waypoint/traffic-gps, "
+          "fix_quality=0/빈 경로) — estop 강제 (RTK 확인 필요)");
     }
     // traffic_stop 신선도 watchdog (§5.7 ③) — lane/gps와 달리 **수신 이력이 있은
     // 뒤 끊긴 경우만** 보정한다(사망 감지). 미수신은 보정하지 않음: traffic은

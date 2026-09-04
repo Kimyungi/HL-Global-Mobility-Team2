@@ -70,7 +70,7 @@ class TestNodeInitialization(unittest.TestCase):
         finally:
             rclpy.shutdown()
 
-    def test_oak_y_only_node_initializes_without_optional_models(self):
+    def test_oak_y_only_node_initializes_with_stopline_yolo(self):
         os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
         rclpy.init(
             args=[
@@ -90,12 +90,18 @@ class TestNodeInitialization(unittest.TestCase):
             ]
         )
         node = None
+        traffic_model = FakeYolo("traffic")
+        stopline_model = FakeStopLineYolo("stopline")
         try:
             with (
-                patch("stack_traffic.node.YOLO", FakeYolo),
+                patch(
+                    "stack_traffic.node.YOLO",
+                    side_effect=[traffic_model, stopline_model],
+                ),
                 patch("stack_traffic.node.OakRgbdCamera", FakeOakCamera),
             ):
                 node = StackTrafficNode()
+            self.assertIs(node.stopline_model, stopline_model)
             self.assertFalse(node.oak_depth_enabled)
             self.assertEqual(node.oak_mxid, "traffic-oak-mxid")
             self.assertEqual(node.oak_usb_speed, "high")
@@ -117,6 +123,11 @@ class TestNodeInitialization(unittest.TestCase):
             self.assertTrue(node.resume_on_green)
             self.assertFalse(node.resume_on_red_clear)
             self.assertFalse(node.show_debug)
+            self.assertEqual(node.red_phase_yolo_inference_interval, 3)
+            # 카메라를 열기 전에 두 모델을 한 번씩 준비해 첫 주행 프레임의
+            # cold-start 지연을 제거한다.
+            self.assertEqual(traffic_model.predict_calls, 1)
+            self.assertEqual(stopline_model.predict_calls, 1)
 
             published_stops = []
             node._publish = (
@@ -136,7 +147,10 @@ class TestNodeInitialization(unittest.TestCase):
                 node.tick()
 
             self.assertEqual(node.frame_index, expected_frames)
-            self.assertEqual(node.model.predict_calls, node.vote_window)
+            self.assertEqual(
+                node.model.predict_calls,
+                node.vote_window + 1,
+            )
             self.assertTrue(all(published_stops[:-1]))
             self.assertFalse(published_stops[-1])
             self.assertFalse(node.startup_hold_latched)
@@ -152,7 +166,7 @@ class TestNodeInitialization(unittest.TestCase):
                 node.destroy_node()
             rclpy.shutdown()
 
-    def test_yolo_seg_stopline_model_is_loaded_only_when_selected(self):
+    def test_stopline_model_is_loaded_when_detection_is_enabled(self):
         os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
         weights = (
             Path(__file__).parents[1]
@@ -168,8 +182,6 @@ class TestNodeInitialization(unittest.TestCase):
                 "oak_depth_enabled:=false",
                 "-p",
                 "stopline_detection_enabled:=true",
-                "-p",
-                "stopline_detector_type:=yolo_seg",
                 "-p",
                 f"stopline_model_path:={weights}",
             ]
@@ -195,7 +207,7 @@ class TestNodeInitialization(unittest.TestCase):
                 None,
             )
             self.assertFalse(runtime.detection.detected)
-            self.assertEqual(stopline_model.predict_calls, 1)
+            self.assertEqual(stopline_model.predict_calls, 2)
         finally:
             if node is not None:
                 node.destroy_node()

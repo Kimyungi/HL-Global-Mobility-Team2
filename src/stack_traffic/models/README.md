@@ -20,19 +20,13 @@
 가져왔으며 SHA-256은
 `e9bd58a64bbe078e879bc3f8de3342ba31b8aa4f175da6f65f94156c0a52eb26`이다.
 
-`stopline_distance_test.launch.py`는 기본적으로 이 모델을 쓴다. 기존
-색상·윤곽선 방식으로 비교하려면 다음처럼 실행한다.
-
-```bash
-ros2 launch stack_traffic stopline_distance_test.launch.py \
-  stopline_detector_type:=color
-```
+`stopline_distance_test.launch.py`와 정지선 검출이 활성화된 노드는 항상 이
+segmentation 모델을 쓴다. 기존 색상·윤곽선 검출 경로는 제거되었다.
 
 다른 segmentation 가중치는 `stopline_model_path`로 지정한다.
 
 ```bash
 ros2 launch stack_traffic stopline_distance_test.launch.py \
-  stopline_detector_type:=yolo_seg \
   stopline_model_path:=/absolute/path/to/best.pt
 ```
 

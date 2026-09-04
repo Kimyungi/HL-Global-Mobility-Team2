@@ -333,6 +333,12 @@ float DecisionBackend::trafficStoplineDistance() const
   return kind_ == Kind::kCore ? core_state_.traffic_stopline_distance : 0.0f;
 }
 
+uint8_t DecisionBackend::trafficEntryState() const
+{
+  return kind_ == Kind::kCore ? core_state_.traffic_entry_state :
+    static_cast<uint8_t>(MGM_STATE_LANE);
+}
+
 uint8_t DecisionBackend::activeState() const
 {
   return kind_ == Kind::kCore ? core_state_.state : active_state_;

@@ -98,24 +98,31 @@ int main()
 
   s = CoreSnapshot{};
   s.traffic_red_active = true;
+  s.traffic_stopline_detected = true;
   record = explainTransition(
     MGM_STATE_LANE, MGM_STATE_TRAFFIC, s, p,
     0, 0, 0, 0, 0.5f, 400);
-  check(record.spec_match, "확정 적색은 TRAFFIC 진입을 설명해야 한다");
+  check(record.spec_match, "확정 적색과 정지선 검출은 TRAFFIC 진입을 설명해야 한다");
   s.traffic_red_active = false;
   s.traffic_green_active = true;
   record = explainTransition(
     MGM_STATE_TRAFFIC, MGM_STATE_LANE, s, p,
     0, 0, 0, 0, 0.0f, 401);
   check(record.spec_match, "확정 초록은 TRAFFIC 탈출을 설명해야 한다");
+  record = explainTransition(
+    MGM_STATE_TRAFFIC, MGM_STATE_WAYPOINT, s, p,
+    0, 0, 0, 0, 0.0f, 402);
+  check(
+    record.spec_match,
+    "확정 초록은 진입 상태에 따른 TRAFFIC→WAYPOINT 복귀도 설명해야 한다");
+  check(
+    record.csv.find("TRAFFIC,WAYPOINT") != std::string::npos,
+    "CSV row must contain the TRAFFIC to WAYPOINT transition");
 
   const std::string header = transitionCsvHeader();
   check(
     header.find("avoid_ticks,return_hold_left") != std::string::npos,
     "CSV must preserve the counters needed to audit transition timing");
-  check(
-    record.csv.find("TRAFFIC,LANE") != std::string::npos,
-    "CSV row must contain the observed transition");
 
   std::printf("transition log: failures=%d\n", failures);
   return failures == 0 ? 0 : 1;

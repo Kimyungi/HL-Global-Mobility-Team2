@@ -1,11 +1,15 @@
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
 from stack_traffic.node import (
+    choose_yolo_tasks,
     choose_target_traffic_light,
     get_traffic_light_class_ids,
+    should_freeze_signal_phase,
     should_run_yolo,
+    stopline_message_values,
 )
 
 
@@ -53,6 +57,96 @@ class TestTargetSelection(unittest.TestCase):
             [True, False, True, False, True, False],
         )
         self.assertTrue(should_run_yolo(4, 1))
+
+    def test_signal_phase_freezes_only_for_single_stop_trial(self):
+        self.assertTrue(should_freeze_signal_phase(True, False, False))
+        self.assertFalse(should_freeze_signal_phase(False, False, False))
+        self.assertFalse(should_freeze_signal_phase(True, True, False))
+        self.assertFalse(should_freeze_signal_phase(True, False, True))
+
+    def test_yolo_tasks_never_overlap_during_red_phase(self):
+        schedule = [
+            choose_yolo_tasks(
+                frame_index=index,
+                normal_signal_interval=2,
+                red_phase_signal_interval=3,
+                red_phase_latched=True,
+                stopline_enabled=True,
+                signal_phase_frozen=False,
+            )
+            for index in range(1, 7)
+        ]
+
+        self.assertEqual(
+            schedule,
+            [
+                (True, False),
+                (False, True),
+                (False, True),
+                (True, False),
+                (False, True),
+                (False, True),
+            ],
+        )
+        self.assertTrue(
+            all(
+                not (signal and stopline)
+                for signal, stopline in schedule
+            )
+        )
+
+    def test_single_stop_trial_assigns_every_red_frame_to_stopline(self):
+        self.assertEqual(
+            choose_yolo_tasks(
+                frame_index=1,
+                normal_signal_interval=2,
+                red_phase_signal_interval=3,
+                red_phase_latched=True,
+                stopline_enabled=True,
+                signal_phase_frozen=True,
+            ),
+            (False, True),
+        )
+
+    def test_pre_red_phase_uses_normal_signal_interval(self):
+        self.assertEqual(
+            [
+                choose_yolo_tasks(
+                    frame_index=index,
+                    normal_signal_interval=2,
+                    red_phase_signal_interval=3,
+                    red_phase_latched=False,
+                    stopline_enabled=True,
+                    signal_phase_frozen=False,
+                )
+                for index in range(1, 5)
+            ],
+            [(True, False), (False, False), (True, False), (False, False)],
+        )
+
+    def test_stopline_control_detection_does_not_require_depth(self):
+        runtime = SimpleNamespace(
+            stable=True,
+            depth=SimpleNamespace(accepted=False),
+            median_camera_z_m=float("nan"),
+        )
+
+        detected, distance_m = stopline_message_values(runtime)
+
+        self.assertTrue(detected)
+        self.assertEqual(distance_m, -1.0)
+
+    def test_valid_depth_is_kept_as_diagnostic_distance(self):
+        runtime = SimpleNamespace(
+            stable=True,
+            depth=SimpleNamespace(accepted=True),
+            median_camera_z_m=2.4,
+        )
+
+        detected, distance_m = stopline_message_values(runtime)
+
+        self.assertTrue(detected)
+        self.assertAlmostEqual(distance_m, 2.4)
 
     def test_traffic_light_class_ids_are_discovered_from_model_names(self):
         self.assertEqual(

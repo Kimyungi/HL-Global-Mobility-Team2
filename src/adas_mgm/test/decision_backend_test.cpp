@@ -20,6 +20,7 @@ using adas_mgm::MGM_SRC_PARKING;
 using adas_mgm::MGM_STATE_AVOID;
 using adas_mgm::MGM_STATE_LANE;
 using adas_mgm::MGM_STATE_PARKING;
+using adas_mgm::MGM_STATE_TRAFFIC;
 using adas_mgm::MGM_STATE_WAYPOINT;
 using adas_mgm::generatedInputWithinLaneWaypointScope;
 using adas_mgm::mgm_init;
@@ -205,6 +206,29 @@ void testGeneratedDispatchAndActiveState()
   expect(
     backend.activeState() == MGM_STATE_WAYPOINT,
     "watchdogs must observe the generated backend's validated state");
+}
+
+void testCoreTrafficEntryStateObserver()
+{
+  CoreParams params = makeParams();
+  params.traffic_state_enabled = 1;
+  DecisionBackend backend("core", false, params);
+  CoreSnapshot input = makeInput();
+  input.vehicle_speed_valid = true;
+  input.lane_confidence = 0.1f;
+  CoreOutput output{};
+  for (int i = 0; i < params.n_cycles; ++i) {
+    output = backend.step(input);
+  }
+  expect(output.state == MGM_STATE_WAYPOINT, "core must enter WAYPOINT first");
+
+  input.traffic_red_active = true;
+  input.traffic_stopline_detected = true;
+  output = backend.step(input);
+  expect(output.state == MGM_STATE_TRAFFIC, "core must enter TRAFFIC from WAYPOINT");
+  expect(
+    backend.trafficEntryState() == MGM_STATE_WAYPOINT,
+    "watchdogs must observe the path source saved before TRAFFIC");
 }
 
 void testRuntimeFaultIsLatchedAndNonempty()
@@ -451,6 +475,7 @@ int main()
 {
   testSelectorAndCoreDefault();
   testGeneratedDispatchAndActiveState();
+  testCoreTrafficEntryStateObserver();
   testRuntimeFaultIsLatchedAndNonempty();
   testFourStateDispatchAndObservers();
   testPureFailClosedValidation();

@@ -139,7 +139,7 @@ mgm_node:
     estop_stale_timeout_sec: 0.25
     traffic_stale_timeout_sec: 0.5   # 수신 이력 후 끊김만 보정 (§5.7 ③) — 미수신은 단독 스택 시험 허용
     vehicle_stale_timeout_sec: 0.2   # TRAFFIC 거리 적분용 dSPACE 실차속도 freshness
-    traffic_state_enabled: true      # 적색 즉시 TRAFFIC 진입 (generated v1.88에서는 false만 허용)
+    traffic_state_enabled: true      # 적색+정지선 동시 검출 시 TRAFFIC 진입 (generated v1.88에서는 false만 허용)
     # ── 정지 거리 추적 (§4 traffic, 2026-09-02 개정 — 사용자 지정, 정지선
     # 소실 edge 기준). 카메라 optical-Z 거리는 검출이 불안정하면 즉시 무효가
     # 돼 그 자체로는 연속 신뢰 기준으로 못 쓴다 — "정지선이 화면에서 사라지는
