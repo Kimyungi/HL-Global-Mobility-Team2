@@ -43,6 +43,11 @@
   `resume_on_green=true`를 기본으로 둔다. `resume_on_red_clear`는 끈다.
 - 재출발 조건을 모두 끈 단일 정지 시험은 적색 확정 뒤 신호 페이즈를 고정하고
   신호등 YOLO를 생략해 정지선 segmentation에 CPU를 우선 배정한다.
+- 초록 재출발을 쓰는 통합 주행에서는 적색 뒤에도 신호등을
+  `red_phase_yolo_inference_interval`(기본 3)마다 재확인한다. 그 프레임에는
+  정지선 YOLO를 실행하지 않고 직전 정지선 상태를 유지해, 한 callback에서 두
+  모델이 겹치지 않게 한다. 기본 10 FPS에서는 신호등 약 3.3 Hz, 정지선 약
+  6.7 Hz다. 초록 3/5 확정에는 통상 약 0.6초가 걸리며 이 동안 정지를 유지한다.
 
 ## 정지선 판정
 
@@ -106,7 +111,7 @@ depth 유효성과 독립이다.
 - 노드 기본값도 안전한 쪽(640x360, 10 FPS, `oak_usb_speed=high`, 교통용 MxID
   핀닝)이다 — 인자를 손으로 붙이는 걸 한 번 잊으면 위성 수·HDOP·RTCM이 전부
   정상으로 보이는 채 RTK FIXED만 안 잡힌다 (CLAUDE.md §6, 2026-08-24).
-  차량 launch의 표준 프로필은 1280x720, 10 FPS, `oak_usb_speed=high`,
+  통합 차량 launch의 표준 프로필은 640x360, 10 FPS, `oak_usb_speed=high`,
   RGB-only다. HIGH 요청 후 실제 `getUsbSpeed()`가 HIGH가 아니면 노드는
   fail-closed한다.
 - USB2 안전 payload 상한은 36 MB/s로 둔다. 비압축 BGR은 3 B/px, depth는
@@ -124,8 +129,15 @@ depth 유효성과 독립이다.
 - YOLO의 논리 검색 범위는 넓은 상단 ROI다. 추적 전에는 이 범위를
   중앙·좌·우의 좁은 가로 타일로 한 장씩 훑고, 검출 뒤에는 bbox 중심을
   따라가는 타일만 사용해 먼 신호의 입력 픽셀 크기를 보존한다.
-- `imgsz=576`, 직사각형 입력, 격프레임 추론을 사용하며 한 프레임에 타일
-  하나만 처리한다.
+- 통합 차량 launch는 두 모델 모두 `imgsz=320`, 신호등 격프레임 추론을
+  사용하며 한 프레임에 타일 하나만 처리한다. 개별 모델을 초기화 직후 검은
+  프레임으로 한 번씩 warm-up한 다음 카메라를 열어 첫 주행 프레임의 CPU
+  cold-start 지연을 제거한다. warm-up 실패는 기동 실패로 처리한다.
+- 적색 뒤에는 한 callback에 신호등 또는 정지선 YOLO 하나만 실행한다. 신호등
+  재확인 프레임은 직전 정지선 결과를 재사용하되 정지선 miss로 기록하지 않는다.
+  따라서 정지선 소실 3/5 판단은 처리 callback 10 Hz가 아니라 실제 정지선 추론
+  약 6.7 Hz 기준으로 진행된다. 카메라 장착이나 이 간격을 바꾸면 MGM의
+  `traffic_ramp_distance_m`과 `traffic_stop_offset_m`을 실차 로그로 재보정한다.
 - 보조 crop/mask/depth 창은 기본적으로 끈다. 전체 depth 색상화는 보조 창을
   켰을 때만 수행한다.
 - depth decimation 결과가 RGB보다 작으면 종횡비를 확인한 뒤 nearest-neighbor로

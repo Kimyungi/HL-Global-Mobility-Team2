@@ -100,12 +100,15 @@ def generate_launch_description():
                 'oak_mxid': LaunchConfiguration('traffic_mxid'),
                 'oak_usb_speed': LaunchConfiguration('usb_speed'),
                 'oak_fps': 10.0, 'oak_width': 640, 'oak_height': 360,
-                'oak_depth_enabled': True,
+                # depth는 정지 조건이 아닌 진단값이다. 단일 정지 시험도 RGB-only로
+                # 두어 USB·CPU 부하와 depth 불량의 영향을 제거한다.
+                'oak_depth_enabled': False,
                 # CPU 직렬 추론이 traffic watchdog(0.5s)을 넘지 않도록 기존
                 # 저해상도·간격 실행 경로를 사용한다. 적색 확정 뒤에는 아래
                 # resume 설정에 따라 신호등 YOLO가 멈추고 정지선에 집중한다.
                 'yolo_image_size': 320,
                 'yolo_inference_interval': 2,
+                'red_phase_yolo_inference_interval': 3,
                 'stopline_detection_enabled': True,
                 'stopline_yolo_confidence_threshold': 0.10,
                 'stopline_yolo_image_size': 320,

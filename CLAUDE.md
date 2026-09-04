@@ -196,6 +196,10 @@ adas_ws/src/
   두 OAK-D 동시 초기화 경쟁으로 traffic 프로세스가 즉사할 수 있어 통합 실차 launch는
   `stack_traffic_node`를 2초 간격으로 자동 respawn한다. 시작부터 traffic 토픽이 한 번도
   오지 않으면 MGM freshness watchdog은 아직 활성되지 않으므로 출발 전 노드 확인은 필수다.
+  CPU 통합 운용은 두 모델 모두 `imgsz=320`이며 기동 중 1회 warm-up한다. 적색 뒤에는
+  한 callback에서 정지선 또는 신호등 YOLO 하나만 실행한다. 정지선을 우선하되 신호등을
+  3프레임마다 재확인해 초록 3/5 재출발을 유지하고, 그 프레임의 정지선 상태는 직전 결과를
+  유지해 인위적인 miss로 세지 않는다. depth는 진단값이라 통합 launch 기본은 RGB-only다.
   **해제 정책 확정(2026-08-09, 팀장):** 시연 신호등은 적색=정지 / 초록=재출발 타입 —
   `resume_on_green`이 실차 표준, `resume_on_red_clear`는 불필요.
   **OAK-D 배분 확정 (2026-08-09, 팀장):** OAK-D Pro **2대** — stack_lane(이현준) 1대(차선용

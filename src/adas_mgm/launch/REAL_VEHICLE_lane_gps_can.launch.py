@@ -430,9 +430,19 @@ def generate_launch_description():
         #   (traffic_width:=1280 traffic_height:=720) 양쪽 fps 를 실측할 것.
         DeclareLaunchArgument('traffic_width', default_value='640'),
         DeclareLaunchArgument('traffic_height', default_value='360'),
-        # TRAFFIC 상태의 정지선 거리 래치에는 metric depth가 필수다. USB 부하는
-        # 해상도/fps와 함께 실차에서 확인하며, false는 인지 측정 디버그 전용이다.
-        DeclareLaunchArgument('traffic_depth_enabled', default_value='true'),
+        # 정지선 depth는 진단값일 뿐 정지 조건이 아니다. 통합 주행은 RGB-only로
+        # USB2 여유와 처리 지연을 우선하고, optical-Z 현장 진단 때만 켠다.
+        DeclareLaunchArgument('traffic_depth_enabled', default_value='false'),
+        # CPU에서 100ms 처리 예산을 지키는 통합 주행 프로필. 적색 전에는 신호등을
+        # 격프레임으로, 적색 뒤에는 정지선을 우선하고 3프레임마다 신호등을 재확인한다.
+        # 한 callback에서는 두 YOLO 중 하나만 실행한다.
+        DeclareLaunchArgument('traffic_yolo_image_size', default_value='320'),
+        DeclareLaunchArgument(
+            'traffic_yolo_inference_interval', default_value='2'),
+        DeclareLaunchArgument(
+            'traffic_red_phase_yolo_inference_interval', default_value='3'),
+        DeclareLaunchArgument(
+            'traffic_stopline_yolo_image_size', default_value='320'),
         # 정지 게이트. 0 = **측정 전용**(정지 요구를 만들지 않는다). 첫 실차 세션은
         # 이 상태로 돌려 로그의 y_ratio 분포를 보고 값을 정한다 — 현장값 0.98 은
         # 옛 ROI·고정 장착·0.28m/s 이하에서만 검증됐고, 카메라 장착·ROI·속도가
@@ -683,8 +693,21 @@ def generate_launch_description():
                     LaunchConfiguration('traffic_height'), value_type=int),
                 'oak_depth_enabled': ParameterValue(
                     LaunchConfiguration('traffic_depth_enabled'), value_type=bool),
+                'yolo_image_size': ParameterValue(
+                    LaunchConfiguration('traffic_yolo_image_size'),
+                    value_type=int),
+                'yolo_inference_interval': ParameterValue(
+                    LaunchConfiguration('traffic_yolo_inference_interval'),
+                    value_type=int),
+                'red_phase_yolo_inference_interval': ParameterValue(
+                    LaunchConfiguration(
+                        'traffic_red_phase_yolo_inference_interval'),
+                    value_type=int),
                 # y gate 를 쓰려면 정지선 검출이 켜져 있어야 한다(노드가 검증).
                 'stopline_detection_enabled': True,
+                'stopline_yolo_image_size': ParameterValue(
+                    LaunchConfiguration(
+                        'traffic_stopline_yolo_image_size'), value_type=int),
                 'stopline_stop_y_ratio': ParameterValue(
                     LaunchConfiguration('traffic_stop_y_ratio'), value_type=float),
                 # 시연 신호등은 적색=정지 / 초록=재출발 타입 (2026-08-09 팀장 결정,

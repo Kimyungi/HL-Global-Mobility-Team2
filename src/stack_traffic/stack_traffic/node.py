@@ -151,6 +151,30 @@ def should_freeze_signal_phase(
     )
 
 
+def choose_yolo_tasks(
+    frame_index: int,
+    normal_signal_interval: int,
+    red_phase_signal_interval: int,
+    red_phase_latched: bool,
+    stopline_enabled: bool,
+    signal_phase_frozen: bool,
+) -> tuple[bool, bool]:
+    """한 callback에서 신호등·정지선 YOLO가 겹치지 않게 실행 작업을 고른다."""
+    if not red_phase_latched or not stopline_enabled:
+        signal_due = bool(
+            not signal_phase_frozen
+            and should_run_yolo(frame_index, normal_signal_interval)
+        )
+        return signal_due, False
+    if signal_phase_frozen:
+        return False, True
+    signal_due = should_run_yolo(
+        frame_index,
+        red_phase_signal_interval,
+    )
+    return signal_due, not signal_due
+
+
 def get_class_name(names, class_id: int) -> str:
     if isinstance(names, dict):
         return str(names.get(class_id, class_id))
@@ -482,6 +506,7 @@ class StackTrafficNode(Node):
                     "정지선 모델 label에 stop_line class가 없습니다: "
                     f"{self.stopline_model.names}"
                 )
+        self._warm_up_models()
         self.camera_source = parse_camera_source(self.camera_source_text)
         self.capture = None
         self.oak_camera = None
@@ -505,6 +530,7 @@ class StackTrafficNode(Node):
             [math.nan] * self.stopline_depth_window,
             maxlen=self.stopline_depth_window,
         )
+        self.last_stopline_runtime = self._empty_stopline_runtime()
         # YOLO miss에는 단순 stale 좌표가 아니라 검증된 짧은 template
         # 추적 결과만 색 판정과 bbox 표시를 이어 가는 데 사용한다.
         self.tracked_bbox: Optional[BBox] = None
@@ -572,6 +598,8 @@ class StackTrafficNode(Node):
             f"{self.stopline_maximum_fit_residual_m:.2f}m "
             f"yolo_imgsz={self.yolo_image_size} "
             f"yolo_interval={self.yolo_inference_interval} "
+            f"red_phase_yolo_interval="
+            f"{self.red_phase_yolo_inference_interval} "
             f"yolo_classes={self.traffic_light_class_ids or 'all'} "
             f"detect_roi={self.detection_roi_enabled}["
             f"{self.detection_roi_x_min:.2f},"
@@ -707,6 +735,10 @@ class StackTrafficNode(Node):
         self.declare_parameter("oak_depth_temporal_filter", False)
         self.declare_parameter("yolo_image_size", 640)
         self.declare_parameter("yolo_inference_interval", 1)
+        # 적색 이후에는 정지선 모델을 우선한다. 신호등 YOLO는 동일 target
+        # 재확인용으로만 성기게 실행하고, 그 프레임에는 정지선 YOLO를 건너뛰어
+        # 두 모델이 한 callback에서 겹치지 않게 한다.
+        self.declare_parameter("red_phase_yolo_inference_interval", 3)
         self.declare_parameter("detection_roi_enabled", False)
         # ROI를 켜면 화면 중앙선을 기준으로 상단 전체 폭을 검색한다.
         self.declare_parameter("detection_roi_x_min", 0.00)
@@ -861,6 +893,11 @@ class StackTrafficNode(Node):
         )
         self.yolo_inference_interval = int(
             self.get_parameter("yolo_inference_interval").value
+        )
+        self.red_phase_yolo_inference_interval = int(
+            self.get_parameter(
+                "red_phase_yolo_inference_interval"
+            ).value
         )
         self.detection_roi_enabled = bool(
             self.get_parameter("detection_roi_enabled").value
@@ -1129,6 +1166,10 @@ class StackTrafficNode(Node):
             raise ValueError("yolo_image_size는 320 이상이어야 합니다.")
         if self.yolo_inference_interval < 1:
             raise ValueError("yolo_inference_interval은 1 이상이어야 합니다.")
+        if self.red_phase_yolo_inference_interval < 2:
+            raise ValueError(
+                "red_phase_yolo_inference_interval은 2 이상이어야 합니다."
+            )
         if not (
             0.0
             <= self.detection_roi_x_min
@@ -1418,6 +1459,53 @@ class StackTrafficNode(Node):
 
         share_dir = Path(get_package_share_directory("stack_traffic"))
         return share_dir / "models" / "stopline_yolov8s_seg.pt"
+
+    def _warm_up_models(self) -> None:
+        """출발 뒤 첫 추론에서 생기는 CPU cold-start 지연을 기동 중 소모한다."""
+        width = (
+            self.oak_width
+            if self.camera_backend == "oak"
+            else self.camera_width
+        )
+        height = (
+            self.oak_height
+            if self.camera_backend == "oak"
+            else self.camera_height
+        )
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+
+        started = time.perf_counter()
+        self.model.predict(
+            source=frame,
+            conf=self.tracking_confidence_threshold,
+            imgsz=self.yolo_image_size,
+            classes=self.traffic_light_class_ids or None,
+            max_det=10,
+            rect=True,
+            verbose=False,
+        )
+        traffic_ms = (time.perf_counter() - started) * 1000.0
+
+        stopline_ms = 0.0
+        if self.stopline_model is not None:
+            started = time.perf_counter()
+            self.stopline_model.predict(
+                source=frame,
+                conf=self.stopline_yolo_confidence_threshold,
+                imgsz=self.stopline_yolo_image_size,
+                classes=self.stopline_class_ids,
+                max_det=5,
+                retina_masks=True,
+                rect=True,
+                device="cpu",
+                verbose=False,
+            )
+            stopline_ms = (time.perf_counter() - started) * 1000.0
+
+        self.get_logger().info(
+            "YOLO warm-up 완료 — "
+            f"traffic={traffic_ms:.1f}ms stopline={stopline_ms:.1f}ms"
+        )
 
     def _read_camera(
         self,
@@ -1900,11 +1988,35 @@ class StackTrafficNode(Node):
                 else 0.9 * self.filtered_fps + 0.1 * instant_fps
             )
 
+        # CPU 환경에서는 한 callback에 YOLO 모델 하나만 실행한다. 적색 전에는
+        # 신호등만, 적색 뒤에는 정지선을 우선하되 지정 간격마다 신호등을 다시
+        # 확인한다. 신호등 재확인 프레임에는 직전 정지선 상태를 유지하며 miss로
+        # 세지 않는다.
+        signal_phase_frozen = should_freeze_signal_phase(
+            self.red_phase_latched,
+            self.resume_on_green,
+            self.resume_on_red_clear,
+        )
+        yolo_ran, stopline_ran = choose_yolo_tasks(
+            frame_index=self.frame_index,
+            normal_signal_interval=self.yolo_inference_interval,
+            red_phase_signal_interval=(
+                self.red_phase_yolo_inference_interval
+            ),
+            red_phase_latched=self.red_phase_latched,
+            stopline_enabled=self.stopline_detection_enabled,
+            signal_phase_frozen=signal_phase_frozen,
+        )
+
         # 정지선 인지는 확정 적색 이후에만 시작한다. 적색과 같은 프레임에서는 아직
         # latch가 갱신되기 전이므로 다음 카메라 프레임(통상 100ms 뒤)부터 시작한다.
         # 비적색 동안의 흰 선 이력은 적색 진입에 섞이지 않도록 비운다.
         if self.red_phase_latched:
-            stopline_runtime = self._process_stopline(frame, depth_mm)
+            if stopline_ran:
+                stopline_runtime = self._process_stopline(frame, depth_mm)
+                self.last_stopline_runtime = stopline_runtime
+            else:
+                stopline_runtime = self.last_stopline_runtime
         else:
             self.stopline_y_history.clear()
             self.stopline_y_history.extend(
@@ -1915,22 +2027,8 @@ class StackTrafficNode(Node):
                 [math.nan] * self.stopline_depth_window
             )
             stopline_runtime = self._empty_stopline_runtime()
+            self.last_stopline_runtime = stopline_runtime
 
-        # CPU 환경에서는 YOLO가 가장 비싸다. 첫 프레임과 지정 간격의
-        # 프레임에서만 추론하고, 사이 프레임은 아래 template 추적기로
-        # 이어 간다. 건너뛴 프레임은 YOLO miss로 세지 않는다.
-        signal_phase_frozen = should_freeze_signal_phase(
-            self.red_phase_latched,
-            self.resume_on_green,
-            self.resume_on_red_clear,
-        )
-        yolo_ran = bool(
-            not signal_phase_frozen
-            and should_run_yolo(
-                self.frame_index,
-                self.yolo_inference_interval,
-            )
-        )
         if yolo_ran:
             detection_frame, detection_roi_bbox = (
                 self._prepare_detection_frame(frame)
@@ -2293,6 +2391,7 @@ class StackTrafficNode(Node):
             self.get_logger().info(
                 f"frame={self.frame_index:06d} | "
                 f"yolo_run={int(yolo_ran)} "
+                f"stopline_run={int(stopline_ran)} "
                 f"yolo={int(detection_fresh)} "
                 f"yolo_ms={yolo_inference_ms:.1f} "
                 f"conf={confidence:.2f} "

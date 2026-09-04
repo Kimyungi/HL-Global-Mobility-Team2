@@ -98,6 +98,30 @@ OAK-D depth가 `accepted=0`이고 유효 픽셀 비율이 약 0~1%여서 기존 
    YOLO를 생략한다.
 4. `stopline_detected`는 depth가 아니라 최근 3/5 안정 segmentation으로 발행한다.
 5. 단발성 segmentation miss는 소실 edge로 취급하지 않는다.
+6. depth 스트림은 끄고 RGB-only로 실행한다.
+7. 카메라를 열기 전에 두 모델을 한 번씩 warm-up한다. 따라서 첫 주행 프레임의
+   100ms 초과 cold-start를 출발 전 기동 단계에서 소모한다.
+
+통합 주행 launch는 초록 재출발이 필요하므로 적색 뒤 신호등 모델을 완전히
+멈추지 않는다. 대신 3프레임마다 신호등을 재확인하고 나머지 프레임에만 정지선을
+실행한다. 어느 callback에서도 두 YOLO를 함께 실행하지 않는다. 이 설정에서는
+정지선 유효 샘플이 약 6.7 Hz라 소실 edge가 단일 정지 시험보다 약 0.1~0.2초
+늦어질 수 있다. 통합 실차 시험 전에 정지 위치 로그를 보고
+`traffic_ramp_distance_m`과 `traffic_stop_offset_m`을 다시 확인한다.
+
+동일 날짜 개발 PC(`Intel Core Ultra 7 256V`)에서 노드와 같은
+`KMP_BLOCKTIME=0`, `OMP_WAIT_POLICY=PASSIVE`, 640x360 검은 입력과
+`imgsz=320`으로 warm-up 후 통합 적색 스케줄 120 callback을 재현했다.
+
+| 구간 | callback 수 | median | p95 | max | 100ms 초과 |
+|---|---:|---:|---:|---:|---:|
+| 전체 | 120 | 45.0ms | 74.4ms | 85.4ms | 0 |
+| 신호등 | 40 | 26.2ms | 36.3ms | 42.8ms | 0 |
+| 정지선 | 80 | 55.6ms | 75.7ms | 85.4ms | 0 |
+
+이는 모델 callback 예산 검증이며 두 OAK-D, LiDAR, lane XPU, CAN을 모두 띄운
+실차 통합 부하 시험을 대신하지 않는다. 실제 통합에서는 `proc_ms`, 토픽 간격,
+MGM 지터를 함께 기록한다.
 
 출발 전 정지 상태에서 로그의 `proc_ms`와 토픽 발행 간격을 확인한다. 실제
 `/perception/traffic_stop` 발행 간격이 한 번이라도 0.5초 이상이거나 MGM에서
