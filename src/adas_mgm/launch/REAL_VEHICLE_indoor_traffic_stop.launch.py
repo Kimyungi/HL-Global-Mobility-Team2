@@ -102,9 +102,6 @@ def generate_launch_description():
                 'oak_fps': 10.0, 'oak_width': 640, 'oak_height': 360,
                 'oak_depth_enabled': True,
                 'stopline_detection_enabled': True,
-                # 실내 시험의 테이프/도색 정지선은 색상 임계 기반 검출에서 이번
-                # 실측 내내 0회였다. 설치된 학습 segmentation 모델을 명시적으로 쓴다.
-                'stopline_detector_type': 'yolo_seg',
                 'stopline_stop_y_ratio': 0.0,
                 'resume_on_green': False,
                 'resume_on_red_clear': False,
