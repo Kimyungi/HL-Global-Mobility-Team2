@@ -52,6 +52,12 @@ class TestLaunchDefaults(unittest.TestCase):
         self.assertEqual(parameters["oak_width"], 1280)
         self.assertEqual(parameters["oak_height"], 720)
         self.assertFalse(parameters["oak_depth_enabled"])
+        self.assertEqual(parameters["stopline_detector_type"], "yolo_seg")
+        self.assertEqual(parameters["stopline_model_path"], "")
+        self.assertAlmostEqual(
+            parameters["stopline_yolo_confidence_threshold"],
+            0.35,
+        )
         self.assertTrue(parameters["resume_on_green"])
         self.assertFalse(parameters["show_debug"])
         self.assertEqual(parameters["stopline_stop_y_ratio"], 0.0)

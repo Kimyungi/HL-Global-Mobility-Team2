@@ -18,6 +18,8 @@ def build_node_parameters():
     oak_height = LaunchConfiguration("oak_height")
     oak_fps = LaunchConfiguration("oak_fps")
     oak_depth_enabled = LaunchConfiguration("oak_depth_enabled")
+    stopline_detector_type = LaunchConfiguration("stopline_detector_type")
+    stopline_model_path = LaunchConfiguration("stopline_model_path")
     stop_distance = LaunchConfiguration("stopline_stop_distance_m")
     stop_y_ratio = LaunchConfiguration("stopline_stop_y_ratio")
     resume_on_green = LaunchConfiguration("resume_on_green")
@@ -85,6 +87,16 @@ def build_node_parameters():
         "minimum_depth_valid_ratio": 0.10,
         "minimum_depth_valid_pixels": 80,
         "stopline_detection_enabled": True,
+        "stopline_detector_type": ParameterValue(
+            stopline_detector_type,
+            value_type=str,
+        ),
+        "stopline_model_path": ParameterValue(
+            stopline_model_path,
+            value_type=str,
+        ),
+        "stopline_yolo_confidence_threshold": 0.35,
+        "stopline_yolo_image_size": 640,
         "stopline_roi_x_min": 0.08,
         "stopline_roi_y_min": 0.48,
         "stopline_roi_x_max": 0.92,
@@ -176,6 +188,22 @@ def generate_launch_description():
                 description=(
                     "false=검증된 RGB 정지선 y 기준 차량 실행. "
                     "true=저해상도 depth 진단용"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "stopline_detector_type",
+                default_value="yolo_seg",
+                description=(
+                    "yolo_seg=학습된 정지선 segmentation 사용, "
+                    "color=기존 색상·윤곽선 방식"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "stopline_model_path",
+                default_value="",
+                description=(
+                    "정지선 YOLO .pt 절대경로. 비우면 패키지에 포함된 "
+                    "stopline_yolov8s_seg.pt 사용"
                 ),
             ),
             DeclareLaunchArgument(
