@@ -217,43 +217,26 @@ class ParallelParkingGeometryTest(unittest.TestCase):
 
 class ParallelParkingControllerTest(unittest.TestCase):
 
-    def test_entry_radius_does_not_leak_into_reused_reference_path(self):
-        base_path = _path()
-        entry_path = build_parallel_reference_path(
-            _candidate(), Pose2(), turn_radius_m=1.12,
-            end_straight_m=1.5, arc_angle_deg=45.0,
-            arc_start_offset_m=0.5, entry_radius_m=2.24)
-        self.assertIsNotNone(entry_path)
-
+    def test_all_motion_arcs_use_the_same_symmetric_radius(self):
         controller = ParallelParkingController()
-        full_forward, full_reverse = parallel_controller_paths(base_path)
+        path = _path()
+        full_forward, _ = parallel_controller_paths(path)
         self.assertTrue(controller.start(
-            base_path, _pose(full_forward[0]), now_s=0.0,
-            entry_path=entry_path))
+            path, _pose(full_forward[0]), now_s=0.0))
 
-        reference_curvatures = {
-            round(abs(point.curvature), 9)
-            for point in controller.reference_reverse_path
-            if abs(point.curvature) > 1.0e-6
-        }
-        entry_curvatures = {
-            round(abs(point.curvature), 9)
-            for point in controller.single_arc_reverse_path
-            if abs(point.curvature) > 1.0e-6
-        }
-        opposite_curvatures = {
-            round(abs(point.curvature), 9)
-            for point in controller.opposite_arc_forward_path
-            if abs(point.curvature) > 1.0e-6
-        }
-        self.assertEqual(reference_curvatures, {round(1.0 / 1.12, 9)})
-        self.assertEqual(entry_curvatures, {round(1.0 / 2.24, 9)})
-        self.assertEqual(opposite_curvatures, {round(1.0 / 1.12, 9)})
-        np.testing.assert_allclose(
-            [[point.x, point.y] for point in controller.reference_reverse_path],
-            [[point.x, point.y] for point in full_reverse],
-            atol=1.0e-9,
-        )
+        expected = {round(1.0 / path.radius_m, 9)}
+        for phase_path in (
+                controller.initial_reference_forward_path,
+                controller.single_arc_reverse_path,
+                controller.opposite_arc_forward_path,
+                controller.reference_reverse_path,
+                controller.reference_forward_path):
+            curvatures = {
+                round(abs(point.curvature), 9)
+                for point in phase_path
+                if abs(point.curvature) > 1.0e-6
+            }
+            self.assertEqual(curvatures, expected)
 
     def test_five_motion_sequence_has_five_one_second_holds(self):
         controller = ParallelParkingController(ParallelParkingConfig(

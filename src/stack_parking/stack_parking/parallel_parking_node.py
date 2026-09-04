@@ -38,10 +38,6 @@ class ParallelParkingNode(WallGapNode):
         self.declare_parameter('rectangle_wall_length_m', 1.5)
         self.declare_parameter('rectangle_inward_depth_m', 0.7)
         self.declare_parameter('parallel_turn_radius_m', 1.12)
-        # Entry arc radius -- used only by SINGLE_ARC_REVERSE.  The symmetric
-        # OPPOSITE_ARC_FORWARD arc and the original full-S reference remain at
-        # parallel_turn_radius_m. 0.0 means "same as turn_radius_m".
-        self.declare_parameter('parallel_entry_radius_m', 0.0)
         self.declare_parameter('parallel_end_straight_m', 1.5)
         self.declare_parameter('parallel_arc_angle_deg', 35.0)
         self.declare_parameter('parallel_arc_start_offset_m', 0.25)
@@ -57,11 +53,6 @@ class ParallelParkingNode(WallGapNode):
             self.get_parameter('rectangle_inward_depth_m').value)
         self.parallel_turn_radius_m = float(
             self.get_parameter('parallel_turn_radius_m').value)
-        parallel_entry_radius_m = float(
-            self.get_parameter('parallel_entry_radius_m').value)
-        self.parallel_entry_radius_m = (
-            parallel_entry_radius_m if parallel_entry_radius_m > 0.0
-            else self.parallel_turn_radius_m)
         self.parallel_end_straight_m = float(
             self.get_parameter('parallel_end_straight_m').value)
         self.parallel_arc_angle_deg = float(
@@ -119,14 +110,13 @@ class ParallelParkingNode(WallGapNode):
 
         self.get_logger().info(
             'parallel parking ready: left wall, rectangle=%.2fm x %.2fm, '
-            'rear R=%.2fm, entry R=%.2fm, arc origin=P0+%.2fm, arcs=%.1fdeg, '
+            'symmetric R=%.2fm, arc origin=P0+%.2fm, arcs=%.1fdeg, '
             'end lines=%.2fm, entry straight=%.2fm, nudge straight=%.2fm, '
             'previous map accepted'
             % (
                 self.rectangle_wall_length_m,
                 self.rectangle_inward_depth_m,
                 self.parallel_turn_radius_m,
-                self.parallel_entry_radius_m,
                 self.parallel_arc_start_offset_m,
                 self.parallel_arc_angle_deg,
                 self.parallel_end_straight_m,
@@ -283,7 +273,7 @@ class ParallelParkingNode(WallGapNode):
                 and self.reference_path is None
                 and not self.path_failed
                 and self._candidate_passed(pose)):
-            reference_path = build_parallel_reference_path(
+            self.reference_path = build_parallel_reference_path(
                 self.confirmed_candidate,
                 pose,
                 turn_radius_m=self.parallel_turn_radius_m,
@@ -291,25 +281,13 @@ class ParallelParkingNode(WallGapNode):
                 arc_angle_deg=self.parallel_arc_angle_deg,
                 arc_start_offset_m=self.parallel_arc_start_offset_m,
             )
-            entry_path = build_parallel_reference_path(
-                self.confirmed_candidate,
-                pose,
-                turn_radius_m=self.parallel_turn_radius_m,
-                end_straight_m=self.parallel_end_straight_m,
-                arc_angle_deg=self.parallel_arc_angle_deg,
-                arc_start_offset_m=self.parallel_arc_start_offset_m,
-                entry_radius_m=self.parallel_entry_radius_m,
-            )
-            if reference_path is None or entry_path is None:
+            if self.reference_path is None:
                 self.path_failed = True
                 self.get_logger().error(
                     'parallel reference-path parameters are degenerate')
             else:
-                self.reference_path = reference_path
                 now_s = self._clock_s()
-                if not self.controller.start(
-                        self.reference_path, pose, now_s,
-                        entry_path=entry_path):
+                if not self.controller.start(self.reference_path, pose, now_s):
                     self.path_failed = True
                     self.get_logger().error(
                         'parallel controller could not sample the reference path')
@@ -324,15 +302,14 @@ class ParallelParkingNode(WallGapNode):
                     self.state_pub.publish(String(data=(
                         reason or first_output.status)))
                     self.get_logger().info(
-                        'parallel S path created after P0 pass: rear R=%.2fm, '
-                        'entry R=%.2fm, origin=P0+%.2fm, arc=%.1fdeg x2, '
+                        'parallel S path created after P0 pass: symmetric '
+                        'R=%.2fm, origin=P0+%.2fm, arc=%.1fdeg x2, '
                         'end straight=%.2fm x2, entry straight=%.2fm, '
                         'nudge straight=%.2fm, preview=%.2fm, '
                         'sequence=S-F/front-arc-R/rear-arc-F/S-R/S-F, '
                         'v_forward=%.2f, v_reverse=%.2f'
                         % (
                             self.parallel_turn_radius_m,
-                            self.parallel_entry_radius_m,
                             self.parallel_arc_start_offset_m,
                             self.parallel_arc_angle_deg,
                             self.parallel_end_straight_m,
