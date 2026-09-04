@@ -7,7 +7,8 @@
 - YOLOv8n으로 traffic light 위치 검출
 - HSV로 red_raw/green_raw 판정
 - 최근 5프레임 중 빨간불 3프레임 이상이면 red_active
-- 하단 RGB에서 정지선을 찾고 정렬 depth로 차량 쪽 경계 거리를 직접 측정
+- 하단 RGB의 학습형 segmentation(또는 기존 색상 방식)으로 정지선을 찾고
+  정렬 depth로 차량 쪽 경계 거리를 직접 측정
 - 확정 red_active를 fresh 초록까지 페이즈 래치
 - red_phase_latched AND 활성화된 접근 임계값이면 정지 래치
 - 정지 래치는 fresh bbox 또는 확정 적색 anchor 안의 초록색 3/5에서만 해제
@@ -67,6 +68,7 @@ from stack_traffic.oak_camera import (
 from stack_traffic.stopline_detector import (
     StopLineDetection,
     detect_stop_line,
+    detect_stop_line_from_yolo_result,
     make_stopline_depth_bbox,
     stable_stopline_y,
     stopline_mask_in_frame,
@@ -148,6 +150,26 @@ def get_traffic_light_class_ids(names) -> list[int]:
         int(class_id)
         for class_id, class_name in items
         if is_traffic_light_class(str(class_name))
+    )
+
+
+def get_stop_line_class_ids(names) -> list[int]:
+    """모델 label에서 stop-line class ID만 추출한다."""
+    if isinstance(names, dict):
+        items = names.items()
+    elif isinstance(names, (list, tuple)):
+        items = enumerate(names)
+    else:
+        return []
+    return sorted(
+        int(class_id)
+        for class_id, class_name in items
+        if str(class_name)
+        .lower()
+        .replace("_", " ")
+        .replace("-", " ")
+        .strip()
+        == "stop line"
     )
 
 
@@ -413,6 +435,30 @@ class StackTrafficNode(Node):
                 "모델 label에서 traffic light class를 찾지 못해 "
                 "전체 class 추론을 사용합니다."
             )
+        self.stopline_model = None
+        self.stopline_class_ids: list[int] = []
+        stopline_model_path = None
+        if (
+            self.stopline_detection_enabled
+            and self.stopline_detector_type == "yolo_seg"
+        ):
+            stopline_model_path = self._resolve_stopline_model_path()
+            if not stopline_model_path.exists():
+                raise FileNotFoundError(
+                    "정지선 segmentation 모델을 찾을 수 없습니다: "
+                    f"{stopline_model_path}. models/stopline_yolov8s_seg.pt에 "
+                    "배치하거나 -p stopline_model_path:=/path/to/best.pt로 "
+                    "지정하세요."
+                )
+            self.stopline_model = YOLO(str(stopline_model_path))
+            self.stopline_class_ids = get_stop_line_class_ids(
+                self.stopline_model.names
+            )
+            if not self.stopline_class_ids:
+                raise ValueError(
+                    "정지선 모델 label에 stop_line class가 없습니다: "
+                    f"{self.stopline_model.names}"
+                )
         self.camera_source = parse_camera_source(self.camera_source_text)
         self.capture = None
         self.oak_camera = None
@@ -486,6 +532,10 @@ class StackTrafficNode(Node):
             f"red_vote={self.vote_window}/{self.minimum_red_votes} "
             f"green_vote={self.vote_window}/{self.minimum_green_votes} "
             f"stopline={int(self.stopline_detection_enabled)} "
+            f"stopline_detector={self.stopline_detector_type} "
+            f"stopline_model={stopline_model_path or '-'} "
+            f"stopline_yolo_conf={self.stopline_yolo_confidence_threshold:.2f} "
+            f"stopline_yolo_imgsz={self.stopline_yolo_image_size} "
             f"stopline_roi=[{self.stopline_roi_x_min:.2f},"
             f"{self.stopline_roi_y_min:.2f}-"
             f"{self.stopline_roi_x_max:.2f},"
@@ -690,6 +740,10 @@ class StackTrafficNode(Node):
         self.declare_parameter("minimum_depth_valid_pixels", 10)
         # 하단 RGB 정지선 + OAK 정렬 depth 진단. 정지 임계값 0은 출력만 한다.
         self.declare_parameter("stopline_detection_enabled", False)
+        self.declare_parameter("stopline_detector_type", "color")
+        self.declare_parameter("stopline_model_path", "")
+        self.declare_parameter("stopline_yolo_confidence_threshold", 0.35)
+        self.declare_parameter("stopline_yolo_image_size", 640)
         self.declare_parameter("stopline_roi_x_min", 0.08)
         self.declare_parameter("stopline_roi_y_min", 0.48)
         self.declare_parameter("stopline_roi_x_max", 0.92)
@@ -943,6 +997,18 @@ class StackTrafficNode(Node):
         )
         self.stopline_detection_enabled = bool(
             self.get_parameter("stopline_detection_enabled").value
+        )
+        self.stopline_detector_type = str(
+            self.get_parameter("stopline_detector_type").value
+        ).strip().lower()
+        self.stopline_model_path = str(
+            self.get_parameter("stopline_model_path").value
+        ).strip()
+        self.stopline_yolo_confidence_threshold = float(
+            self.get_parameter("stopline_yolo_confidence_threshold").value
+        )
+        self.stopline_yolo_image_size = int(
+            self.get_parameter("stopline_yolo_image_size").value
         )
         self.stopline_roi_x_min = float(
             self.get_parameter("stopline_roi_x_min").value
@@ -1307,6 +1373,16 @@ class StackTrafficNode(Node):
             raise ValueError(
                 "stopline_roi_y_min/y_max는 0~1 안에서 min < max여야 합니다."
             )
+        if self.stopline_detector_type not in ("color", "yolo_seg"):
+            raise ValueError(
+                "stopline_detector_type은 color 또는 yolo_seg여야 합니다."
+            )
+        if not 0.0 <= self.stopline_yolo_confidence_threshold <= 1.0:
+            raise ValueError(
+                "stopline_yolo_confidence_threshold는 0~1이어야 합니다."
+            )
+        if self.stopline_yolo_image_size < 32:
+            raise ValueError("stopline_yolo_image_size는 32 이상이어야 합니다.")
         if not 0 <= self.stopline_minimum_value <= 255:
             raise ValueError("stopline_minimum_value는 0~255여야 합니다.")
         if not 0 <= self.stopline_maximum_saturation <= 255:
@@ -1501,6 +1577,13 @@ class StackTrafficNode(Node):
         share_dir = Path(get_package_share_directory("stack_traffic"))
         return share_dir / "models" / "yolov8n.pt"
 
+    def _resolve_stopline_model_path(self) -> Path:
+        if self.stopline_model_path:
+            return Path(self.stopline_model_path).expanduser().resolve()
+
+        share_dir = Path(get_package_share_directory("stack_traffic"))
+        return share_dir / "models" / "stopline_yolov8s_seg.pt"
+
     def _read_camera(
         self,
     ) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
@@ -1645,54 +1728,84 @@ class StackTrafficNode(Node):
         if not self.stopline_detection_enabled:
             return self._empty_stopline_runtime()
 
-        detection = detect_stop_line(
-            frame=frame,
-            roi_x_min=self.stopline_roi_x_min,
-            roi_y_min=self.stopline_roi_y_min,
-            roi_x_max=self.stopline_roi_x_max,
-            roi_y_max=self.stopline_roi_y_max,
-            minimum_value=self.stopline_minimum_value,
-            maximum_saturation=self.stopline_maximum_saturation,
-            adaptive_percentile=self.stopline_adaptive_percentile,
-            adaptive_margin=self.stopline_adaptive_margin,
-            local_contrast_enabled=self.stopline_local_contrast_enabled,
-            local_contrast_minimum_value=(
-                self.stopline_local_contrast_minimum_value
-            ),
-            local_contrast_delta=self.stopline_local_contrast_delta,
-            local_contrast_background_ratio=(
-                self.stopline_local_contrast_background_ratio
-            ),
-            local_contrast_clahe_clip_limit=(
-                self.stopline_local_contrast_clahe_clip_limit
-            ),
-            edge_pair_enabled=self.stopline_edge_pair_enabled,
-            edge_pair_canny_low=self.stopline_edge_pair_canny_low,
-            edge_pair_canny_high=self.stopline_edge_pair_canny_high,
-            edge_pair_minimum_length_ratio=(
-                self.stopline_edge_pair_minimum_length_ratio
-            ),
-            edge_pair_maximum_angle_difference_deg=(
-                self.stopline_edge_pair_maximum_angle_difference_deg
-            ),
-            edge_pair_minimum_interior_contrast=(
-                self.stopline_edge_pair_minimum_interior_contrast
-            ),
-            horizontal_close_ratio=(
-                self.stopline_horizontal_close_ratio
-            ),
-            minimum_width_ratio=self.stopline_minimum_width_ratio,
-            minimum_aspect_ratio=self.stopline_minimum_aspect_ratio,
-            minimum_fill_ratio=self.stopline_minimum_fill_ratio,
-            minimum_row_coverage=(
-                self.stopline_minimum_row_coverage
-            ),
-            minimum_thickness_px=self.stopline_minimum_thickness_px,
-            maximum_thickness_ratio=(
-                self.stopline_maximum_thickness_ratio
-            ),
-            maximum_angle_deg=self.stopline_maximum_angle_deg,
-        )
+        if self.stopline_detector_type == "yolo_seg":
+            roi_bbox = normalized_roi_to_bbox(
+                frame.shape,
+                self.stopline_roi_x_min,
+                self.stopline_roi_y_min,
+                self.stopline_roi_x_max,
+                self.stopline_roi_y_max,
+            )
+            results = self.stopline_model.predict(
+                # 학습 영상과 같은 전체 프레임 문맥을 모델에 보여 준 뒤,
+                # 아래 변환 함수에서 하단 search ROI와 겹치는 마스크만 쓴다.
+                source=frame,
+                conf=self.stopline_yolo_confidence_threshold,
+                imgsz=self.stopline_yolo_image_size,
+                classes=self.stopline_class_ids,
+                max_det=5,
+                retina_masks=True,
+                rect=True,
+                device="cpu",
+                verbose=False,
+            )
+            detection = detect_stop_line_from_yolo_result(
+                results[0] if results else None,
+                frame_shape=frame.shape,
+                roi_bbox=roi_bbox,
+                confidence_threshold=(
+                    self.stopline_yolo_confidence_threshold
+                ),
+            )
+        else:
+            detection = detect_stop_line(
+                frame=frame,
+                roi_x_min=self.stopline_roi_x_min,
+                roi_y_min=self.stopline_roi_y_min,
+                roi_x_max=self.stopline_roi_x_max,
+                roi_y_max=self.stopline_roi_y_max,
+                minimum_value=self.stopline_minimum_value,
+                maximum_saturation=self.stopline_maximum_saturation,
+                adaptive_percentile=self.stopline_adaptive_percentile,
+                adaptive_margin=self.stopline_adaptive_margin,
+                local_contrast_enabled=self.stopline_local_contrast_enabled,
+                local_contrast_minimum_value=(
+                    self.stopline_local_contrast_minimum_value
+                ),
+                local_contrast_delta=self.stopline_local_contrast_delta,
+                local_contrast_background_ratio=(
+                    self.stopline_local_contrast_background_ratio
+                ),
+                local_contrast_clahe_clip_limit=(
+                    self.stopline_local_contrast_clahe_clip_limit
+                ),
+                edge_pair_enabled=self.stopline_edge_pair_enabled,
+                edge_pair_canny_low=self.stopline_edge_pair_canny_low,
+                edge_pair_canny_high=self.stopline_edge_pair_canny_high,
+                edge_pair_minimum_length_ratio=(
+                    self.stopline_edge_pair_minimum_length_ratio
+                ),
+                edge_pair_maximum_angle_difference_deg=(
+                    self.stopline_edge_pair_maximum_angle_difference_deg
+                ),
+                edge_pair_minimum_interior_contrast=(
+                    self.stopline_edge_pair_minimum_interior_contrast
+                ),
+                horizontal_close_ratio=(
+                    self.stopline_horizontal_close_ratio
+                ),
+                minimum_width_ratio=self.stopline_minimum_width_ratio,
+                minimum_aspect_ratio=self.stopline_minimum_aspect_ratio,
+                minimum_fill_ratio=self.stopline_minimum_fill_ratio,
+                minimum_row_coverage=(
+                    self.stopline_minimum_row_coverage
+                ),
+                minimum_thickness_px=self.stopline_minimum_thickness_px,
+                maximum_thickness_ratio=(
+                    self.stopline_maximum_thickness_ratio
+                ),
+                maximum_angle_deg=self.stopline_maximum_angle_deg,
+            )
         self.stopline_y_history.append(
             detection.maximum_edge_y_px
             if detection.detected

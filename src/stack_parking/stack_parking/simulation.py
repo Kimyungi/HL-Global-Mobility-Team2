@@ -163,7 +163,7 @@ def simulate_once(
             pose = Pose2(target.x, target.y, target.yaw)
 
         if mission.state == MissionState.REVERSE and mission.space is not None:
-            rear_sensor_map = compose(pose, Pose2(-0.055, 0.0, 0.0))
+            rear_sensor_map = compose(pose, Pose2(-0.110354, 0.002473, 0.0))
             sensor_lane = between(mission.space.lane_pose_map, rear_sensor_map)
             if mode == MODE_PARALLEL:
                 geometric_clearance = sensor_lane.x - mission.space.start_x_lane

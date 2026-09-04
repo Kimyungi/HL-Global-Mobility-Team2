@@ -9,6 +9,7 @@ nohup.out
 drive_logs/
 field_logs/
 *.pt
+!src/stack_traffic/models/stopline_yolov8s_seg.pt
 
 # 세션 산출물 — 커밋 대상 아님
 mgm.log

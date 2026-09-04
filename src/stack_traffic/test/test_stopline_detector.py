@@ -7,10 +7,38 @@ import numpy as np
 
 from stack_traffic.stopline_detector import (
     detect_stop_line,
+    detect_stop_line_from_yolo_result,
     make_stopline_depth_bbox,
     stable_stopline_y,
     stopline_mask_in_frame,
 )
+
+
+class FakeBoxes:
+    def __init__(self, classes, confidences):
+        self.cls = np.asarray(classes, dtype=np.float32)
+        self.conf = np.asarray(confidences, dtype=np.float32)
+
+
+class FakeMasks:
+    def __init__(self, polygons):
+        self.xy = polygons
+
+
+class FakeSegmentationResult:
+    def __init__(
+        self,
+        classes,
+        confidences,
+        polygons,
+        names=None,
+        orig_shape=None,
+    ):
+        self.boxes = FakeBoxes(classes, confidences)
+        self.masks = FakeMasks(polygons)
+        self.names = names or {0: "stop_line", 1: "crosswalk"}
+        if orig_shape is not None:
+            self.orig_shape = orig_shape
 
 
 class TestStopLineDetector(unittest.TestCase):
@@ -227,6 +255,79 @@ class TestStopLineDetector(unittest.TestCase):
             405,
             delta=4,
         )
+
+    def test_converts_yolo_segmentation_mask_to_frame_coordinates(self):
+        result = FakeSegmentationResult(
+            classes=[0],
+            confidences=[0.82],
+            polygons=[
+                np.asarray(
+                    [[20, 100], [480, 105], [480, 125], [20, 120]],
+                    dtype=np.float32,
+                )
+            ],
+        )
+
+        detection = detect_stop_line_from_yolo_result(
+            result,
+            frame_shape=(480, 640, 3),
+            roi_bbox=(70, 220, 570, 470),
+        )
+
+        self.assertTrue(detection.detected)
+        self.assertEqual(detection.bbox, (90, 320, 551, 346))
+        self.assertAlmostEqual(detection.score, 0.82, places=2)
+        self.assertGreater(detection.maximum_edge_y_px, 340)
+        self.assertEqual(detection.white_mask.shape, (250, 500))
+        self.assertGreater(np.count_nonzero(detection.white_mask), 0)
+
+    def test_yolo_conversion_rejects_wrong_class_and_low_confidence(self):
+        polygon = np.asarray(
+            [[20, 100], [480, 100], [480, 120], [20, 120]],
+            dtype=np.float32,
+        )
+        result = FakeSegmentationResult(
+            classes=[1, 0],
+            confidences=[0.99, 0.20],
+            polygons=[polygon, polygon],
+        )
+
+        detection = detect_stop_line_from_yolo_result(
+            result,
+            frame_shape=(480, 640, 3),
+            roi_bbox=(70, 220, 570, 470),
+            confidence_threshold=0.35,
+        )
+
+        self.assertFalse(detection.detected)
+        self.assertIsNone(detection.bbox)
+
+    def test_yolo_full_frame_result_is_clipped_to_search_roi(self):
+        result = FakeSegmentationResult(
+            classes=[0, 0],
+            confidences=[0.90, 0.80],
+            polygons=[
+                np.asarray(
+                    [[20, 80], [620, 80], [620, 110], [20, 110]],
+                    dtype=np.float32,
+                ),
+                np.asarray(
+                    [[90, 320], [550, 325], [550, 345], [90, 340]],
+                    dtype=np.float32,
+                ),
+            ],
+            orig_shape=(480, 640),
+        )
+
+        detection = detect_stop_line_from_yolo_result(
+            result,
+            frame_shape=(480, 640, 3),
+            roi_bbox=(70, 220, 570, 470),
+        )
+
+        self.assertTrue(detection.detected)
+        self.assertEqual(detection.bbox, (90, 320, 551, 346))
+        self.assertAlmostEqual(detection.score, 0.80, places=2)
 
 
 if __name__ == "__main__":

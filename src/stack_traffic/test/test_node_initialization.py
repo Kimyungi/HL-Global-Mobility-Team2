@@ -1,5 +1,6 @@
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -17,6 +18,10 @@ class FakeYolo:
     def predict(self, **_kwargs):
         self.predict_calls += 1
         return []
+
+
+class FakeStopLineYolo(FakeYolo):
+    names = {0: "stop_line", 1: "crosswalk", 2: "other_road_marking"}
 
 
 class FakeOakCamera:
@@ -142,6 +147,55 @@ class TestNodeInitialization(unittest.TestCase):
             self.assertTrue(node.camera_fault_latched)
             self.assertTrue(node.stop_required_latched)
             node._publish.assert_called_once_with(True, -1.0)
+        finally:
+            if node is not None:
+                node.destroy_node()
+            rclpy.shutdown()
+
+    def test_yolo_seg_stopline_model_is_loaded_only_when_selected(self):
+        os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
+        weights = (
+            Path(__file__).parents[1]
+            / "models"
+            / "stopline_yolov8s_seg.pt"
+        )
+        rclpy.init(
+            args=[
+                "--ros-args",
+                "-p",
+                "camera_backend:=oak",
+                "-p",
+                "oak_depth_enabled:=false",
+                "-p",
+                "stopline_detection_enabled:=true",
+                "-p",
+                "stopline_detector_type:=yolo_seg",
+                "-p",
+                f"stopline_model_path:={weights}",
+            ]
+        )
+        node = None
+        traffic_model = FakeYolo("traffic")
+        stopline_model = FakeStopLineYolo("stopline")
+        try:
+            with (
+                patch(
+                    "stack_traffic.node.YOLO",
+                    side_effect=[traffic_model, stopline_model],
+                ),
+                patch("stack_traffic.node.OakRgbdCamera", FakeOakCamera),
+            ):
+                node = StackTrafficNode()
+
+            self.assertIs(node.model, traffic_model)
+            self.assertIs(node.stopline_model, stopline_model)
+            self.assertEqual(node.stopline_class_ids, [0])
+            runtime = node._process_stopline(
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                None,
+            )
+            self.assertFalse(runtime.detection.detected)
+            self.assertEqual(stopline_model.predict_calls, 1)
         finally:
             if node is not None:
                 node.destroy_node()

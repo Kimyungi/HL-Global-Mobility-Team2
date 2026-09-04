@@ -115,7 +115,7 @@
       wheelbase_m: 0.595
       min_turn_radius_m: 1.15
     lidar:
-      rear_x_m: -0.055
+      rear_x_m: -0.110354
 
     icp:
       scan_voxel_m: 0.06

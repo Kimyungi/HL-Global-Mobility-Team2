@@ -12,7 +12,8 @@
       # its shorter cutoff only inside stack_parking's cloud filter.
       range_max: 12.0
     sensors:
-      # 앞/뒤를 기준으로 고정. 좌우 보정 결과는 b1/b2 x/y/yaw에만 반영한다.
+      # a1을 고정 기준으로 두고 a2/b1/b2를 긴 벽 공동 보정으로 정렬한다.
+      # 시야각은 보정 대상이 아니며 아래 고정값을 그대로 유지한다.
       a1:
         topic: /lidar/a1/scan
         x: 0.760
@@ -25,9 +26,10 @@
         range_offset_m: 0.069
       a2:
         topic: /lidar/a2/scan
-        x: -0.055
-        y: 0.000
-        yaw_deg: 90.0
+        # 2026-09-02 fixed-mount joint wall calibration
+        x: -0.110354
+        y: 0.002473
+        yaw_deg: 93.410120
         fov_min_deg: 20.0
         fov_max_deg: 160.0
         min_range: 0.15
@@ -35,10 +37,10 @@
         range_offset_m: 0.069
       b1:
         topic: /lidar/b1/scan
-        # 2026-09-01 front/rear anchor wall calibration (RMS 0.0099 m)
-        x: 0.294739
-        y: 0.171568
-        yaw_deg: 2.827857
+        # 2026-09-02 fixed-mount joint wall calibration
+        x: 0.215329
+        y: 0.211549
+        yaw_deg: 1.703610
         fov_min_deg: 35.0
         fov_max_deg: 145.0
         min_range: 0.15
@@ -46,10 +48,10 @@
         range_offset_m: 0.069
       b2:
         topic: /lidar/b2/scan
-        # 2026-09-01 front/rear anchor wall calibration (RMS 0.0065 m)
-        x: 0.302170
-        y: -0.224331
-        yaw_deg: -179.762631
+        # 2026-09-02 fixed-mount joint wall calibration
+        x: 0.246203
+        y: -0.225131
+        yaw_deg: -177.787378
         fov_min_deg: 35.0
         fov_max_deg: 145.0
         min_range: 0.15
