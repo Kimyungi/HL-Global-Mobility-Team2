@@ -252,6 +252,13 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // 되레 멈춰 세운다. 래치하지 않는다 — 위치로 정해지는 값이라 구간을 벗어나면
   // 평소 히스테리시스(신뢰도 N주기 + 트랙 재합류)로 자연 복귀한다.
   const bool gps_only_zone = s.gps_gps_only_zone && s.gps_path.n > 0;
+  // A GPS parking zone owns the approach while stack_parking is still
+  // mapping and searching for a space. Follow the existing GPS waypoint
+  // instead of continuing on a camera lane or a synthetic straight target.
+  // Once space_found rises, PARKING remains the higher-priority transition.
+  const bool parking_waypoint_zone =
+    s.gps_parking_zone && s.gps_path.n > 0;
+  const bool waypoint_forced_zone = gps_only_zone || parking_waypoint_zone;
   const bool traffic_entry = st.params.traffic_state_enabled != 0 &&
     s.traffic_red_active;
   // ★ 구간 안에서는 LANE 복귀 카운터를 **세지 않는다**(0으로 묶는다).
@@ -261,7 +268,7 @@ void transition(const CoreSnapshot & s, CoreState & st)
   //   같은 유형의 버그다(CLAUDE.md §4 히스테리시스 규약: "N주기 연속"은 실제로
   //   전이가 가능한 동안 세어야 한다). 구간을 벗어난 뒤 새로 n_cycles(0.5s) 동안
   //   신뢰도가 유지되고 트랙에도 붙어 있어야 LANE으로 간다.
-  if (gps_only_zone) {
+  if (waypoint_forced_zone) {
     st.lane_high_cnt = 0;
   }
 
@@ -293,7 +300,7 @@ void transition(const CoreSnapshot & s, CoreState & st)
         st.state = MGM_STATE_PARKING;
       } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
-      } else if (gps_only_zone || st.lane_low_cnt >= st.params.n_cycles) {
+      } else if (waypoint_forced_zone || st.lane_low_cnt >= st.params.n_cycles) {
         // 구간 진입은 **즉시** 내려간다(히스테리시스 없음) — 차선을 못 믿는
         // 구간이라고 사람이 지정한 곳이므로, 신뢰도가 높게 나오는 동안 기다릴
         // 이유가 없다. 나가는 쪽은 평소 조건(신뢰도 + 재합류)을 그대로 지킨다.
@@ -308,7 +315,7 @@ void transition(const CoreSnapshot & s, CoreState & st)
         st.state = MGM_STATE_PARKING;
       } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
-      } else if (!gps_only_zone && st.return_hold_left == 0 &&
+      } else if (!waypoint_forced_zone && st.return_hold_left == 0 &&
         st.lane_high_cnt >= st.params.n_cycles && rejoined)
       {
         // 전이 조건 3개: ① 복귀 보류 시간 경과 ② 차선 신뢰도 히스테리시스

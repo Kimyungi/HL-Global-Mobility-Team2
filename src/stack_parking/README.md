@@ -56,6 +56,9 @@ ros2 topic pub --once /parking/gps_command std_msgs/msg/String \
   "{data: 'start parallel left'}"
 ```
 
+주차 구역에 진입한 뒤 공간이 확정되기 전까지는 MGM이 기존 GPS waypoint를
+따라 전진한다. `space_found=true`가 되면 PARKING 경로로 전환한다.
+
 `parking_mode=NONE`인 기존/recorded `GpsPath` 메시지는
 `parking_params.yaml`의 `gps_default_mode`/`gps_default_side`를 사용해 호환한다.
 
@@ -72,8 +75,8 @@ ros2 topic pub --once /parking/manual_command std_msgs/msg/String "{data: cancel
 ```
 
 단독 launch와 실제 `stack_gps`를 함께 실행하면 `/perception/gps_path` publisher가
-둘이 되므로 금지한다. SCANNING 중 차량 직진은 기존 lane source를 쓰거나 bench에서
-수동 이동한다.
+둘이 되므로 금지한다. 실차 GPS 주차 구역의 SCANNING 구간은 waypoint를 사용하고,
+GPS 없는 bench에서는 합성 waypoint 또는 수동 이동을 사용한다.
 
 ## 실행과 토픽
 

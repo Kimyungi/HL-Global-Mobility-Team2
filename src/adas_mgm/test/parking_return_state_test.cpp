@@ -88,12 +88,43 @@ void testWaypointReturnsToWaypoint()
     "WAYPOINT-origin parking must return to WAYPOINT");
 }
 
+void testParkingSearchUsesWaypoint()
+{
+  CoreState state{};
+  mgm_init(state, params());
+  CoreSnapshot snapshot = input();
+  snapshot.gps_parking_zone = true;
+  snapshot.parking_space_found = false;
+
+  CoreOutput output = mgm_step(snapshot, state);
+  check(
+    output.state == MGM_STATE_WAYPOINT,
+    "parking-zone search must immediately use GPS WAYPOINT");
+  check(
+    output.path_source == MGM_SRC_GPS,
+    "parking-zone search must select the GPS path");
+
+  for (int i = 0; i < 5; ++i) {
+    output = mgm_step(snapshot, state);
+  }
+  check(
+    output.state == MGM_STATE_WAYPOINT,
+    "parking-zone search must not return to LANE before space detection");
+
+  snapshot.parking_space_found = true;
+  output = mgm_step(snapshot, state);
+  check(
+    output.state == MGM_STATE_PARKING,
+    "detected parking space must hand waypoint approach to PARKING");
+}
+
 }  // namespace
 
 int main()
 {
   testLaneReturnsToLane();
   testWaypointReturnsToWaypoint();
+  testParkingSearchUsesWaypoint();
   if (failures == 0) {
     std::puts("parking_return_state_test: PASS");
   }

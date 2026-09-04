@@ -71,7 +71,10 @@ TransitionRecord explainTransition(
   const int32_t n = p.n_cycles;
 
   if (from == MGM_STATE_LANE && to == MGM_STATE_WAYPOINT) {
-    if (s.gps_gps_only_zone && s.gps_path.n > 0) {
+    if (s.gps_parking_zone && s.gps_path.n > 0) {
+      r.rule = "lane→waypoint: GPS 주차구간 탐색 진입 (웨이포인트 추종)";
+      r.spec_match = true;
+    } else if (s.gps_gps_only_zone && s.gps_path.n > 0) {
       r.rule = "lane→waypoint: GPS 전용 구간 진입 (즉시, 히스테리시스 없음)";
       r.spec_match = true;
     } else {
@@ -81,11 +84,12 @@ TransitionRecord explainTransition(
     }
   } else if (from == MGM_STATE_WAYPOINT && to == MGM_STATE_LANE) {
     r.rule = "waypoint→lane: 신뢰도 > lane_conf_return 가 n_cycles 연속 "
-      "+ 트랙 재합류(cross ≤ lane_entry_max_cross) + GPS 전용 구간 밖";
+      "+ 트랙 재합류(cross ≤ lane_entry_max_cross) + 강제 waypoint 구간 밖";
     const bool cross_ok = p.lane_entry_max_cross <= 0.0f ||
       s.gps_cross_track <= p.lane_entry_max_cross;
     r.spec_match = s.lane_confidence > p.lane_conf_return &&
       lane_high_cnt_before >= n - 1 && cross_ok && !s.gps_gps_only_zone &&
+      !s.gps_parking_zone &&
       return_hold_left_before <= 1;
   } else if (to == MGM_STATE_TRAFFIC) {
     r.rule = "lane/waypoint→traffic: 확정 적색";

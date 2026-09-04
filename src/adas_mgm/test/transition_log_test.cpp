@@ -69,6 +69,16 @@ int main()
     "GPS-only flag without a GPS path must be logged as a confidence transition");
 
   s = CoreSnapshot{};
+  s.gps_path.n = 1;
+  s.gps_parking_zone = true;
+  record = explainTransition(
+    MGM_STATE_LANE, MGM_STATE_WAYPOINT, s, p,
+    0, 0, 0, 0, 0.5f, 103);
+  check(
+    record.spec_match && record.rule.find("주차구간") != std::string::npos,
+    "parking-zone waypoint approach must be identified in the transition log");
+
+  s = CoreSnapshot{};
   record = explainTransition(
     MGM_STATE_AVOID, MGM_STATE_WAYPOINT, s, p,
     0, 0, 99, 0, 0.5f, 200);
