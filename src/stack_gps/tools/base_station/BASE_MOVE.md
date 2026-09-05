@@ -54,6 +54,9 @@ python3 read_base_position.py
 **가는 지점 것 한 줄만 그대로 복붙한다.**
 
 ```bash
+# ── 용인 운전면허시험장 (yongin_license_20260905)
+python3 setup_base.py --lat 37.288898139 --lon 127.107505461 --height 114.4403
+
 # ── 원주 운전면허시험장 (outdoor_20260818)
 python3 setup_base.py --lat 37.300314764 --lon 127.979451327 --height 224.2647
 
@@ -101,6 +104,7 @@ python3 ~/FMA_ws/src/stack_gps/tools/base_station/rtcm_server.py \
 
 | 지점 | 코스 CSV |
 |---|---|
+| 용인 운전면허시험장 (`yongin_license_20260905`) | **기록 예정 — 기존 코스 사용 금지** |
 | 원주 운전면허시험장 (`outdoor_20260818`) | `waypoints_wonju_license_20260818_160511.csv` (지정 구간 3종 포함) |
 | 한라대학교 (`halla_20260819`, MBD 시험) | `waypoints_halla_univ_20260819_182657.csv` (303점, 전 구간 FIXED) |
 
