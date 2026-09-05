@@ -10,6 +10,7 @@ EVK-F9P 를 자체 RTK 베이스로 만들고 차량의 FST-UEF9P 로버까지 R
 | **지금 어느 좌표가 등록돼 있나 / 어느 코스가 어느 지점 것인가** | [`BASE_LOCATIONS.md`](BASE_LOCATIONS.md) — 좌표 레지스트리 |
 | **처음 세우는 자리의 좌표를 측량한다** | [`BASE_SURVEY.md`](BASE_SURVEY.md) |
 | **이미 등록된 지점끼리 옮긴다** | [`BASE_MOVE.md`](BASE_MOVE.md) |
+| **용인 운전면허시험장 확정 좌표·재가동 절차** | [`FINAL_BASE_GPS_SETTING_IN_YONGIN.md`](FINAL_BASE_GPS_SETTING_IN_YONGIN.md) |
 | 팀원 PC 를 베이스 PC 로 세팅한다 | 이 문서 아래 |
 | 산업용 PC 세팅 | [`INDUSTRIAL_PC_SETUP.md`](INDUSTRIAL_PC_SETUP.md) |
 
