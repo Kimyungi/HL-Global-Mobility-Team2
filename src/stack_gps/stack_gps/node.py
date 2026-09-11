@@ -77,13 +77,13 @@ def _parse_latlon_spec(spec, per, name, logger):
 
 
 def _load_zones_file(path, logger):
-    """mark_zone 이 쓴 구간 YAML → ([(lat,lon)...], [(lat1,lon1,lat2,lon2)...]).
+    """구간 YAML → 정지점, 회피/GPS 구간, 주차점 목록.
 
     파일이 없으면 조용히 빈 목록 — 구간을 안 쓰는 run 이 정상이기 때문이다.
     형식이 깨졌거나 회피 구간의 끝점이 없으면 **그 항목만 버리고 경고**한다:
     구간 하나 때문에 주행 전체를 막는 것도, 조용히 무시하는 것도 나쁘다.
     """
-    empty = ([], [], [])
+    empty = ([], [], [], [])
     if not path:
         return empty
     if not os.path.isfile(path):
@@ -118,9 +118,28 @@ def _load_zones_file(path, logger):
 
     avoid = _pairs('avoid_zones', '회피 구간')
     gps_only = _pairs('gps_only_zones', 'GPS 전용 구간')
+    parking = []
+    for i, e in enumerate(z.get('parking_points') or []):
+        try:
+            mode = str(e['mode']).strip().lower()
+            if mode in ('t', 't_parking', 'perpendicular'):
+                mode = 'perpendicular'
+            elif mode in ('parallel', 'parallel_parking'):
+                mode = 'parallel'
+            else:
+                raise ValueError(f'알 수 없는 mode={mode!r}')
+            lat = float(e['lat'])
+            lon = float(e['lon'])
+            parking.append((lat, lon, mode))
+            note = e.get('note') or ''
+            logger.info(
+                f"  구간 파일 주차 지점 {i + 1}: {lat:.7f},{lon:.7f} "
+                f"({mode}{f', {note}' if note else ''})")
+        except (KeyError, TypeError, ValueError) as error:
+            logger.warn(f"  주차 지점 {i + 1} 형식 오류 — 무시: {e!r} ({error})")
     logger.info(f"구간 파일 로드: {path} (정지 {len(stops)} · 회피 {len(avoid)} · "
-                f"GPS전용 {len(gps_only)})")
-    return stops, avoid, gps_only
+                f"GPS전용 {len(gps_only)} · 주차 {len(parking)})")
+    return stops, avoid, gps_only, parking
 
 
 class StackGpsNode(Node):
@@ -201,6 +220,8 @@ class StackGpsNode(Node):
         self.declare_parameter('avoid_zone_latlon', '')
         self.declare_parameter('gps_only_zone_latlon', '')
         self.declare_parameter('stop_zone_span_m', 1.0)      # 정지 구간 폭 [m]
+        # parking_points 한 점을 이 길이의 웨이포인트 구간으로 넓힌다.
+        self.declare_parameter('parking_zone_span_m', 1.0)
         # 회피 허용 구간을 **앞쪽으로** 늘리는 길이 [m] (2026-08-18 실차에서 도출).
         # 사람은 콘이 있는 자리를 구간으로 찍지만, 회피 판단(avoidable)은 감지
         # 거리 3m 안에서 TTC 가 문턱(1.5s) 위일 때만 성립한다 — 구간이 콘에서
@@ -249,8 +270,9 @@ class StackGpsNode(Node):
             f"곡선ff {self.engine.curve_ff:.2f} 곡선당김 {self.engine.curve_margin:.1f}")
         self.get_logger().info(
             f"웨이포인트 {len(pts)}개 로드: {csv_path} "
-            f"(accel {accel or '없음'}, T parking {parking or '없음'}, "
-            f"parallel parking {parallel_parking or '없음'})")
+            f"(accel {accel or '없음'}, "
+            f"T parking {self.engine.parking_ranges or '없음'}, "
+            f"parallel parking {self.engine.parallel_parking_ranges or '없음'})")
 
         rtcm_host = p('rtcm_host').value
         if rtcm_host.lower() in ('off', 'none'):  # launch 인자는 빈 값 불가
@@ -541,8 +563,42 @@ class StackGpsNode(Node):
         snap_max = float(p('stop_zone_snap_max_m').value)
         span = float(p('stop_zone_span_m').value)
 
-        file_stops, file_avoid, file_gps_only = _load_zones_file(
+        file_stops, file_avoid, file_gps_only, file_parking = _load_zones_file(
             p('zones_file').value, log)
+
+        # 주차 지점은 위치만 YAML에 보존하고, 현재 트랙을 로드할 때 짧은 인덱스
+        # 구간으로 변환한다. 트랙을 다시 기록해 인덱스가 바뀌어도 장소와 모드는
+        # 유지된다. 무엇을 수행할지는 MGM/stack_parking이 결정한다.
+        parking_span = float(p('parking_zone_span_m').value)
+        perpendicular_ranges = list(self.engine.parking_ranges)
+        parallel_ranges = list(self.engine.parallel_parking_ranges)
+
+        def _overlaps(candidate, ranges):
+            return any(max(candidate[0], other[0]) <= min(candidate[1], other[1])
+                       for other in ranges)
+
+        for k, (lat, lon, mode) in enumerate(file_parking):
+            a, b, d = self.engine.range_from_latlon(lat, lon, parking_span)
+            if d > snap_max:
+                log.error(
+                    f"주차 지점 {k + 1} ({lat:.7f},{lon:.7f})이 트랙에서 {d:.1f}m "
+                    f"떨어져 있음 (한계 {snap_max:.1f}m) — 다른 코스의 좌표로 보고 **무시**한다")
+                continue
+            candidate = (a, b)
+            own = perpendicular_ranges if mode == 'perpendicular' else parallel_ranges
+            other = parallel_ranges if mode == 'perpendicular' else perpendicular_ranges
+            if _overlaps(candidate, other):
+                log.error(
+                    f"주차 지점 {k + 1}의 {mode} 구간 {a}~{b}가 반대 주차 모드와 겹침 "
+                    "— 모드가 모호하므로 **무시**한다")
+                continue
+            if candidate not in own:
+                own.append(candidate)
+            log.info(f"주차 지점 {k + 1}: {mode} idx {a}~{b} "
+                     f"(트랙 스냅 {d:.2f}m, 폭 {parking_span:.1f}m)")
+
+        self.engine.parking_ranges = perpendicular_ranges
+        self.engine.parallel_parking_ranges = parallel_ranges
 
         stop_ranges = []
         for k, (lat, lon) in enumerate(

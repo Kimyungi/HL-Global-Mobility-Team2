@@ -1,0 +1,15 @@
+track: waypoints_halla_reference_path_04.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones:
+- start: {lat: 37.30381051, lon: 127.90710090, note: rectangle zone 2 entry}
+  end: {lat: 37.30376514, lon: 127.90704653, note: rectangle zone 2 exit}
+- start: {lat: 37.30357394, lon: 127.90681739, note: rectangle zone 1 entry}
+  end: {lat: 37.30352422, lon: 127.90679021, note: rectangle zone 1 exit}
+parking_points:
+- mode: parallel
+  lat: 37.30358042
+  lon: 127.90682516
+  east_m: -62.7363
+  north_m: -65.911
+  note: 평행 주차

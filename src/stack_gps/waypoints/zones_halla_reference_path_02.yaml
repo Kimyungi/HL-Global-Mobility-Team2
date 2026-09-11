@@ -1,0 +1,8 @@
+track: waypoints_halla_reference_path_02.csv
+stop_points: []
+avoid_zones: []
+# 경로 2는 전체를 카메라 전이 없는 순수 웨이포인트 주행으로 사용한다.
+gps_only_zones:
+- start: {lat: 37.30414727, lon: 127.90756213, note: path 2 start}
+  end: {lat: 37.30413351, lon: 127.90748153, note: path 2 end}
+parking_points: []

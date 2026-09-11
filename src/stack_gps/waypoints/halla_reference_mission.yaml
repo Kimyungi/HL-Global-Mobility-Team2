@@ -1,0 +1,54 @@
+# 한라대학교 기준경로 1~7 시나리오 메타데이터.
+# ENU 원점은 기존 한라대 RTK FIXED 웨이포인트 idx 0이다.
+origin:
+  lat: 37.3041743
+  lon: 127.9075328
+
+routes:
+- id: 1
+  file: waypoints_halla_reference_path_01.csv
+- id: 2
+  file: waypoints_halla_reference_path_02.csv
+  drive_mode: waypoint_only
+- id: 3
+  file: waypoints_halla_reference_path_03.csv
+- id: 4
+  file: waypoints_halla_reference_path_04.csv
+- id: 5
+  file: waypoints_halla_reference_path_05.csv
+- id: 6
+  file: waypoints_halla_reference_path_06.csv
+- id: 7
+  file: waypoints_halla_reference_path_07.csv
+
+# 사각형의 자세한 네 꼭짓점과 위경도는 halla_reference_zone_corners.csv가 정본이다.
+gps_only_rectangles:
+- id: 1
+  east_min: -70.0
+  east_max: -57.8346
+  north_min: -80.0
+  north_max: -66.5645
+- id: 2
+  east_min: -43.1667
+  east_max: -38.1339
+  north_min: -50.1861
+  north_max: -40.1591
+- id: 3
+  east_min: -20.0
+  east_max: -5.16
+  north_min: -21.0
+  north_max: -9.58929
+
+parking_points:
+- mode: perpendicular
+  east_m: -31.8932
+  north_m: -33.4497
+  lat: 37.30387291
+  lon: 127.90717306
+  note: T자 주차
+- mode: parallel
+  east_m: -62.7363
+  north_m: -65.911
+  lat: 37.30358042
+  lon: 127.90682516
+  note: 평행 주차

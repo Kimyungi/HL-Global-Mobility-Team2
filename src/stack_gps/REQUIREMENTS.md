@@ -14,6 +14,10 @@ GPS·IMU 융합, RTK, waypoint ref
   10Hz로 싣는다. yaw의 0점은 임의이므로 절대 ENU heading으로 쓰지 않는다.
   - `points[]`: 전역 waypoint를 **vehicle frame으로 변환 완료한** ref points. **점 개수: 1개** (팀 합의 2026-07-29) — 추종 목표 waypoint 하나만.
   - `accel_zone` / `parking_zone`: 구간 플래그 — 속도를 올리는 판단은 MGM 우선권 표가 한다.
+  - 트랙 옆 `zones_<이름>.yaml`의 `parking_points`는 위경도와
+    `mode: perpendicular|parallel`을 보존한다. 기동 시 현재 트랙의 짧은 인덱스
+    구간으로 변환하여 `parking_zone`/`parking_mode`만 발행하며, 주차 진입 판단과
+    기동은 MGM/`stack_parking`이 담당한다.
 - localization 보정: `/vehicle/vector` (dSPACE 상태 추정 회신, 10ms) 구독하여 GPS 갱신 사이 dead-reckoning 보정.
 - 금지: v_ref 결정·모드 판단 금지 (CLAUDE.md §5.1). accel_zone은 요구의 원천일 뿐.
 - 검증: RTK fix 상태에서 waypoint 추종 오차, GPS 음영에서 vehicle vector 보정 유지 시간.

@@ -122,6 +122,7 @@ def load_zones(path):
         with open(path) as f:
             z = yaml.safe_load(f) or {}
     z.setdefault('stop_points', [])
+    z.setdefault('parking_points', [])
     for key, _ in ZONE_KINDS.values():
         z.setdefault(key, [])
     return z
@@ -135,6 +136,7 @@ def save_zones(path, zones, track):
         '#   stop_points : 그 지점에서 정지 (정차 시간은 MGM stop_zone_hold_cycles)\n'
         '#   avoid_zones : 이 구간 안에서만 회피 허용 (MGM avoid_zone_only 와 짝)\n'
         '#   gps_only_zones : 이 구간에서는 차선 전이 없이 GPS(WAYPOINT)로만 주행\n'
+        '#   parking_points : mode(perpendicular/parallel)에 맞는 주차 위치\n'
         '# launch 가 waypoint_csv 옆의 이 파일을 자동으로 읽는다.\n')
     with open(path, 'w') as f:
         f.write(header)
