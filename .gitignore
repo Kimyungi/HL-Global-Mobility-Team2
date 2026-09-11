@@ -15,3 +15,8 @@ field_logs/
 # 세션 산출물 — 커밋 대상 아님
 mgm.log
 .cache/
+
+# integration/v2_main isolated workspace outputs
+build_v2/
+install_v2/
+log_v2/

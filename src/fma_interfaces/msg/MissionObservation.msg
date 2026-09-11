@@ -1,0 +1,10 @@
+bool recorded
+builtin_interfaces/Time stamp
+bool position_valid
+float64 x
+float64 y
+int32 track_index
+bool speed_valid
+float32 actual_speed
+uint8 zone_id
+float64 travel_distance

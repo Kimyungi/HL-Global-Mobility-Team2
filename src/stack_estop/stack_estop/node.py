@@ -601,6 +601,7 @@ class StackEstopNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
         msg.estop = self.current_final_estop
+        msg.scan_valid = not self.scan_timeout_active
         self.pub.publish(msg)
 
     def publish_heartbeat(self):

@@ -3,6 +3,7 @@ project(fma_interfaces)
 
 find_package(ament_cmake REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -13,11 +14,15 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GpsPath.msg"
   "msg/AvoidStatus.msg"
   "msg/ParkingStatus.msg"
+  "msg/ParkingCommand.msg"
+  "msg/MissionObservation.msg"
   "msg/TrafficStop.msg"
   "msg/StopLine.msg"
   "msg/EstopRequest.msg"
   "msg/CanHealth.msg"
-  DEPENDENCIES std_msgs
+  "msg/MgmState.msg"
+  "msg/ZoneContext.msg"
+  DEPENDENCIES std_msgs builtin_interfaces
 )
 
 ament_package()

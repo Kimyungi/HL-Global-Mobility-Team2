@@ -30,6 +30,8 @@ public:
   DecisionBackend & operator=(const DecisionBackend &) = delete;
 
   CoreOutput step(const CoreSnapshot & input);
+  // Called only by the control thread, at a snapshot boundary.
+  void setParkingCalibration(double timeout_s, double distance_m);
   uint8_t activeState() const;
   // 내부 상태 관찰자 (판단 아님 — 전이/정차 로그 전용).
   bool stopZoneHolding() const;

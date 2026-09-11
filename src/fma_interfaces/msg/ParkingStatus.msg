@@ -14,3 +14,24 @@ float64 dx
 float64 dy
 float64 dyaw
 uint64 update
+
+# Existing mission state, exposed for MGM command acknowledgement. COMPLETE
+# still supplies done; no new completion/failure judgment is made here.
+bool mission_active
+# Same values as GpsPath.PARKING_*: 0=none, 1=perpendicular/T, 2=parallel
+uint8 mission_mode
+
+# Actual sensor-input generation backing these points, not publication time.
+# Held on republish; zero means unproven/no generated reference. MGM applies
+# the existing provider timeout to this stamp, including transport delay.
+builtin_interfaces/Time reference_stamp
+
+# Current MGM request only. 0 denotes the legacy/manual interface.
+uint64 request_id
+bool search_active
+# Existing detector + planner produced a space/plan; localization may still run.
+bool search_space_found
+# Existing pipeline PARKING + plan + fresh localization, before execution starts.
+bool preparation_ready
+# Actual accepted localization input backing preparation_ready (not heartbeat).
+builtin_interfaces/Time preparation_stamp

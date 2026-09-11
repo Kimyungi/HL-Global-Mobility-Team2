@@ -64,10 +64,51 @@ void verifyHold(uint8_t state, const char * label)
     check(first.ref_points[i].curvature == repeated.ref_points[i].curvature, label);
   }
 }
+void verifyAvoidPriority(int32_t count)
+{
+  auto p = params();
+  p.blend_cycles = 10;
+  CoreState memory{};
+  mgm_init(memory, p);
+  memory.state = MGM_STATE_WAYPOINT;
+  memory.last_src = MGM_SRC_GPS;
+  CoreSnapshot input{};
+  input.gps_updated = true;
+  input.gps_heading_valid = true;
+  input.avoid_ttc = 10.0F;
+  setPath(input.gps_path, 2.0F, -1.0F);
+  mgm_step(input, memory);
+  input.avoid_obstacle_detected = input.avoid_avoidable = true;
+  input.avoid_updated = true;
+  input.avoid_v_suggest = 0.8F;
+  input.avoid_path.n = count;
+  for (int i = 0; i < count; ++i) {
+    input.avoid_path.pts[i] = CorePoint{1.5F + i, 0.6F, 0.0F, 0.0F};
+  }
+  auto out = mgm_step(input, memory);
+  check(memory.state == MGM_STATE_AVOID, "valid avoidance must preempt GPS");
+  const float expected_y = count == 1 ? 0.6F / MGM_NUM_POINTS : 0.6F;
+  check(std::fabs(out.ref_points[0].y - expected_y) < 1e-6F,
+    "first avoidance tick must not blend GPS reference");
+  input.gps_path.pts[0].y = -10.0F;
+  out = mgm_step(input, memory);
+  check(std::fabs(out.ref_points[0].y - expected_y) < 1e-6F,
+    "GPS updates must not change active avoidance reference");
+  input.estop = true;
+  out = mgm_step(input, memory);
+  check(out.v_ref == 0.0F, "E-stop must retain priority over avoidance");
+  input.estop = false;
+  input.avoid_maneuver_done = true;
+  out = mgm_step(input, memory);
+  check(memory.state == MGM_STATE_WAYPOINT, "completed avoidance must return to GPS");
+  check(memory.blend_left == 9, "GPS return must retain transition blending");
+}
 }  // namespace
 
 int main()
 {
+  verifyAvoidPriority(1);
+  verifyAvoidPriority(2);
   verifyHold(MGM_STATE_LANE, "LANE stale ref must hold");
   verifyHold(MGM_STATE_WAYPOINT, "WAYPOINT stale ref must hold");
   verifyHold(MGM_STATE_AVOID, "AVOID stale ref must hold");

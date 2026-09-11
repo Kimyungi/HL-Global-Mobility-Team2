@@ -1,3 +1,8 @@
+> **Integration v2_main 브랜치** — 기존 main과 별도 관리하는 실차 검증 전 통합 후보입니다.
+> 빌드/검사/실행은 [docs/INTEGRATION_V2.md](docs/INTEGRATION_V2.md),
+> 반영 목록은 [docs/INTEGRATION_V2_SCOPE.md](docs/INTEGRATION_V2_SCOPE.md)를 따릅니다.
+> 아래 기존 main 런북의 명령 대신 `scripts/v2` 진입점을 사용하세요.
+
 # FMA_ws — WHEELTEC 자율주행 시스템
 
 아키텍처·설계 결론은 [CLAUDE.md](CLAUDE.md)가 기준. 통신 바이너리 계약은 [PROTOCOL.md](src/bridge_dspace/PROTOCOL.md).

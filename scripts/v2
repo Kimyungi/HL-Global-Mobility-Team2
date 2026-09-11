@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# One source tree and one install: never inherit another workspace's ROS overlay.
+set -eo pipefail
+V2_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+V2_ACTION=${1:-check}
+case "$V2_ACTION" in
+  build|check|test|bench|vehicle|go|state|stop) ;;
+  *) echo 'Usage: scripts/v2 [build|check|test|bench|vehicle [launch arguments]|go [options]|state|stop]' >&2; exit 2 ;;
+esac
+if [[ ${FMA_V2_CLEAN:-} != "$V2_ROOT" ]]; then
+  exec env -i HOME="$HOME" USER="${USER:-}" LANG="${LANG:-C.UTF-8}" \
+    TERM="${TERM:-dumb}" DISPLAY="${DISPLAY:-}" XAUTHORITY="${XAUTHORITY:-}" \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    FMA_V2_CLEAN="$V2_ROOT" FMA_V2_WORKSPACE="$V2_ROOT" \
+    /bin/bash --noprofile --norc "$V2_ROOT/scripts/v2" "$@"
+fi
+source /opt/ros/humble/setup.bash
+cd -- "$V2_ROOT"
+if [[ "$V2_ACTION" == build ]]; then
+  exec colcon --log-base "$V2_ROOT/log_v2" build --base-paths "$V2_ROOT/src" \
+    --build-base "$V2_ROOT/build_v2" --install-base "$V2_ROOT/install_v2" \
+    --symlink-install --parallel-workers 2 \
+    --packages-up-to adas_mgm stack_traffic lidar_fusion_v2 multi_lidar_fusion \
+    --cmake-args -DBUILD_TESTING=ON -DADAS_MGM_ENABLE_GENERATED_BACKEND=OFF
+fi
+if [[ ! -f "$V2_ROOT/install_v2/local_setup.bash" ]]; then
+  echo 'v2 install missing. Run scripts/v2 build first.' >&2; exit 1
+fi
+# local_setup does not replay a cached chain of unrelated underlays.
+source "$V2_ROOT/install_v2/local_setup.bash"
+/usr/bin/python3 "$V2_ROOT/scripts/v2_check.py"
+case "$V2_ACTION" in
+  check) ;;
+  test)
+    ctest --test-dir "$V2_ROOT/build_v2/adas_mgm" --output-on-failure
+    export PYTHONPATH="$V2_ROOT/src/stack_gps:$V2_ROOT/src/stack_lane:$V2_ROOT/src/stack_parking:$V2_ROOT/src/stack_estop:$V2_ROOT/src/stack_avoid:$V2_ROOT/src/lidar_fusion_v2:$V2_ROOT/src/stack_traffic:$PYTHONPATH"
+    /usr/bin/python3 -m pytest -q src/stack_gps/test src/stack_estop/test \
+      src/stack_parking/test src/stack_avoid/test src/lidar_fusion_v2/test \
+      src/stack_traffic/test src/adas_mgm/test/test_reference_metadata.py \
+      src/adas_mgm/test/test_mission_calibration.py scripts/test_v2_launch.py
+    export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=174
+    exec /usr/bin/python3 src/adas_mgm/test/manager_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    ;;
+  bench)
+    export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=175
+    exec ros2 launch adas_mgm integration_v2_bench.launch.py
+    ;;
+  vehicle)
+    shift
+    exec ros2 launch adas_mgm REAL_VEHICLE_integration_v2.launch.py "$@"
+    ;;
+  go)
+    shift
+    exec ros2 run adas_mgm go "$@"
+    ;;
+  state) exec ros2 topic echo /adas/mgm_state ;;
+  stop) exec ros2 topic pub --once /operator/stop std_msgs/msg/Bool '{data: true}' ;;
+esac

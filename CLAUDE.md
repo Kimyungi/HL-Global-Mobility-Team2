@@ -1,5 +1,29 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> Integration v2 분리 기준: [docs/INTEGRATION_V2.md](docs/INTEGRATION_V2.md). 기존 main은 보존하며 v2 전용 소스/build/install에서만 통합한다.
+
+> **6차 기준:** [MGM_MBD_STATE_MACHINE_SPEC.md](docs/MGM_MBD_STATE_MACHINE_SPEC.md)가 현재 C++ 병행 Manager와 향후 MBD의 단일 명세다. 아래 3/4/5차와 legacy 설명은 이 명세에 종속한다.
+> Zone은 독립 GNSS generation으로 확인하며 확인 표본 수는 0=미설정이다. 정의된 Zone의 확인 기준 미설정은 ZONE_CONTEXT_UNAVAILABLE 정지로 노출한다.
+> Parking 제한 -1 및 Recovery OFF 유지. Traffic은 앞범퍼 잔여거리 1.5m 최초 seed, 실측 속도 절댓값 적분, 목표 1.0m다.
+
+> 2026-09-11 5차: Mission Zone entry는 제어권 획득이 아닌 탐색 요청이다.
+> [MGM_MISSION_PREPARATION.md](docs/MGM_MISSION_PREPARATION.md)를 우선한다.
+> IDLE → PREPARE(일반 병행 주행 유지) → 현재 요청의 Parking ready → ACTIVE.
+> Zone exit는 요청을 취소하지 않는다. 시간/거리 제한은 실차 calibration 전 미설정이며,
+> 미설정 요청은 명시적으로 취소하여 무제한 탐색을 허용하지 않는다.
+
+> 2026-09-11: `feat/state-machine`의 C++ MGM 공통 베이스 재구성은
+> 4차 안전 계층 [MGM_REFERENCE_SAFETY.md](docs/MGM_REFERENCE_SAFETY.md)를 함께 적용한다.
+> 실제 센서 입력에 근거한 Reference 생성 시각과 발행 시각을 분리한다. 기존
+> provider별 timeout을 재사용하며 invalid/stale 선택 경로는 SAFE_STOP reason으로 정지한다.
+> Mission/Avoidance 제어권을 유지하고 최종 송신 전 유효성을 다시 검사한다.
+> Recovery OFF와 rear_clear 미연결 상태는 임의 변경하지 않는다.
+> [MGM_BASE_STATE_MACHINE.md](docs/MGM_BASE_STATE_MACHINE.md)를 우선한다.
+> 3차 수정: Mission은 MISSION_ZONE의 실제 포함 여부 edge로 시작한다.
+> waypoint reached 토픽/ID trigger는 제거한다. GPS/주차 구간 정의는 stack_gps 설정을 재사용한다.
+> Navigation/Avoidance/Traffic/Safety/Mission을 병행 관리한다. 아래 단일 5상태·
+> 회피 중 신호 무시·estop에 의한 종점 해제 규칙은 legacy/generated v1.88 경로에만 해당한다.
+
 > 이 파일은 팀의 아키텍처 설계 결론을 담는다. Claude Code는 모든 세션에서 이 문서를 프로젝트의 기준으로 삼을 것.
 > 설계 변경은 반드시 이 문서를 갱신한 뒤 코드에 반영한다.
 

@@ -254,6 +254,11 @@ class StackAvoidNode(Node):
         gap = obs[0] if obs is not None else None
 
         msg = AvoidStatus()
+        msg.scan_valid = bool(
+            scan.ranges and math.isfinite(scan.angle_min)
+            and math.isfinite(scan.angle_increment) and scan.angle_increment != 0.0
+            and math.isfinite(scan.range_min) and math.isfinite(scan.range_max)
+            and scan.range_max >= scan.range_min)
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'          # points[]는 vehicle frame(후축 원점)
 
@@ -334,6 +339,8 @@ class StackAvoidNode(Node):
         # narrow 시 v_narrow 상한도 MGM 우선권 표 몫.
         msg.v_suggest = float(self.target_speed)
 
+        if msg.scan_valid and msg.points:
+            msg.reference_stamp = scan.header.stamp
         self.pub.publish(msg)
 
         # 튜닝 보조 로그(비권위적): ttc_stop 임계 확인용. 정지 결정은 MGM.

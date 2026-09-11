@@ -5,6 +5,8 @@
 //   → 실행 1: ref 조립 (§5.1/§5.6 — 포맷 변환·전환 연속 처리만)
 //   → 실행 2: 종방향 병합 (§5.6 — rate limit만, immediate_stop은 우회)
 #include "mgm_step.hpp"
+#include "manager_step.hpp"
+#include "reference_safety.hpp"
 
 #include <cmath>
 
@@ -57,6 +59,65 @@ bool paths_equal(const CorePoint * a, const CorePoint * b, int32_t n)
   }
   return true;
 }
+
+}  // namespace
+
+// Shared existing recovery entry/exit conditions; managers only supply eligibility.
+bool update_escape(const CoreSnapshot & s, CoreState & st, bool eligible)
+{
+  const bool escape_usable =
+    st.params.escape_after_cycles > 0 &&
+    st.params.escape_max_cycles > 0 &&
+    st.params.v_escape < 0.0f;
+
+  // 주행 무장 — 직전 틱의 명령 속도가 0을 넘은 적이 있는가(transition 시점의
+  // st.v 는 아직 이전 틱 값이다). 벽을 마주 보고 launch 하면 첫 틱부터 실제
+  // estop 이 참이라 v 가 0 에서 벗어나지 못하고, 그래서 영원히 무장되지 않는다.
+  if (st.v > kStoppedSpeed) {
+    st.escape_armed = true;
+  }
+
+  // 실제 estop 연속 틱. wrapper 보정이 섞인 s.estop 이 아니라 s.estop_latch_release
+  // 를 쓰는 것이 ④의 핵심이다 — 이 필드는 "신선한 실제 EstopRequest 의 estop 값"이다.
+  if (eligible && s.estop_latch_release) {
+    ++st.estop_hold_cnt;
+  } else {
+    st.estop_hold_cnt = 0;
+  }
+
+  // 후방 여유 게이트 — 진입뿐 아니라 **후진 중에도 매 틱 다시 본다**.
+  // 후진하는 동안 뒤에 뭔가 들어오면 그 자리에서 멈춰야 한다.
+  const bool rear_ok =
+    (st.params.escape_require_rear_clear == 0) || s.estop_rear_clear;
+
+  if (st.escape_phase == MGM_ESCAPE_REVERSING) {
+    ++st.escape_ticks;
+    // 종료 조건 4개: 시간 상한 · 후방 막힘 · estop 해제(장애물이 사라짐) ·
+    // 기능이 런타임에 꺼짐. 어느 쪽이든 페이즈를 닫고 카운터를 리셋한다 —
+    // 리셋 덕분에 다시 갇히면 escape_after_cycles 를 새로 채워야 후진한다
+    // (연속 후진으로 트랙에서 무한히 멀어지는 것을 시간으로 막는다).
+    if (!eligible || !escape_usable || !rear_ok || !s.estop_latch_release ||
+      st.escape_ticks >= st.params.escape_max_cycles)
+    {
+      st.escape_phase = MGM_ESCAPE_NONE;
+      st.escape_ticks = 0;
+      st.estop_hold_cnt = 0;
+    }
+  }
+
+  // 진입 판정 — 위 5개 불변식 + 연속 유지 시간. PARKING 은 제외한다(주차는
+  // parking_v_suggest 로 자체 후진을 하며, 그 판단은 stack_parking 소관이다).
+  const bool escape_entry =
+    escape_usable && st.escape_armed && rear_ok &&
+    st.escape_phase == MGM_ESCAPE_NONE &&
+    eligible &&
+    st.estop_hold_cnt >= st.params.escape_after_cycles;
+
+  return escape_entry;
+}
+
+namespace
+{
 
 // ── 판단: 스테이트 전이 (§4 전이 조건표)
 void transition(const CoreSnapshot & s, CoreState & st)
@@ -176,54 +237,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
   //  ④ estop_latch_release — **실제** EstopRequest 만 센다. §5.7 watchdog 보정이나
   //                          wait_go 대기로 걸린 estop 은 교착이 아니라 안전 장치다
   //  ⑤ 후방 여유           — escape_require_rear_clear 가 켜져 있으면 rear_clear 필수
-  const bool escape_usable =
-    st.params.escape_after_cycles > 0 &&
-    st.params.escape_max_cycles > 0 &&
-    st.params.v_escape < 0.0f;
-
-  // 주행 무장 — 직전 틱의 명령 속도가 0을 넘은 적이 있는가(transition 시점의
-  // st.v 는 아직 이전 틱 값이다). 벽을 마주 보고 launch 하면 첫 틱부터 실제
-  // estop 이 참이라 v 가 0 에서 벗어나지 못하고, 그래서 영원히 무장되지 않는다.
-  if (st.v > kStoppedSpeed) {
-    st.escape_armed = true;
-  }
-
-  // 실제 estop 연속 틱. wrapper 보정이 섞인 s.estop 이 아니라 s.estop_latch_release
-  // 를 쓰는 것이 ④의 핵심이다 — 이 필드는 "신선한 실제 EstopRequest 의 estop 값"이다.
-  if (s.estop_latch_release) {
-    ++st.estop_hold_cnt;
-  } else {
-    st.estop_hold_cnt = 0;
-  }
-
-  // 후방 여유 게이트 — 진입뿐 아니라 **후진 중에도 매 틱 다시 본다**.
-  // 후진하는 동안 뒤에 뭔가 들어오면 그 자리에서 멈춰야 한다.
-  const bool rear_ok =
-    (st.params.escape_require_rear_clear == 0) || s.estop_rear_clear;
-
-  if (st.escape_phase == MGM_ESCAPE_REVERSING) {
-    ++st.escape_ticks;
-    // 종료 조건 4개: 시간 상한 · 후방 막힘 · estop 해제(장애물이 사라짐) ·
-    // 기능이 런타임에 꺼짐. 어느 쪽이든 페이즈를 닫고 카운터를 리셋한다 —
-    // 리셋 덕분에 다시 갇히면 escape_after_cycles 를 새로 채워야 후진한다
-    // (연속 후진으로 트랙에서 무한히 멀어지는 것을 시간으로 막는다).
-    if (!escape_usable || !rear_ok || !s.estop_latch_release ||
-      st.escape_ticks >= st.params.escape_max_cycles)
-    {
-      st.escape_phase = MGM_ESCAPE_NONE;
-      st.escape_ticks = 0;
-      st.estop_hold_cnt = 0;
-    }
-  }
-
-  // 진입 판정 — 위 5개 불변식 + 연속 유지 시간. PARKING 은 제외한다(주차는
-  // parking_v_suggest 로 자체 후진을 하며, 그 판단은 stack_parking 소관이다).
-  const bool escape_entry =
-    escape_usable && st.escape_armed && rear_ok &&
-    st.escape_phase == MGM_ESCAPE_NONE &&
-    st.state != MGM_STATE_PARKING &&
-    st.state != MGM_STATE_TRAFFIC &&
-    st.estop_hold_cnt >= st.params.escape_after_cycles;
+  const bool escape_entry = update_escape(
+    s, st, st.state != MGM_STATE_PARKING && st.state != MGM_STATE_TRAFFIC);
 
   // avoid 복귀 보류 카운터 — waypoint에서 GPS 트랙에 재합류할 시간을 벌어준다
   if (st.return_hold_left > 0) {
@@ -663,7 +678,8 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     (src == MGM_SRC_GPS) ? s.gps_updated :
     (src == MGM_SRC_AVOID) ? s.avoid_updated :
     (src == MGM_SRC_ESCAPE) ? true : false;
-  const bool is_stale_repeat = !src_updated && st.has_raw_target && st.raw_n == n &&
+  const bool source_changed = src != st.last_src;
+  const bool is_stale_repeat = !source_changed && !src_updated && st.has_raw_target && st.raw_n == n &&
     paths_equal(target, st.last_raw_target, n);
 
   st.n_out = n_wire;
@@ -672,7 +688,11 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.blend_from[i] = st.ref_out[i];
     }
-    st.blend_left = st.params.blend_cycles;
+    // 회피 진입은 기존 GPS/차선 경로를 섞지 않고 선택된 회피 경로를 즉시 채택한다.
+    // 회피 종료 후 트랙 복귀 등 다른 전환은 기존 블렌드를 유지한다.
+    const bool exclusive_owner = st.params.base_state_machine_enabled &&
+      (src == MGM_SRC_PARKING || src == MGM_SRC_ESCAPE);
+    st.blend_left = (src == MGM_SRC_AVOID || exclusive_owner) ? 0 : st.params.blend_cycles;
     st.last_src = src;
   }
 
@@ -722,10 +742,21 @@ float merge(const CoreOutput & d, CoreState & st)
 
 }  // namespace
 
+CoreOutput existing_source_request(
+  const CoreSnapshot & s, const CoreState & st, uint8_t state)
+{
+  CoreState view = st;
+  view.state = state;
+  CoreOutput out{};
+  prioritize(s, view, out);
+  return out;
+}
+
 void mgm_init(CoreState & st, const CoreParams & params)
 {
   st = CoreState{};
   st.params = params;
+  st.managers.recovery.measured_distance_complete = true;
   st.state = MGM_STATE_LANE;
   st.traffic_entry_state = MGM_STATE_LANE;
   st.last_src = MGM_SRC_LANE;
@@ -737,14 +768,44 @@ CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
 {
   CoreOutput out{};
 
-  transition(in, st);        // 판단: 전이
-  prioritize(in, st, out);   // 판단: 우선권 → v_ref 요구·경로 소스·immediate_stop
-  assemble(in, out.path_source, st);  // 실행: 조립
+  if (st.params.base_state_machine_enabled) {
+    manager_transition(in, st);
+    out = manager_decision(in, st);
+    st.state = out.state;  // legacy CAN/log projection, never manager input
+  } else {
+    transition(in, st);
+    prioritize(in, st, out);
+  }
+  CoreSnapshot execution = in;
+  if (st.params.base_state_machine_enabled && out.mission == MissionState::MISSION_ACTIVE) {
+    if (out.mission_start) {
+      // Discard general navigation geometry on exclusive mission handoff.
+      for (auto & point : st.ref_out) {point = CorePoint{};}
+      st.n_out = 1;
+      st.has_raw_target = false;
+    }
+    if (!st.managers.mission_feedback_seen) {execution.parking_path.n = 0;}
+  }
+  // Invalid providers retain authority but cannot feed malformed/new geometry
+  // to the assembler. Existing finite hold/initial stop buffer stays untouched.
+  if (!st.params.base_state_machine_enabled || out.selected_reference.valid) {
+    assemble(execution, out.path_source, st);
+  }
   out.v_ref = merge(out, st);         // 실행: 병합 (rate limit)
 
   out.n_points = st.n_out;
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
     out.ref_points[i] = st.ref_out[i];
+  }
+  if (st.params.base_state_machine_enabled) {
+    final_reference_gate(out, st);
+    st.managers.previous_reverse_command = out.path_source == MGM_SRC_ESCAPE && out.v_ref < 0;
+    if (out.path_source == MGM_SRC_ESCAPE && !out.selected_reference.valid) {
+      st.managers.recovery.last_reason = RecoveryReason::REFERENCE_INVALID;
+      st.managers.recovery.eligible = false;
+      st.managers.recovery.block_reason = RecoveryBlockReason::FORCED_STOP;
+    }
+    out.recovery = st.managers.recovery;
   }
   return out;
 }

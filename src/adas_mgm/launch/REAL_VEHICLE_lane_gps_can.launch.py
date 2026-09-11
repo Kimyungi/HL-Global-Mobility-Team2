@@ -102,6 +102,7 @@ RECORD_TOPICS = [
     '/perception/lane_path', '/perception/gps_path', '/perception/gps_fix',
     '/perception/estop', '/perception/avoid', '/perception/parking',
     '/perception/traffic_stop', '/adas/target_ref', '/vehicle/vector',
+    '/adas/mgm_state', '/parking/mission_command', '/operator/cancel_mission',
     '/scan', '/lidar/a1/scan', '/unified_lidar/scan',
     '/parking/local_map', '/parking/slam_pose', '/parking/pipeline_stage',
     '/rosout', '/tf', '/tf_static',
@@ -161,7 +162,7 @@ def ydlidar_file(*parts):
 DEFAULT_YDLIDAR_PARAMS = ydlidar_file('params', 'Tmini-Plus-SH.yaml')
 
 
-def validate(context):
+def validate(context, log_dir=LOG_DIR):
     if LaunchConfiguration('REAL_VEHICLE_CONFIRM').perform(context) != CONFIRM_TOKEN:
         raise RuntimeError(
             'REAL VEHICLE launch refused. '
@@ -277,14 +278,16 @@ def validate(context):
             f'라이다 파라미터 파일 없음: {ydlidar_params}\n'
             '  ydlidar_ros2_driver 를 빌드했는지 확인하거나 '
             'ydlidar_params:=<경로> 로 직접 지정하세요.')
-    os.makedirs(LOG_DIR, exist_ok=True)
-    print(f'[record] 로그 디렉터리: {LOG_DIR}')
+    os.makedirs(log_dir, exist_ok=True)
+    print(f'[record] 로그 디렉터리: {log_dir}')
     # 확정한 구간 파일 경로를 노드에 넘긴다. 이 OpaqueFunction 은 LaunchDescription
     # 목록에서 노드들보다 **앞**에 있으므로 여기서 설정한 값이 아래 Node 에 잡힌다.
     return [SetLaunchConfiguration('zones_file_resolved', zones_file)]
 
 
-def generate_launch_description():
+def build_launch_description(
+        log_dir=LOG_DIR, default_homography=DEFAULT_HOMOGRAPHY,
+        default_lane_weights=os.path.expanduser('~/FMA_ws/src/stack_lane/models/yolopv2.pt')):
     mgm_params = os.path.join(
         get_package_share_directory('adas_mgm'), 'config', 'params.yaml')
 
@@ -302,6 +305,11 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
         DeclareLaunchArgument('can_interface', default_value='can0'),
+        # Unset calibration: do not assign operational search limits from guesses.
+        DeclareLaunchArgument('zone_enter_confirm_samples', default_value='0'),
+        DeclareLaunchArgument('zone_exit_confirm_samples', default_value='0'),
+        DeclareLaunchArgument('parking_search_timeout', default_value='-1.0'),
+        DeclareLaunchArgument('max_parking_search_distance', default_value='-1.0'),
         DeclareLaunchArgument(
             'v_base', default_value=str(v_base_default),
             description='MGM normal target speed [m/s]'),
@@ -358,7 +366,7 @@ def generate_launch_description():
         # dSPACE RX 피드백(/vehicle/vector) CSV. 토픽은 rosbag 에도 들어가지만
         # 실차 분석은 run 폴더 CSV 를 먼저 보므로 같은 자리에 둔다 (2026-08-25).
         DeclareLaunchArgument('vehicle_csv_path',
-                              default_value=os.path.join(LOG_DIR, 'vehicle_vector.csv')),
+                              default_value=os.path.join(log_dir, 'vehicle_vector.csv')),
         DeclareLaunchArgument('stop_zone_span_m', default_value='1.0',
                               description='정지 지점 구간 폭 [m] (진입 판정 여유)'),
         DeclareLaunchArgument('parking_zone_span_m', default_value='1.0',
@@ -415,15 +423,16 @@ def generate_launch_description():
         #   mgm_jitter.csv(주기 지터)와 stack_lane의 파이프라인 지연 로그를 확인해
         #   기록 부하가 제어 루프를 건드리지 않았는지 확인할 것.
         DeclareLaunchArgument('lane_debug', default_value='false'),
+        DeclareLaunchArgument('lane_csv', default_value='false',
+                              description='Frame CSV without debug image overhead'),
         DeclareLaunchArgument('gps_error_log_csv',
-                              default_value=os.path.join(LOG_DIR, 'lateral.csv')),
+                              default_value=os.path.join(log_dir, 'lateral.csv')),
 
         # ── stack_lane
-        DeclareLaunchArgument('homography_path', default_value=DEFAULT_HOMOGRAPHY),
+        DeclareLaunchArgument('homography_path', default_value=default_homography),
         # 가중치도 소스 트리 절대경로 필수 (기본값은 설치본 내부로 해석 — 파일 없음).
         # yolopv2.pt는 gitignore 대상(156MB) — 새 PC엔 공식 릴리즈에서 수동 다운로드.
-        DeclareLaunchArgument('lane_weights', default_value=os.path.expanduser(
-            '~/FMA_ws/src/stack_lane/models/yolopv2.pt')),
+        DeclareLaunchArgument('lane_weights', default_value=default_lane_weights),
         DeclareLaunchArgument('camera_mxid', default_value='14442C105157D3D200',
                               description='차선용 OAK-D MxID (2026-08-11 실측)'),
         # USB3 트래픽 = 1280x720x3 x fps. 기본 30fps는 ≈83MB/s인데 YOLOPv2 추론은
@@ -566,8 +575,13 @@ def generate_launch_description():
         DeclareLaunchArgument('estop_on_distance_m', default_value='1.20'),
         DeclareLaunchArgument('estop_off_distance_m', default_value='1.35'),
         DeclareLaunchArgument('dynamic_tracking_max_distance_m', default_value='3.00'),
+        DeclareLaunchArgument('estop_corridor_max_x_m', default_value='1.50'),
+        DeclareLaunchArgument('dynamic_roi_max_x_m', default_value='1.50'),
+        DeclareLaunchArgument('avoid_target_speed_mps', default_value='1.0'),
+        DeclareLaunchArgument('ttc_stop', default_value=str(_yaml['ttc_stop'])),
+        DeclareLaunchArgument('v_accel_zone', default_value=str(_yaml['v_accel_zone'])),
 
-        OpaqueFunction(function=validate),
+        OpaqueFunction(function=validate, args=[log_dir]),
 
         LifecycleNode(
             package='ydlidar_ros2_driver',
@@ -621,6 +635,8 @@ def generate_launch_description():
             name='stack_avoid_node',
             parameters=[os.path.join(
                 get_package_share_directory('stack_avoid'), 'config', 'params.yaml'), {
+                    'target_speed_mps': ParameterValue(
+                        LaunchConfiguration('avoid_target_speed_mps'), value_type=float),
                     'scan_topic': PythonExpression([
                         "'/lidar/a1/scan' if '",
                         LaunchConfiguration('parking_enabled'),
@@ -642,6 +658,10 @@ def generate_launch_description():
             parameters=[{
                 'laser_yaw_in_base_rad': ParameterValue(
                     LaunchConfiguration('laser_yaw_in_base_rad'), value_type=float),
+                'corridor_max_x_m': ParameterValue(
+                    LaunchConfiguration('estop_corridor_max_x_m'), value_type=float),
+                'dynamic_roi_max_x_m': ParameterValue(
+                    LaunchConfiguration('dynamic_roi_max_x_m'), value_type=float),
                 'dynamic_enabled': ParameterValue(
                     LaunchConfiguration('dynamic_enabled'), value_type=bool),
                 'dynamic_stop_distance_m': ParameterValue(
@@ -723,8 +743,10 @@ def generate_launch_description():
                 'publish_debug_image': ParameterValue(
                     LaunchConfiguration('lane_debug'), value_type=bool),
                 'log_csv': PythonExpression(
-                    ["'", os.path.join(LOG_DIR, 'lane_frames.csv'),
-                     "' if '", LaunchConfiguration('lane_debug'), "' == 'true' else ''"]),
+                    ["'", os.path.join(log_dir, 'lane_frames.csv'),
+                     "' if ('", LaunchConfiguration('lane_debug'),
+                     "' == 'true' or '", LaunchConfiguration('lane_csv'),
+                     "' == 'true') else ''"]),
                 'coeff_smoothing_alpha': ParameterValue(
                     LaunchConfiguration('coeff_smoothing_alpha'), value_type=float),
             }],
@@ -790,16 +812,30 @@ def generate_launch_description():
             name='mgm_node',
             parameters=[mgm_params, {   # 기존 REAL_VEHICLE launch의 params 누락 수정
                 # run별 진단 산출물 — back-to-back 재현(§5.5)과 지터 판정(§7)
-                'snapshot_dump_path': os.path.join(LOG_DIR, 'mgm_snapshots.bin'),
-                'jitter_csv_path': os.path.join(LOG_DIR, 'mgm_jitter.csv'),
+                'snapshot_dump_path': os.path.join(log_dir, 'mgm_snapshots.bin'),
+                'jitter_csv_path': os.path.join(log_dir, 'mgm_jitter.csv'),
                 # 스테이트 전이 이유 (판단 아님 — 관찰 기록). MBD 시험과 같은
                 # 포맷이라 두 run 을 그대로 대조할 수 있다.
-                'transition_csv_path': os.path.join(LOG_DIR, 'transitions.csv'),
+                'transition_csv_path': os.path.join(log_dir, 'transitions.csv'),
+                'mission_events_csv_path': os.path.join(log_dir, 'mission_events.csv'),
+                'zone_enter_confirm_samples': ParameterValue(
+                    LaunchConfiguration('zone_enter_confirm_samples'), value_type=int),
+                'zone_exit_confirm_samples': ParameterValue(
+                    LaunchConfiguration('zone_exit_confirm_samples'), value_type=int),
+                'zone_observations_csv_path': os.path.join(log_dir, 'zone_observations.csv'),
+                'parking_search_timeout': ParameterValue(
+                    LaunchConfiguration('parking_search_timeout'), value_type=float),
+                'max_parking_search_distance': ParameterValue(
+                    LaunchConfiguration('max_parking_search_distance'), value_type=float),
                 # 출발 인가 게이트 — launch 직후 정지 대기, `ros2 run adas_mgm go`
                 # (RTK FIXED 등 점검 통과 시)로 출발 (2026-08-11)
                 'wait_go': True,
                 # 시험별 목표속도. 기본은 params.yaml 값을 그대로 따르며, 실차 시험에서
                 # 명시적으로 낮출 때만 launch 인자로 덮어쓴다.
+                'ttc_stop': ParameterValue(
+                    LaunchConfiguration('ttc_stop'), value_type=float),
+                'v_accel_zone': ParameterValue(
+                    LaunchConfiguration('v_accel_zone'), value_type=float),
                 'v_base': ParameterValue(
                     LaunchConfiguration('v_base'), value_type=float),
                 # E-stop 자체를 실패로 판정하는 시험에서는 반드시 0으로 두어, 장시간
@@ -838,7 +874,7 @@ def generate_launch_description():
             condition=IfCondition(PythonExpression(
                 ["'", LaunchConfiguration('record'), "' == 'true' and '",
                  LaunchConfiguration('lane_debug'), "' != 'true'"])),
-            cmd=['ros2', 'bag', 'record', '-o', os.path.join(LOG_DIR, 'rosbag')]
+            cmd=['ros2', 'bag', 'record', '-o', os.path.join(log_dir, 'rosbag')]
                 + RECORD_TOPICS,
             output='screen',
         ),
@@ -849,7 +885,7 @@ def generate_launch_description():
             condition=IfCondition(PythonExpression(
                 ["'", LaunchConfiguration('record'), "' == 'true' and '",
                  LaunchConfiguration('lane_debug'), "' == 'true'"])),
-            cmd=['ros2', 'bag', 'record', '-o', os.path.join(LOG_DIR, 'rosbag')]
+            cmd=['ros2', 'bag', 'record', '-o', os.path.join(log_dir, 'rosbag')]
                 + RECORD_TOPICS + ['/perception/lane_debug_image'],
             output='screen',
         ),
@@ -860,3 +896,7 @@ def generate_launch_description():
             can_interface=LaunchConfiguration('can_interface'),
             vehicle_csv_path=LaunchConfiguration('vehicle_csv_path')),
     ])
+
+
+def generate_launch_description():
+    return build_launch_description()

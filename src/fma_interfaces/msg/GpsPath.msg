@@ -2,7 +2,7 @@
 std_msgs/Header header
 RefPoint[] points
 bool accel_zone      # 가속구간 (종방향 ↑ 요구의 원천 — 적용 여부는 스테이트 우선권이 결정)
-bool parking_zone    # GPS 주차구간 (lane→parking 전이 조건의 절반)
+bool parking_zone    # legacy/generated 입력; 병행 Mission은 zones entry에서 PREPARE
 # GPS parking-zone type. NONE preserves the legacy boolean-only contract;
 # stack_parking then uses its configured gps_default_mode.
 uint8 PARKING_NONE = 0
@@ -64,3 +64,26 @@ bool avoid_zone
 # 코스 단위가 아니라 **구간 단위**로 지정하기 위한 것. launch 의 gps_only:=true 는
 # run 전체에 걸리는 반면 이쪽은 그 구간에서만 걸린다.
 bool gps_only_zone
+
+# Complete configured membership snapshot. False on invalid fix; an empty but
+# valid snapshot means NORMAL_ZONE. Existing zone booleans remain for legacy clients.
+bool zone_valid
+ZoneContext[] zones
+
+# Actual sensor-input generation backing these points, not publication time.
+# Held on republish; zero means unproven/no generated reference. MGM applies
+# the existing provider timeout to this stamp, including transport delay.
+builtin_interfaces/Time reference_stamp
+
+# Existing GNSS ENU position and current-position track index, for mission logs.
+# Same sample/freshness as reference_stamp. No new path/zone geometry.
+bool position_valid
+float64 position_x
+float64 position_y
+int32 track_index
+
+# Observations for calibration; change only on independent GNSS fix.
+int32 previous_track_index -1
+float64 position_step_m
+float64 vehicle_heading_rad
+bool vehicle_heading_valid

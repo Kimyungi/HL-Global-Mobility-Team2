@@ -98,6 +98,9 @@ int main(int argc, char ** argv)
   for (int i = 0; i < MGM_NUM_POINTS; ++i) {
     out << ",x" << i << ",y" << i << ",yaw" << i << ",k" << i;
   }
+  if (h.params.base_state_machine_enabled) {
+    out << ",top,navigation,avoidance,signal,safety,mission,mission_type,speed_owner,reference_available,ref_valid,ref_fresh,ref_age_s,ref_generation,stop_reasons,parking_calibration,zone_calibration,zone_generation,recovery_configured,rear_sensor_valid,rear_corridor_state,recovery_eligible,recovery_block_reason,recovery_attempts,reverse_command_time_s,reverse_measured_distance_m,reverse_distance_complete,last_recovery_reason,traffic_remaining_m,traffic_stop_success";
+  }
   out << "\n";
 
   CoreState st;
@@ -117,6 +120,22 @@ int main(int argc, char ** argv)
         static_cast<double>(o.ref_points[i].x), static_cast<double>(o.ref_points[i].y),
         static_cast<double>(o.ref_points[i].yaw), static_cast<double>(o.ref_points[i].curvature));
       out << buf;
+    }
+    if (h.params.base_state_machine_enabled) {
+      out << ',' << static_cast<int>(o.top) << ',' << static_cast<int>(o.nav)
+          << ',' << static_cast<int>(o.avoid) << ',' << static_cast<int>(o.signal)
+          << ',' << static_cast<int>(o.safety) << ',' << static_cast<int>(o.mission)
+          << ',' << static_cast<int>(o.mission_type) << ',' << static_cast<int>(o.speed_owner)
+          << ',' << o.reference_available << ',' << o.selected_reference.valid
+          << ',' << o.selected_reference.fresh << ',' << o.selected_reference.age_s
+          << ',' << o.selected_reference.generation << ',' << o.safe_stop_reasons
+          << ',' << static_cast<int>(o.parking_calibration) << ',' << static_cast<int>(o.zones.calibration)
+          << ',' << o.zones.last_generation << ',' << o.recovery.configured << ',' << o.recovery.rear_sensor_valid
+          << ',' << static_cast<int>(o.recovery.rear_corridor_state) << ',' << o.recovery.eligible
+          << ',' << static_cast<int>(o.recovery.block_reason) << ',' << o.recovery.attempt_count
+          << ',' << o.recovery.command_time_s << ',' << o.recovery.measured_distance_m
+          << ',' << o.recovery.measured_distance_complete << ',' << static_cast<int>(o.recovery.last_reason)
+          << ',' << o.traffic_remaining_m << ',' << o.traffic_stop_in_success_region;
     }
     out << '\n';
     ++tick;

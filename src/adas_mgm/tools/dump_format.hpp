@@ -29,7 +29,13 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // 레이아웃이 달라 재생 불가(snapshot_size 검사가 잡는다). 같이 들어간 CoreParams
 // 4개(escape_*)는 구조체 뒤에 붙였으므로 옛 params_size 로도 기본값으로 채워진다.
 // v7 (2026-08-31): TRAFFIC 상태의 적색/초록/정지선 거리와 dSPACE 실차속도 입력 추가.
-constexpr uint32_t kDumpVersion = 7;
+// v8 (2026-09-11): parallel manager validity/session/mission event inputs.
+// Older raw snapshots require their matching historical build (no guessed validity).
+// v9: Zone membership inputs replace waypoint-trigger inputs/parameters.
+// v10: actual reference generation/age/timeout inputs.
+// v11: mission preparation session, clocks, telemetry and calibrated limits.
+// v12: GNSS Zone stability, rear corridor validity, calibration parameters.
+constexpr uint32_t kDumpVersion = 12;
 
 struct DumpHeader
 {

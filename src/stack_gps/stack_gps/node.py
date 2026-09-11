@@ -27,8 +27,9 @@ import rclpy
 import yaml
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.duration import Duration
 
-from fma_interfaces.msg import EstopRequest, GpsPath, RefPoint
+from fma_interfaces.msg import EstopRequest, GpsPath, RefPoint, ZoneContext
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Path
@@ -36,6 +37,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import Imu, NavSatFix
 from tf2_ros import TransformBroadcaster
 
+from stack_gps.zones import ZoneMap, load_zone_definitions
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
 from stack_gps.imu_link import ImuLink
@@ -309,6 +311,10 @@ class StackGpsNode(Node):
                 "IMU 꺼짐 — 헤딩은 COG/접선만 사용 (정지 시 절대 헤딩 없음)")
         self._heading_src = '접선'
         self._pose_delta_tracker = PoseDeltaTracker()
+        self._zone_telemetry_fix = None
+        self._zone_telemetry_previous = None
+        self._reference_fix_time = None
+        self._reference_stamp = None
         self._imu_gen = 0
         self._cog_ok = False
         self._was_aligned = False
@@ -471,10 +477,14 @@ class StackGpsNode(Node):
         # The GGA link can return the same latest sample on more than one timer
         # tick.  Count and calculate motion only once per actual GNSS sample.
         east, north = self.engine.to_enu(lat, lon)
+        msg.position_valid = True
+        msg.position_x, msg.position_y = float(east), float(north)
+        msg.track_index = int(snap['idx'])
         delta, update = self._pose_delta_tracker.consume(
             fix_t, (east, north, yaw), msg.heading_source)
         msg.dx, msg.dy, msg.dyaw = delta
         msg.update = update
+        self._set_reference_stamp(msg, fix_t)
         for x, y, pt_yaw, curv in snap['points']:
             rp = RefPoint()
             rp.x, rp.y, rp.yaw, rp.curvature = (float(x), float(y),
@@ -491,6 +501,8 @@ class StackGpsNode(Node):
         msg.stop_zone = int(snap['stop_zone'])
         msg.avoid_zone = snap['avoid_zone']
         msg.gps_only_zone = snap['gps_only_zone']
+        self._fill_zone_context(msg, snap['idx'])
+        self._fill_zone_telemetry(msg, fix_t, east, north, yaw, heading is not None)
         msg.at_end = snap['at_end']
         msg.fix_quality = quality
         msg.cross_track_m = float(snap['cross_track_m'])
@@ -551,6 +563,50 @@ class StackGpsNode(Node):
     def _on_estop(self, msg):
         # estop=false 하트비트(manual_go/stack_estop)가 살아 있는 동안만 GO
         self._go_t = time.monotonic() if not msg.estop else None
+
+    def _set_reference_stamp(self, msg, fix_t):
+        # Reuse the existing actual GNSS sample identity; timer ticks do not renew it.
+        if fix_t != self._reference_fix_time:
+            self._reference_fix_time = fix_t
+            sample_age = time.monotonic() - fix_t
+            self._reference_stamp = (
+                (self.get_clock().now() - Duration(seconds=sample_age)).to_msg()
+                if math.isfinite(sample_age) and sample_age >= 0.0 else None)
+        if self._reference_stamp is not None:
+            msg.reference_stamp = self._reference_stamp
+
+    def _fill_zone_context(self, msg, current_position_index):
+        """Publish spatial memberships; MGM creates per-Zone entry/exit edges."""
+        msg.zone_valid = True
+        for definition, in_zone in self.zone_map.snapshot(current_position_index):
+            context = ZoneContext()
+            context.zone_valid = True
+            context.zone_id = definition.zone_id
+            context.zone_type = int(definition.zone_type)
+            context.mission_type = int(definition.mission_type)
+            context.mission_id = definition.mission_id
+            context.in_zone = in_zone
+            context.raw_in_zone = in_zone
+            msg.zones.append(context)
+
+    def _fill_zone_telemetry(self, msg, fix_t, east, north, yaw, heading_valid):
+        """Record existing localization observations, without altering nearest/path selection."""
+        if fix_t != self._zone_telemetry_fix:
+            previous = self._zone_telemetry_previous
+            self._zone_telemetry_values = (
+                previous[0] if previous else -1,
+                math.hypot(east-previous[1], north-previous[2]) if previous else 0.0,
+                yaw, heading_valid)
+            self._zone_telemetry_previous = (msg.track_index, east, north)
+            self._zone_telemetry_fix = fix_t
+        (msg.previous_track_index, msg.position_step_m,
+         msg.vehicle_heading_rad, msg.vehicle_heading_valid) = self._zone_telemetry_values
+        definitions = {z.zone_id: z for z in self.zone_map.definitions}
+        for context in msg.zones:
+            zone = definitions[context.zone_id]
+            context.boundary_distance_m = min(
+                math.hypot(east-self.engine.e[i], north-self.engine.n[i])
+                for i in (zone.start_index, zone.end_index))
 
     def _setup_zones(self, p):
         """위경도로 준 지정 구간 → 웨이포인트 인덱스 구간 (2026-08-18).
@@ -656,6 +712,12 @@ class StackGpsNode(Node):
             log.info(f"GPS 전용 구간 {len(gps_only_ranges)}: idx {min(i1, i2)}~{max(i1, i2)} "
                      f"(스냅 {d1:.2f}/{d2:.2f}m) — 이 구간에서는 차선 전이 없음")
         self.engine.gps_only_ranges = gps_only_ranges
+        explicit_zones = load_zone_definitions(p('zones_file').value, self.engine, snap_max)
+        self.zone_map = ZoneMap.from_engine(self.engine, explicit_zones)
+        for zone in self.zone_map.definitions:
+            log.info(f"Zone {zone.zone_id}: {zone.zone_type.name} "
+                     f"idx {zone.start_index}~{zone.end_index}, "
+                     f"mission={zone.mission_id}/{zone.mission_type.name}")
 
         if not stop_ranges:
             log.info("지정 정지 지점 없음")

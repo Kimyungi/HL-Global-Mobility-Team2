@@ -19,6 +19,7 @@
 #include <exception>
 #include <fstream>
 #include <memory>
+#include <limits>
 #include <mutex>
 #include <numeric>
 #include <stdexcept>
@@ -29,10 +30,13 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rcl_interfaces/msg/parameter_descriptor.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "fma_interfaces/msg/mgm_state.hpp"
 #include "fma_interfaces/msg/lane_path.hpp"
 #include "fma_interfaces/msg/gps_path.hpp"
 #include "fma_interfaces/msg/avoid_status.hpp"
 #include "fma_interfaces/msg/parking_status.hpp"
+#include "fma_interfaces/msg/parking_command.hpp"
 #include "fma_interfaces/msg/traffic_stop.hpp"
 #include "fma_interfaces/msg/estop_request.hpp"
 #include "fma_interfaces/msg/can_health.hpp"
@@ -41,6 +45,8 @@
 
 #include "core/mgm_step.hpp"
 #include "src/decision_backend.hpp"
+#include "src/reference_clock.hpp"
+#include "core/reference_safety.hpp"
 #include "src/transition_log.hpp"
 #include "tools/dump_format.hpp"
 
@@ -64,11 +70,29 @@ struct LatestMsgs
   fma_interfaces::msg::VehicleVector vehicle;  // dSPACE 실차속도 피드백
 };
 
+fma_interfaces::msg::ZoneContext toRosZone(const ZoneContext & zone)
+{
+  fma_interfaces::msg::ZoneContext msg;
+  msg.zone_valid = zone.zone_valid;
+  msg.zone_id = zone.zone_id;
+  msg.zone_type = static_cast<uint8_t>(zone.zone_type);
+  msg.mission_type = static_cast<uint8_t>(zone.mission_type);
+  msg.mission_id = zone.mission_id;
+  msg.in_zone = zone.in_zone;
+  msg.zone_entered = zone.zone_entered;
+  msg.zone_exited = zone.zone_exited;
+  msg.mission_entry_suppressed = zone.mission_entry_suppressed;
+  msg.raw_in_zone = zone.raw_in_zone; msg.stable_in_zone = zone.stable_in_zone;
+  msg.enter_count = zone.enter_count; msg.exit_count = zone.exit_count;
+  msg.boundary_distance_m = zone.boundary_distance_m;
+  return msg;
+}
+
 // msg → CoreSnapshot 변환 (포맷 변환만 — 판단 금지)
 void toCorePath(const std::vector<fma_interfaces::msg::RefPoint> & in, CorePath & out)
 {
-  out.n = static_cast<int32_t>(std::min<size_t>(in.size(), MGM_NUM_POINTS));
-  for (int32_t i = 0; i < out.n; ++i) {
+  out.n = static_cast<int32_t>(std::min<size_t>(in.size(), MGM_NUM_POINTS + 1));
+  for (int32_t i = 0; i < std::min(out.n, MGM_NUM_POINTS); ++i) {
     out.pts[i] = CorePoint{in[i].x, in[i].y, in[i].yaw, in[i].curvature};
   }
 }
@@ -85,7 +109,16 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   s.gps_cross_track = m.gps.cross_track_m;
   s.gps_stop_zone = m.gps.stop_zone;      // 0 = 아님, 1~ = 지정 정지 지점 번호
   s.gps_avoid_zone = m.gps.avoid_zone;    // 회피 허용 구간 안인가
-  s.gps_gps_only_zone = m.gps.gps_only_zone;  // GPS 전용 구간 (차선 전이 금지)
+  s.gps_gps_only_zone = m.gps.gps_only_zone;  // legacy/generated only
+  s.zones.zone_valid = m.gps.zone_valid;
+  s.zones.count = static_cast<int32_t>(std::min<size_t>(m.gps.zones.size(), MGM_ZONE_CAPACITY));
+  for (int i = 0; i < s.zones.count; ++i) {
+    const auto & zone = m.gps.zones[i];
+    s.zones.zone_valid = s.zones.zone_valid && zone.zone_valid;
+    s.zones.observations[i] = ZoneObservation{
+      zone.zone_id, static_cast<ZoneType>(zone.zone_type),
+      static_cast<MissionType>(zone.mission_type), zone.mission_id, zone.in_zone, zone.boundary_distance_m};
+  }
   // 접선 폴백(HEADING_TANGENT)은 헤딩을 모를 때의 가정이라 신뢰 불가 (§4 역방향 래치)
   s.gps_heading_valid = (m.gps.heading_source != fma_interfaces::msg::GpsPath::HEADING_TANGENT);
   s.avoid_obstacle_detected = m.avoid.obstacle_detected;
@@ -172,9 +205,9 @@ public:
   : Node("mgm_node")
   {
     CoreParams p{};
-    p.lane_conf_exit = static_cast<float>(declare_parameter<double>("lane_conf_exit", 0.4));
-    p.lane_conf_return = static_cast<float>(declare_parameter<double>("lane_conf_return", 0.6));
-    p.n_cycles = static_cast<int32_t>(declare_parameter<int>("n_cycles", 20));
+    p.lane_conf_exit = static_cast<float>(declare_parameter<double>("lane_conf_exit", 0.35));
+    p.lane_conf_return = static_cast<float>(declare_parameter<double>("lane_conf_return", 0.7));
+    p.n_cycles = static_cast<int32_t>(declare_parameter<int>("n_cycles", 50));
     p.v_base = static_cast<float>(declare_parameter<double>("v_base", 0.5));
     p.v_accel_zone = static_cast<float>(declare_parameter<double>("v_accel_zone", 1.0));
     p.v_narrow = static_cast<float>(declare_parameter<double>("v_narrow", 0.2));
@@ -231,8 +264,10 @@ public:
     // 그렇다(사용자 확인). seed(traffic_ramp_distance_m)를 같이 올릴지는 별도 검토.
     p.traffic_stop_offset = static_cast<float>(
       declare_parameter<double>("traffic_stop_offset_m", 1.0));
-    if (p.traffic_stop_offset < 0.0f) {
-      throw std::invalid_argument("traffic_stop_offset_m must be non-negative");
+    if (!std::isfinite(p.traffic_ramp_distance_m) || !std::isfinite(p.traffic_stop_offset) ||
+      p.traffic_stop_offset <= 0 || p.traffic_ramp_distance_m <= p.traffic_stop_offset)
+    {
+      throw std::invalid_argument("Traffic distances require finite seed > remaining target > 0");
     }
     rcl_interfaces::msg::ParameterDescriptor backend_descriptor;
     backend_descriptor.read_only = true;
@@ -245,6 +280,36 @@ public:
       "startup-only acknowledgement for the limited generated backend";
     const bool generated_scope_acknowledged = declare_parameter<bool>(
       "generated_backend_acknowledge_limited_scope", false, acknowledgement_descriptor);
+    base_managers_ = declare_parameter<bool>(
+      "base_state_machine_enabled", backend_name == "core");
+    p.base_state_machine_enabled = base_managers_ ? 1 : 0;
+    rcl_interfaces::msg::ParameterDescriptor zone_descriptor;
+    zone_descriptor.read_only = true;
+    zone_descriptor.description = "GNSS confirmation calibration; restart to change fixed zone context policy";
+    p.zone_enter_confirm_samples = declare_parameter<int>("zone_enter_confirm_samples", 0, zone_descriptor);
+    p.zone_exit_confirm_samples = declare_parameter<int>("zone_exit_confirm_samples", 0, zone_descriptor);
+    p.parking_search_timeout = declare_parameter<double>("parking_search_timeout", -1.0);
+    p.max_parking_search_distance = declare_parameter<double>("max_parking_search_distance", -1.0);
+    if (base_managers_ && (!std::isfinite(p.parking_search_timeout) ||
+      p.parking_search_timeout <= 0 || !std::isfinite(p.max_parking_search_distance) ||
+      p.max_parking_search_distance <= 0))
+    {
+      RCLCPP_WARN(get_logger(), "Parking search limits uncalibrated: requests will be cancelled (CALIBRATION_REQUIRED)");
+    }
+    const auto zone_csv = declare_parameter<std::string>("zone_observations_csv_path", "");
+    if (!zone_csv.empty()) {
+      zone_events_.open(zone_csv, std::ios::trunc);
+      if (!zone_events_) {throw std::runtime_error("cannot open zone_observations_csv_path");}
+      zone_events_ << "generation,time_ns,zone_id,zone_valid,raw_in,stable_in,enter_count,exit_count,x,y,position_valid,track_index,previous_track_index,position_step_m,heading_rad,heading_valid,boundary_endpoint_distance_m,calibration_state\n";
+      zone_events_.precision(17);
+    }
+    const auto mission_csv = declare_parameter<std::string>("mission_events_csv_path", "");
+    if (!mission_csv.empty()) {
+      mission_events_.open(mission_csv, std::ios::trunc);
+      if (!mission_events_) {throw std::runtime_error("cannot open mission_events_csv_path");}
+      mission_events_ << "event,request_id,mission_id,mission_type,source_zone_id,time_ns,position_valid,x,y,track_index,speed_valid,actual_speed,zone_id,travel_distance,elapsed_s,cancel_reason\n";
+      mission_events_.precision(17);
+    }
     backend_ = std::make_unique<DecisionBackend>(
       backend_name, generated_scope_acknowledged, p);
     RCLCPP_INFO(
@@ -257,7 +322,9 @@ public:
     if (!transition_csv_path_.empty()) {
       transitions_.open(transition_csv_path_, std::ios::trunc);
       if (transitions_) {
-        transitions_ << transitionCsvHeader();
+        transitions_ << (base_managers_ ?
+          "tick,top,navigation,avoidance,signal,safety,mission,mission_type,reference_source,speed_owner,v_ref,ref_valid,ref_fresh,ref_age_s,stop_reasons\n" :
+          transitionCsvHeader());
         transitions_.flush();
       } else {
         RCLCPP_WARN(get_logger(), "전이 CSV를 열 수 없음: %s", transition_csv_path_.c_str());
@@ -288,10 +355,8 @@ public:
     // 무효화, AVOID 스테이트 중이면 estop 보정 (낡은 회피 경로 주행 차단)
     avoid_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("avoid_stale_timeout_sec", 0.5) * 1e9);
-    // parking 신선도 watchdog (§5.7 ⑦, 2026-08-31 — PR #45 통합 검토 P0 ③).
-    // avoid(⑤)와 같은 규약이다. **CoreSnapshot 은 건드리지 않는다** — parking_updated
-    // 를 넣으면 덤프 포맷이 v6→v7 이 되어 drive_logs 의 기존 스냅샷이 전부 재생
-    // 불가가 된다. 수신 시각만으로 판정하면 코어도 덤프도 그대로다.
+    // Existing parking timeout also bounds actual reference generation age in
+    // the parallel core. Receipt time still independently checks module health.
     parking_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("parking_stale_timeout_sec", 0.5) * 1e9);
 
@@ -335,6 +400,27 @@ public:
           RCLCPP_WARN(get_logger(), "CAN 고장 래치 해제 — 재인가로 주행 재개");
         }
         go_received_ = m->data;});
+    sub_session_ = create_subscription<std_msgs::msg::Bool>(
+      "/operator/start_session", rclcpp::QoS(1),
+      [this](std_msgs::msg::Bool::ConstSharedPtr m) {
+        if (m->data) {
+          std::lock_guard<std::mutex> lk(mtx_);
+          session_requested_ = true;
+        }
+      });
+    sub_operator_stop_ = create_subscription<std_msgs::msg::Bool>(
+      "/operator/stop", rclcpp::QoS(1),
+      [this](std_msgs::msg::Bool::ConstSharedPtr m) {
+        std::lock_guard<std::mutex> lk(mtx_); operator_stop_ = m->data;
+      });
+    sub_mission_cancel_ = create_subscription<std_msgs::msg::Bool>(
+      "/operator/cancel_mission", rclcpp::QoS(1),
+      [this](std_msgs::msg::Bool::ConstSharedPtr m) {
+        if (m->data) {std::lock_guard<std::mutex> lk(mtx_); mission_cancel_requested_ = true;}
+      });
+    mission_command_pub_ = create_publisher<fma_interfaces::msg::ParkingCommand>(
+      "/parking/mission_command", 10);
+    manager_pub_ = create_publisher<fma_interfaces::msg::MgmState>("/adas/mgm_state", 1);
     if (wait_go_) {
       RCLCPP_INFO(get_logger(),
         "출발 대기 모드 — 점검 후 `ros2 run adas_mgm go` 로 출발 인가");
@@ -415,6 +501,32 @@ public:
     msgs_.avoid.ttc = 1e9f;   // 인지 도착 전 TTC=0으로 오인해 정지하는 것 방지
     msgs_.estop.estop = true;  // 첫 EstopRequest 수신 전 fail-safe — 미수신 = 정지
 
+    pending_parking_timeout_ = p.parking_search_timeout;
+    pending_parking_distance_ = p.max_parking_search_distance;
+    calibration_callback_ = add_on_set_parameters_callback(
+      [this](const std::vector<rclcpp::Parameter> & values) {
+        rcl_interfaces::msg::SetParametersResult result; result.successful = true;
+        bool changed = false;
+        std::lock_guard<std::mutex> lock(mtx_);
+        double timeout = pending_parking_timeout_, distance = pending_parking_distance_;
+        for (const auto & value : values) {
+          if (value.get_name() != "parking_search_timeout" && value.get_name() != "max_parking_search_distance") {continue;}
+          changed = true;
+          if (value.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE) {
+            result.successful = false; result.reason = "Parking calibration requires double values"; return result;
+          }
+          if (value.get_name() == "parking_search_timeout") {timeout = value.as_double();}
+          else {distance = value.as_double();}
+        }
+        if (changed && (!base_managers_ || dump_.is_open())) {
+          result.successful = false;
+          result.reason = "Parking tuning requires base core without snapshot dump; a recorded dump has fixed header parameters. Set YAML and restart.";
+        } else if (changed) {
+          pending_parking_timeout_ = timeout; pending_parking_distance_ = distance;
+          calibration_pending_ = true;
+        }
+        return result;
+      });
     loop_thread_ = std::thread([this] {loop();});
   }
 
@@ -427,6 +539,44 @@ public:
   }
 
 private:
+  static fma_interfaces::msg::MissionObservation toRosObservation(const MissionObservation & in)
+  {
+    fma_interfaces::msg::MissionObservation out;
+    out.recorded = in.recorded;
+    if (in.time_ns >= 0) {out.stamp = rclcpp::Time(in.time_ns);}
+    out.position_valid = in.position_valid;
+    out.x = in.x; out.y = in.y; out.track_index = in.track_index;
+    out.speed_valid = in.speed_valid; out.actual_speed = in.actual_speed;
+    out.zone_id = in.zone_id; out.travel_distance = in.travel_distance;
+    return out;
+  }
+  void logMissionEvents(const CoreSnapshot & s, const CoreOutput & out)
+  {
+    if (out.mission_events == 0) {return;}
+    const auto & r = out.mission_request;
+    if (out.mission_cancel) {
+      RCLCPP_WARN(get_logger(), "Mission request %lu cancelled: reason=%u elapsed=%.3f travel=%.3f",
+        static_cast<unsigned long>(r.request_id), static_cast<unsigned>(r.cancel_reason),
+        r.elapsed_s, r.travel_distance);
+    }
+    if (!mission_events_) {return;}
+    const MissionObservation end{true, s.event_time_ns, s.gps_position_valid,
+      s.gps_x, s.gps_y, s.gps_track_index, s.vehicle_speed_valid, s.vehicle_speed,
+      out.zones.selected.zone_id, r.travel_distance};
+    const MissionObservation * observations[] = {
+      &r.zone_entry, &r.search_start, &r.space, &r.ready, &r.handoff, &end, &end};
+    const char * names[] = {"zone_entry", "search_start", "space_found", "ready", "handoff", "cancel", "done"};
+    for (int i = 0; i < 7; ++i) {
+      if (!(out.mission_events & (1u << i))) {continue;}
+      const auto & o = *observations[i];
+      mission_events_ << names[i] << ',' << r.request_id << ',' << +r.mission_id << ','
+        << static_cast<unsigned>(r.mission_type) << ',' << +r.source_zone_id << ',' << o.time_ns << ','
+        << o.position_valid << ',' << o.x << ',' << o.y << ',' << o.track_index << ','
+        << o.speed_valid << ',' << o.actual_speed << ',' << +o.zone_id << ',' << o.travel_distance << ','
+        << r.elapsed_s << ',' << static_cast<unsigned>(r.cancel_reason) << '\n';
+    }
+    mission_events_.flush();
+  }
   void loop()
   {
     // SCHED_FIFO + 코어 고정 시도 (§5.2) — 실패해도 동작은 하되 지터로 드러난다
@@ -475,6 +625,9 @@ private:
     int64_t can_rx_ns;
     int64_t vehicle_rx_ns;
     bool go;
+    bool new_session;
+    bool mission_cancel;
+    bool operator_stop;
     {
       std::lock_guard<std::mutex> lk(mtx_);
       m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
@@ -487,6 +640,16 @@ private:
       can_rx_ns = last_can_rx_ns_;
       vehicle_rx_ns = last_vehicle_rx_ns_;
       go = go_received_;
+      operator_stop = operator_stop_;
+      if (calibration_pending_) {
+        backend_->setParkingCalibration(pending_parking_timeout_, pending_parking_distance_);
+        calibration_pending_ = false;
+      }
+      new_session = session_requested_;
+      session_requested_ = false;
+      mission_cancel = mission_cancel_requested_;
+      mission_cancel_requested_ = false;
+
     }
     // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
     // counter watchdog의 PC측 대응물). stack_estop 미수신/사망 시 스냅샷의
@@ -495,6 +658,7 @@ private:
     // 보정 전 "실제 수신값" 보존 — at_end 래치 해제는 이 값으로만 한다 (CLAUDE.md
     // §4 래치). stale이면 마지막 값을 조작 의사로 신뢰할 수 없으므로 false.
     const bool estop_real = !estop_stale && m.estop.estop;
+    bool external_stop = operator_stop || (wait_go_ && !go);
     if (estop_stale) {
       m.estop.estop = true;
       // 후방 여유는 반대 방향으로 보정한다 — "모르면 false"(§4 후진 탈출).
@@ -503,7 +667,7 @@ private:
     }
     // 출발 인가 게이트 — 인가 전까지 estop 보정으로 정지 대기 (운용 입력
     // 컨디셔닝, §5.7과 동류). estop_real(래치 해제용)에는 영향 없음.
-    if (wait_go_ && !go) {
+    if (external_stop) {
       m.estop.estop = true;
       RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
         "출발 대기 중 — 점검 완료 후 `ros2 run adas_mgm go` 로 출발");
@@ -518,7 +682,7 @@ private:
     const bool traffic_uses_gps = active_state == MGM_STATE_TRAFFIC &&
       traffic_entry_state == MGM_STATE_WAYPOINT;
     const bool lane_stale = lane_rx_ns < 0 || monotonicNs() - lane_rx_ns > lane_stale_ns_;
-    if ((active_state == MGM_STATE_LANE ||
+    if (!base_managers_ && (active_state == MGM_STATE_LANE ||
       (active_state == MGM_STATE_TRAFFIC && !traffic_uses_gps)) &&
       lane_stale && !estop_stale)
     {
@@ -538,7 +702,7 @@ private:
     // 태운다 — 새 판단이 아니라 입력 컨디셔닝(§5.7 ②의 확장).
     const bool gps_stale = gps_rx_ns < 0 || monotonicNs() - gps_rx_ns > gps_stale_ns_;
     const bool gps_no_fix = m.gps.fix_quality == 0 || m.gps.points.empty();
-    if ((active_state == MGM_STATE_WAYPOINT || traffic_uses_gps) &&
+    if (!base_managers_ && (active_state == MGM_STATE_WAYPOINT || traffic_uses_gps) &&
       (gps_stale || gps_no_fix) && !estop_stale)
     {
       m.estop.estop = true;
@@ -571,7 +735,7 @@ private:
       m.avoid.obstacle_detected = false;
       m.avoid.avoidable = false;
       m.avoid.ttc = 1e9f;
-      if (backend_->activeState() == MGM_STATE_AVOID && !estop_stale) {
+      if (!base_managers_ && backend_->activeState() == MGM_STATE_AVOID && !estop_stale) {
         m.estop.estop = true;
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
           "avoid 신선도 초과(state=avoid) — estop 강제 (stack_avoid 확인 필요)");
@@ -595,7 +759,7 @@ private:
     if (parking_stale) {
       m.parking.space_found = false;
       m.parking.done = false;
-      if (backend_->activeState() == MGM_STATE_PARKING && !estop_stale) {
+      if (!base_managers_ && backend_->activeState() == MGM_STATE_PARKING && !estop_stale) {
         m.estop.estop = true;
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
           "parking 신선도 초과(state=parking) — estop 강제 (stack_parking 확인 필요)");
@@ -628,6 +792,7 @@ private:
           "CAN 고장 %.1fs 지속 — 래치. 확인 후 `ros2 run adas_mgm go` 로 재인가할 것",
           static_cast<double>(can_relatch_ns_) * 1e-9);
       }
+      external_stop = external_stop || can_bad || can_latched_.load();
       if ((can_bad || can_latched_.load()) && !estop_stale) {
         m.estop.estop = true;
         RCLCPP_WARN_THROTTLE(
@@ -639,10 +804,69 @@ private:
       }
     }
     CoreSnapshot s = toSnapshot(m);
+    if (base_managers_) {
+      const auto stamp_ns = [](const auto & stamp) {
+        return static_cast<int64_t>(stamp.sec) * 1'000'000'000 + stamp.nanosec;
+      };
+      const int64_t stamps[] = {stamp_ns(m.lane.reference_stamp), stamp_ns(m.gps.reference_stamp),
+        stamp_ns(m.avoid.reference_stamp), stamp_ns(m.parking.reference_stamp)};
+      const int64_t timeouts[] = {lane_stale_ns_, gps_stale_ns_, avoid_stale_ns_, parking_stale_ns_};
+      const int64_t ros_now = now().nanoseconds(), steady_now = monotonicNs();
+      for (int source = 0; source < MGM_SRC_ESCAPE; ++source) {
+        s.references[source] = reference_clocks_[source].observe(
+          stamps[source], ros_now, steady_now, timeouts[source]);
+      }
+    }
+    s.autonomous_enabled = !wait_go_ || go;
+    s.new_session = new_session;
+    s.monotonic_ns = monotonicNs();
+    s.event_time_ns = now().nanoseconds();
+    s.mission_cancel_requested = mission_cancel;
+    s.parking_request_id = m.parking.request_id;
+    s.parking_search_active = m.parking.search_active;
+    s.parking_search_space_found = m.parking.search_space_found;
+    s.parking_preparation_ready = m.parking.preparation_ready;
+    const auto & ready_stamp = m.parking.preparation_stamp;
+    s.parking_preparation_reference = preparation_clock_.observe(
+      static_cast<int64_t>(ready_stamp.sec) * 1'000'000'000 + ready_stamp.nanosec,
+      s.event_time_ns, s.monotonic_ns, parking_stale_ns_);
+    const auto & gps_sample = s.references[MGM_SRC_GPS];
+    s.zones.generation = gps_sample.generation;
+    const auto & rear_stamp = m.estop.rear_reference_stamp;
+    const auto rear_sample = rear_clock_.observe(
+      static_cast<int64_t>(rear_stamp.sec) * 1'000'000'000 + rear_stamp.nanosec,
+      s.event_time_ns, s.monotonic_ns, estop_stale_ns_);
+    s.rear_sensor_valid = !estop_stale && m.estop.rear_sensor_valid && rear_sample.generation != 0 &&
+      std::isfinite(rear_sample.age_s) && rear_sample.age_s >= 0 &&
+      rear_sample.timeout_s > 0 && rear_sample.age_s <= rear_sample.timeout_s;
+    s.rear_corridor_state = s.rear_sensor_valid && m.estop.rear_corridor_state <= 2 ?
+      static_cast<RearCorridorState>(m.estop.rear_corridor_state) : RearCorridorState::UNKNOWN;
+    s.gps_position_valid = !gps_stale && m.gps.fix_quality != 0 && m.gps.position_valid &&
+      gps_sample.generation != 0 && std::isfinite(gps_sample.age_s) &&
+      gps_sample.age_s >= 0 && gps_sample.age_s <= gps_sample.timeout_s &&
+      std::isfinite(m.gps.position_x) && std::isfinite(m.gps.position_y);
+    s.gps_x = m.gps.position_x;
+    s.gps_y = m.gps.position_y;
+    s.gps_track_index = s.gps_position_valid ? m.gps.track_index : -1;
+    s.external_stop = external_stop;
+    // Sensor/message availability stays separate from drivable path validity.
+    s.camera_line_valid = !lane_stale;
+    s.gps_valid = !gps_stale && m.gps.fix_quality != 0;
+    s.lidar_valid = !avoid_stale && m.avoid.scan_valid;
+    s.auto_estop = estop_real && m.estop.scan_valid;
+    s.parking_valid = !parking_stale;
+    s.parking_mission_active = m.parking.mission_active;
+    s.parking_mission_mode = m.parking.mission_mode;
+    s.parking_updated = parking_rx_ns != last_parking_rx_used_;
+    last_parking_rx_used_ = parking_rx_ns;
+    if (!s.camera_line_valid) {s.lane_path.n = 0;}
+    if (!s.gps_valid) {s.gps_path.n = 0;}
+    if (!s.lidar_valid) {s.avoid_path.n = 0;}
+    if (!s.parking_valid) {s.parking_path.n = 0;}
     const bool vehicle_stale = vehicle_rx_ns < 0 ||
       monotonicNs() - vehicle_rx_ns > vehicle_stale_ns_;
     s.vehicle_speed_valid = !vehicle_stale && std::isfinite(s.vehicle_speed);
-    if (backend_->activeState() == MGM_STATE_TRAFFIC && !s.vehicle_speed_valid) {
+    if (!base_managers_ && backend_->activeState() == MGM_STATE_TRAFFIC && !s.vehicle_speed_valid) {
       s.traffic_fail_safe_stop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
         "vehicle/vector 신선도 초과(state=traffic) — 정지 강제");
@@ -680,7 +904,7 @@ private:
     // 스테이트 전이 이유 — 바뀐 그 틱의 결정 변수를 그대로 남긴다.
     // 판단이 아니라 관찰이다: 전이는 이미 backend가 했고 여기서 되먹임하지 않는다.
     // MBD 시험에서 "레퍼런스와 같은 조건으로 바뀌었나"가 이 줄로 판별된다.
-    if (out.state != state_before) {
+    if (!base_managers_ && out.state != state_before) {
       const TransitionRecord tr = explainTransition(
         state_before, out.state, s, backend_->params(),
         low_before, high_before, avoid_ticks_before, return_hold_before,
@@ -722,6 +946,161 @@ private:
         static_cast<double>(s.vehicle_speed), static_cast<double>(out.v_ref));
     }
 
+    if (base_managers_) {
+      fma_interfaces::msg::MgmState status;
+      status.header.stamp = now();
+      status.top = static_cast<uint8_t>(out.top);
+      status.navigation = static_cast<uint8_t>(out.nav);
+      status.avoidance = static_cast<uint8_t>(out.avoid);
+      status.signal = static_cast<uint8_t>(out.signal);
+      status.safety = static_cast<uint8_t>(out.safety);
+      status.mission = static_cast<uint8_t>(out.mission);
+      status.mission_type = static_cast<uint8_t>(out.mission_type);
+      status.reference_source = out.path_source;
+      status.speed_owner = static_cast<uint8_t>(out.speed_owner);
+      status.reference_available = out.reference_available;
+      status.selected_reference_valid = out.selected_reference.valid;
+      status.selected_reference_fresh = out.selected_reference.fresh;
+      status.selected_reference_age_s = out.selected_reference.age_s;
+      status.selected_reference_generation = out.selected_reference.generation;
+      status.line_ref_valid = out.references[MGM_SRC_LANE].valid;
+      status.gps_ref_valid = out.references[MGM_SRC_GPS].valid;
+      status.avoid_ref_valid = out.references[MGM_SRC_AVOID].valid;
+      status.mission_ref_valid = out.references[MGM_SRC_PARKING].valid;
+      status.recovery_ref_valid = out.references[MGM_SRC_ESCAPE].valid;
+      status.avoid_episode_reference_seen = out.avoid_episode_reference_seen;
+      status.active_safe_stop_reasons = out.safe_stop_reasons;
+      status.immediate_stop = out.immediate_stop;
+      status.zone = toRosZone(out.zones.selected);
+      status.in_gps_only_zone = out.zones.in_gps_only_zone;
+      status.active_mission_id = out.active_mission_id;
+      for (const auto & zone : out.zones.contexts) {
+        if (zone.zone_id != 0 || zone.in_zone || zone.zone_exited) {status.zones.push_back(toRosZone(zone));}
+      }
+      const auto & request = out.mission_request;
+      status.mission_request_active = request.active;
+      status.mission_request_id = request.request_id;
+      status.mission_source_zone_id = request.source_zone_id;
+      status.request_mission_id = request.mission_id;
+      status.request_mission_type = static_cast<uint8_t>(request.mission_type);
+      status.request_start_monotonic_ns = request.start_time_ns;
+      status.search_elapsed_s = request.elapsed_s;
+      status.search_travel_distance = request.travel_distance;
+      status.parking_search_acknowledged = request.search_acknowledged;
+      status.parking_space_found = request.space_found;
+      status.parking_ready = request.preparation_ready;
+      status.mission_completed = out.active_mission_completed;
+      status.mission_cancel_reason = static_cast<uint8_t>(request.cancel_reason);
+      status.mission_events = out.mission_events;
+      status.zone_entry_observation = toRosObservation(request.zone_entry);
+      status.search_start_observation = toRosObservation(request.search_start);
+      status.space_found_observation = toRosObservation(request.space);
+      status.ready_observation = toRosObservation(request.ready);
+      status.handoff_observation = toRosObservation(request.handoff);
+      status.parking_calibration_state = static_cast<uint8_t>(out.parking_calibration);
+      status.zone_calibration_state = static_cast<uint8_t>(out.zones.calibration);
+      status.zone_generation = out.zones.last_generation;
+      status.zone_enter_confirm_samples = backend_->params().zone_enter_confirm_samples;
+      status.zone_exit_confirm_samples = backend_->params().zone_exit_confirm_samples;
+      status.gps_position_valid = s.gps_position_valid;
+      status.gps_x = s.gps_x; status.gps_y = s.gps_y; status.gps_track_index = s.gps_track_index;
+      status.gps_previous_track_index = m.gps.previous_track_index;
+      status.gps_position_step_m = m.gps.position_step_m;
+      status.gps_vehicle_heading_rad = m.gps.vehicle_heading_rad;
+      status.gps_vehicle_heading_valid = s.gps_position_valid && m.gps.vehicle_heading_valid;
+      const auto & recovery = out.recovery;
+      status.recovery_configured = recovery.configured;
+      status.rear_sensor_valid = recovery.rear_sensor_valid;
+      status.rear_corridor_state = static_cast<uint8_t>(recovery.rear_corridor_state);
+      status.recovery_eligible = recovery.eligible;
+      status.recovery_block_reason = static_cast<uint8_t>(recovery.block_reason);
+      status.recovery_attempt_count = recovery.attempt_count;
+      status.cumulative_reverse_command_time = recovery.command_time_s;
+      status.cumulative_reverse_measured_distance = recovery.measured_distance_m;
+      status.reverse_measured_distance_complete = recovery.measured_distance_complete;
+      status.last_recovery_reason = static_cast<uint8_t>(recovery.last_reason);
+      status.traffic_distance_known = out.traffic_distance_known;
+      status.traffic_remaining_m = out.traffic_remaining_m;
+      status.traffic_stop_in_success_region = out.traffic_stop_in_success_region;
+      if (zone_events_ && s.zones.generation != last_zone_log_generation_) {
+        last_zone_log_generation_ = s.zones.generation;
+        for (const auto & zone : status.zones) {
+          zone_events_ << s.zones.generation << ',' << s.event_time_ns << ',' << +zone.zone_id << ','
+            << zone.zone_valid << ',' << zone.raw_in_zone << ',' << zone.stable_in_zone << ','
+            << zone.enter_count << ',' << zone.exit_count << ',' << s.gps_x << ',' << s.gps_y << ','
+            << s.gps_position_valid << ',' << s.gps_track_index << ',' << m.gps.previous_track_index << ','
+            << m.gps.position_step_m << ',' << m.gps.vehicle_heading_rad << ','
+            << status.gps_vehicle_heading_valid << ',' << zone.boundary_distance_m << ','
+            << +status.zone_calibration_state << '\n';
+        }
+        zone_events_.flush();
+      }
+      manager_pub_->publish(status);
+      logMissionEvents(s, out);
+      const bool changed = !has_manager_status_ || status.top != previous_manager_status_.top ||
+        status.zone.zone_id != previous_manager_status_.zone.zone_id ||
+        status.zone.zone_valid != previous_manager_status_.zone.zone_valid ||
+        status.navigation != previous_manager_status_.navigation ||
+        status.avoidance != previous_manager_status_.avoidance ||
+        status.signal != previous_manager_status_.signal ||
+        status.safety != previous_manager_status_.safety ||
+        status.mission != previous_manager_status_.mission ||
+        status.mission_type != previous_manager_status_.mission_type ||
+        status.reference_source != previous_manager_status_.reference_source ||
+        status.speed_owner != previous_manager_status_.speed_owner ||
+        status.active_safe_stop_reasons != previous_manager_status_.active_safe_stop_reasons ||
+        status.selected_reference_valid != previous_manager_status_.selected_reference_valid;
+      if (changed) {
+        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+          "MGM top=%u nav=%u avoid=%u signal=%u safety=%u mission=%u type=%u ref=%u speed=%u valid=%d age=%.3f reasons=0x%x",
+          status.top, status.navigation, status.avoidance, status.signal, status.safety,
+          status.mission, status.mission_type, status.reference_source, status.speed_owner,
+          status.selected_reference_valid, status.selected_reference_age_s, status.active_safe_stop_reasons);
+        if (transitions_) {
+          transitions_ << (tick_ - 1) << ',' << +status.top << ',' << +status.navigation << ','
+                       << +status.avoidance << ',' << +status.signal << ',' << +status.safety << ','
+                       << +status.mission << ',' << +status.mission_type << ','
+                       << +status.reference_source << ',' << +status.speed_owner << ',' << out.v_ref << ','
+                       << status.selected_reference_valid << ',' << status.selected_reference_fresh << ','
+                       << status.selected_reference_age_s << ',' << status.active_safe_stop_reasons << '\n';
+          transitions_.flush();
+        }
+        previous_manager_status_ = status;
+        has_manager_status_ = true;
+      }
+      using ParkingCommand = fma_interfaces::msg::ParkingCommand;
+      if (out.mission_cancel) {
+        pending_mission_command_.request_id = request.request_id;
+        pending_mission_command_.mission_mode = static_cast<uint8_t>(request.mission_type);
+        pending_mission_command_.action = ParkingCommand::CANCEL;
+      } else if (request.active) {
+        pending_mission_command_.request_id = request.request_id;
+        pending_mission_command_.mission_mode = static_cast<uint8_t>(request.mission_type);
+        pending_mission_command_.action = out.mission == MissionState::MISSION_PREPARE ?
+          ParkingCommand::PREPARE : ParkingCommand::ACTIVATE;
+      } else if (pending_mission_command_.action != ParkingCommand::CANCEL) {
+        pending_mission_command_.action = 0;
+      }
+      const bool command_matching = s.parking_valid &&
+        s.parking_request_id == pending_mission_command_.request_id &&
+        s.parking_mission_mode == pending_mission_command_.mission_mode;
+      const bool acknowledged = command_matching && (
+        (pending_mission_command_.action == ParkingCommand::PREPARE && s.parking_search_active) ||
+        (pending_mission_command_.action == ParkingCommand::ACTIVATE && s.parking_mission_active) ||
+        (pending_mission_command_.action == ParkingCommand::CANCEL &&
+         !s.parking_search_active && !s.parking_mission_active));
+      if (!acknowledged && pending_mission_command_.action != 0) {
+        mission_command_pub_->publish(pending_mission_command_);
+      }
+      if (acknowledged && pending_mission_command_.action == ParkingCommand::CANCEL) {
+        pending_mission_command_.action = 0;
+      }
+      if (!out.selected_reference.valid) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+          "MGM source %u reference invalid/stale: SAFE_STOP",
+          static_cast<unsigned>(out.path_source));
+      }
+    }
     TargetRef msg;
     msg.header.stamp = now();
     msg.header.frame_id = "base_link";
@@ -748,6 +1127,9 @@ private:
       msg.ref_points[i].yaw = out.ref_points[i].yaw;
       msg.ref_points[i].curvature = out.ref_points[i].curvature;
     }
+    // Last command boundary guard, also independent of the speed ramp.
+    if (base_managers_ && (!out.selected_reference.valid || !std::isfinite(msg.v_ref) ||
+      !reference_geometry_valid(out.ref_points, out.n_points))) {msg.v_ref = 0.0f;}
     pub_->publish(msg);
   }
 
@@ -778,6 +1160,9 @@ private:
   int cpu_core_{-1};
   std::ofstream dump_;
 
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr calibration_callback_;
+  double pending_parking_timeout_{-1.0}, pending_parking_distance_{-1.0};
+  bool calibration_pending_{false};
   std::mutex mtx_;
   LatestMsgs msgs_;
   int64_t last_estop_rx_ns_{-1};  // 마지막 EstopRequest 수신 시각 (미수신 = -1)
@@ -806,9 +1191,28 @@ private:
   std::atomic<bool> can_latched_{false};   // CAN 고장 래치 — /operator/go 재인가로만 해제
   bool stop_holding_prev_{false};   // 지정 지점 정차 로그용 (코어 상태의 직전 값)
   bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
+  bool base_managers_{false};
+  ReferenceClock reference_clocks_[MGM_SRC_ESCAPE];
+  ReferenceClock preparation_clock_;
+  bool session_requested_{false};
+  bool operator_stop_{false};
+  bool mission_cancel_requested_{false};
+  fma_interfaces::msg::ParkingCommand pending_mission_command_;
+  std::ofstream mission_events_;
+  std::ofstream zone_events_;
+  uint64_t last_zone_log_generation_{0};
+  ReferenceClock rear_clock_;
+  fma_interfaces::msg::MgmState previous_manager_status_;
+  bool has_manager_status_{false};
+  int64_t last_parking_rx_used_{-1};
   bool go_received_{false};         // /operator/go 마지막 수신값
 
   rclcpp::Publisher<TargetRef>::SharedPtr pub_;
+  rclcpp::Publisher<fma_interfaces::msg::ParkingCommand>::SharedPtr mission_command_pub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_mission_cancel_;
+  rclcpp::Publisher<fma_interfaces::msg::MgmState>::SharedPtr manager_pub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_session_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_operator_stop_;
   rclcpp::Subscription<fma_interfaces::msg::LanePath>::SharedPtr sub_lane_;
   rclcpp::Subscription<fma_interfaces::msg::GpsPath>::SharedPtr sub_gps_;
   rclcpp::Subscription<fma_interfaces::msg::AvoidStatus>::SharedPtr sub_avoid_;

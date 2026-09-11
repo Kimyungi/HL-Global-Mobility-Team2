@@ -16,6 +16,7 @@ import numpy as np
 
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from rclpy.qos import qos_profile_sensor_data
 
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
@@ -26,6 +27,8 @@ from sensor_msgs.msg import Imu, LaserScan, PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header, String
 from visualization_msgs.msg import Marker, MarkerArray
+
+from fma_interfaces.msg import ParkingCommand
 
 from .geometry import Pose2, transform_points
 from .icp_slam import IcpConfig, IcpSlam, voxel_downsample
@@ -81,6 +84,11 @@ class StackParkingNode(Node):
         planner = MinimumRadiusParkingPlanner(self._planner_config())
         self.mission = ParkingMission(detector, planner, self._mission_config())
         self.pose_delta_tracker = PoseDeltaTracker()
+        self.search_request_id = 0
+        self.search_mission_mode = 0
+        self.search_running = False
+        self.execution_authorized = False
+        self.search_start_s = -math.inf
 
         self.latest_vehicle: Optional[VehicleVector] = None
         self.latest_rear_clearance_m: Optional[float] = None
@@ -99,6 +107,7 @@ class StackParkingNode(Node):
         self.latest_vehicle_s = -math.inf
         self.last_pair_skew_s = math.inf
         self.last_slam_update_s = -math.inf
+        self.reference_input_stamp_s = -math.inf
         self.slam_update_times: deque[float] = deque(maxlen=30)
         self._last_frame_warning_s = -math.inf
 
@@ -165,6 +174,8 @@ class StackParkingNode(Node):
                 qos_profile_sensor_data)
         self.gps_sub = self.create_subscription(
             GpsPath, str(self._p('gps_topic')), self._on_gps_path, 1)
+        self.mission_command_sub = self.create_subscription(
+            ParkingCommand, '/parking/mission_command', self._on_mission_command, 10)
         self.gps_command_sub = self.create_subscription(
             String, '/parking/gps_command', self._on_command, 10)
         self.manual_command_sub = self.create_subscription(
@@ -238,7 +249,7 @@ class StackParkingNode(Node):
             # it does not park against whatever the vehicle happened to map
             # beforehand.
             'reset_map_on_mission_start': True,
-            'auto_trigger_gps_zone': True,
+            'auto_trigger_gps_zone': False,  # MGM owns mission start; legacy zone mode is explicit
             'gps_default_mode': MODE_PERPENDICULAR,
             'gps_default_side': SIDE_AUTO,
             # Test-only: synthesizes the existing MGM GPS gate after a manual
@@ -499,9 +510,7 @@ class StackParkingNode(Node):
         if not words:
             return None
         if words[0] in ('cancel', 'reset', 'stop'):
-            self.mission.cancel()
-            self.pipeline.return_to_mapping(self.slam.initialized)
-            self.manual_gate_active = False
+            self._cancel_search()
             self.get_logger().warn('parking mission cancelled by command')
             return None
         if words[0] == 'start':
@@ -536,19 +545,81 @@ class StackParkingNode(Node):
             return
         self._start_mission(parsed[0], parsed[1], source='command')
 
-    def _start_mission(self, mode: str, side: str, source: str) -> None:
+    def _cancel_search(self) -> None:
+        self.mission.cancel()
+        self.pipeline.return_to_mapping(self.slam.initialized)
+        self.manual_gate_active = False
+        self.search_running = False
+        self.execution_authorized = False
+        self.reference_input_stamp_s = -math.inf
+
+    def _on_mission_command(self, msg: ParkingCommand) -> None:
+        request_id = int(msg.request_id)
+        if request_id <= 0 or request_id < self.search_request_id:
+            return
+        if msg.action == ParkingCommand.CANCEL:
+            # Also tombstone a cancel that arrives before its prepare command.
+            self.search_request_id = request_id
+            self.search_mission_mode = int(msg.mission_mode)
+            self._cancel_search()
+            return
+        if msg.action == ParkingCommand.PREPARE:
+            if request_id == self.search_request_id:
+                return  # retries and zone chatter never reset an existing search
+            mode = {GpsPath.PARKING_PERPENDICULAR: MODE_PERPENDICULAR,
+                    GpsPath.PARKING_PARALLEL: MODE_PARALLEL}.get(msg.mission_mode)
+            if mode is None:
+                return
+            self._cancel_search()
+            self.search_request_id = request_id
+            self.search_mission_mode = int(msg.mission_mode)
+            self.search_start_s = self._clock_s()
+            self._start_mission(mode, SIDE_AUTO, source='mgm', force_reset=True)
+            self.search_running = self.mission.state == MissionState.SCANNING
+        elif (msg.action == ParkingCommand.ACTIVATE
+              and request_id == self.search_request_id and self.search_running
+              and int(msg.mission_mode) == self.search_mission_mode
+              and self._preparation_ready(self._clock_s())):
+            self.execution_authorized = True
+
+    def _preparation_ready(self, now_s: float) -> bool:
+        # Reuse existing pipeline, planner and localization freshness. Space
+        # detection alone precedes the existing localization confirmation stage.
+        return bool(
+            self.search_running and self.pipeline.parking_enabled
+            and self.mission.plan is not None and self.mission.space is not None
+            and len(self.mission.current_path) > 0
+            and self._localization_valid(now_s)
+            and math.isfinite(self.reference_input_stamp_s)
+            and 0.0 <= now_s - self.reference_input_stamp_s
+            <= float(self._p('slam_stale_timeout_s')))
+
+    def _start_mission(self, mode: str, side: str, source: str,
+                       force_reset: bool = False) -> None:
+        if self.search_running and source != 'mgm':
+            self.get_logger().warn('manual/GPS trigger ignored during MGM request')
+            return
         if mode not in (MODE_PARALLEL, MODE_PERPENDICULAR) or side not in (
             SIDE_LEFT, SIDE_RIGHT, SIDE_AUTO
         ):
             self.get_logger().error('invalid parking type/side: %s %s' % (mode, side))
             return
-        if bool(self._p('reset_map_on_mission_start')):
+        if force_reset or bool(self._p('reset_map_on_mission_start')):
             self.slam.reset(Pose2())
             self.prior.reset(Pose2())
             self.pose_delta_tracker = PoseDeltaTracker()
+            self.reference_input_stamp_s = -math.inf
             self.cloud_pairer.clear()
             self.pipeline.reset()
             self.last_icp_accepted_s = -math.inf
+            self.last_icp_result = None
+            self.last_slam_update_s = -math.inf
+            self.latest_merged_cloud = None
+            self.latest_scan_map = np.empty((0, 2), dtype=np.float64)
+            self.latest_rear_clearance_m = None
+            self.latest_rear_scan_s = -math.inf
+            self.last_output = None
+            self.slam_update_times.clear()
         accepted = self.mission.trigger(mode, side, self.slam.pose)
         if accepted:
             if source == 'command' and bool(self._p('manual_test_publish_gps_gate')):
@@ -675,6 +746,9 @@ class StackParkingNode(Node):
             points, stamp_s = pair.points, pair.stamp_s
             self.last_pair_skew_s = pair.skew_s
 
+        if self.search_running and (
+                not math.isfinite(stamp_s) or stamp_s <= self.search_start_s):
+            return  # queued pre-request scan cannot populate a new search map
         prior_pose = self.prior.predict(stamp_s)
         result = self.slam.update(
             points,
@@ -687,6 +761,8 @@ class StackParkingNode(Node):
         if result.accepted:
             self.last_icp_accepted_s = now_s
         self.pose_delta_tracker.update(result.pose)
+        if result.accepted:
+            self.reference_input_stamp_s = stamp_s
         # Localization is a control input, not a debug visualization. Publish
         # it at the configured SLAM rate (10Hz) so downstream preview/delta
         # generation is not silently throttled by debug_publish_rate_hz (5Hz).
@@ -774,13 +850,21 @@ class StackParkingNode(Node):
             <= float(self._p('prior.velocity_timeout_s'))
         ):
             vehicle_speed = float(self.latest_vehicle.v)
-        mission_output = self.mission.tick(
-            self.slam.pose,
-            now_s,
-            rear_clearance_m=self._rear_clearance(now_s),
-            vehicle_speed_mps=vehicle_speed,
-            localization_valid=self._localization_valid(now_s),
-        )
+        if self.search_running and not self.execution_authorized:
+            # Observe/map/plan in _process_slam, but do not advance approach,
+            # reverse, wait or exit while navigation still owns the vehicle.
+            mission_output = MissionOutput(
+                state=self.mission.state, space_found=False, path_blocked=False,
+                done=False, reference_local=None, v_suggest_mps=0.0,
+                progress_index=self.mission.progress, preview_index=0,
+                status='mission_preparation')
+        else:
+            mission_output = self.mission.tick(
+                self.slam.pose, now_s,
+                rear_clearance_m=self._rear_clearance(now_s),
+                vehicle_speed_mps=vehicle_speed,
+                localization_valid=self._localization_valid(now_s),
+            )
         output = mission_output
         if not self.pipeline.parking_enabled:
             output = MissionOutput(
@@ -806,6 +890,23 @@ class StackParkingNode(Node):
         msg.space_found = output.space_found
         msg.path_blocked = output.path_blocked
         msg.done = output.done
+        # Keep cancelled/completed ID and mode visible for cleanup acknowledgement.
+        msg.request_id = self.search_request_id
+        msg.search_active = self.search_running and mission_output.state not in (
+            MissionState.IDLE, MissionState.COMPLETE)
+        msg.search_space_found = bool(msg.search_active and self.mission.space is not None
+                                      and self.mission.plan is not None)
+        msg.preparation_ready = self._preparation_ready(now_s)
+        if msg.preparation_ready:
+            msg.preparation_stamp = Time(seconds=self.reference_input_stamp_s).to_msg()
+        msg.mission_active = mission_output.state not in (
+            MissionState.IDLE, MissionState.COMPLETE) and (
+                not self.search_running or self.execution_authorized)
+        msg.mission_mode = (
+            GpsPath.PARKING_PARALLEL if self.mission.mode == MODE_PARALLEL
+            else GpsPath.PARKING_PERPENDICULAR)
+        if self.search_request_id:
+            msg.mission_mode = self.search_mission_mode
         msg.v_suggest = float(output.v_suggest_mps)
         delta = self.pose_delta_tracker.delta
         msg.dx = float(delta.dx)
@@ -819,6 +920,7 @@ class StackParkingNode(Node):
             point.yaw = float(output.reference_local.yaw)
             point.curvature = float(output.reference_local.curvature)
             msg.points.append(point)
+        self._set_reference_stamp(msg, now_s)
         self.status_pub.publish(msg)
         self._publish_paths(now.to_msg())
         self._publish_markers(now.to_msg(), output)
@@ -829,6 +931,15 @@ class StackParkingNode(Node):
                 PipelineStage.LOCALIZATION, PipelineStage.PARKING)
         ):
             self.pipeline.return_to_mapping(self.slam.initialized)
+            self.search_running = False
+            self.execution_authorized = False
+
+    def _set_reference_stamp(self, msg, now_s):
+        # A timer-generated local preview still depends on the last accepted
+        # localization sample. Rejected/absent ICP cannot rejuvenate its pose.
+        stamp_s = self.reference_input_stamp_s
+        if msg.points and math.isfinite(stamp_s) and stamp_s > 0.0 and self._localization_valid(now_s):
+            msg.reference_stamp = Time(seconds=stamp_s).to_msg()
 
     def _publish_manual_gate(self, stamp) -> None:
         if self.manual_gate_pub is None:

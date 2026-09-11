@@ -30,6 +30,8 @@ x,y의 절대 거리 정확도는 보장되지 않으니 실측 캘리브레이�
 """
 from __future__ import annotations
 
+import math
+
 import time
 from dataclasses import replace
 
@@ -153,6 +155,7 @@ class StackLaneNode(Node):
         # 추적 상태머신: 'valid'(방금 새로 검출) | 'held' | 'search' | 'lost'
         self._track_status = 'lost'
         self._age_frames = 0        # 현재 상태(held/search)에서 경과 프레임 수
+        self._reference_stamp = None
         self._held_estimate = None  # HELD/SEARCH 중 그대로 재발행할 마지막 정상 LaneEstimate
         self.warmup_frames = int(self.get_parameter('warmup_frames').value)
         self._frames_seen = 0
@@ -447,6 +450,7 @@ class StackLaneNode(Node):
             rp.curvature = float(p.curvature)
             points.append(rp)
         msg.points = points
+        self._set_reference_stamp(msg, cap_mono, estimate.mode != 'none')
         self.pub.publish(msg)
 
         # 캡처→발행 지연 주기 로깅 (5초). 차선 추종 루프의 위상 여유를 좌우하는
@@ -462,6 +466,19 @@ class StackLaneNode(Node):
                     % (v[len(v) // 2], v[int(0.9 * len(v))], v[-1],
                        infer_ms, self._frames_dropped))
                 self._pipeline_ms.clear()
+
+    def _set_reference_stamp(self, msg, cap_mono, new_estimate):
+        # HELD/SEARCH republishes the previous estimate: a new camera frame
+        # alone must not renew that path's generation. Geometry is unchanged.
+        if new_estimate:
+            self._reference_stamp = None
+            if cap_mono is not None:
+                capture_age = time.monotonic() - cap_mono
+                if math.isfinite(capture_age) and capture_age >= 0.0:
+                    self._reference_stamp = (
+                        self.get_clock().now() - Duration(seconds=capture_age)).to_msg()
+        if msg.points and self._reference_stamp is not None:
+            msg.reference_stamp = self._reference_stamp
 
     def destroy_node(self) -> None:
         if self.logger_csv is not None:

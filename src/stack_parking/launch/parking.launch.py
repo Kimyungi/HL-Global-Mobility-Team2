@@ -53,7 +53,7 @@ def generate_launch_description():
             output='screen',
             parameters=[params, {
                 'merged_cloud_topic': merged_cloud_topic,
-                'auto_trigger_gps_zone': True,
+                'auto_trigger_gps_zone': False,
                 'manual_test_publish_gps_gate': False,
             }],
         ),

@@ -7,6 +7,7 @@
 #define ADAS_MGM__CORE__MGM_TYPES_HPP_
 
 #include <cstdint>
+#include "manager_types.hpp"
 
 namespace adas_mgm
 {
@@ -143,6 +144,34 @@ struct CoreSnapshot
   // **모르면 false**: 후방 센서 미탑재·스캔 무효·stack_estop staleness 전부 false다.
   // escape_require_rear_clear가 켜져 있으면 이 값이 true인 동안만 후진한다.
   bool estop_rear_clear;
+  // Explicit validity/operating inputs for the parallel manager core.
+  // Legacy/generated snapshots ignore these appended fields.
+  bool autonomous_enabled;
+  bool new_session;
+  bool external_stop;  // operator/CAN; never masked by parking or recovery
+  bool camera_line_valid;
+  bool gps_valid;
+  bool lidar_valid;  // fresh, valid scan consumed by existing avoidance module
+  bool auto_estop;   // fresh LiDAR danger; excludes scan timeout and operator stop
+  bool parking_valid;
+  bool parking_updated;
+  ZoneSnapshot zones;
+  bool parking_mission_active;
+  uint8_t parking_mission_mode;
+  ReferenceSample references[MGM_REFERENCE_PROVIDERS];
+  int64_t monotonic_ns;
+  int64_t event_time_ns;
+  bool mission_cancel_requested;
+  uint64_t parking_request_id;
+  bool parking_search_active;
+  bool parking_search_space_found;
+  bool parking_preparation_ready;
+  ReferenceSample parking_preparation_reference;
+  bool gps_position_valid;
+  double gps_x, gps_y;
+  int32_t gps_track_index;
+  bool rear_sensor_valid;  // includes actual rear generation freshness in wrapper
+  RearCorridorState rear_corridor_state;
 };
 
 // 튜닝 파라미터 — params.yaml과 1:1, Simulink에서는 tunable parameter
@@ -251,11 +280,17 @@ struct CoreParams
   // 안정 검출 시 매 틱 재신뢰로 두 번 바뀌었다가, 두 안 모두 이 edge 기반
   // 시드 방식으로 되돌아왔다 — mgm_step.cpp의 거리 추적 블록 주석 참조.)
   float traffic_ramp_distance_m;  // 소실 edge에서의 시드 거리 [m] — ramp는 여기서 v_base로 시작
-  // 두 역할을 겸한다: ① 빨간불이 아직 확정 안 된 채 감쇠값이 이 이하로
-  // 떨어지면 시드로 되돌리는 가드 문턱, ② 빨간불 확정 후 이 이하에서 완전
-  // 정지(v_ref=0). 기본 0.5m — "seed(1.5m)에서 1m 이상 진행한 뒤에만 실제
-  // 정지가 성립한다"는 요구사항과 동일한 값이다(사용자 지정, 2026-09-02).
+  // Current base: desired front-bumper remaining distance, 1.0m. First loss
+  // seeds 1.5m; actual |speed| integration consumes 0.5m to reach this target.
+  // Existing speed profile/merge remain; physical stopping position needs measurement.
+  // Legacy false backend additionally uses this threshold for its historical pre-red guard.
   float traffic_stop_offset;
+  // 0: historical/generated parity; 1: parallel managers. ROS core defaults to 1.
+  int32_t base_state_machine_enabled;
+  double parking_search_timeout;       // seconds; <=0 means uncalibrated
+  double max_parking_search_distance;  // metres; <=0 means uncalibrated
+  int32_t zone_enter_confirm_samples;  // independent GNSS fixes; 0 = uncalibrated
+  int32_t zone_exit_confirm_samples;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -318,6 +353,7 @@ struct CoreState
   float traffic_stopline_distance;
   // edge(true→false) 검출용 — 이번 틱 traffic_stopline_detected의 직전값.
   bool traffic_prev_stopline_detected;
+  ManagerState managers;
 };
 
 // 매 틱의 출력 — wrapper가 TargetRef로 변환·발행
@@ -329,6 +365,32 @@ struct CoreOutput
   float v_ref;             // [m/s] 병합 최종 목표 속도. 정지 = 0
   int32_t n_points;        // 유효 점 수 (1~20) — CAN에는 이만큼만 실린다
   CorePoint ref_points[MGM_NUM_POINTS];
+  // The legacy state byte above remains a CAN-compatible path projection.
+  TopState top;
+  NavState nav;
+  AvoidState avoid;
+  SignalState signal;
+  SafetyState safety;
+  MissionState mission;
+  MissionType mission_type;
+  SpeedOwner speed_owner;
+  bool mission_start;
+  bool mission_cancel;
+  bool mission_prepare;
+  MissionRequest mission_request;
+  uint32_t mission_events;
+  bool active_mission_completed;
+  bool reference_available;
+  ZoneState zones;
+  uint8_t active_mission_id;
+  ReferenceStatus references[MGM_REFERENCE_PROVIDERS];
+  ReferenceStatus selected_reference;
+  uint32_t safe_stop_reasons;
+  bool avoid_episode_reference_seen;
+  CalibrationState parking_calibration;
+  RecoveryDiagnostics recovery;
+  float traffic_remaining_m;
+  bool traffic_distance_known, traffic_stop_in_success_region;
 };
 
 }  // namespace adas_mgm

@@ -19,7 +19,7 @@ find_package(std_msgs REQUIRED)
 
 # ── MGM 로직 코어 (§5.5) — ROS 의존성 없는 정적 라이브러리.
 # 여기에 rclcpp/fma_interfaces를 링크하는 순간 §5.5 위반 — 절대 추가 금지.
-add_library(mgm_core STATIC core/mgm_step.cpp)
+add_library(mgm_core STATIC core/mgm_step.cpp core/manager_step.cpp core/zone_step.cpp core/reference_safety.cpp core/mission_step.cpp)
 target_include_directories(mgm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ── ROS 2 wrapper 노드
@@ -125,6 +125,26 @@ if(BUILD_TESTING OR ADAS_MGM_ENABLE_GENERATED_BACKEND)
 endif()
 
 if(BUILD_TESTING)
+  add_executable(stabilization_test test/stabilization_test.cpp)
+  target_link_libraries(stabilization_test mgm_core)
+  add_test(NAME stabilization_test COMMAND stabilization_test)
+
+  add_executable(reference_safety_test test/reference_safety_test.cpp)
+  target_link_libraries(reference_safety_test mgm_core)
+  add_test(NAME reference_safety_test COMMAND reference_safety_test)
+
+  add_executable(zone_manager_test test/zone_manager_test.cpp)
+  target_link_libraries(zone_manager_test mgm_core)
+  add_test(NAME zone_manager_test COMMAND zone_manager_test)
+
+  add_executable(mission_preparation_test test/mission_preparation_test.cpp)
+  target_link_libraries(mission_preparation_test mgm_core)
+  add_test(NAME mission_preparation_test COMMAND mission_preparation_test)
+
+  add_executable(manager_state_test test/manager_state_test.cpp)
+  target_link_libraries(manager_state_test mgm_core)
+  add_test(NAME manager_state_test COMMAND manager_state_test)
+
   # Compile this target without ADAS_MGM_HAS_GENERATED_BACKEND even when the
   # package opt-in is ON. It proves that an unavailable generated request
   # fails at startup instead of silently falling back to the production core.
@@ -175,7 +195,7 @@ endif()
 
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS tools/go tools/state tools/can_watchdog_check.py
-  tools/straight_lane_publisher.py
+  tools/straight_lane_publisher.py tools/analyze_mission_calibration.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 

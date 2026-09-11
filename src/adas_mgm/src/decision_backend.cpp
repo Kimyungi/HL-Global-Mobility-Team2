@@ -167,6 +167,11 @@ DecisionBackend::DecisionBackend(
     throw std::invalid_argument(
             "backend must be exactly 'core' or 'generated'; got '" + requested + "'");
   }
+  if (params_.base_state_machine_enabled) {
+    throw std::invalid_argument(
+            "generated v1.88 does not implement parallel managers; "
+            "set base_state_machine_enabled=false for historical model tests");
+  }
   if (!generated_scope_acknowledged) {
     throw std::invalid_argument(
             "backend=generated requires generated_backend_acknowledge_limited_scope=true");
@@ -384,3 +389,11 @@ CoreOutput DecisionBackend::failStopOutput() const
 }
 
 }  // namespace adas_mgm
+
+namespace adas_mgm {
+void DecisionBackend::setParkingCalibration(double timeout_s, double distance_m)
+{
+  params_.parking_search_timeout = core_state_.params.parking_search_timeout = timeout_s;
+  params_.max_parking_search_distance = core_state_.params.max_parking_search_distance = distance_m;
+}
+}

@@ -1,0 +1,25 @@
+# Add the optional "zones" key to the existing stack_gps zones_file.
+# No vehicle coordinates or active test regions are supplied in this template.
+zones: []
+# Each configured entry requires:
+#   zone_id: unique integer 1..255
+#   zone_type: NORMAL_ZONE | GPS_ONLY_ZONE | MISSION_ZONE
+#   mission_id: integer 0..255 (MISSION_ZONE only, completion-memory key)
+#   mission_type: T_PARKING | PARALLEL_PARKING (MISSION_ZONE only)
+# and exactly one boundary representation:
+#   index_range: [measured_start_index, measured_end_index]
+# or:
+#   start: {lat: measured_start_latitude, lon: measured_start_longitude}
+#   end: {lat: measured_end_latitude, lon: measured_end_longitude}
+# GPS reuses index_of + stop_zone_snap_max_m, then the existing _in_ranges.
+# Existing gps_only_zones / gps_only_zone_latlon and parking_zone_ranges /
+# parallel_parking_zone_ranges are automatically exposed as Zone definitions.
+# Explicit definitions reserve their IDs; identical type/ranges replace the
+# generated definitions. Several zones may share one mission_id and type.
+
+# Revision 5: MISSION_ZONE defines the search trigger, not the maneuver site.
+# Calibrate its measured index_range/start/end ahead of the parking area; MGM
+# latches the request after exit. No guessed lead distance is supplied here.
+# To replace an old parking range with an earlier explicit trigger, remove that
+# old range from the GPS configuration; a different range is a separate zone
+# and would otherwise receive its own auto-generated Mission ID.

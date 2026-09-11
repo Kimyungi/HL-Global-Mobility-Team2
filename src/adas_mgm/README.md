@@ -1,10 +1,32 @@
 # adas_mgm — Decision 계층 (10ms MGM 루프)
 
+> **6차 단일 기준:** [MGM_MBD_STATE_MACHINE_SPEC.md](../../docs/MGM_MBD_STATE_MACHINE_SPEC.md). 현재 MBD 정본은 병행 Top/Nav/Avoid/Signal/Safety/Mission이며 legacy 5-state byte는 호환 projection이다.
+> Zone 확인은 독립 GNSS sample이며 0=미설정. Parking 제한 -1, Recovery OFF 유지. 새 bus/dump는 v12이며 이전 버전 설명/시험 절차는 역사적 비교 범위다.
+> 실제 운용 전 Zone/Parking/후방 corridor calibration과 현장 검증이 필요하다.
+
+## 2026-09-11 공통 베이스 상태 머신
+
+C++ `backend=core`는 Navigation/Avoidance/Traffic/Safety/Mission 병행 Manager를 기본 사용합니다.
+Mission은 GPS의 `MISSION_ZONE` entry에서 `MISSION_PREPARE` 요청을 latch합니다.
+Zone 밖에서도 탐색을 유지하며 현재 요청의 ready 이후에만 `MISSION_ACTIVE`로 제어권을 넘깁니다.
+기존 GPS 전용·주차 구간을 재사용하고, 명시적 Zone ID/Mission ID는 GPS `zones_file`에서 설정합니다.
+확정된 실차 Mission 경계는 별도로 설정해야 하며 임의 좌표는 추가하지 않았습니다.
+Zone/Manager 구조는 [설계 문서](../../docs/MGM_BASE_STATE_MACHINE.md)를 참고하세요.
+4차에서는 실제 생성 시각에 따른 Reference validity/freshness와 독립 SAFE_STOP reason을 추가했습니다.
+invalid/stale 경로는 제어권을 유지한 채 속도를 0으로 차단합니다. timeout은 기존 provider별 설정을 재사용합니다.
+메시지·복구 입력·경계 chatter·최신 시험 결과는 [Reference 안전 통합 보고서](../../docs/MGM_REFERENCE_SAFETY.md)에 있습니다.
+5차 구현·검증 결과는 [Mission Preparation 보고서](../../docs/MGM_MISSION_PREPARATION.md)를 참고하세요.
+`parking_search_timeout`(s), `max_parking_search_distance`(m)는 실측 전 **-1.0(미설정)** 입니다.
+둘 다 유한 양수로 설정해야 탐색합니다. 미설정 요청은 `CALIBRATION_REQUIRED`로 취소하고 일반 주행을 유지합니다.
+`/operator/cancel_mission`의 Bool true는 Mission만 취소합니다. `/operator/stop`은 기존 임시 정지입니다.
+`mission_events_csv_path`에 보정용 이벤트 CSV를 기록할 수 있으며 실차 통합 launch는 `mission_events.csv`를 설정합니다.
+아래 기존 5상태 설명은 `base_state_machine_enabled=false`의 legacy 동작과 구별해야 합니다.
+
 구조·규칙의 단일 소스는 워크스페이스 루트 `CLAUDE.md` (§2, §4, §5, §5.5). 이 문서는 실행·측정 절차만 다룬다.
 
 실차 통합 실행은 다음 두 문서를 순서대로 사용한다.
 
-1. [`RUNBOOK_full_measurement_20260830.md`](RUNBOOK_full_measurement_20260830.md) —
+1. [`RUNBOOK_full_measurement_20260904.md`](RUNBOOK_full_measurement_20260904.md) —
    처음 설치하거나 장착 위치가 바뀐 경우의 임계값 측정
 2. [`RUNBOOK_full_operation_20260904.md`](RUNBOOK_full_operation_20260904.md) —
    측정 완료 후 차선·GPS·회피·긴급정지·신호등을 함께 실행
@@ -36,7 +58,7 @@ g++ -std=c++17 -Wall -Wextra -c core/mgm_step.cpp -I.   # 통과해야 정상
 
 ## 실험용 generated backend (4상태 v1.88, opt-in)
 
-ROS 노드의 기본 backend는 TRAFFIC을 포함한 5상태 C++ `core`이며, 기본 빌드에는 생성
+ROS 노드의 기본 backend는 위 병행 Manager를 실행하는 C++ `core`이며, 기본 빌드에는 생성
 backend가 링크되지 않는다. `ADAS_MGR2` v1.88을 실행하려면 아래 두 단계를 모두
 명시해야 한다. v1.88은 TRAFFIC 상태가 없으므로 generated backend는
 `traffic_state_enabled=false`일 때만 기동한다.
