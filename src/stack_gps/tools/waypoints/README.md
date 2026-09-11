@@ -359,6 +359,33 @@ rviz2 -d "$HOME/FMA_ws/src/stack_gps/tools/waypoints/gps_view.rviz"
 
 ## 9. 주차 구간 인덱스 확정
 
+한라대 기준경로 1~7은 `waypoints_halla_reference_path_01.csv`부터
+`waypoints_halla_reference_path_07.csv`까지이며, ENU 좌표와 WGS84 `lat/lon`을
+함께 가진다. 사각 GPS 전용 Zone과 주차 지점은 같은 폴더의
+`halla_reference_mission.yaml` 및 각 경로에 대응하는
+`zones_halla_reference_path_XX.yaml`에 저장된다. 경로 2의 YAML은 시작부터 끝까지
+GPS 전용 구간이라 카메라 전이 없이 waypoint로만 주행한다.
+
+`parking_points`는 인덱스를 직접 쓰지 않고 위경도와 모드를 저장한다.
+`stack_gps` 기동 시 `parking_zone_span_m`(기본 1.0m) 폭의 현재 트랙 인덱스
+구간으로 변환되므로 경로를 다시 샘플링해도 장소가 유지된다.
+
+```yaml
+parking_points:
+- mode: perpendicular
+  lat: 37.30387291
+  lon: 127.90717306
+- mode: parallel
+  lat: 37.30358042
+  lon: 127.90682516
+```
+
+경로·Zone·주차점 확인 그림은 MATLAB에서 다음 파일을 실행한다.
+
+```text
+src/stack_gps/tools/waypoints/plot_halla_reference_mission.m
+```
+
 통합 주차 launch는 CSV의 인덱스 범위를 사용한다.
 
 - T자/직각 주차: `t_parking_zone_ranges:="[시작,끝]"`

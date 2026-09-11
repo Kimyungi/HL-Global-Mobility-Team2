@@ -218,15 +218,20 @@ def validate(context):
             stops = z.get('stop_points') or []
             avoids = [a for a in (z.get('avoid_zones') or []) if 'end' in a]
             gonly = [a for a in (z.get('gps_only_zones') or []) if 'end' in a]
+            parking = z.get('parking_points') or []
             n_stop, n_avoid = len(stops), len(avoids)
             print(f'[launch] 구간 파일: {os.path.basename(zones_file)} '
-                  f'(정지 {n_stop} · 회피 {n_avoid} · GPS전용 {len(gonly)})')
+                  f'(정지 {n_stop} · 회피 {n_avoid} · GPS전용 {len(gonly)} · '
+                  f'주차 {len(parking)})')
             if gonly:
                 print(f'[launch]   GPS 전용 구간 {len(gonly)}개 — 그 안에서는 차선 전이 없음 '
                       '(run 전체를 GPS로만 가려면 gps_only:=true)')
             for i, e in enumerate(stops):
                 note = f"  ({e.get('note')})" if e.get('note') else ''
                 print(f'[launch]   정지 {i + 1}: {e.get("lat")},{e.get("lon")}{note}')
+            for i, e in enumerate(parking):
+                print(f'[launch]   주차 {i + 1}: {e.get("mode")} '
+                      f'{e.get("lat")},{e.get("lon")}')
         except Exception as e:                                # noqa: BLE001
             print(f'[launch] ⚠ 구간 파일을 못 읽음 — 지정 구간 없이 진행: {e}')
     else:
@@ -356,6 +361,8 @@ def generate_launch_description():
                               default_value=os.path.join(LOG_DIR, 'vehicle_vector.csv')),
         DeclareLaunchArgument('stop_zone_span_m', default_value='1.0',
                               description='정지 지점 구간 폭 [m] (진입 판정 여유)'),
+        DeclareLaunchArgument('parking_zone_span_m', default_value='1.0',
+                              description='주차 지점 구간 폭 [m] (진입 판정 여유)'),
 
         # ── 회피 허용 구간 (2026-08-18). avoid_zone_only:=true 면 이 구간 **안에서만**
         # AVOID 전이가 일어난다.
@@ -682,6 +689,8 @@ def generate_launch_description():
                 'avoid_zone_latlon': LaunchConfiguration('avoid_zone_latlon'),
                 'stop_zone_span_m': ParameterValue(
                     LaunchConfiguration('stop_zone_span_m'), value_type=float),
+                'parking_zone_span_m': ParameterValue(
+                    LaunchConfiguration('parking_zone_span_m'), value_type=float),
             }],
             output='screen',
             # 이 노드가 죽으면 launch 전체를 내린다 (2026-08-15). 예전에는 혼자
