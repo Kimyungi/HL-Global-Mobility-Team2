@@ -134,6 +134,16 @@
       # Parallel space includes the two minimum-radius S arcs and vehicle
       # front/rear clearances; it is intentionally longer than body length.
       parallel_min_length_m: 2.90
+      # Parallel-only decision landmark: the right side wall ends in a very
+      # short 90deg tab which points left/toward the driving lane. Two mapped
+      # point 8cm inward is accepted only with corner continuity, angle,
+      # direction and the common 3-frame stability checks.
+      parallel_decision_wall_min_length_m: 0.08
+      parallel_decision_wall_min_points: 1
+      parallel_decision_wall_x_tolerance_m: 0.10
+      parallel_corner_connect_tolerance_m: 0.14
+      parallel_corner_max_angle_error_deg: 35.0
+      parallel_side_wall_min_length_m: 0.50
       perpendicular_min_width_m: 0.86
       perpendicular_min_depth_m: 1.35
       stable_frames: 3

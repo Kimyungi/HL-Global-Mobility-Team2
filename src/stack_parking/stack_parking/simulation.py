@@ -45,8 +45,11 @@ def synthetic_scene(mode: str, side: str) -> np.ndarray:
     """Return endpoint geometry for a bracketed scale-vehicle parking bay."""
     if mode == MODE_PARALLEL:
         points = np.vstack((
-            _rectangle(-1.45, -0.20, -1.10, -0.55),
-            _rectangle(3.00, 4.25, -1.10, -0.55),
+            # The longitudinal wall ends at x=0 and turns only 16cm toward
+            # the lane. This short L-corner is the parallel decision landmark;
+            # the minimum-length parking area ahead is otherwise open.
+            _line((-2.50, -1.00), (0.00, -1.00)),
+            _line((0.00, -1.00), (0.00, -0.84)),
             _line((-2.5, 1.8), (5.0, 1.8), 0.10),
         ))
     elif mode == MODE_PERPENDICULAR:

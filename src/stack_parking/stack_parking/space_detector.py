@@ -34,6 +34,18 @@ class SpaceDetectorConfig:
     perpendicular_min_depth_m: float = 1.35
     parallel_offset_min_m: float = 0.68
     parallel_offset_max_m: float = 1.00
+    # Parallel bays are keyed by the L corner at the end of the side wall.
+    # The decision-wall tab can be very short: the fitted side-wall corner and
+    # one additional confirmed map point 8cm inward are enough only when they
+    # point toward the lane and agree with the expected right angle.
+    parallel_decision_wall_min_length_m: float = 0.08
+    parallel_decision_wall_min_points: int = 1
+    parallel_decision_wall_x_tolerance_m: float = 0.10
+    parallel_corner_connect_tolerance_m: float = 0.14
+    # A two-to-four point short tab has a noisy PCA direction; continuity and
+    # inward sign are stronger gates here, so allow a 35deg angular residual.
+    parallel_corner_max_angle_error_deg: float = 35.0
+    parallel_side_wall_min_length_m: float = 0.50
     rear_lidar_x_m: float = -0.110354
     completion_clearance_m: float = 0.20
     # Plan a little past the threshold so quantization/noise can actually
@@ -83,11 +95,13 @@ class _Candidate:
 
 
 class ParkingSpaceDetector:
-    """Find a stable gap bracketed by two mapped obstacle clusters.
+    """Find a stable parking landmark in the accumulated endpoint map.
 
     Only endpoint occupancy is used.  The fused cloud has no per-point ray
     origin, so this detector deliberately does not ray-cast fictitious free
-    space from the rear axle.
+    space from the rear axle. Perpendicular bays use two flanks and a back
+    wall. Parallel bays use the end of a side wall plus its short, connected
+    decision-wall tab which turns toward the lane.
     """
 
     def __init__(self, config: Optional[SpaceDetectorConfig] = None):
@@ -268,6 +282,132 @@ class ParkingSpaceDetector:
         members = relevant[bins == selected]
         return float(np.median(members))
 
+    def _find_parallel_corner_candidate(
+        self,
+        lane_points: np.ndarray,
+        current_x_lane: float,
+        side: str,
+    ) -> Optional[_Candidate]:
+        """Find the side-wall end whose short 90-degree tab points lane-inward.
+
+        For a right-side bay, ``side_distance=-y``.  A wall which turns left
+        therefore moves toward *smaller* side distance.  The same formulation
+        mirrors naturally for a left-side bay.
+        """
+        cfg = self.config
+        side_sign = 1.0 if side == SIDE_LEFT else -1.0
+        side_distance = side_sign * lane_points[:, 1]
+        boundary_mask = (
+            (side_distance >= cfg.boundary_near_m)
+            & (side_distance <= cfg.boundary_far_m)
+        )
+        boundary = lane_points[boundary_mask]
+        if len(boundary) < cfg.cluster_min_points:
+            return None
+
+        candidates: list[_Candidate] = []
+        for wall_start, wall_end, wall_count in self._clusters(boundary[:, 0]):
+            wall_span = wall_end - wall_start
+            if wall_span < cfg.parallel_side_wall_min_length_m:
+                continue
+            corner_x = wall_end
+            if corner_x > current_x_lane + cfg.candidate_max_ahead_m:
+                continue
+            if corner_x < current_x_lane - cfg.candidate_max_behind_m:
+                continue
+
+            end_support = boundary[
+                (boundary[:, 0]
+                 >= corner_x - cfg.parallel_side_wall_min_length_m)
+                & (boundary[:, 0]
+                   <= corner_x + cfg.parallel_decision_wall_x_tolerance_m)
+            ]
+            if len(end_support) < cfg.cluster_min_points:
+                continue
+            wall_distance = float(np.median(
+                side_sign * end_support[:, 1]))
+
+            toward_lane = wall_distance - side_distance
+            tab_mask = (
+                (np.abs(lane_points[:, 0] - corner_x)
+                 <= cfg.parallel_decision_wall_x_tolerance_m)
+                & (toward_lane > 0.02)
+                & (toward_lane <= cfg.boundary_far_m)
+            )
+            tab = lane_points[tab_mask]
+            tab_toward = toward_lane[tab_mask]
+            if len(tab) < cfg.parallel_decision_wall_min_points:
+                continue
+            if (float(np.max(tab_toward)) + 1.0e-6
+                    < cfg.parallel_decision_wall_min_length_m):
+                continue
+            # The first tab return must meet the longitudinal wall. This
+            # rejects an unrelated short cross-wall at a similar x position.
+            if float(np.min(tab_toward)) > cfg.parallel_corner_connect_tolerance_m:
+                continue
+
+            # Fit the short tab in (x, side-distance). Its principal direction
+            # must be lateral, within the configured tolerance of 90 degrees
+            # to the lane/side wall.
+            # The supported longitudinal-wall endpoint is the first point of
+            # the tiny tab. Include that fitted corner explicitly, allowing an
+            # 8cm tab represented by just one additional confirmed map voxel.
+            tab_coords = np.vstack((
+                np.asarray([[corner_x, wall_distance]]),
+                np.column_stack((tab[:, 0], side_sign * tab[:, 1])),
+            ))
+            centroid = np.mean(tab_coords, axis=0)
+            covariance = (tab_coords - centroid).T @ (tab_coords - centroid)
+            _, eigenvectors = np.linalg.eigh(covariance)
+            direction = eigenvectors[:, 1]
+            if direction[1] < 0.0:
+                direction = -direction
+            angle_error = abs(math.atan2(
+                float(direction[0]), float(direction[1])))
+            if angle_error > math.radians(
+                    cfg.parallel_corner_max_angle_error_deg):
+                continue
+            if abs(float(direction[1])) <= 1.0e-9:
+                continue
+            fitted_corner_x = float(
+                centroid[0]
+                + (wall_distance - centroid[1])
+                * direction[0] / direction[1])
+            if abs(fitted_corner_x - corner_x) > (
+                    cfg.parallel_corner_connect_tolerance_m):
+                continue
+
+            goal_side_distance = min(
+                cfg.parallel_offset_max_m,
+                max(cfg.parallel_offset_min_m,
+                    wall_distance + 0.5 * cfg.vehicle_width_m),
+            )
+            tab_span = float(np.max(tab_toward))
+            support = min(
+                1.0,
+                (wall_count + len(tab))
+                / max(1.0, 2.0 * cfg.cluster_min_points),
+            )
+            length_score = min(
+                1.0,
+                tab_span / max(cfg.parallel_decision_wall_min_length_m, 0.01),
+            )
+            confidence = 0.60 * support + 0.40 * length_score
+            # Only the rear edge is physically marked. GPS already gates the
+            # search zone, so expose a virtual minimum-length bay in front of
+            # the corner for the unchanged parallel path planner.
+            candidates.append(_Candidate(
+                fitted_corner_x,
+                fitted_corner_x + cfg.parallel_min_length_m,
+                goal_side_distance,
+                None,
+                confidence,
+            ))
+
+        if not candidates:
+            return None
+        return min(candidates, key=lambda item: item.start_x)
+
     def _find_candidate(
         self,
         lane_points: np.ndarray,
@@ -277,6 +417,9 @@ class ParkingSpaceDetector:
     ) -> Optional[_Candidate]:
         if len(lane_points) < self.config.cluster_min_points * 2:
             return None
+        if mode == MODE_PARALLEL:
+            return self._find_parallel_corner_candidate(
+                lane_points, current_x_lane, side)
         side_sign = 1.0 if side == SIDE_LEFT else -1.0
         side_distance = side_sign * lane_points[:, 1]
         boundary_mask = (
@@ -285,11 +428,7 @@ class ParkingSpaceDetector:
         )
         boundary = lane_points[boundary_mask]
         clusters = self._mouth_clusters(boundary, side_distance[boundary_mask])
-        minimum = (
-            self.config.parallel_min_length_m
-            if mode == MODE_PARALLEL
-            else self.config.perpendicular_min_width_m
-        )
+        minimum = self.config.perpendicular_min_width_m
         candidates: list[_Candidate] = []
         for left, right in zip(clusters, clusters[1:]):
             start = left[1]
@@ -303,39 +442,23 @@ class ParkingSpaceDetector:
             if center < current_x_lane - self.config.candidate_max_behind_m:
                 continue
 
-            flank_mask = (
-                ((boundary[:, 0] >= left[0]) & (boundary[:, 0] <= left[1]))
-                | ((boundary[:, 0] >= right[0]) & (boundary[:, 0] <= right[1]))
-            )
-            flank_distance = side_sign * boundary[flank_mask, 1]
-            if len(flank_distance) == 0:
-                continue
-            near_face = float(np.median(flank_distance))
             back_wall = self._back_wall_distance(
                 lane_points, side_sign, start, end)
 
-            if mode == MODE_PERPENDICULAR:
-                if back_wall is None or back_wall < self.config.perpendicular_min_depth_m:
-                    continue
-                target_clearance = max(
-                    0.05,
-                    self.config.completion_clearance_m
-                    - self.config.completion_trigger_margin_m,
-                )
-                goal_side_distance = back_wall - (
-                    abs(self.config.rear_lidar_x_m) + target_clearance)
-            else:
-                # The mapped near face is the side of the adjacent parked car.
-                # Its centreline is approximately half a vehicle width deeper.
-                goal_side_distance = min(
-                    self.config.parallel_offset_max_m,
-                    max(self.config.parallel_offset_min_m,
-                        near_face + 0.5 * self.config.vehicle_width_m),
-                )
+            if (back_wall is None
+                    or back_wall < self.config.perpendicular_min_depth_m):
+                continue
+            target_clearance = max(
+                0.05,
+                self.config.completion_clearance_m
+                - self.config.completion_trigger_margin_m,
+            )
+            goal_side_distance = back_wall - (
+                abs(self.config.rear_lidar_x_m) + target_clearance)
 
             size_margin = min(1.0, max(0.0, (gap - minimum) / max(minimum, 0.1)))
             support = min(1.0, (left[2] + right[2]) / 30.0)
-            back_score = 1.0 if (mode == MODE_PARALLEL or back_wall is not None) else 0.0
+            back_score = 1.0 if back_wall is not None else 0.0
             confidence = 0.45 * support + 0.35 * size_margin + 0.20 * back_score
             candidates.append(_Candidate(
                 start, end, goal_side_distance, back_wall, confidence))
