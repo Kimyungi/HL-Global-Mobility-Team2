@@ -58,14 +58,33 @@ def test_all_seven_paths_have_consistent_latlon_and_zone_flags():
             assert int(row['inside_zone']) == int(expected_zone != 0)
 
 
-def test_path_graph_connects_at_exact_endpoints():
+def test_path_graph_connects_except_for_the_parking_handoff():
     paths = {path_id: _load_path(path_id) for path_id in range(1, 8)}
     assert _xy(paths[1][-1]) == _xy(paths[2][-1]) == _xy(paths[3][0])
     assert _xy(paths[3][-1]) == _xy(paths[4][0])
-    assert _xy(paths[4][-1]) == _xy(paths[5][0])
+    # Path 4 finishes the parallel-parking maneuver. Path 5 deliberately
+    # resumes from its separate post-parking start point.
+    assert _xy(paths[4][-1]) == (-62.335, -72.648)
+    assert _xy(paths[5][0]) == (-64.335, -70.648)
     assert _xy(paths[5][-1]) == _xy(paths[6][0]) == _xy(paths[7][0])
     assert _xy(paths[6][-1]) == _xy(paths[1][0])
     assert _xy(paths[7][-1]) == _xy(paths[2][0])
+
+
+def test_updated_parking_control_points_are_sampled():
+    path_4 = {_xy(row) for row in _load_path(4)}
+    path_5 = {_xy(row) for row in _load_path(5)}
+    assert {
+        (-35.02, -36.958),
+        (-64.335, -67.648),
+        (-64.335, -70.648),
+        (-62.335, -72.648),
+    }.issubset(path_4)
+    assert {
+        (-64.335, -70.648),
+        (-61.335, -70.648),
+        (-43.0, -50.0),
+    }.issubset(path_5)
 
 
 def test_path_2_is_waypoint_only():
@@ -83,7 +102,7 @@ def test_path_2_is_waypoint_only():
 def test_parking_markers_match_requested_positions():
     expected = {
         3: ('perpendicular', -29.231453, -30.797922),
-        4: ('parallel', -63.080587, -66.270682),
+        4: ('parallel', -63.127912, -66.384294),
     }
     for path_id, (mode, east, north) in expected.items():
         marked = [row for row in _load_path(path_id) if row['parking_mode'] != 'none']
@@ -104,7 +123,7 @@ def test_mission_state_codes_and_signal_marker():
     expected = {
         1: (3, 145, 'perpendicular'),
         2: (4, 163, 'parallel'),
-        3: (5, 308, 'none'),
+        3: (5, 300, 'none'),
     }
     marked = []
     for path_id in range(1, 8):
@@ -148,7 +167,7 @@ def test_mission_yaml_state_definitions_match_csv():
             for point in mission['state_points']] == [
                 (1, 3, 145),
                 (2, 4, 163),
-                (3, 5, 308),
+                (3, 5, 300),
             ]
 
 

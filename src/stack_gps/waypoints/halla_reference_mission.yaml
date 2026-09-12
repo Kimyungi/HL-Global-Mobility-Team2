@@ -38,13 +38,13 @@ state_points:
 - state: 2
   path_id: 4
   idx: 163
-  east_m: -63.080587
-  north_m: -66.270682
-  lat: 37.30357718
-  lon: 127.90682128
+  east_m: -63.127912
+  north_m: -66.384294
+  lat: 37.30357615
+  lon: 127.90682074
 - state: 3
   path_id: 5
-  idx: 308
+  idx: 300
   east_m: -15.326897
   north_m: -17.805034
   lat: 37.30401387
@@ -83,8 +83,8 @@ parking_points:
   lon: 127.90720308
   note: T자 주차
 - mode: parallel
-  east_m: -63.080587
-  north_m: -66.270682
-  lat: 37.30357718
-  lon: 127.90682128
+  east_m: -63.127912
+  north_m: -66.384294
+  lat: 37.30357615
+  lon: 127.90682074
   note: 평행 주차
