@@ -18,6 +18,9 @@ GPS·IMU 융합, RTK, waypoint ref
     `mode: perpendicular|parallel`을 보존한다. 기동 시 현재 트랙의 짧은 인덱스
     구간으로 변환하여 `parking_zone`/`parking_mode`만 발행하며, 주차 진입 판단과
     기동은 MGM/`stack_parking`이 담당한다.
+  - 한라대 기준경로 CSV의 `state` 코드는 0=일반, 1=T자, 2=평행,
+    3=신호 예상 지점이다. 1·2는 YAML 주차점과 동기화하고, 3은 코스
+    메타데이터로만 쓴다. 신호 정지 판단은 `stack_traffic`과 MGM이 담당한다.
 - localization 보정: `/vehicle/vector` (dSPACE 상태 추정 회신, 10ms) 구독하여 GPS 갱신 사이 dead-reckoning 보정.
 - 금지: v_ref 결정·모드 판단 금지 (CLAUDE.md §5.1). accel_zone은 요구의 원천일 뿐.
 - 검증: RTK fix 상태에서 waypoint 추종 오차, GPS 음영에서 vehicle vector 보정 유지 시간.

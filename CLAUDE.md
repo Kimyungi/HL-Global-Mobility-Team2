@@ -95,6 +95,11 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 위경도와 `mode: perpendicular|parallel`을 저장하고, `stack_gps`가 기동 시 현재
 트랙의 인덱스 범위로 변환해 `GpsPath.parking_zone/parking_mode`만 발행한다.
 주차 진입·종료 판단은 계속 MGM과 `stack_parking`의 책임이다.
+한라대 기준경로 CSV의 `state`는 코스 미션 표식으로 `1=T자 주차`,
+`2=평행 주차`, `3=신호등`을 뜻한다. 1·2는 트랙 옆 YAML의
+`parking_points`와 같은 지점을 가리킨다. 3은 신호 인식 예상 지점을
+기록하는 메타데이터이며, TRAFFIC 전이를 직접 강제하지 않는다.
+전이 판단은 기존대로 적색 확정과 정지선 검출이 모두 성립할 때 MGM이 한다.
 
 **스테이트별 우선권 (매 10ms, 스테이트 내부에서 결정 — 전역 min/max 규칙 금지):**
 

@@ -21,6 +21,35 @@ routes:
 - id: 7
   file: waypoints_halla_reference_path_07.csv
 
+state_definitions:
+  0: normal
+  1: perpendicular_parking
+  2: parallel_parking
+  3: traffic_signal
+
+state_points:
+- state: 1
+  path_id: 3
+  idx: 145
+  east_m: -29.231453
+  north_m: -30.797922
+  lat: 37.30389680
+  lon: 127.90720308
+- state: 2
+  path_id: 4
+  idx: 163
+  east_m: -63.080587
+  north_m: -66.270682
+  lat: 37.30357718
+  lon: 127.90682128
+- state: 3
+  path_id: 5
+  idx: 308
+  east_m: -15.326897
+  north_m: -17.805034
+  lat: 37.30401387
+  lon: 127.90735992
+
 # 사각형의 자세한 네 꼭짓점과 위경도는 halla_reference_zone_corners.csv가 정본이다.
 gps_only_rectangles:
 - id: 1
@@ -39,16 +68,23 @@ gps_only_rectangles:
   north_min: -21.0
   north_max: -9.58929
 
+# 사각형 Zone 3을 지나 Path 3에서는 현장 편집값을 따라 GPS 전용 구간을 추가로 늘린다.
+gps_only_route_overrides:
+- path_id: 3
+  zone_id: 3
+  start_idx: 28
+  end_idx: 116
+
 parking_points:
 - mode: perpendicular
-  east_m: -31.8932
-  north_m: -33.4497
-  lat: 37.30387291
-  lon: 127.90717306
+  east_m: -29.231453
+  north_m: -30.797922
+  lat: 37.30389680
+  lon: 127.90720308
   note: T자 주차
 - mode: parallel
-  east_m: -62.7363
-  north_m: -65.911
-  lat: 37.30358042
-  lon: 127.90682516
+  east_m: -63.080587
+  north_m: -66.270682
+  lat: 37.30357718
+  lon: 127.90682128
   note: 평행 주차

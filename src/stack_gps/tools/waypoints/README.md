@@ -365,6 +365,11 @@ rviz2 -d "$HOME/FMA_ws/src/stack_gps/tools/waypoints/gps_view.rviz"
 `halla_reference_mission.yaml` 및 각 경로에 대응하는
 `zones_halla_reference_path_XX.yaml`에 저장된다. 경로 2의 YAML은 시작부터 끝까지
 GPS 전용 구간이라 카메라 전이 없이 waypoint로만 주행한다.
+각 CSV의 `state`는 `0=일반`, `1=T자 주차`, `2=평행 주차`,
+`3=신호등 인식 예상 지점`이다. `state=3`은 코스 표식이며 위치만으로
+TRAFFIC 전이를 강제하지 않는다. 적색과 정지선을 카메라로 인식했을 때만
+MGM이 TRAFFIC으로 전이한다. Path 3의 Zone 3은 현장 편집값인
+`idx 28~116`으로 연장되어 있다.
 
 `parking_points`는 인덱스를 직접 쓰지 않고 위경도와 모드를 저장한다.
 `stack_gps` 기동 시 `parking_zone_span_m`(기본 1.0m) 폭의 현재 트랙 인덱스
@@ -373,11 +378,11 @@ GPS 전용 구간이라 카메라 전이 없이 waypoint로만 주행한다.
 ```yaml
 parking_points:
 - mode: perpendicular
-  lat: 37.30387291
-  lon: 127.90717306
+  lat: 37.30389680
+  lon: 127.90720308
 - mode: parallel
-  lat: 37.30358042
-  lon: 127.90682516
+  lat: 37.30357718
+  lon: 127.90682128
 ```
 
 경로·Zone·주차점 확인 그림은 MATLAB에서 다음 파일을 실행한다.
