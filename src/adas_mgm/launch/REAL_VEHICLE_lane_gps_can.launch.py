@@ -415,6 +415,8 @@ def generate_launch_description():
         #   mgm_jitter.csv(주기 지터)와 stack_lane의 파이프라인 지연 로그를 확인해
         #   기록 부하가 제어 루프를 건드리지 않았는지 확인할 것.
         DeclareLaunchArgument('lane_debug', default_value='false'),
+        DeclareLaunchArgument('lane_csv', default_value='false',
+                              description='Frame CSV without debug image overhead'),
         DeclareLaunchArgument('gps_error_log_csv',
                               default_value=os.path.join(LOG_DIR, 'lateral.csv')),
 
@@ -566,6 +568,11 @@ def generate_launch_description():
         DeclareLaunchArgument('estop_on_distance_m', default_value='1.20'),
         DeclareLaunchArgument('estop_off_distance_m', default_value='1.35'),
         DeclareLaunchArgument('dynamic_tracking_max_distance_m', default_value='3.00'),
+        DeclareLaunchArgument('estop_corridor_max_x_m', default_value='1.50'),
+        DeclareLaunchArgument('dynamic_roi_max_x_m', default_value='1.50'),
+        DeclareLaunchArgument('avoid_target_speed_mps', default_value='1.0'),
+        DeclareLaunchArgument('ttc_stop', default_value=str(_yaml['ttc_stop'])),
+        DeclareLaunchArgument('v_accel_zone', default_value=str(_yaml['v_accel_zone'])),
 
         OpaqueFunction(function=validate),
 
@@ -621,6 +628,8 @@ def generate_launch_description():
             name='stack_avoid_node',
             parameters=[os.path.join(
                 get_package_share_directory('stack_avoid'), 'config', 'params.yaml'), {
+                    'target_speed_mps': ParameterValue(
+                        LaunchConfiguration('avoid_target_speed_mps'), value_type=float),
                     'scan_topic': PythonExpression([
                         "'/lidar/a1/scan' if '",
                         LaunchConfiguration('parking_enabled'),
@@ -642,6 +651,10 @@ def generate_launch_description():
             parameters=[{
                 'laser_yaw_in_base_rad': ParameterValue(
                     LaunchConfiguration('laser_yaw_in_base_rad'), value_type=float),
+                'corridor_max_x_m': ParameterValue(
+                    LaunchConfiguration('estop_corridor_max_x_m'), value_type=float),
+                'dynamic_roi_max_x_m': ParameterValue(
+                    LaunchConfiguration('dynamic_roi_max_x_m'), value_type=float),
                 'dynamic_enabled': ParameterValue(
                     LaunchConfiguration('dynamic_enabled'), value_type=bool),
                 'dynamic_stop_distance_m': ParameterValue(
@@ -724,7 +737,9 @@ def generate_launch_description():
                     LaunchConfiguration('lane_debug'), value_type=bool),
                 'log_csv': PythonExpression(
                     ["'", os.path.join(LOG_DIR, 'lane_frames.csv'),
-                     "' if '", LaunchConfiguration('lane_debug'), "' == 'true' else ''"]),
+                     "' if ('", LaunchConfiguration('lane_debug'),
+                     "' == 'true' or '", LaunchConfiguration('lane_csv'),
+                     "' == 'true') else ''"]),
                 'coeff_smoothing_alpha': ParameterValue(
                     LaunchConfiguration('coeff_smoothing_alpha'), value_type=float),
             }],
@@ -800,6 +815,10 @@ def generate_launch_description():
                 'wait_go': True,
                 # 시험별 목표속도. 기본은 params.yaml 값을 그대로 따르며, 실차 시험에서
                 # 명시적으로 낮출 때만 launch 인자로 덮어쓴다.
+                'ttc_stop': ParameterValue(
+                    LaunchConfiguration('ttc_stop'), value_type=float),
+                'v_accel_zone': ParameterValue(
+                    LaunchConfiguration('v_accel_zone'), value_type=float),
                 'v_base': ParameterValue(
                     LaunchConfiguration('v_base'), value_type=float),
                 # E-stop 자체를 실패로 판정하는 시험에서는 반드시 0으로 두어, 장시간
