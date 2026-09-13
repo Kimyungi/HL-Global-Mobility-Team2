@@ -25,7 +25,7 @@ class SpaceDetectorConfig:
     vehicle_width_m: float = 0.62
     vehicle_length_m: float = 0.85
     boundary_near_m: float = 0.42
-    boundary_far_m: float = 1.05
+    boundary_far_m: float = 3.0
     cluster_join_gap_m: float = 0.24
     cluster_min_span_m: float = 0.20
     cluster_min_points: int = 5
@@ -267,7 +267,10 @@ class ParkingSpaceDetector:
         relevant = side_distance[
             (x >= gap_start + margin)
             & (x <= gap_end - margin)
-            & (side_distance > self.config.boundary_far_m)
+            # The side-wall search limit is not the T-bay depth threshold.
+            # With a 3m side band, requiring the back wall to lie beyond that
+            # band would make ordinary bays impossible to detect.
+            & (side_distance >= self.config.perpendicular_min_depth_m)
         ]
         if len(relevant) < self.config.back_wall_min_points:
             return None

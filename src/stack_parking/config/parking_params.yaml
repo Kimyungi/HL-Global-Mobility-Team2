@@ -130,7 +130,8 @@
 
     space:
       boundary_near_m: 0.42
-      boundary_far_m: 1.05
+      # User-selected field search limit for side-wall candidates.
+      boundary_far_m: 3.0
       # Parallel space includes the two minimum-radius S arcs and vehicle
       # front/rear clearances; it is intentionally longer than body length.
       parallel_min_length_m: 2.90
@@ -145,6 +146,8 @@
       parallel_corner_max_angle_error_deg: 35.0
       parallel_side_wall_min_length_m: 0.50
       perpendicular_min_width_m: 0.86
+      # Independent of boundary_far_m: a T-bay back wall may be inside the
+      # 3m side-wall search band and still counts once it is this deep.
       perpendicular_min_depth_m: 1.35
       stable_frames: 3
 

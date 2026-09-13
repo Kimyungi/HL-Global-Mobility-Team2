@@ -14,7 +14,8 @@ MGM에 넘기며 `/adas/target_ref`는 MGM만 발행한다.
    innovation gate 뒤 x/y drift 보정에 쓴다.
 3. `GpsPath.parking_zone` 상승 에지와 `parking_mode`에서 평행(1자)/직각(T자),
    좌/우를 결정한다. 양쪽 정적 경계가 있는 gap을 3 frame 연속 확인한다. 직각 주차는 gap 내부 후면
-   벽 지지점까지 요구한다.
+   벽 지지점까지 요구한다. 측면 경계 후보는 최대 3m까지 탐색하며, 직각 주차의 후면 벽
+   깊이는 이 상한과 별도로 `perpendicular_min_depth_m`을 적용한다.
 4. **LOCALIZATION** — 후축 기준 최소 회전반경 1.15m의 원호 경로를 만들고 차량
    직사각 footprint로 정적 충돌 검사를 한다. 계획 순간 map을 동결하고 연속 ICP
    정합을 확인하는 동안에는 아직 `space_found=false`를 유지한다.

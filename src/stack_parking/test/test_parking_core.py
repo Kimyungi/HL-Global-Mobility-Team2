@@ -442,6 +442,21 @@ class MissionSimulationTest(unittest.TestCase):
         self.assertTrue(mission.observe_map(points, pose))
         return mission, pose
 
+    def test_perpendicular_back_wall_inside_three_meter_side_band(self):
+        detector = ParkingSpaceDetector(SpaceDetectorConfig(
+            boundary_far_m=3.0,
+            stable_frames=1,
+        ))
+        space = detector.update(
+            synthetic_scene(MODE_PERPENDICULAR, SIDE_RIGHT),
+            Pose2(-1.5, 0.0, 0.0),
+            Pose2(),
+            MODE_PERPENDICULAR,
+            SIDE_RIGHT,
+        )
+        self.assertIsNotNone(space)
+        self.assertAlmostEqual(space.back_wall_distance_m, 2.0, places=6)
+
     def test_all_parking_geometries_complete(self):
         for mode in (MODE_PARALLEL, MODE_PERPENDICULAR):
             for side in (SIDE_LEFT, SIDE_RIGHT):

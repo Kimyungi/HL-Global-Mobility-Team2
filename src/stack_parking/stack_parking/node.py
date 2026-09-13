@@ -305,13 +305,11 @@ class StackParkingNode(Node):
             # docstring for why plain x-clustering couldn't see this bay at
             # all). This room has other objects sitting at side_distance up
             # to ~1.65m that aren't the bay; the bay's own arms start at
-            # ~1.7m and its back wall sits at ~2.7m. near/far must bracket
-            # the arms (catch them, exclude the clutter below) while staying
-            # under the back wall (so it's still classified as back-wall,
-            # not folded into the side-wall band). Re-tune for a different
-            # room/rig by replaying its map the same way.
+            # ~1.7m and its back wall sits at ~2.7m. The field side-wall
+            # search now extends to 3m; perpendicular back-wall depth is
+            # classified independently by perpendicular_min_depth_m.
             'space.boundary_near_m': 1.7,
-            'space.boundary_far_m': 2.3,
+            'space.boundary_far_m': 3.0,
             'space.parallel_min_length_m': 2.90,
             'space.parallel_decision_wall_min_length_m': 0.08,
             'space.parallel_decision_wall_min_points': 1,
