@@ -75,15 +75,15 @@ class StackAvoidNode(Node):
         self.lidar_yaw = self.declare_parameter('lidar_mount.yaw_deg', 0.0).value
         self.lidar_roll = self.declare_parameter('lidar_mount.roll_deg', 0.0).value
         self.lidar_pitch = self.declare_parameter('lidar_mount.pitch_deg', 0.0).value
-        # 차량 전방을 가리키는 스캔 각도(드라이버 프레임 관례). 필드검증 확정 = 270°
-        # (FOV = raw 180°~360°). ★코드 고정: read_only → 런타임(param set) 변경 불가.
-        #  값을 바꾸려면 이 기본값 또는 params.yaml 수정 후 재빌드해야 한다.
+        # 차량 전방을 가리키는 스캔 각도. 단일 /scan 기본값은 270°이며,
+        # 4-LiDAR 통합 launch는 a1 보정값에서 계산한 87°를 시작 시 전달한다.
+        # read_only: 실행 중 좌표 기준이 바뀌지 않도록 param set은 금지한다.
         self.front_center = math.radians(
             self.declare_parameter(
                 'lidar_mount.forward_angle_deg', 270.0,
                 ParameterDescriptor(
                     read_only=True,
-                    description='전방=raw270°(FOV raw180~360). 코드 고정, 런타임 변경 불가')).value)
+                    description='원본 스캔의 차량 전방 각도; 시작 시 설정, 런타임 변경 불가')).value)
 
         # 회피 판단 (튜닝 글로벌)
         self.roi_angle = self.declare_parameter('avoid.roi_angle_deg', 180.0).value

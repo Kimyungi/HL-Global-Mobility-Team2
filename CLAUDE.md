@@ -1,5 +1,12 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> 2026-09-13 정면 라이다 좌표 수정: `parking_enabled=true`인 공유 통합 launch는
+> E-stop yaw를 `lidar_fusion_v2/config/fixed_geometry.yaml`의 a1 -87도에서 읽고,
+> 회피 전방 각도를 동일 yaw에서 +87도로 계산한다. 기존 +90도/270도 해석으로
+> 뒤쪽 반사점을 전방 장애물로 오인하던 문제를 합성 스캔으로 재현·수정했다.
+> 일반/no-estop에 공통 적용하며 단일 /scan 방향과 거리 문턱은 유지한다.
+> 현장 검증은 남아 있다. [재현·검증 기록](docs/FRONT_LIDAR_ALIGNMENT.md).
+
 > **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](docs/INTEGRATION_V2_PR_STATUS_20260913.md). 13개 패키지 빌드 완료, Python 471 통과/3 skip.
 > 전체 CTest는 11/20 통과이며 회귀 정리가 남아 있다. 아래 과거 미빌드/전체 통과 표기보다 이 결과를 우선한다.
 
