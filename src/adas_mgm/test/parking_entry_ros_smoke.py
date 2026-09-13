@@ -76,12 +76,13 @@ def main():
                 zone.in_zone=True;gps.zones=[zone]
                 wait_for(lambda:states[-1].mission==1 and commands,'immediate ACTIVE with PREPARE command')
                 assert states[-1].parking_zone_entry_active
-                assert commands[-1].action==ParkingCommand.PREPARE and refs[-1].state==3 and refs[-1].v_ref>0
+                assert commands[-1].action==ParkingCommand.PREPARE and refs[-1].state==3 and refs[-1].v_ref==0
                 spin(.2)  # existing LINE->GPS reference blend is ten MGM ticks
                 assert states[-1].reference_source==1 and abs(refs[-1].ref_points[0].y-.2)<1e-6
                 assert (refs[-1].dx,refs[-1].dy,refs[-1].dyaw,refs[-1].update)==(gps.dx,gps.dy,gps.dyaw,gps.update)
                 request=commands[-1].request_id
                 parking.request_id=request;parking.mission_mode=1;parking.search_active=True
+                parking.wall_acquisition_complete=True;parking.wall_acquisition_frames=5
                 zone.in_zone=False;gps.zones=[zone];spin(.6)
                 assert states[-1].mission==1 and not states[-1].mission_failed and refs[-1].v_ref>0
                 assert not any(c.action==ParkingCommand.CANCEL for c in commands)

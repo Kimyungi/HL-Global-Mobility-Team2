@@ -10,7 +10,7 @@ import math
 import numpy as np
 import pytest
 from rclpy.time import Time
-from fma_interfaces.msg import ParkingCommand, GpsPath
+from fma_interfaces.msg import ParkingCommand, GpsPath, ParkingWallStatus
 from std_msgs.msg import String
 
 from stack_parking.geometry import Pose2
@@ -62,7 +62,7 @@ def node():
         clock=clock,
     )
     for name in ('_on_mission_command', '_start_mission', '_cancel_search',
-                 '_preparation_ready', '_localization_valid', '_tick',
+                 '_preparation_ready', '_localization_valid', '_tick', '_wall_acquired', '_on_wall_status',
                  '_set_reference_stamp', '_parse_command', '_on_command', '_process_slam'):
         setattr(n, name, MethodType(getattr(StackParkingNode, name), n))
     return n
@@ -72,7 +72,14 @@ def command(n, request=101, action=ParkingCommand.PREPARE, mode=1):
     n._on_mission_command(ParkingCommand(request_id=request, action=action, mission_mode=mode))
 
 
+def acquired(n):
+    msg=ParkingWallStatus(request_id=n.search_request_id, mission_active=True, complete=True, frame_count=5)
+    msg.header.stamp=Time(seconds=n.clock.now).to_msg()
+    n._on_wall_status(msg)
+
+
 def plan(n, mode=MODE_PERPENDICULAR):
+    acquired(n)
     scene = synthetic_scene(mode, SIDE_RIGHT)
     for _ in range(n.mission.detector.config.stable_frames + 2):
         n.mission.observe_map(scene, Pose2(-1.5, 0., 0.))
@@ -196,3 +203,16 @@ def test_manual_start_cannot_overwrite_mgm_preparation(node):
     command(node)
     node._on_command(String(data='start parallel auto'))
     assert node.search_request_id == 101 and node.mission.mode == MODE_PERPENDICULAR
+
+
+def test_wall_completion_is_fresh_and_request_scoped(node):
+    command(node)
+    assert not node._wall_acquired(node.clock.now)
+    acquired(node)
+    assert node._wall_acquired(node.clock.now)
+    node.latest_wall_status.frame_count=4
+    assert not node._wall_acquired(node.clock.now)
+    node.latest_wall_status.frame_count=5
+    assert not node._wall_acquired(node.clock.now+.51)
+    command(node, request=102)
+    assert not node._wall_acquired(node.clock.now)

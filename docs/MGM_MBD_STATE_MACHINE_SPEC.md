@@ -1,5 +1,12 @@
 # MGM 병행 Manager / MBD 단일 명세 — 6차
 
+> **주차 진입 정지·5프레임 수집:** [현재 동작](PARKING_LEFT_WALL_ACQUISITION.md)이 이전 즉시 GPS 탐색 설명보다 우선한다.
+> 주차 진입 즉시 정지 → fresh CAN |v_act| ≤0.1m/s → 새 LiDAR 5프레임 → GPS 탐색 재개. raw dump v24.
+
+> **2026-09-13 회피 종료 개정:** [MGM_AVOID_GPS_RETURN.md](MGM_AVOID_GPS_RETURN.md)를 우선한다.
+> GPS_RETURN=3은 AVOID 상태 내 GPS 추종 단계이며, 종료는 현재 station 오차 0.1m/20° 이내 조건이다.
+> 자동후진 시작과 동시에 AVOID_ACTIVE를 latch한다. 메시지/입력 bus 확장 및 raw dump v23.
+
 > **2026-09-13 회피 수정:** [main 동작 복원 메모](AVOIDANCE_MAIN_RESTORE.md)가 아래 과거 회피 고정속도/소실 200틱 종료 설명보다 우선한다.
 > AVOID 첫 CAN 기준점·yaw, .6/.2 m/s 상한, 가감속, 완료/최대 시간 종료 및 종료 후 GPS hold를 복원했다.
 > v2 단일점 계약과 병행 Manager는 유지한다. CTest 21/21 통과; 실차 확인은 남아 있다.

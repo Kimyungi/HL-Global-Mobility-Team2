@@ -54,11 +54,12 @@ void avoidance()
   r.tick(250);
   check(r.out.avoid==AvoidState::AVOID_ACTIVE && r.out.path_source==MGM_SRC_AVOID,"11: disappearance alone keeps avoidance");
   r.s.avoid_maneuver_done=true; r.tick();
-  check(r.out.avoid==AvoidState::INACTIVE && r.out.nav==NavState::GPS_BACKUP,"11: completion ends avoidance into GPS");
+  check(r.out.avoid==AvoidState::GPS_RETURN && r.out.path_source==MGM_SRC_GPS,"11: completion starts GPS return inside avoidance");
   check(r.st.lane_high_cnt==50,"high confidence accumulates throughout avoidance");
   r.s.avoid_maneuver_done=false;
-  r.tick(299); check(r.out.nav==NavState::GPS_BACKUP,"12: GPS hold lasts 299 ticks after completion");
-  r.tick(); check(r.out.nav==NavState::LINE,"12: GPS hold ends 300 ticks after completion");
+  r.tick(400); check(r.out.avoid==AvoidState::GPS_RETURN,"12: elapsed time cannot release GPS return");
+  r.s.gps_heading_valid=r.s.gps_station_error_valid=true; r.tick();
+  check(r.out.nav==NavState::LINE && r.out.avoid==AvoidState::INACTIVE,"12: valid station alignment releases GPS return");
   Run redetect; redetect.obstacle(); redetect.s.avoid_obstacle_detected=false; redetect.tick(199);
   redetect.s.avoid_obstacle_detected=true; redetect.tick();
   check(redetect.out.avoid==AvoidState::AVOID_ACTIVE && redetect.st.managers.clear_count==0,"13: redetection keeps episode active");
@@ -67,7 +68,7 @@ void avoidance()
   Run nogps; nogps.obstacle(); nogps.s.avoid_obstacle_detected=false; nogps.tick(199);
   nogps.s.avoid_maneuver_done=true; nogps.tick();
   nogps.s.gps_valid=false; nogps.tick();
-  check(nogps.out.nav==NavState::LINE && nogps.out.path_source==MGM_SRC_LANE,"GPS loss bypasses hold after high 50");
+  check(nogps.out.avoid==AvoidState::GPS_RETURN && nogps.out.path_source==MGM_SRC_GPS && nogps.out.v_ref==0,"GPS loss preserves GPS return ownership and stops");
   Run notready; notready.st.managers.nav=NavState::GPS_BACKUP;
   notready.st.return_hold_left=300; notready.s.gps_valid=false;
   notready.tick(49); check(notready.out.nav==NavState::GPS_BACKUP,"GPS loss must not bypass high 49");
@@ -142,7 +143,7 @@ void safety()
     r.out.path_source==MGM_SRC_ESCAPE,"26: existing 1000 cycle condition starts existing recovery ref");
   r.s.auto_estop=false; r.gps_zone(true); r.tick();
   check(r.out.safety==SafetyState::NORMAL && r.out.nav==NavState::GPS_ONLY_NAV &&
-    r.out.path_source==MGM_SRC_GPS,"27: recovery end reevaluates current zone");
+    r.out.path_source==MGM_SRC_AVOID && r.out.avoid==AvoidState::AVOID_ACTIVE,"27: recovery end keeps avoidance and observes current zone");
   Run all; all.s.camera_line_valid=all.s.gps_valid=all.s.lidar_valid=false; all.tick();
   check(all.out.safety==SafetyState::SAFE_STOP && all.out.v_ref==0,"28: all sensors unavailable stops");
   all.s.gps_valid=true; all.tick();
@@ -190,8 +191,12 @@ void safety()
     recovery_ref.st.managers.recovery_waiting_reference,
     "recovery exit waits for actual reacquired reference");
   recovery_ref.s.gps_valid=true; recovery_ref.tick();
-  check(recovery_ref.out.safety==SafetyState::NORMAL && recovery_ref.out.path_source==MGM_SRC_GPS,
-    "recovery with GPS returns via current selection");
+  check(recovery_ref.out.v_ref==0 && recovery_ref.out.avoid==AvoidState::AVOID_ACTIVE,
+    "GPS recovery alone cannot release unfinished obstacle maneuver");
+  recovery_ref.s.avoid_maneuver_done=true; recovery_ref.tick();
+  check(recovery_ref.out.safety==SafetyState::NORMAL && recovery_ref.out.path_source==MGM_SRC_GPS &&
+    recovery_ref.out.avoid==AvoidState::GPS_RETURN,
+    "completed maneuver can use recovered GPS within avoidance");
   Run hard_stop; hard_stop.tick(); hard_stop.st.params.escape_after_cycles=1;
   hard_stop.s.auto_estop=true; hard_stop.s.external_stop=true; hard_stop.tick();
   check(hard_stop.out.v_ref==0 && hard_stop.out.safety==SafetyState::SAFE_STOP,

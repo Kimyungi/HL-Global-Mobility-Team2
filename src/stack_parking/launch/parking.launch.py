@@ -56,4 +56,10 @@ def generate_launch_description():
                 'manual_test_publish_gps_gate': False,
             }],
         ),
+        Node(
+            package='stack_parking',
+            executable='parking_lateral_wall',
+            name='parking_lateral_wall',
+            output='screen',
+        ),
     ])

@@ -219,7 +219,7 @@ endif()
 
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS tools/go tools/state tools/can_watchdog_check.py
-  tools/straight_lane_publisher.py tools/analyze_mission_calibration.py
+  tools/straight_lane_publisher.py tools/analyze_mission_calibration.py tools/integration_view.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 

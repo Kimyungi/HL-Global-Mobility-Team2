@@ -23,11 +23,30 @@ void start(Run & r, MissionType type=MissionType::T_PARKING) {
   r.tick();
   check(r.out.mission==MissionState::MISSION_ACTIVE && r.out.state==MGM_STATE_PARKING &&
     !r.out.mission_start && r.out.mission_prepare,"fifth fix enters Parking search and requests preparation");
-  check(r.out.path_source==MGM_SRC_GPS && near(r.out.v_ref,r.st.params.v_base) &&
+  check(r.out.path_source==MGM_SRC_GPS && r.out.v_ref==0 &&
     r.out.n_points==1 && near(r.out.ref_points[0].y,r.s.gps_path.pts[0].y),
-    "Parking search drives the GPS point at navigation speed despite high LINE confidence");
+    "Parking entry stops immediately while retaining the GPS point");
   check(!r.out.mission_request.handoff.recorded && !r.out.mission_request.ready.recorded &&
     r.out.parking_calibration==CalibrationState::NOT_REQUIRED,"handoff waits for readiness; limits not required");
+  r.s.parking_valid=r.s.parking_updated=r.s.parking_search_active=true;
+  r.s.parking_request_id=r.out.mission_request.request_id;
+  r.s.parking_mission_mode=static_cast<uint8_t>(type);
+  r.s.parking_preparation_ready=true;
+  r.s.parking_preparation_reference=ReferenceSample{static_cast<uint64_t>(r.s.event_time_ns),0,.5f};
+  r.s.parking_wall_acquisition_complete=false; r.tick(4);
+  check(r.out.v_ref==0 && !r.out.mission_request.preparation_ready && !r.out.mission_start,
+    "early planner readiness cannot skip collection or release the entry stop");
+  r.s.parking_preparation_ready=false;
+  r.s.parking_wall_acquisition_complete=true; ++r.s.parking_request_id; r.tick();
+  check(r.out.v_ref==0,"another request's completion cannot release stop");
+  --r.s.parking_request_id; r.tick();
+  check(r.out.v_ref>0 && r.out.path_source==MGM_SRC_GPS && !r.out.mission_request.preparation_ready,
+    "five collected frames resume GPS before a parking plan is ready");
+  r.s.parking_updated=false; r.tick();
+  check(r.out.v_ref>0,"fresh completion remains usable between status publications");
+  r.s.parking_valid=false; r.tick();
+  check(r.out.v_ref==0,"lost status stops GPS search");
+  r.s.parking_valid=r.s.parking_updated=true; r.tick();
 }
 void status(Run & r) {
   r.s.parking_valid=r.s.parking_updated=r.s.parking_search_active=true;
@@ -113,13 +132,14 @@ int main() {
   {
     Run r;configure(r);start(r);
     r.s.parking_valid=false;r.s.parking_path.n=0;r.tick(60);
-    check(r.out.mission_request.active && r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0 &&
-      r.out.speed_owner==SpeedOwner::NAVIGATION && !r.out.safe_stop_reasons,
-      "absent Parking status/path does not stop search or return to a high-confidence LINE");
+    check(r.out.mission_request.active && r.out.path_source==MGM_SRC_GPS && r.out.v_ref==0 &&
+      r.out.speed_owner==SpeedOwner::MISSION && !r.out.safe_stop_reasons,
+      "absent Parking status stops search without returning to a high-confidence LINE");
     r.s.gps_valid=false;r.tick();
     check(r.out.mission==MissionState::MISSION_ACTIVE && r.out.path_source==MGM_SRC_GPS &&
       r.out.v_ref==0 && (r.out.safe_stop_reasons&SAFE_STOP_REFERENCE_INVALID),
       "GPS loss during search stops without LINE or LiDAR fallback");
+    status(r);
     r.s.gps_valid=true;r.s.avoid_obstacle_detected=r.s.avoid_avoidable=true;r.tick();
     check(r.out.v_ref>0 && r.out.path_source==MGM_SRC_GPS && r.out.avoid==AvoidState::INACTIVE,
       "GPS recovery resumes search; ordinary Avoidance cannot take over the search route");

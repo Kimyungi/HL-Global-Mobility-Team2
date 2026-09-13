@@ -45,7 +45,9 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v20: PARKING search follows GPS until ready; unchanged layout, new authority semantics.
 // v21: main-compatible AVOID wire target, speed ramp and completion; unchanged snapshot layout.
 // v22: independent recovery speed and explicit optional rear requirement in parallel Manager.
-constexpr uint32_t kDumpVersion = 22;
+// v23: current-station heading error/validity and GPS return within the avoidance episode.
+// v24: request-matched wall-acquisition completion gates Parking entry stop.
+constexpr uint32_t kDumpVersion = 24;
 
 struct DumpHeader
 {

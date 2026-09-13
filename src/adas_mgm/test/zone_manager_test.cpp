@@ -121,8 +121,8 @@ void authority_and_gaps()
   clear.tick(); check(clear.out.avoid==AvoidState::AVOID_ACTIVE && clear.out.v_ref==0,
     "Z23: disappearance cannot release invalid active avoidance");
   clear.s.avoid_maneuver_done=true; clear.tick();
-  check(clear.out.avoid==AvoidState::INACTIVE && clear.out.path_source==MGM_SRC_GPS,
-    "Z23: producer completion returns through navigation selection");
+  check(clear.out.avoid==AvoidState::GPS_RETURN && clear.out.path_source==MGM_SRC_GPS,
+    "Z23: producer completion starts GPS return inside avoidance");
   Run empty; empty.s.camera_line_valid=empty.s.gps_valid=false; empty.s.avoid_path.n=0; empty.tick();
   check(empty.out.path_source==MGM_SRC_AVOID && empty.out.n_points==1 &&
     empty.out.ref_points[0].x==0 && empty.out.ref_points[0].y==0 && empty.out.v_ref==0 &&

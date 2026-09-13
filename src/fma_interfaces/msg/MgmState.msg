@@ -10,8 +10,11 @@ uint8 MISSION_PREPARE=2
 uint8 top
 # 0=LINE, 1=GPS_BACKUP, 2=GPS_ONLY_NAV
 uint8 navigation
-# 0=INACTIVE, 1=AVOID_ACTIVE, 2=CLEAR_CONFIRM
+# 0=INACTIVE, 1=AVOID_ACTIVE, 2=CLEAR_CONFIRM (historical), 3=GPS_RETURN (still AVOID)
 uint8 avoidance
+float32 avoid_return_cross_track_m
+float32 avoid_return_yaw_error_rad
+bool avoid_return_error_valid
 # 0=SIGNAL_IDLE, 1=RED_DETECTED, 2=APPROACH_STOP_LINE, 3=STOPPED_WAIT
 uint8 signal
 # 0=NORMAL, 1=AUTO_ESTOP, 2=REVERSE_RECOVERY, 3=SAFE_STOP

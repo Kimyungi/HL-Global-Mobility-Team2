@@ -28,6 +28,8 @@ builtin_interfaces/Time reference_stamp
 
 # Current MGM request only. 0 denotes the legacy/manual interface.
 uint64 request_id
+bool wall_acquisition_complete
+uint8 wall_acquisition_frames
 bool search_active
 # Existing detector + planner produced a space/plan; localization may still run.
 bool search_space_found

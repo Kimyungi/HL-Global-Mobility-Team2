@@ -8,7 +8,7 @@ namespace adas_mgm
 {
 enum class TopState : uint8_t {AUTONOMOUS_ENABLE, AUTONOMOUS_DRIVE, FINISH};
 enum class NavState : uint8_t {LINE, GPS_BACKUP, GPS_ONLY_NAV};
-enum class AvoidState : uint8_t {INACTIVE, AVOID_ACTIVE, CLEAR_CONFIRM};
+enum class AvoidState : uint8_t {INACTIVE, AVOID_ACTIVE, CLEAR_CONFIRM, GPS_RETURN};
 enum class SignalState : uint8_t {SIGNAL_IDLE, RED_DETECTED, APPROACH_STOP_LINE, STOPPED_WAIT};
 enum class SafetyState : uint8_t {NORMAL, AUTO_ESTOP, REVERSE_RECOVERY, SAFE_STOP};
 enum class MissionState : uint8_t {MISSION_IDLE=0, MISSION_ACTIVE=1, MISSION_PREPARE=2};

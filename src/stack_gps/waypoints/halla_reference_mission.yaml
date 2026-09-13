@@ -74,6 +74,11 @@ gps_only_route_overrides:
   zone_id: 3
   start_idx: 28
   end_idx: 116
+# Path 03: waypoint-only approach, about 3 m before the parking trigger.
+- path_id: 3
+  zone_id: 4
+  start_idx: 133
+  end_idx: 145
 
 parking_points:
 - mode: perpendicular

@@ -89,6 +89,8 @@ def main():
                 parking.request_id = commands[-1].request_id
                 parking.mission_mode = commands[-1].mission_mode
                 parking.search_active = True
+                parking.wall_acquisition_complete = True
+                parking.wall_acquisition_frames = 5
             # Deliberately never report space_found, ready, done or any Parking point.
             msgs['/vehicle/vector'].v = 1. if moving else 0.
             stamp = node.get_clock().now().to_msg()

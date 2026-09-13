@@ -38,6 +38,7 @@ from ament_index_python.packages import get_package_share_directory
 from fma_interfaces.msg import TrafficStop
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
+from sensor_msgs.msg import Image
 from stack_traffic.depth_utils import (
     StopLineDepthMeasurement,
     measure_stopline_depth,
@@ -516,6 +517,7 @@ class StackTrafficNode(Node):
         self.publisher = self.create_publisher(
             TrafficStop, "/perception/traffic_stop", 1
         )
+        self.debug_image_pub = self.create_publisher(Image, '/perception/traffic_debug_image', 1)
 
         self.red_history: Deque[int] = deque(maxlen=self.vote_window)
         self.green_history: Deque[int] = deque(maxlen=self.vote_window)
@@ -2442,7 +2444,7 @@ class StackTrafficNode(Node):
                 f"fps={self.filtered_fps:.1f}"
             )
 
-        if self.show_debug:
+        if self.show_debug or self.debug_image_pub.get_subscription_count() > 0:
             self._show_debug(
                 frame,
                 bbox,
@@ -2524,6 +2526,7 @@ class StackTrafficNode(Node):
         red_mask: np.ndarray,
         green_mask: np.ndarray,
     ) -> None:
+        frame = frame.copy()  # visualization must not draw into camera/tracker input buffers
         if self.detection_roi_enabled:
             roi_x1, roi_y1, roi_x2, roi_y2 = search_roi_bbox
             full_width_upper_area = (
@@ -2720,6 +2723,17 @@ class StackTrafficNode(Node):
                 2,
             )
 
+        if self.debug_image_pub.get_subscription_count() > 0:
+            image = Image()
+            image.header.stamp = self.get_clock().now().to_msg()
+            image.header.frame_id = 'oak_rgb_optical_frame'
+            image.height, image.width = frame.shape[:2]
+            image.encoding = 'bgr8'
+            image.step = image.width * 3
+            image.data = frame.tobytes()
+            self.debug_image_pub.publish(image)
+        if not self.show_debug:
+            return  # RViz subscriber renders the image; no separate OpenCV windows.
         cv2.imshow("traffic_red_binary_test", frame)
         if self.show_auxiliary_debug:
             cv2.imshow("traffic_light_crop", crop)

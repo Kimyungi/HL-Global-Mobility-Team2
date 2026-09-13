@@ -102,6 +102,22 @@ def test_gps_same_fix_republication_keeps_generation(environment):
     assert stamp(new) > stamp(first)
 
 
+def test_gps_station_error_survives_serialization_separately_from_preview():
+    from rclpy.serialization import serialize_message, deserialize_message
+    fn = method('src/stack_gps/stack_gps/node.py', '_fill_station_reference', {'RefPoint': RefPoint})
+    msg = GpsPath()
+    snap = {'points': [(2.5, .1, .6, .2)],
+            'station_yaw_error_rad': -.2, 'station_error_valid': True}
+    fn(NS(), msg, snap)
+    received = deserialize_message(serialize_message(msg), GpsPath)
+    assert received.station_error_valid
+    assert received.station_yaw_error_rad == pytest.approx(-.2)
+    assert len(received.points) == 1 and received.points[0].yaw == pytest.approx(.6)
+    snap['station_error_valid'] = False
+    fn(NS(), msg, snap)
+    assert not deserialize_message(serialize_message(msg), GpsPath).station_error_valid
+
+
 @pytest.fixture
 def gps_station_environment(environment):
     from stack_gps.path_engine import PathEngine, M_PER_DEG_LAT

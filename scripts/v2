@@ -4,12 +4,13 @@ set -eo pipefail
 V2_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 V2_ACTION=${1:-check}
 case "$V2_ACTION" in
-  build|check|test|bench|vehicle|vehicle-no-estop|go|state|stop) ;;
-  *) echo 'Usage: scripts/v2 [build|check|test|bench|vehicle|vehicle-no-estop [launch arguments]|go [options]|state|stop]' >&2; exit 2 ;;
+  build|check|test|bench|vehicle|vehicle-no-estop|drive|view|go|state|stop) ;;
+  *) echo 'Usage: scripts/v2 [build|check|test|bench|vehicle|vehicle-no-estop|drive [launch arguments]|view|go [options]|state|stop]' >&2; exit 2 ;;
 esac
 if [[ ${FMA_V2_CLEAN:-} != "$V2_ROOT" ]]; then
   exec env -i HOME="$HOME" USER="${USER:-}" LANG="${LANG:-C.UTF-8}" \
     TERM="${TERM:-dumb}" DISPLAY="${DISPLAY:-}" XAUTHORITY="${XAUTHORITY:-}" \
+    ROS_LOG_DIR="${ROS_LOG_DIR:-$V2_ROOT/log_v2/ros}" \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     FMA_V2_CLEAN="$V2_ROOT" FMA_V2_WORKSPACE="$V2_ROOT" \
     /bin/bash --noprofile --norc "$V2_ROOT/scripts/v2" "$@"
@@ -39,11 +40,16 @@ case "$V2_ACTION" in
       src/stack_traffic/test src/adas_mgm/test/test_reference_metadata.py \
       src/adas_mgm/test/test_mission_calibration.py scripts/test_v2_launch.py \
       scripts/test_v2_recover_lidars.py scripts/test_v2_front_lidar.py
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=181 /usr/bin/python3 -m pytest -q \
+      src/adas_mgm/test/test_integration_view.py
     export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=174
     /usr/bin/python3 src/adas_mgm/test/manager_ros_smoke.py \
       "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
     export ROS_DOMAIN_ID=178
     /usr/bin/python3 src/adas_mgm/test/parking_entry_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=179
+    /usr/bin/python3 src/adas_mgm/test/parking_search_route_ros_smoke.py \
       "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
     export ROS_DOMAIN_ID=176
     for V2_TEST_START in 01 02; do
@@ -60,6 +66,10 @@ case "$V2_ACTION" in
     export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=175
     exec ros2 launch adas_mgm integration_v2_bench.launch.py
     ;;
+  drive)
+    shift
+    exec ros2 launch "$V2_ROOT/src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py" "$@"
+    ;;
   vehicle)
     shift
     exec ros2 launch adas_mgm REAL_VEHICLE_integration_v2.launch.py "$@"
@@ -67,6 +77,10 @@ case "$V2_ACTION" in
   vehicle-no-estop)
     shift
     exec ros2 launch adas_mgm REAL_VEHICLE_integration_v2_no_estop.launch.py "$@"
+    ;;
+  view)
+    shift
+    exec ros2 launch adas_mgm integration_v2_view.launch.py "$@"
     ;;
   go)
     shift

@@ -115,7 +115,7 @@ bool active_parking_step(const CoreSnapshot & s, CoreState & st, bool matching)
       r.space = observe(s, m); m.mission_events |= MISSION_EVENT_SPACE_FOUND;
     }
     const auto & ref = s.parking_preparation_reference;
-    if (!r.preparation_ready && s.parking_preparation_ready &&
+    if (!r.preparation_ready && s.parking_wall_acquisition_complete && s.parking_preparation_ready &&
       ref.generation >= static_cast<uint64_t>(std::max<int64_t>(1, r.zone_entry.time_ns)) &&
       std::isfinite(ref.age_s) && ref.age_s >= 0 && std::isfinite(ref.timeout_s) &&
       ref.timeout_s > 0 && ref.age_s <= ref.timeout_s)

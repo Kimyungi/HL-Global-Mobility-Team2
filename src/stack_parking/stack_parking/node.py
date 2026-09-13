@@ -28,7 +28,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header, String
 from visualization_msgs.msg import Marker, MarkerArray
 
-from fma_interfaces.msg import ParkingCommand
+from fma_interfaces.msg import ParkingCommand, ParkingWallStatus
 
 from .geometry import Pose2, transform_points
 from .icp_slam import IcpConfig, IcpSlam, voxel_downsample
@@ -89,6 +89,9 @@ class StackParkingNode(Node):
         self.search_running = False
         self.execution_authorized = False
         self.search_start_s = -math.inf
+        self.latest_wall_status = None
+        self.left_wall_sub = self.create_subscription(
+            ParkingWallStatus, '/parking/left_wall/status', self._on_wall_status, 1)
 
         self.latest_vehicle: Optional[VehicleVector] = None
         self.latest_rear_clearance_m: Optional[float] = None
@@ -598,6 +601,18 @@ class StackParkingNode(Node):
               and self._preparation_ready(self._clock_s())):
             self.execution_authorized = True
 
+    def _on_wall_status(self, msg: ParkingWallStatus) -> None:
+        self.latest_wall_status = msg
+
+    def _wall_acquired(self, now_s: float) -> bool:
+        msg = getattr(self, 'latest_wall_status', None)
+        if msg is None:
+            return False
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        return bool(msg.request_id == self.search_request_id and self.search_request_id > 0
+                    and msg.mission_active and msg.complete and msg.frame_count >= 5
+                    and 0 <= now_s - stamp <= .5)
+
     def _preparation_ready(self, now_s: float) -> bool:
         # Reuse existing pipeline, planner and localization freshness. Space
         # detection alone precedes the existing localization confirmation stage.
@@ -908,6 +923,9 @@ class StackParkingNode(Node):
         msg.done = output.done
         # Keep cancelled/completed ID and mode visible for cleanup acknowledgement.
         msg.request_id = self.search_request_id
+        msg.wall_acquisition_complete = self._wall_acquired(now_s)
+        wall = getattr(self, 'latest_wall_status', None)
+        msg.wall_acquisition_frames = wall.frame_count if wall is not None and wall.request_id == self.search_request_id else 0
         msg.search_active = self.search_running and mission_output.state not in (
             MissionState.IDLE, MissionState.COMPLETE)
         msg.search_space_found = bool(msg.search_active and self.mission.space is not None

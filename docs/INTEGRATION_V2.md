@@ -1,5 +1,15 @@
 # Integration v2_main — 실차 검증 전 통합 기준
 
+> **통합 실행 + RViz (2026-09-14):** [최신 실행 명령과 런처 위치](INTEGRATION_V2_DRIVE_QUICKSTART.md).
+> `scripts/v2 drive`로 차량 RTCM·통합 노드·RViz를 함께 실행하고 01/02 출발 또는 03/04 중간 재시작을 선택한다.
+
+> **주차 진입 정지·5프레임 수집:** [현재 동작](PARKING_LEFT_WALL_ACQUISITION.md)이 이전 즉시 GPS 탐색 설명보다 우선한다.
+> 주차 진입 즉시 정지 → fresh CAN |v_act| ≤0.1m/s → 새 LiDAR 5프레임 → GPS 탐색 재개. raw dump v24.
+
+> **회피 복귀 변경:** [회피 상태 내부 GPS 복귀](MGM_AVOID_GPS_RETURN.md)가 종전 회피 완료/300틱 hold 설명보다 우선한다.
+> 회피 완료 후에도 AVOID 상태로 GPS를 추종하며 횡오차 ≤0.1m와 방향오차 절댓값 ≤20°에서 종료한다.
+> 자동후진 시작 틱부터 AVOID_ACTIVE이며, 후진 종료 후 회피와 GPS 복귀를 수행한다. raw dump v23.
+
 > **2026-09-13 무인 RC 시험 후진:** [현재 설정](RC_REVERSE_RECOVERY.md)이 아래 과거 Recovery OFF/필수 CLEAR/고정속도 설명보다 우선한다.
 > 일반 v2 설정은 `escape_after_cycles=1000`, `v_escape=-0.8`, `escape_max_cycles=162`,
 > `escape_require_rear_clear=false`. 주차·외부·CAN 정지는 유지하며 no-estop/MBD/bench는 복구 OFF다. raw dump v22.

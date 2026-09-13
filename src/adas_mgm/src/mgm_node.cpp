@@ -119,6 +119,8 @@ CoreSnapshot toSnapshot(const LatestMsgs & m, bool single_point)
   s.route.required_count = static_cast<int32_t>(std::min<size_t>(route.required_missions.size(), 257));
   for (int i=0; i<std::min(s.route.required_count, 256); ++i) {s.route.required_missions[i] = route.required_missions[i];}
   s.gps_cross_track = m.gps.cross_track_m;
+  s.gps_station_yaw_error = m.gps.station_yaw_error_rad;
+  s.gps_station_error_valid = m.gps.station_error_valid && m.gps.vehicle_heading_valid;
   s.gps_stop_zone = m.gps.stop_zone;      // 0 = 아님, 1~ = 지정 정지 지점 번호
   s.gps_avoid_zone = m.gps.avoid_zone;    // 회피 허용 구간 안인가
   s.gps_gps_only_zone = m.gps.gps_only_zone;  // legacy/generated only
@@ -874,6 +876,7 @@ private:
     s.mission_cancel_requested = mission_cancel;
     s.parking_request_id = m.parking.request_id;
     s.parking_search_active = m.parking.search_active;
+    s.parking_wall_acquisition_complete = m.parking.wall_acquisition_complete;
     s.parking_search_space_found = m.parking.search_space_found;
     s.parking_preparation_ready = m.parking.preparation_ready;
     const auto & ready_stamp = m.parking.preparation_stamp;
@@ -1014,6 +1017,11 @@ private:
       status.top = static_cast<uint8_t>(out.top);
       status.navigation = static_cast<uint8_t>(out.nav);
       status.avoidance = static_cast<uint8_t>(out.avoid);
+      status.avoid_return_cross_track_m = s.gps_cross_track;
+      status.avoid_return_yaw_error_rad = s.gps_station_yaw_error;
+      status.avoid_return_error_valid = out.references[MGM_SRC_GPS].valid &&
+        s.gps_heading_valid && s.gps_station_error_valid &&
+        std::isfinite(s.gps_cross_track) && std::isfinite(s.gps_station_yaw_error);
       status.signal = static_cast<uint8_t>(out.signal);
       status.safety = static_cast<uint8_t>(out.safety);
       status.mission = static_cast<uint8_t>(out.mission);

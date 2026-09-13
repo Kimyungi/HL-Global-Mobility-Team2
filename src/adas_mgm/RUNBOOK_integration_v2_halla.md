@@ -1,5 +1,8 @@
 # Integration v2 통합 자율주행 시작 — 한라대학교
 
+> **현재 통합 실행/RViz 명령:** [2026-09-14 빠른 시작](../../docs/INTEGRATION_V2_DRIVE_QUICKSTART.md).
+> `scripts/v2 drive`가 차량 RTCM 중계와 RViz까지 함께 실행한다. 현재 주차 5프레임 수집 정책도 해당 문서에 정리했다.
+
 > **1/10 무인 RC 시험 후진:** E-stop 연속 1000틱(정상 주기 10초) 뒤 −0.8m/s로 최대
 > 162틱(1.62초, 명령상 약 1.3m) 후진한다. `escape_require_rear_clear=false`로 후방
 > CLEAR를 요구하지 않으며, 주차 ACTIVE에서는 후진 복구를 실행하지 않는다.
