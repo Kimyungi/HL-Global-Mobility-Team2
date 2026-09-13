@@ -18,8 +18,10 @@ from stack_parking.simulation import build_mission, simulate_once, synthetic_sce
 from stack_parking.space_detector import (
     MODE_PARALLEL,
     MODE_PERPENDICULAR,
+    ParkingSpaceDetector,
     SIDE_LEFT,
     SIDE_RIGHT,
+    SpaceDetectorConfig,
 )
 
 
@@ -350,6 +352,82 @@ class FrontRearLocalizationTest(unittest.TestCase):
         self.assertTrue(pipeline.observe_slam(True, 5))
         self.assertEqual(pipeline.stage, PipelineStage.PARKING)
         self.assertTrue(pipeline.parking_enabled)
+
+
+class IntegratedParallelCornerDetectionTest(unittest.TestCase):
+
+    @staticmethod
+    def _line(a, b, count):
+        return np.column_stack((
+            np.linspace(a[0], b[0], count),
+            np.linspace(a[1], b[1], count),
+        ))
+
+    def _scene(
+        self,
+        tab_start=(-0.0, -1.0),
+        tab_end=(0.0, -0.88),
+        tab_count=4,
+    ):
+        return np.vstack((
+            self._line((-2.5, -1.0), (0.0, -1.0), 64),
+            self._line(tab_start, tab_end, tab_count),
+        ))
+
+    def test_short_right_wall_tab_confirms_after_three_frames(self):
+        detector = ParkingSpaceDetector(SpaceDetectorConfig(stable_frames=3))
+        scene = self._scene()
+        pose = Pose2(-1.5, 0.0, 0.0)
+        self.assertIsNone(detector.update(
+            scene, pose, Pose2(), MODE_PARALLEL, SIDE_RIGHT))
+        self.assertIsNone(detector.update(
+            scene, pose, Pose2(), MODE_PARALLEL, SIDE_RIGHT))
+        space = detector.update(
+            scene, pose, Pose2(), MODE_PARALLEL, SIDE_RIGHT)
+        self.assertIsNotNone(space)
+        self.assertEqual(space.side, SIDE_RIGHT)
+        self.assertAlmostEqual(space.start_x_lane, 0.0, places=6)
+        self.assertAlmostEqual(
+            space.end_x_lane - space.start_x_lane, 2.90, places=6)
+
+    def test_eight_centimeter_tab_needs_only_corner_and_one_map_point(self):
+        detector = ParkingSpaceDetector(SpaceDetectorConfig(stable_frames=1))
+        scene = self._scene(tab_end=(0.0, -0.92), tab_count=2)
+        space = detector.update(
+            scene, Pose2(-1.5, 0.0, 0.0), Pose2(),
+            MODE_PARALLEL, SIDE_RIGHT)
+        self.assertIsNotNone(space)
+        self.assertAlmostEqual(space.start_x_lane, 0.0, places=6)
+
+    def test_tab_which_turns_away_from_lane_is_rejected(self):
+        detector = ParkingSpaceDetector(SpaceDetectorConfig(stable_frames=1))
+        scene = self._scene(tab_end=(0.0, -1.14))
+        self.assertIsNone(detector.update(
+            scene, Pose2(-1.5, 0.0, 0.0), Pose2(),
+            MODE_PARALLEL, SIDE_RIGHT))
+
+    def test_detached_short_wall_is_rejected(self):
+        detector = ParkingSpaceDetector(SpaceDetectorConfig(stable_frames=1))
+        scene = self._scene(
+            tab_start=(0.0, -0.72), tab_end=(0.0, -0.58))
+        self.assertIsNone(detector.update(
+            scene, Pose2(-1.5, 0.0, 0.0), Pose2(),
+            MODE_PARALLEL, SIDE_RIGHT))
+
+    def test_waypoint_remains_owner_before_corner_is_stable(self):
+        mission = build_mission(stable_frames=3)
+        pose = Pose2(-1.5, 0.0, 0.0)
+        self.assertTrue(mission.trigger(MODE_PARALLEL, SIDE_RIGHT, pose))
+        scene = self._scene()
+        self.assertFalse(mission.observe_map(scene, pose))
+        self.assertFalse(mission.observe_map(scene, pose))
+        output = mission.tick(
+            pose, 0.0, rear_clearance_m=None,
+            vehicle_speed_mps=0.5, localization_valid=True)
+        self.assertEqual(output.state, MissionState.SCANNING)
+        self.assertFalse(output.space_found)
+        self.assertIsNone(output.reference_local)
+        self.assertEqual(output.v_suggest_mps, 0.0)
 
 
 class MissionSimulationTest(unittest.TestCase):

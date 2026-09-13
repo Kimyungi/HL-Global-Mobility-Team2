@@ -313,6 +313,12 @@ class StackParkingNode(Node):
             'space.boundary_near_m': 1.7,
             'space.boundary_far_m': 2.3,
             'space.parallel_min_length_m': 2.90,
+            'space.parallel_decision_wall_min_length_m': 0.08,
+            'space.parallel_decision_wall_min_points': 1,
+            'space.parallel_decision_wall_x_tolerance_m': 0.10,
+            'space.parallel_corner_connect_tolerance_m': 0.14,
+            'space.parallel_corner_max_angle_error_deg': 35.0,
+            'space.parallel_side_wall_min_length_m': 0.50,
             # 2026-09-02 (user directive): 1m x 1m minimum, first gap wins.
             'space.perpendicular_min_width_m': 1.0,
             'space.perpendicular_min_depth_m': 1.0,
@@ -401,6 +407,18 @@ class StackParkingNode(Node):
             boundary_near_m=float(self._p('space.boundary_near_m')),
             boundary_far_m=float(self._p('space.boundary_far_m')),
             parallel_min_length_m=float(self._p('space.parallel_min_length_m')),
+            parallel_decision_wall_min_length_m=float(
+                self._p('space.parallel_decision_wall_min_length_m')),
+            parallel_decision_wall_min_points=int(
+                self._p('space.parallel_decision_wall_min_points')),
+            parallel_decision_wall_x_tolerance_m=float(
+                self._p('space.parallel_decision_wall_x_tolerance_m')),
+            parallel_corner_connect_tolerance_m=float(
+                self._p('space.parallel_corner_connect_tolerance_m')),
+            parallel_corner_max_angle_error_deg=float(
+                self._p('space.parallel_corner_max_angle_error_deg')),
+            parallel_side_wall_min_length_m=float(
+                self._p('space.parallel_side_wall_min_length_m')),
             perpendicular_min_width_m=float(self._p('space.perpendicular_min_width_m')),
             perpendicular_min_depth_m=float(self._p('space.perpendicular_min_depth_m')),
             rear_lidar_x_m=float(self._p('lidar.rear_x_m')),
