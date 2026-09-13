@@ -79,7 +79,7 @@
     # Voxel occupancy state: new cells are tentative, become confirmed after
     # three observations, and confirmed-free rays remove them after 1/3 misses.
     # Missing or nearer (occluding) rays do not count as misses.
-    icp.observation_match_radius_m: 0.06
+    icp.observation_match_radius_m: 0.02
     icp.tentative_confirm_hits: 3
     icp.tentative_delete_misses: 1
     icp.confirmed_delete_misses: 3

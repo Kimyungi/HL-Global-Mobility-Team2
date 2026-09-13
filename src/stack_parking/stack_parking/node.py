@@ -296,7 +296,7 @@ class StackParkingNode(Node):
             'icp.freespace_bin_width_deg': 1.0,
             'icp.freespace_margin_m': 0.02,
             'icp.freespace_occlusion_padding_deg': 1.5,
-            'icp.observation_match_radius_m': 0.06,
+            'icp.observation_match_radius_m': 0.02,
             'icp.tentative_confirm_hits': 3,
             'icp.tentative_delete_misses': 1,
             'icp.confirmed_delete_misses': 3,

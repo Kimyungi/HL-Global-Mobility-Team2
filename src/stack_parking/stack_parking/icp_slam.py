@@ -44,7 +44,7 @@ class IcpConfig:
     freespace_bin_width_rad: float = math.radians(1.0)
     freespace_margin_m: float = 0.02
     freespace_occlusion_padding_rad: float = math.radians(1.5)
-    observation_match_radius_m: float = 0.06
+    observation_match_radius_m: float = 0.02
     tentative_confirm_hits: int = 3
     tentative_delete_misses: int = 1
     confirmed_delete_misses: int = 3

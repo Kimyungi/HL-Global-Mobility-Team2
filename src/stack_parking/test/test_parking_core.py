@@ -37,6 +37,9 @@ class GeometryTest(unittest.TestCase):
 
 class IcpSlamTest(unittest.TestCase):
 
+    def test_default_observation_match_radius_is_two_centimeters(self):
+        self.assertAlmostEqual(IcpConfig().observation_match_radius_m, 0.02)
+
     def test_freespace_empty_bin_is_unknown(self):
         point_map = VoxelPointMap(0.02)
         point_map.add(np.asarray([[2.0, 0.0]]))
@@ -69,17 +72,17 @@ class IcpSlamTest(unittest.TestCase):
 
     def test_voxel_crossing_boundary_is_one_confirmed_cell(self):
         point_map = VoxelPointMap(0.08)
-        point_map.add(np.asarray([[0.079, 0.0]]), 0.06, confirm_hits=3)
-        point_map.add(np.asarray([[0.081, 0.0]]), 0.06, confirm_hits=3)
-        point_map.add(np.asarray([[0.078, 0.0]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.079, 0.0]]), 0.02, confirm_hits=3)
+        point_map.add(np.asarray([[0.081, 0.0]]), 0.02, confirm_hits=3)
+        point_map.add(np.asarray([[0.078, 0.0]]), 0.02, confirm_hits=3)
         self.assertEqual(len(point_map), 1)
         self.assertEqual(point_map.state_counts(), (0, 1))
 
     def test_same_voxel_observations_do_not_need_distance_match(self):
         point_map = VoxelPointMap(0.08)
-        point_map.add(np.asarray([[0.001, 0.001]]), 0.06, confirm_hits=3)
-        point_map.add(np.asarray([[0.079, 0.079]]), 0.06, confirm_hits=3)
-        point_map.add(np.asarray([[0.002, 0.002]]), 0.06, confirm_hits=3)
+        point_map.add(np.asarray([[0.001, 0.001]]), 0.02, confirm_hits=3)
+        point_map.add(np.asarray([[0.079, 0.079]]), 0.02, confirm_hits=3)
+        point_map.add(np.asarray([[0.002, 0.002]]), 0.02, confirm_hits=3)
         self.assertEqual(len(point_map), 1)
         self.assertEqual(point_map.state_counts(), (0, 1))
 
