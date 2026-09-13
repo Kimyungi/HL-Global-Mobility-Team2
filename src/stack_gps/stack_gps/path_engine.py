@@ -337,6 +337,8 @@ class PathEngine:
                     self._in_ranges(preview_idx, self.gps_only_ranges))
         return dict(diagnostics, points=[(c*de+s*dn, -s*de+c*dn, wrap_angle(yaw-psi), curvature)],
                     idx=idx, cross_track_m=math.hypot(foot_e-ev, foot_n-nv),
+                    station_yaw_error_rad=wrap_angle(track.heading()-psi),
+                    station_error_valid=heading is not None,
                     accel_zone=self._in_ranges(idx, self.accel_ranges),
                     parking_zone=perpendicular or parallel,
                     parking_mode='perpendicular' if perpendicular else 'parallel' if parallel else None,

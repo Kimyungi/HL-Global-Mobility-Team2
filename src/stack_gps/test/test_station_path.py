@@ -214,3 +214,20 @@ def test_accepted_route_handoff_resets_station_but_duplicate_command_does_not():
     initial = plan.active_engine.snapshot(*plan.files[1].points[0], generation=2.)
     assert not plan.apply(plan.sequence_id, 22, 22, 1, 1)
     assert plan.active_engine.station_path.station == initial['station_m']
+
+
+def test_station_heading_interpolates_wrap_without_preview_snap():
+    path = track([(0., 0.), (10., 0.), (20., 0.)],
+                 yaw=[math.radians(179), math.radians(-179), math.radians(-160)])
+    update(path, 5.)
+    assert abs(path.heading()) == pytest.approx(math.pi)
+    assert abs(path.preview()[0][2]) != pytest.approx(abs(path.heading()))
+
+
+def test_engine_station_error_is_separate_from_preview_yaw_and_rejects_fallback():
+    eng = PathEngine([latlon(float(i)) for i in range(21)], station_tracking=True)
+    snap = eng.snapshot(*latlon(5.), heading=.3, v_ref=1., generation=1.)
+    assert snap['station_error_valid']
+    assert snap['station_yaw_error_rad'] == pytest.approx(-.3, abs=1e-7)
+    snap = eng.snapshot(*latlon(5.), heading=None, v_ref=1., generation=2.)
+    assert not snap['station_error_valid']

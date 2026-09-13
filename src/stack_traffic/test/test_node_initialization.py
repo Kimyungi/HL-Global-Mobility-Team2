@@ -139,14 +139,22 @@ class TestNodeInitialization(unittest.TestCase):
                 (720, 1280, 3),
                 dtype=np.uint8,
             )
+            node.debug_image_pub = Mock()
+            node.debug_image_pub.get_subscription_count.return_value = 1
             expected_frames = max(
                 node.startup_minimum_frames,
                 1
                 + (node.vote_window - 1)
                 * node.yolo_inference_interval,
             )
-            for _ in range(expected_frames):
-                node.tick()
+            with patch('stack_traffic.node.cv2.imshow', side_effect=AssertionError('RViz must not open OpenCV windows')):
+                for _ in range(expected_frames):
+                    node.tick()
+
+            image = node.debug_image_pub.publish.call_args.args[0]
+            self.assertEqual((image.width, image.height, image.encoding), (1280, 720, 'bgr8'))
+            self.assertGreater(np.count_nonzero(np.frombuffer(image.data, np.uint8)), 0)
+            self.assertEqual(np.count_nonzero(node.oak_camera.frame), 0)
 
             self.assertEqual(node.frame_index, expected_frames)
             self.assertEqual(

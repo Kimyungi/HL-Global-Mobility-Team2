@@ -21,6 +21,10 @@ uint8 fix_quality    # 0=invalid, 1=GPS, 2=DGPS, 4=RTK fixed, 5=RTK float
 # 뒤에만** 허용돼야 하는데(2026-08-14), 시간 게이트만으로는 이탈한 채 lane으로
 # 넘어가 버린다. stack_gps가 이미 내부에서 쓰던 값을 계약에 노출한 것.
 float32 cross_track_m
+# Current station tangent minus measured vehicle heading, wrapped to [-pi, pi].
+# Separate from the +2.5m preview point yaw. False for tangent-fallback heading.
+float32 station_yaw_error_rad
+bool station_error_valid
 
 # 헤딩 추정 소스 (2026-08-16 신설). MGM이 "이 헤딩을 믿어도 되는가"를 알아야 하는데
 # 종전 계약엔 그 정보가 없었다 — fix_quality가 위치 신뢰도만 알려주듯, 헤딩에도

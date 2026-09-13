@@ -36,6 +36,13 @@ bool line_valid(const CoreSnapshot & s)
   return provider_reference(s, MGM_SRC_LANE).valid;
 }
 bool gps_valid(const CoreSnapshot & s) {return provider_reference(s, MGM_SRC_GPS).valid;}
+bool gps_return_aligned(const CoreSnapshot & s)
+{
+  constexpr float kYawLimit = 20.0f * 3.14159265358979323846f / 180.0f;
+  return gps_valid(s) && s.gps_heading_valid && s.gps_station_error_valid &&
+    std::isfinite(s.gps_cross_track) && std::isfinite(s.gps_station_yaw_error) &&
+    std::fabs(s.gps_cross_track) <= 0.1f && std::fabs(s.gps_station_yaw_error) <= kYawLimit;
+}
 bool line_return_ready(const CoreSnapshot & s, const CoreState & st)
 {
   return line_valid(s) && st.lane_high_cnt >= st.params.n_cycles &&
@@ -43,7 +50,7 @@ bool line_return_ready(const CoreSnapshot & s, const CoreState & st)
 }
 void nav_reselect(const CoreSnapshot & s, CoreState & st)
 {
-  if (mission_searches_along_gps(st)) {
+  if (mission_searches_along_gps(st) || st.managers.avoid == AvoidState::GPS_RETURN) {
     st.managers.nav = st.managers.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
   } else if (st.managers.route.enabled && st.managers.route.connecting) {
     st.managers.nav = NavState::GPS_BACKUP;
@@ -223,7 +230,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool avoid_entry = (s.avoid_obstacle_detected && s.avoid_avoidable &&
     (st.params.avoid_zone_only == 0 || s.gps_avoid_zone)) || fallback;
   const bool was_avoiding = m.avoid != AvoidState::INACTIVE;
-  if (!avoid_allowed) {
+  if (!st.params.avoidance_enabled || mission || m.top != TopState::AUTONOMOUS_DRIVE) {
     m.avoid = AvoidState::INACTIVE;
     m.clear_count = 0;
     m.avoid_fallback_only = false;
@@ -231,6 +238,26 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
       st.return_hold_left = 0;
       if (was_avoiding) {nav_reselect(s, st);}
     }
+  } else if (st.escape_phase == MGM_ESCAPE_REVERSING) {
+    // Reverse and its following maneuver are one avoidance episode.
+    m.avoid = AvoidState::AVOID_ACTIVE;
+    m.avoid_fallback_only = false;
+  } else if (m.avoid == AvoidState::GPS_RETURN) {
+    // Preserve ownership through lost/stale GPS. Its reference gate stops output;
+    // a camera confidence increase or elapsed timer cannot finish the return.
+    if (avoid_allowed && s.avoid_obstacle_detected && s.avoid_avoidable &&
+      !s.avoid_maneuver_done && (st.params.avoid_zone_only == 0 || s.gps_avoid_zone)) {
+      m.avoid = AvoidState::AVOID_ACTIVE;
+      st.avoid_ticks = 0;
+    } else if (gps_return_aligned(s) && !s.auto_estop) {
+      m.avoid = AvoidState::INACTIVE;
+      st.return_hold_left = 0;
+      nav_reselect(s, st);
+    }
+  } else if (!avoid_allowed) {
+    m.avoid = AvoidState::INACTIVE;
+    m.clear_count = 0;
+    m.avoid_fallback_only = false;
   } else if (m.avoid == AvoidState::INACTIVE) {
     if (avoid_entry) {
       m.avoid = AvoidState::AVOID_ACTIVE;
@@ -246,19 +273,19 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     (s.avoid_maneuver_done ||
     (st.params.avoid_max_cycles > 0 && st.avoid_ticks >= st.params.avoid_max_cycles)))
   {
-    // main: disappearing from the forward corridor is not passing the object.
-    // Wait for the producer's maneuver completion (or the configured episode
-    // limit), then start the full GPS return hold. Never finish reverse recovery.
-    m.avoid = AvoidState::INACTIVE;
+    // Completion/episode limit ends only obstacle steering. Remain in AVOID
+    // while the actual GPS station errors converge; no elapsed-time exit.
+    m.avoid = AvoidState::GPS_RETURN;
     m.clear_count = 0;
-    st.return_hold_left = st.params.avoid_return_hold_cycles;
+    st.return_hold_left = 0;
     m.nav = m.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
   } else {
     m.avoid = AvoidState::AVOID_ACTIVE;
     m.clear_count = 0;
     if (s.avoid_obstacle_detected) {m.avoid_fallback_only = false;}
   }
-  // The GPS hold begins on actual avoidance exit, as it did in main.
+  if (m.avoid == AvoidState::GPS_RETURN) {nav_reselect(s, st);}
+  // Preserve any hold established by other existing transitions.
   if (!m.gps_only_context && st.return_hold_left > 0 && gps) {
     m.nav = NavState::GPS_BACKUP;
   }
@@ -371,15 +398,22 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     st.escape_phase = MGM_ESCAPE_REVERSING;
     st.escape_ticks = 0;
     m.recovery_waiting_reference = false;
+    if (st.params.avoidance_enabled) {
+      m.avoid = AvoidState::AVOID_ACTIVE;
+      m.avoid_fallback_only = false;
+      m.clear_count = st.avoid_ticks = st.return_hold_left = 0;
+      m.avoid_episode_reference_seen = false;
+    }
   }
   if (!mission && was_reversing && st.escape_phase == MGM_ESCAPE_NONE) {
     m.recovery_waiting_reference = true;
+    st.avoid_ticks = 0;  // Reverse duration does not consume the following maneuver budget.
     nav_reselect(s, st);
   }
   if (mission) {m.recovery_waiting_reference = false;}
   if (m.recovery_waiting_reference) {
     nav_reselect(s, st);
-    const bool reference = m.avoid != AvoidState::INACTIVE ?
+    const bool reference = m.avoid != AvoidState::INACTIVE && m.avoid != AvoidState::GPS_RETURN ?
       provider_reference(s, MGM_SRC_AVOID).valid : nav_available(s, st);
     if (reference) {m.recovery_waiting_reference = false;}
   }
@@ -412,8 +446,9 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   const auto & m = st.managers;
   const bool mission = mission_reference_authority(st);
   const bool avoid = st.params.avoidance_enabled && m.avoid != AvoidState::INACTIVE;
+  const bool gps_return = avoid && m.avoid == AvoidState::GPS_RETURN;
   const uint8_t source_state = mission ? MGM_STATE_PARKING : mission_searches_along_gps(st) ? MGM_STATE_WAYPOINT :
-    avoid ? MGM_STATE_AVOID :
+    gps_return ? MGM_STATE_WAYPOINT : avoid ? MGM_STATE_AVOID :
     m.nav == NavState::LINE ? MGM_STATE_LANE : MGM_STATE_WAYPOINT;
   CoreSnapshot request = s;
   request.estop = false;  // independent safety arbitration below
@@ -510,6 +545,17 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
     out.v_ref = 0.0f;
     out.immediate_stop = true;
     out.speed_owner = m.top == TopState::FINISH ? SpeedOwner::FINISH : SpeedOwner::SAFETY;
+  }
+  // Entry braking precedes the CAN-speed-gated five-frame wall acquisition.
+  // Only fresh completion for this request releases normal GPS search speed.
+  if (mission_searches_along_gps(st) && !(s.parking_valid &&
+    s.parking_request_id == m.request.request_id &&
+    s.parking_mission_mode == static_cast<uint8_t>(m.mission_type) &&
+    s.parking_wall_acquisition_complete))
+  {
+    out.v_ref = 0.0f;
+    out.immediate_stop = true;
+    out.speed_owner = SpeedOwner::MISSION;
   }
   out.selected_reference = out.references[out.path_source];
   out.reference_available = out.selected_reference.available;

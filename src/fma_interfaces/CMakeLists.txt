@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RouteControl.msg"
   "msg/AvoidStatus.msg"
   "msg/ParkingStatus.msg"
+  "msg/ParkingWallStatus.msg"
   "msg/ParkingCommand.msg"
   "msg/MissionObservation.msg"
   "msg/TrafficStop.msg"

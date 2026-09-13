@@ -106,6 +106,7 @@ RECORD_TOPICS = [
     '/adas/mgm_state', '/parking/mission_command', '/operator/cancel_mission',
     '/scan', '/lidar/a1/scan', '/unified_lidar/scan',
     '/parking/local_map', '/parking/slam_pose', '/parking/pipeline_stage',
+    '/parking/left_wall/status', '/parking/left_wall/diagnostics', '/parking/left_wall/markers',
     '/rosout', '/tf', '/tf_static',
 ]
 
@@ -520,10 +521,11 @@ def build_launch_description(
         # 정지선 depth는 진단값일 뿐 정지 조건이 아니다. 통합 주행은 RGB-only로
         # USB2 여유와 처리 지연을 우선하고, optical-Z 현장 진단 때만 켠다.
         DeclareLaunchArgument('traffic_depth_enabled', default_value='false'),
-        # CPU에서 100ms 처리 예산을 지키는 통합 주행 프로필. 적색 전에는 신호등을
-        # 격프레임으로, 적색 뒤에는 정지선을 우선하고 3프레임마다 신호등을 재확인한다.
+        # 2026-09-13 저조도 추가학습 모델은 입력 640에서 검증했다.
+        # 320에서는 작은 신호등을 놓치므로 검증된 입력 크기를 사용한다.
+        # 적색 전에는 격프레임, 적색 뒤에는 정지선을 우선하고 3프레임마다 신호등을 재확인한다.
         # 한 callback에서는 두 YOLO 중 하나만 실행한다.
-        DeclareLaunchArgument('traffic_yolo_image_size', default_value='320'),
+        DeclareLaunchArgument('traffic_yolo_image_size', default_value='640'),
         DeclareLaunchArgument(
             'traffic_yolo_inference_interval', default_value='2'),
         DeclareLaunchArgument(

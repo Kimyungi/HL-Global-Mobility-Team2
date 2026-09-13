@@ -429,6 +429,8 @@ class StackGpsNode(Node):
         point, = snap['points']
         x, y, yaw, curvature = map(float, point)
         msg.points = [RefPoint(x=x, y=y, yaw=yaw, curvature=curvature)]
+        msg.station_yaw_error_rad = float(snap.get('station_yaw_error_rad', 0.0))
+        msg.station_error_valid = bool(snap.get('station_error_valid', False))
 
     def _on_route_control(self, msg):
         plan = self._route_plan

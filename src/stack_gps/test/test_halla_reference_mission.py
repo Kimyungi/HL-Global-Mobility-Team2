@@ -54,6 +54,8 @@ def test_all_seven_paths_have_consistent_latlon_and_zone_flags():
             # 현장에서 Path 3의 Zone 3 종료점을 idx 90→116으로 연장했다.
             if path_id == 3 and 28 <= int(row['idx']) <= 116:
                 expected_zone = 3
+            if path_id == 3 and 133 <= int(row['idx']) <= 145:
+                expected_zone = 4
             assert int(row['zone_id']) == expected_zone
             assert int(row['inside_zone']) == int(expected_zone != 0)
 
@@ -151,6 +153,16 @@ def test_path_3_zone_3_extension_matches_yaml():
     interval = zones['gps_only_zones'][0]
     assert abs(interval['start']['lat'] - float(rows[28]['lat'])) < 1e-8
     assert abs(interval['end']['lat'] - float(rows[116]['lat'])) < 1e-8
+
+    approach = [row for row in rows if row['zone_id'] == '4']
+    assert [int(row['idx']) for row in approach] == list(range(133, 146))
+    assert all(row['drive_mode'] == 'waypoint_only' for row in approach)
+    assert abs(float(rows[145]['s_m']) - float(rows[133]['s_m']) - 3.) < .025
+    interval = zones['gps_only_zones'][1]
+    for side, idx in [('start', 133), ('end', 145)]:
+        for coord in ('lat', 'lon'):
+            assert abs(interval[side][coord] - float(rows[idx][coord])) < 1e-8
+    assert rows[132]['zone_id'] == rows[146]['zone_id'] == '0'
 
 
 def test_mission_yaml_state_definitions_match_csv():

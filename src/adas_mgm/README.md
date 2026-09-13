@@ -29,6 +29,10 @@ invalid/stale 경로는 제어권을 유지한 채 속도를 0으로 차단합�
 
 **Integration v2의 통합 실행은 코스에 맞는 새 런북을 사용한다.**
 
+통합 실시간 화면은 `./scripts/v2 view`: 차량 고정 RViz 한 창에 GPS/카메라 목표점,
+정지선 거리·신호등, 4-LiDAR/SLAM 지도와 주차 경로·두 카메라 영상을 표시한다.
+[통합 화면 사용법](../../docs/INTEGRATION_V2_VIEW.md)을 참고한다.
+
 - [한라대학교 — Integration v2](RUNBOOK_integration_v2_halla.md): 업로드된 기준경로 (01 또는 02)→03→04→05→(06 또는 07)과 경로별 Zone/Mission 인계.
 - [용인 Course A — Integration v2](RUNBOOK_integration_v2_yongin.md): 업로드된 2,141점 CSV, 별도 Mission Zone 준비.
 

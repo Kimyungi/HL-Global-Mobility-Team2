@@ -85,6 +85,14 @@ class StationPath:
         t = (self.station-self.s[i]) / (self.s[i+1]-self.s[i])
         return self.e[i] + t*(self.e[i+1]-self.e[i]), self.n[i] + t*(self.n[i+1]-self.n[i])
 
+    def heading(self):
+        """Interpolate existing path tangents at the current station, without preview snapping."""
+        if self.station is None:
+            raise ValueError('station is not initialized')
+        i = min(len(self.e)-2, max(0, bisect_right(self.s, self.station)-1))
+        t = (self.station-self.s[i]) / (self.s[i+1]-self.s[i])
+        return _wrap(self.yaw[i] + t*_wrap(self.yaw[i+1]-self.yaw[i]))
+
     def preview(self):
         if self.station is None:
             raise ValueError('station is not initialized')
