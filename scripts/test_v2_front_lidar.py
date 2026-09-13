@@ -72,9 +72,14 @@ def detect(params, scan):
         front_center=math.radians(avoid_params['lidar_mount.forward_angle_deg']),
         front_half_angle=math.radians(avoid_params['avoid.roi_angle_deg'] / 2),
         max_range=avoid_params['avoid.max_range_m'],
+        lidar_x=avoid_params['lidar_mount.x_m'],
         lidar_y=avoid_params['lidar_mount.y_m'],
+        cluster_dist=avoid_params['avoid.cluster_dist_m'],
+        surface_link_scale=avoid_params['avoid.surface_link_scale'],
+        surface_max_link=avoid_params['avoid.surface_max_link_m'],
         corridor_half_width=(avoid_params['vehicle.width_m'] / 2
                              + avoid_params['avoid.lateral_margin_m']))
+    avoid._surfaces = StackAvoidNode._scan_surfaces(avoid, scan)
     return estop, StackAvoidNode._nearest_front_obstacle(avoid, scan)
 
 

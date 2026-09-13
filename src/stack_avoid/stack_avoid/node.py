@@ -1,9 +1,9 @@
 """stack_avoid — 장애물 인지, 회피 가능 판정 재료(TTC·측방), 회피 경로
 담당: 이기돈
 
-- 전방 2D LiDAR 스캔(`/scan`)을 구독해 전방 통로(corridor) 안 최근접 장애물 거리·TTC 산출.
-- 장애물 감지 시 회피 목표점 1개를 follow-the-gap(양쪽 장애물 고려)으로 생성 → `points[]`.
-  전방 FOV의 열림(gap)들 중 통과 가능·최소 편차 열림 중심으로 조준.
+- 전방 2D LiDAR 스캔(`/scan`)의 인접 반사점을 연결 윤곽으로 구성해 거리·TTC 산출.
+- 장애물 감지 시 윤곽 전체의 측방 점유 구간을 차폭·여유만큼 확장해 열림을 탐색.
+  통과 가능·최소 편차 열림으로 회피 목표점 1개 생성 → `points[]`.
   (avoid n_points=1: dSPACE quintic이 현재 자세에서 이 목표점으로 궤적을 채움)
 - 모든 차량/센서/튜닝 값은 `config/params.yaml`에서 로드(하드코딩 금지, CLAUDE.md §5).
 - LiDAR 장착 오프셋으로 vehicle frame(base_link=후축 중심) 보정 + static TF 발행.
@@ -31,6 +31,10 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import TransformStamped
 from tf2_ros import StaticTransformBroadcaster
 from fma_interfaces.msg import AvoidStatus, RefPoint, VehicleVector
+from stack_avoid.surfaces import (
+    scan_surfaces, nearest_in_corridor, blocked_intervals, gap_centers,
+    outside_intervals, surface_clearance, occluded,
+)
 
 TTC_INF = 1.0e9   # 장애물 없을 때 ttc (0 금지 — MGM이 즉시 정지 바닥을 밟음)
 EPS_SPEED = 1e-3  # 이보다 느리면 정지 상태로 보고 ttc=INF
@@ -93,9 +97,19 @@ class StackAvoidNode(Node):
         self.max_range = self.declare_parameter('avoid.max_range_m', 12.0).value
         # 회피 목표점 측방 오프셋 상한
         self.offset_max = self.declare_parameter('avoid.offset_max_m', 1.0).value
-        # follow-the-gap: 장애물 전방거리 ±이 값 안의 blocker를 양쪽 고려
+        # 이 깊이 밴드에 걸친 연결 윤곽 전체를 양쪽 고려한다.
         self.depth_band = self.declare_parameter('avoid.depth_band_m', 0.6).value
-        # ★ 목표 y 변화율 상한 [m/s]. 0 이면 제한 없음(구동작). 상세는 _rate_limit 주석.
+        self.cluster_dist = float(self.declare_parameter('avoid.cluster_dist_m', 0.10).value)
+        self.surface_link_scale = float(
+            self.declare_parameter('avoid.surface_link_scale', 3.0).value)
+        self.surface_max_link = float(
+            self.declare_parameter('avoid.surface_max_link_m', 0.30).value)
+        if not self._valid_surface_params(
+                self.cluster_dist, self.surface_link_scale, self.surface_max_link):
+            raise ValueError('surface link parameters must be finite and positive; max >= cluster_dist')
+        self._surfaces = []
+        # ★ 목표 y 변화율 상한 [m/s]. 0 이면 제한 없음(구동작).
+        # 아래 bag 수치는 기존 점 기반 구현의 튜닝 기록이며 새 표면 모델 실측은 별도다.
         #   3.0 = 10Hz 스캔에서 프레임당 0.30m. 2개 bag 재생으로 정한 값 —
         #   1m 초과 점프를 24·32회 → 2·0회로 줄이면서 narrow_gap 은 늘지 않았다.
         self.target_rate_mps = float(
@@ -197,6 +211,13 @@ class StackAvoidNode(Node):
 
     def _on_set_params(self, params):
         """런타임 파라미터 변경 반영. scan_topic·장착값은 재시작 권장."""
+        proposed = {p.name: p.value for p in params}
+        if not self._valid_surface_params(
+                proposed.get('avoid.cluster_dist_m', self.cluster_dist),
+                proposed.get('avoid.surface_link_scale', self.surface_link_scale),
+                proposed.get('avoid.surface_max_link_m', self.surface_max_link)):
+            return SetParametersResult(successful=False, reason=(
+                'surface link parameters must be finite and positive; max >= cluster_dist'))
         for p in params:
             if p.name == 'target_speed_mps':
                 self.target_speed = p.value
@@ -214,6 +235,12 @@ class StackAvoidNode(Node):
                 self.offset_max = p.value
             elif p.name == 'avoid.depth_band_m':
                 self.depth_band = p.value
+            elif p.name == 'avoid.cluster_dist_m':
+                self.cluster_dist = float(p.value)
+            elif p.name == 'avoid.surface_link_scale':
+                self.surface_link_scale = float(p.value)
+            elif p.name == 'avoid.surface_max_link_m':
+                self.surface_max_link = float(p.value)
             elif p.name == 'avoid.target_rate_limit_mps':
                 self.target_rate_mps = float(p.value)
             elif p.name == 'avoid.clear_margin_m':
@@ -250,6 +277,7 @@ class StackAvoidNode(Node):
     def on_scan(self, scan: LaserScan):
         """전방 통로 안 최근접 장애물 → 거리·TTC + 회피 목표점 발행."""
         self.front_scan_pub.publish(self._front_only_scan(scan))  # 시각화용
+        self._surfaces = self._scan_surfaces(scan)
         obs = self._nearest_front_obstacle(scan)   # (gap, y_veh) or None
         gap = obs[0] if obs is not None else None
 
@@ -353,27 +381,23 @@ class StackAvoidNode(Node):
     # 목표 방위각 주변 이 각도 안의 측정치를 본다 [deg]. 3m 에서 ±0.10m 에 해당.
     BEHIND_WIN_DEG = 2.0
 
+    @staticmethod
+    def _valid_surface_params(distance, scale, maximum):
+        return (all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+                    for v in (distance, scale, maximum)) and maximum >= distance)
+
+    def _scan_surfaces(self, scan):
+        return scan_surfaces(
+            scan.ranges, scan.angle_min, scan.angle_increment,
+            scan.range_min, min(scan.range_max, self.max_range),
+            self.front_center, self.front_half_angle, self.lidar_x, self.lidar_y,
+            self.cluster_dist, self.surface_link_scale, self.surface_max_link)
+
     def _behind_surface(self, scan, tx, ty):
-        """목표 (tx,ty) 가 **스캔된 표면보다 뒤**에 있는가 (vehicle frame 입력).
-
-        ★ 왜 이 판정인가 (2026-08-10 실차 규명). `_gap_target` 은 장면을 "한 깊이
-          슬래브에 늘어선 점들의 1차원 줄"로 모델링한다. 실제 장면은 2차원이라
-          **대각선 벽은 어느 깊이로 잘라도 그 단면에 '끝'이 생기고**, 알고리즘은 그
-          가짜 끝을 돌아갈 수 있는 모서리로 착각해 벽 반대편에 목표를 찍는다.
-          실측(avoid_20260809_220343 t=9.89s): 왼쪽 벽이 x 1.5→4.0 에서 y +1.4→+0.2 로
-          기우는 하나의 연속 벽인데 슬래브 3.02~4.22 에서는 y +0.38~+0.71 로만 보여,
-          그 "끝" 바깥 +1.17 을 목표로 냈다. 15프레임 재현.
-
-          스캔은 방위각의 함수 r(θ) 다. "장애물 뒤"의 정확한 정의는 **목표의 방위각에서
-          목표까지의 거리가 측정 거리보다 먼 것** — 즉 스캔된 표면을 뚫고 들어간 것이다.
-          위 프레임: 목표 거리 3.09m vs 그 방위각 측정 2.18m → 뒤 ✓
-
-        ★ 처음에는 "경로 수직거리" 로 검사했는데 **너무 엄격해 실주행이 막혔다**
-          (2026-08-10 실차: 230/260 프레임 기각, 23초 정지). 통로를 따라 정상 주행할 때
-          벽은 항상 clear 언저리를 스치므로, 수직거리 기준은 "벽 옆을 지나감" 과
-          "벽을 뚫고 감" 을 구분하지 못한다. 같은 프레임에서 이 표면 판정은
-          목표 2.57m vs 측정 3.95m → 통과로 올바르게 판정한다.
-        """
+        """Reject targets hidden by connected edges, plus the existing beam window guard."""
+        if occluded((self.lidar_x, self.lidar_y), (tx, ty),
+                    self._surfaces, self.BEHIND_TOL_M):
+            return True
         xl, yl = tx - self.lidar_x, ty - self.lidar_y      # 라이다 프레임으로
         tr = math.hypot(xl, yl)
         if tr < 1e-6:
@@ -395,129 +419,43 @@ class StackAvoidNode(Node):
                 nearest = r
         return nearest is not None and tr > nearest + self.BEHIND_TOL_M
 
+    def _target_clear(self, scan, x, y, intervals, clear):
+        return (outside_intervals(y, intervals)
+                and surface_clearance((x, y), self._surfaces) >= clear - 1e-6
+                and not self._behind_surface(scan, x, y))
+
     def _gap_target(self, scan: LaserScan, gap: float):
-        """follow-the-gap (양쪽 고려) — 회피 목표점 1개, vehicle frame(후축 원점).
+        """Select one target outside inflated, whole-contour occupied intervals.
 
-        장애물 전방거리(obs_x) 깊이 밴드 안의 blocker들(양쪽)을 모아, 통과 가능한
-        열림(사이/바깥)들 중 직진에서 가장 덜 벗어나는 열림 중심으로 목표점을 낸다.
-        - 사이가 통과 최소폭(차폭+2·여유) 이상이면 그 사이로,
-        - 아니면 바깥으로 돌아감. 없거나 벗어나면 None.
-        dSPACE quintic이 현재 자세→이 점으로 궤적 복원. (avoid n_points=1)"""
+        The depth band selects obstacles, but never cuts their contour. Thus a
+        diagonal wall's sliced endpoint cannot become a fictitious way around it.
+        Output remains one vehicle-frame target for the existing controller.
+        """
         obs_x = self.lidar_x + gap
-        lo, hi = obs_x - self.depth_band, obs_x + self.depth_band
-        pass_w = self.vehicle_width + 2.0 * self.lateral_margin   # 통과 최소폭
-        clear = self.vehicle_width / 2.0 + self.lateral_margin    # 편측 여유
-
-        # 깊이 밴드 내 blocker들의 측방 y (vehicle frame)
-        ys = []
-        angle = scan.angle_min
-        for r in scan.ranges:
-            rel = wrap_to_pi(angle - self.front_center)
-            angle += scan.angle_increment
-            if abs(rel) > self.front_half_angle:
-                continue
-            # ★ blocker 범위는 **거리(r)가 아니라 기하**로 자른다 (2026-08-09 실차 규명).
-            #
-            #   detect_range(3.0)로 자르면: 깊이 밴드가 obs_x±depth_band 라 4.4m 까지
-            #   뻗는데 3.0m 초과 점이 통째로 빠져 **없는 빈틈이 생긴다.**
-            #   실측(avoid_20260809_214356 t=11.24s): 밴드 안 44점 중 33점이 빠져
-            #   y=+0.09 에 가짜 열림이 생겼고 목표점이 장애물 0.10m 앞에 찍혔다.
-            #
-            #   그렇다고 max_range(12m)로 풀면 반대로 망가진다: FOV 가 ±90° 라 거의
-            #   옆(rel≈89°)의 먼 벽이 x_v 만 밴드에 걸려 y=+6.98 로 들어오고, 그것이
-            #   ys[-1] 이 되어 좌측 바깥 후보를 +0.12 → +7.44 로 밀어낸다. 후보가
-            #   전멸해 **출발부터 narrow_gap** 이 됐다(2026-08-09 지상 시험 2회 정지).
-            #
-            #   올바른 경계는 **차가 실제로 갈 수 있는 가로 범위**다:
-            #       |y| <= offset_max + clear
-            #   목표 중심은 |y| <= offset_max 까지만 갈 수 있고 차 반쪽이 clear 안에
-            #   들어오므로, 이 밖의 점은 어떤 후보로도 부딪힐 수 없다(안전하게 무시 가능).
-            #   x 범위는 깊이 밴드가, y 범위는 이 식이 건다. 거리 컷은 쓰지 않는다.
-            if (not math.isfinite(r) or r < scan.range_min
-                    or r > min(scan.range_max, self.max_range)):
-                continue
-            x_v = self.lidar_x + r * math.cos(rel)
-            y_v = r * math.sin(rel) + self.lidar_y
-            if abs(y_v) > self.offset_max + clear:
-                continue
-            if lo <= x_v <= hi:
-                ys.append(y_v)
-        if not ys:
-            self._prev_center = None       # 목표 없음 → 이력 리셋
-            return None
-        ys.sort()
-
-        # 후보 열림 중심 y: 좌 바깥 / blocker 사이(통과폭 충족) / 우 바깥
-        cands = [ys[-1] + clear, ys[0] - clear]
-        for a, b in zip(ys, ys[1:]):
-            if (b - a) >= pass_w:
-                cands.append((a + b) / 2.0)
-
-        # offset_max 안에서 통과 가능한 열림만 실현 가능. 하나도 없으면 안전한
-        # 목표가 없는 것 → None (예전엔 ±offset_max로 클램프해 여유 미달 지점을
-        # 목표로 냈음. 팀장 리뷰 반영). narrow_gap 판정은 호출측(on_scan)이 담당.
-        # ★ 후보가 **스캔된 표면 뒤**에 있으면 버린다. 열림 판정(pass_w)은 한 깊이
-        #   슬래브 안의 1차원 문제라, 대각선 벽의 단면에 생기는 가짜 '끝'을 걸러내지
-        #   못한다 (_behind_surface 주석).
-        reach = [c for c in cands
-                 if abs(c) <= self.offset_max
-                 and not self._behind_surface(scan, obs_x, c)]
+        clear = self.vehicle_width / 2.0 + self.lateral_margin
+        intervals = blocked_intervals(
+            self._surfaces, obs_x - self.depth_band, obs_x + self.depth_band, clear)
+        reach = [y for y in gap_centers(intervals, self.offset_max)
+                 if self._target_clear(scan, obs_x, y, intervals, clear)]
         if not reach:
-            self._prev_center = None       # 목표 소실 → 이력 리셋
+            self._prev_center = None
             return None
-        center = min(reach, key=abs)   # 직진에서 가장 덜 벗어나는 열림 (이미 clamp 불필요)
-        center = self._rate_limit(scan, obs_x, center, ys, clear)
+        center = min(reach, key=abs)
+        center = self._rate_limit(scan, obs_x, center, intervals, clear)
         return self._rp(obs_x, center)
 
-    def _rate_limit(self, scan, obs_x, center, ys=None, clear=None):
-        """목표 y 의 프레임 간 변화를 제한한다 (급변 억제).
-
-        ★ 왜 필요한가 (2026-08-10 실측). 열림이 바뀌면 목표 y 가 한 프레임에 1.5m 씩
-          튄다. 조향은 63% 서는 데 0.33s 가 걸리는데 0.1s 마다 그런 명령이 오면 차는
-          어느 쪽도 못 따라간다. 실측: offset_max 1.6 에서 1m 초과 점프가 24회,
-          그 세션 4번 장애물에서 이격이 차폭 안(−0.04m)까지 들어갔다.
-
-          급변의 81% 는 "이전에 고르던 쪽 후보가 소멸" 이라 히스테리시스(전환 여유)로는
-          못 잡는다 — 없는 후보를 고를 수는 없기 때문이다(여유 0.5m 까지 시험, 무효).
-          그래서 후보 선택이 아니라 **출력 변화율**을 제한한다.
-
-        ★ 안전: 속도 제한된 중간값이 **표면 뒤면 쓰지 않고 그냥 점프**한다. 부드러움
-          보다 정확성이 우선 — 중간값이 장애물을 가리키면 안 된다. 실측에서 이 경우는
-          243프레임 중 3회였다.
-
-        효과 (2개 bag 재생, offset_max 1.6):
-            제한 없음 → 1m 초과 점프 24·32회
-            0.30m/프레임 → 2·0 회, narrow_gap 은 그대로 0·19
-        """
+    def _rate_limit(self, scan, obs_x, center, intervals, clear):
+        """Limit target motion only when the intermediate target clears surfaces."""
         prev = self._prev_center
         if prev is not None and self.target_rate_mps > 0.0:
             now = self.get_clock().now().nanoseconds * 1e-9
             dt = now - self._prev_center_t if self._prev_center_t else 0.0
-            # dt 이상치(첫 프레임·스캔 유실) 는 1스캔 주기로 본다
             if not 0.0 < dt < 1.0:
                 dt = 1.0 / max(1.0, self.scan_rate_hz)
             step = self.target_rate_mps * dt
             if abs(center - prev) > step:
                 limited = prev + math.copysign(step, center - prev)
-                # ★ 중간값이 blocker 를 **스치거나 관통**하면 쓰지 않고 그냥 점프한다
-                #   (2026-08-16 실차 규명). _behind_surface 만으로는 못 막는다 —
-                #   그건 표면 **뒤**로 들어간 목표를 거르는데, 목표가 표면 **위**에
-                #   있으면 tr ≈ nearest 라 `tr > nearest + TOL` 이 성립하지 않아
-                #   통과해버린다.
-                #
-                #   실측 run_0816_182715 두 번째 장애물: 후보는 −0.82 / +0.63 으로
-                #   안정적인데, 선택이 좌↔우로 바뀌자 rate limiter 가 목표를
-                #   0.30m/프레임(= target_rate_limit_mps 3.0 × 0.1s)으로 끌고 가며
-                #   −1.56 → −0.55 → **+0.04** → +1.18 로 걸어갔다. blocker y 범위가
-                #   [−0.36, +0.17] 이라 +0.04 는 콘 한복판을 조준한 것이고, 그 1초
-                #   동안 차가 계속 접근해 estop 거리에 들어갔다.
-                #
-                #   판정은 열림 후보와 **같은 기준**(편측 여유 clear)을 쓴다. 후보는
-                #   구성상 이미 이를 만족하므로(바깥 후보는 정확히 clear, 사이 후보는
-                #   pass_w/2 = clear 이상) 정상 목표를 막지 않는다.
-                near_ok = (not ys) or (clear is None) or all(
-                    abs(limited - y) >= clear - 1e-6 for y in ys)
-                if near_ok and not self._behind_surface(scan, obs_x, limited):
+                if self._target_clear(scan, obs_x, limited, intervals, clear):
                     center = limited
         self._prev_center = center
         self._prev_center_t = self.get_clock().now().nanoseconds * 1e-9
@@ -554,32 +492,12 @@ class StackAvoidNode(Node):
         return out
 
     def _nearest_front_obstacle(self, scan: LaserScan):
-        """전방 통로(±front_half_angle, |y_veh|<corridor) 안 최근접 장애물의
-        (앞범퍼 기준 거리 gap [m], vehicle frame 측방 y_veh [m]). 없으면 None.
+        """Surface/corridor intersection, including gaps between adjacent returns.
 
-        LiDAR가 앞범퍼(x=lidar_x)에 있어 LiDAR 전방거리가 곧 앞범퍼~장애물 gap."""
-        nearest_x = None
-        nearest_y = 0.0
-        angle = scan.angle_min
-        for r in scan.ranges:
-            rel = wrap_to_pi(angle - self.front_center)  # 차량 전방 기준 상대각
-            angle += scan.angle_increment
-            if (not math.isfinite(r) or r < scan.range_min
-                    or r > min(scan.range_max, self.max_range)):
-                continue
-            if abs(rel) > self.front_half_angle:
-                continue
-            x_l = r * math.cos(rel)   # LiDAR 전방(+) = 앞범퍼 기준 gap
-            y_l = r * math.sin(rel)   # LiDAR 좌측(+)
-            y_veh = y_l + self.lidar_y
-            if x_l <= 0.0 or abs(y_veh) > self.corridor_half_width:
-                continue
-            if nearest_x is None or x_l < nearest_x:
-                nearest_x = x_l
-                nearest_y = y_veh
-        if nearest_x is None:
-            return None
-        return (nearest_x, nearest_y)
+        `_surfaces` is rebuilt once per on_scan before detection/target selection.
+        The LiDAR x is the front bumper; return (bumper distance, vehicle y).
+        """
+        return nearest_in_corridor(self._surfaces, self.lidar_x, self.corridor_half_width)
 
 
 def main(args=None):

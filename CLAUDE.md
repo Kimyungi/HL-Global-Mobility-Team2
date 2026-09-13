@@ -4,6 +4,15 @@
 > 일반 v2 설정은 `escape_after_cycles=1000`, `v_escape=-0.8`, `escape_max_cycles=162`,
 > `escape_require_rear_clear=false`. 주차·외부·CAN 정지는 유지하며 no-estop/MBD/bench는 복구 OFF다. raw dump v22.
 
+> **2026-09-13 회피 장애물 표면 모델:** `stack_avoid`는 매 스캔의 인접 반사점을
+> 연결된 2D 윤곽(선분)으로 구성한다. 감지·TTC는 윤곽과 전방 통로의 교차로,
+> 회피 공간은 깊이 밴드에 걸친 **윤곽 전체**의 측방 점유 구간에 차폭/여유를
+> 반영해 계산한다. 깊이·측방 컷으로 벽의 가짜 끝을 만들지 않는다.
+> 무효 빔/거리 불연속은 연결하지 않고 고립점도 보존한다. 목표와 rate limit
+> 중간점은 연속 선분의 거리·가림을 검사한다. 3D 면 복원이나 가려진 물체의
+> 체적 추정은 아니며, 실제 제어 궤적 전체의 충돌 검증은 별도다.
+> 단일 목표점/MGM/CAN/완료 계약은 유지한다. 상세: `docs/AVOID_SURFACES.md`.
+
 > **2026-09-13 GPS-only Zone 선행 진입:** 일반 `GPS_ONLY_ZONE` membership은
 > 현재 station 최근접 웨이포인트와 station+2.5m preview에 가장 가까운 CSV
 > 웨이포인트 중 하나라도 Zone 범위 안이면 true다. preview의 주행 기준점 보간은
