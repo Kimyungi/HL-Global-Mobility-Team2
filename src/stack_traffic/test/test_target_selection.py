@@ -272,3 +272,31 @@ class TestTargetSelection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCentralTargetSelection(unittest.TestCase):
+    def test_center_wins_over_higher_confidence_side_candidate(self):
+        boxes = [FakeBox((10, 50, 110, 80), .99),
+                 FakeBox((300, 50, 340, 70), .25)]
+        bbox, _ = choose_target_traffic_light(
+            [FakeResult(boxes)], (360, 640, 3), .20, 24,
+            prefer_center=True,
+        )
+        self.assertEqual(bbox, (300, 50, 340, 70))
+
+    def test_center_does_not_bypass_confidence_threshold(self):
+        boxes = [FakeBox((300, 50, 340, 70), .05)]
+        bbox, _ = choose_target_traffic_light(
+            [FakeResult(boxes)], (360, 640, 3), .20, 24,
+            prefer_center=True,
+        )
+        self.assertIsNone(bbox)
+
+    def test_existing_track_is_retained_in_center_mode(self):
+        previous = (100, 50, 150, 80)
+        boxes = [FakeBox(previous, .5), FakeBox((300, 50, 340, 70), .9)]
+        bbox, _ = choose_target_traffic_light(
+            [FakeResult(boxes)], (360, 640, 3), .20, 24,
+            previous_bbox=previous, prefer_center=True,
+        )
+        self.assertEqual(bbox, previous)

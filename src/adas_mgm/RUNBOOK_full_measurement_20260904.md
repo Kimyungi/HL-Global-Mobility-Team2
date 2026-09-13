@@ -1,4 +1,4 @@
-# 통합 실차 측정 런북 (2026-08-30) — 주차 제외, 신호등 정지 임계값 수집
+# 통합 실차 측정 런북 (2026-09-04) — 신호등·정지선 측정
 
 **launch: `adas_mgm/launch/REAL_VEHICLE_lane_gps_can.launch.py` + `traffic_enabled:=true`**
 

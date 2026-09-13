@@ -43,6 +43,7 @@ from stack_traffic.depth_utils import (
     measure_stopline_depth,
 )
 from stack_traffic.logic import (
+    CENTRAL_TRAFFIC_ROI,
     camera_poll_timed_out,
     classify_color_ratios,
     combine_stopline_proximity,
@@ -234,6 +235,7 @@ def choose_target_traffic_light(
     tracking_maximum_center_shift_ratio: float = 0.50,
     tracking_minimum_size_similarity: float = 0.50,
     minimum_box_width_height_ratio: float = 0.0,
+    prefer_center: bool = False,
 ) -> Tuple[Optional[BBox], float]:
     """신규 신호등을 선택하거나 이전 bbox와 이어지는 후보를 추적한다."""
     if not results:
@@ -251,6 +253,7 @@ def choose_target_traffic_light(
     best_confidence = 0.0
     best_score = -1.0
     tracking_candidates = []
+    central_candidates = []
     candidate_threshold = (
         confidence_threshold
         if previous_bbox is None
@@ -299,6 +302,12 @@ def choose_target_traffic_light(
 
         center_x = 0.5 * (x1 + x2)
         center_y = 0.5 * (y1 + y2)
+        if prefer_center:
+            central_candidates.append(
+                (abs(center_x - frame_width * 0.5), -confidence,
+                 -box_area, bbox, confidence)
+            )
+            continue
 
         center_distance = math.hypot(
             center_x - frame_width * 0.5,
@@ -328,6 +337,10 @@ def choose_target_traffic_light(
             best_score = score
             best_bbox = bbox
             best_confidence = confidence
+
+    if previous_bbox is None and central_candidates:
+        selected = min(central_candidates)
+        return selected[3], selected[4]
 
     if previous_bbox is not None:
         tracked = select_tracking_candidate(
@@ -740,6 +753,7 @@ class StackTrafficNode(Node):
         # 두 모델이 한 callback에서 겹치지 않게 한다.
         self.declare_parameter("red_phase_yolo_inference_interval", 3)
         self.declare_parameter("detection_roi_enabled", False)
+        self.declare_parameter("central_traffic_only", False)
         # ROI를 켜면 화면 중앙선을 기준으로 상단 전체 폭을 검색한다.
         self.declare_parameter("detection_roi_x_min", 0.00)
         self.declare_parameter("detection_roi_y_min", 0.00)
@@ -901,6 +915,9 @@ class StackTrafficNode(Node):
         )
         self.detection_roi_enabled = bool(
             self.get_parameter("detection_roi_enabled").value
+        )
+        self.central_traffic_only = bool(
+            self.get_parameter("central_traffic_only").value
         )
         self.detection_roi_x_min = float(
             self.get_parameter("detection_roi_x_min").value
@@ -1137,6 +1154,16 @@ class StackTrafficNode(Node):
         self.print_every = max(
             1, int(self.get_parameter("print_every").value)
         )
+
+        if self.central_traffic_only:
+            self.detection_roi_enabled = True
+            (
+                self.detection_roi_x_min, self.detection_roi_y_min,
+                self.detection_roi_x_max, self.detection_roi_y_max,
+            ) = CENTRAL_TRAFFIC_ROI
+            self.detection_tile_width_ratio = 1.0
+            # Full-frame template tracking could follow a target outside the crop.
+            self.template_tracking_enabled = False
 
         if self.camera_backend not in ("opencv", "oak"):
             raise ValueError("camera_backend은 opencv 또는 oak여야 합니다.")
@@ -1596,6 +1623,7 @@ class StackTrafficNode(Node):
             minimum_box_width_height_ratio=(
                 self.minimum_box_width_height_ratio
             ),
+            prefer_center=getattr(self, "central_traffic_only", False),
         )
         if detection_bbox is None:
             return None, confidence

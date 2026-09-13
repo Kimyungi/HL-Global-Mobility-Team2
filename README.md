@@ -8,7 +8,7 @@
 ## 실차 운영 문서
 
 - 처음 측정하거나 카메라·신호등 위치가 바뀐 경우:
-  [통합 실차 측정 런북](src/adas_mgm/RUNBOOK_full_measurement_20260830.md)
+  [통합 실차 측정 런북](src/adas_mgm/RUNBOOK_full_measurement_20260904.md)
 - 측정이 끝나고 `traffic_stop_y_ratio.txt`가 준비된 경우:
   [통합 실차 운영 런북](src/adas_mgm/RUNBOOK_full_operation_20260904.md)
 - CAN FD 설치·복구·점검:

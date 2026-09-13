@@ -503,7 +503,7 @@ back-to-back parity(`parity_replay`).
 
 ## 참조
 
-- `RUNBOOK_full_measurement_20260830.md` — 운영 C++ 코어의 신호등 임계값 측정 런북.
+- `RUNBOOK_full_measurement_20260904.md` — 운영 C++ 코어의 신호등·정지선 측정 런북.
 - `RUNBOOK_full_operation_20260904.md` — 운영 C++ 코어의 실제 통합 런북.
   두 문서의 운영 launch와 **이 문서의 launch를 동시에 띄우지 말 것** (estop·mgm·bridge 중복)
 - [`base_station/BASE_SURVEY.md`](../stack_gps/tools/base_station/BASE_SURVEY.md) — 베이스 좌표 측량

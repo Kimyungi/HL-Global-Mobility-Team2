@@ -128,7 +128,7 @@ ros2 node list
 ```
 
 장착 위치·각도, 카메라 또는 정지선이 바뀌었다면 먼저
-`RUNBOOK_full_measurement_20260830.md`로 신호등과 정지선 검출을 다시 확인한다.
+`RUNBOOK_full_measurement_20260904.md`로 신호등과 정지선 검출을 다시 확인한다.
 
 ---
 
@@ -450,7 +450,7 @@ PARKING·후진·정지·5초 대기·출차·`done`, 회피 전이/복귀와 �
 
 ## 참조 문서
 
-- `RUNBOOK_full_measurement_20260830.md` — 신호등·정지선 측정
+- `RUNBOOK_full_measurement_20260904.md` — 신호등·정지선 측정
 - `RUNBOOK_lane_gps.md` — 베이스·RTCM·GPS·차선 진단
 - `stack_gps/tools/waypoints/README.md` — 처음 가는 지역의 베이스 측량·웨이포인트 기록
 - `RUNBOOK_avoid_field_test.md` — 회피 판정과 구간 설정
