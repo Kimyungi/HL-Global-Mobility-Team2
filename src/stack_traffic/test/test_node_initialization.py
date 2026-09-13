@@ -110,6 +110,8 @@ class TestNodeInitialization(unittest.TestCase):
                 "traffic-oak-mxid",
             )
             self.assertEqual(FakeOakCamera.last_kwargs["usb_speed"], "high")
+            self.assertEqual(FakeOakCamera.last_kwargs["exposure_compensation"], -2)
+            self.assertTrue(node.describe_parameter("oak_exposure_compensation").read_only)
             self.assertIn(
                 "mxid=traffic-oak-mxid",
                 node._camera_description(),

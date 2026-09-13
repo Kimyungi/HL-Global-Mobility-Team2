@@ -114,6 +114,11 @@ depth 유효성과 독립이다.
   통합 차량 launch의 표준 프로필은 640x360, 10 FPS, `oak_usb_speed=high`,
   RGB-only다. HIGH 요청 후 실제 `getUsbSpeed()`가 HIGH가 아니면 노드는
   fail-closed한다.
+- 신호등 RGB 센서의 자동 노출 보정은 `oak_exposure_compensation=-2`로 두 단계
+  낮춘다. 통합 launch 인자는 `traffic_exposure_compensation`이다. SDK 정수 범위는
+  -9..9이며 0은 기존 자동 노출 목표로 복원한다. EV/밝기 백분율 값은 아니다.
+  시작 시 적용하므로 변경하려면 신호등 노드를 재시작한다. 차선 카메라와 stereo
+  노출은 변경하지 않는다. 노출 조정만으로 신호등 검출 성공을 보장하지는 않는다.
 - USB2 안전 payload 상한은 36 MB/s로 둔다. 비압축 BGR은 3 B/px, depth는
   2 B/px로 계산하며 1280x720@10 RGB-only는 27.65 MB/s라 허용한다.
   같은 해상도의 RGBD는 46.08 MB/s라 거부하고, depth 진단은

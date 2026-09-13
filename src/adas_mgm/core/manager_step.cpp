@@ -36,7 +36,9 @@ bool line_return_ready(const CoreSnapshot & s, const CoreState & st)
 }
 void nav_reselect(const CoreSnapshot & s, CoreState & st)
 {
-  if (st.managers.route.enabled && st.managers.route.connecting) {
+  if (mission_searches_along_gps(st)) {
+    st.managers.nav = st.managers.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
+  } else if (st.managers.route.enabled && st.managers.route.connecting) {
     st.managers.nav = NavState::GPS_BACKUP;
   } else if (st.managers.gps_only_context) {
     st.managers.nav = NavState::GPS_ONLY_NAV;
@@ -74,7 +76,7 @@ void update_existing_guards(const CoreSnapshot & s, CoreState & st)
     }
     if (s.gps_stop_zone != st.stop_zone_boot_id) {st.stop_zone_boot_id = 0;}
     if (st.params.stop_zone_hold_cycles > 0 && !st.stop_zone_holding &&
-      st.managers.mission != MissionState::MISSION_ACTIVE && s.gps_stop_zone != 0 &&
+      !mission_reference_authority(st) && s.gps_stop_zone != 0 &&
       s.gps_stop_zone != st.stop_zone_done_id && s.gps_stop_zone != st.stop_zone_boot_id)
     {
       st.stop_zone_holding = true;
@@ -90,7 +92,7 @@ void update_existing_guards(const CoreSnapshot & s, CoreState & st)
 uint32_t base_stop_reasons(const CoreSnapshot & s, const CoreState & st)
 {
   const auto & m = st.managers;
-  const bool mission = m.mission == MissionState::MISSION_ACTIVE;
+  const bool mission = mission_reference_authority(st);
   const bool gps = gps_valid(s);
   const bool signal_stop = m.signal == SignalState::APPROACH_STOP_LINE ||
     m.signal == SignalState::STOPPED_WAIT;
@@ -207,6 +209,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   if (mission_ended) {nav_reselect(s, st);}
 
   const bool mission = m.mission == MissionState::MISSION_ACTIVE;
+  const bool maneuver = mission_reference_authority(st);
   const bool fallback = !m.gps_only_context && !nav_available(s, st) && !gps;
   const bool avoid_allowed = st.params.avoidance_enabled && !mission && s.lidar_valid &&
     !(m.gps_only_context && !gps) && m.top == TopState::AUTONOMOUS_DRIVE;
@@ -255,6 +258,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   if (!m.gps_only_context && st.return_hold_left > 0 && gps) {
     m.nav = NavState::GPS_BACKUP;
   }
+  if (mission_searches_along_gps(st)) {nav_reselect(s, st);}
   st.avoid_ticks = m.avoid != AvoidState::INACTIVE ? st.avoid_ticks + 1 : 0;
   if (m.avoid == AvoidState::INACTIVE || st.avoid_ticks == 1) {
     m.avoid_episode_reference_seen = false;
@@ -313,12 +317,14 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool signal_stop = m.signal == SignalState::APPROACH_STOP_LINE ||
     m.signal == SignalState::STOPPED_WAIT;
   m.safe_stop_reasons = base_stop_reasons(s, st);
-  if (!mission && signal_stop && (!clock_valid || !std::isfinite(s.vehicle_speed))) {
+  if (!maneuver && signal_stop && (!clock_valid || !std::isfinite(s.vehicle_speed))) {
     m.safe_stop_reasons |= SAFE_STOP_VEHICLE_SPEED;
   }
-  const bool sensor_stop = !mission && ((m.gps_only_context && !gps) ||
+  const bool sensor_stop = !maneuver && (((m.gps_only_context || mission_searches_along_gps(st)) && !gps) ||
     (!nav_available(s, st) && !gps && (!s.lidar_valid || !st.params.avoidance_enabled)));
   const bool fault_stop = m.safe_stop_reasons != 0;
+  // PARKING includes GPS-guided search before readiness. Suppress ordinary
+  // LiDAR E-stop throughout that state, just like ordinary avoidance above.
   const bool auto_stop = !mission && (s.auto_estop ||
     (m.avoid != AvoidState::INACTIVE && s.lidar_valid && s.avoid_ttc < st.params.ttc_stop));
   const bool was_reversing = st.escape_phase == MGM_ESCAPE_REVERSING;
@@ -398,9 +404,10 @@ uint8_t legacy_state_projection(const CoreState & st)
 CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
 {
   const auto & m = st.managers;
-  const bool mission = m.mission == MissionState::MISSION_ACTIVE;
+  const bool mission = mission_reference_authority(st);
   const bool avoid = st.params.avoidance_enabled && m.avoid != AvoidState::INACTIVE;
-  const uint8_t source_state = mission ? MGM_STATE_PARKING : avoid ? MGM_STATE_AVOID :
+  const uint8_t source_state = mission ? MGM_STATE_PARKING : mission_searches_along_gps(st) ? MGM_STATE_WAYPOINT :
+    avoid ? MGM_STATE_AVOID :
     m.nav == NavState::LINE ? MGM_STATE_LANE : MGM_STATE_WAYPOINT;
   CoreSnapshot request = s;
   request.estop = false;  // independent safety arbitration below

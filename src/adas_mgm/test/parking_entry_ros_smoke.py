@@ -27,12 +27,14 @@ def main():
     }
     pubs = {topic: node.create_publisher(type(msg), topic, 10) for topic, msg in msgs.items()}
     gps, lane, parking = (msgs[t] for t in ('/perception/gps_path','/perception/lane_path','/perception/parking'))
-    gps.points=[RefPoint(x=2.5)];gps.fix_quality=4;gps.zone_valid=True;gps.position_valid=True
+    gps.points=[RefPoint(x=2.5,y=.2)];gps.fix_quality=4;gps.zone_valid=True;gps.position_valid=True
+    gps.dx=.12;gps.dy=.03;gps.dyaw=.02;gps.update=71
     gps.route.enabled=True;gps.route.sequence_id=11;gps.route.instance_id=22
     gps.route.count=2;gps.route.required_missions=[0]
     zone=ZoneContext(zone_valid=True,zone_id=10,zone_type=2,mission_type=1,mission_id=0,in_zone=False)
     gps.zones=[zone]
     lane.points=[RefPoint(x=2.5)];lane.confidence=.9
+    parking.dx=-.11;parking.dy=-.02;parking.dyaw=-.04;parking.update=19
     msgs['/perception/estop'].scan_valid=True
     states, refs, commands = [], [], []
     subscriptions = [
@@ -74,18 +76,22 @@ def main():
                 zone.in_zone=True;gps.zones=[zone]
                 wait_for(lambda:states[-1].mission==1 and commands,'immediate ACTIVE with PREPARE command')
                 assert states[-1].parking_zone_entry_active
-                assert commands[-1].action==ParkingCommand.PREPARE and refs[-1].state==3 and refs[-1].v_ref==0
+                assert commands[-1].action==ParkingCommand.PREPARE and refs[-1].state==3 and refs[-1].v_ref>0
+                spin(.2)  # existing LINE->GPS reference blend is ten MGM ticks
+                assert states[-1].reference_source==1 and abs(refs[-1].ref_points[0].y-.2)<1e-6
+                assert (refs[-1].dx,refs[-1].dy,refs[-1].dyaw,refs[-1].update)==(gps.dx,gps.dy,gps.dyaw,gps.update)
                 request=commands[-1].request_id
                 parking.request_id=request;parking.mission_mode=1;parking.search_active=True
                 zone.in_zone=False;gps.zones=[zone];spin(.6)
-                assert states[-1].mission==1 and not states[-1].mission_failed and refs[-1].v_ref==0
+                assert states[-1].mission==1 and not states[-1].mission_failed and refs[-1].v_ref>0
                 assert not any(c.action==ParkingCommand.CANCEL for c in commands)
-                print('PASS: confirmed Zone exit keeps Parking stopped',flush=True)
+                print('PASS: confirmed Zone exit continues GPS search with GNSS pose delta',flush=True)
                 parking.preparation_ready=parking.search_space_found=True
                 wait_for(lambda:any(c.action==ParkingCommand.ACTIVATE for c in commands),'fresh ready sends ACTIVATE')
                 assert refs[-1].v_ref==0
                 parking.mission_active=True;parking.points=[RefPoint(x=-1.,y=.1)];parking.v_suggest=-.3
                 wait_for(lambda:refs[-1].v_ref<0 and refs[-1].state==3,'execution ack releases one-point parking motion')
+                assert (refs[-1].dx,refs[-1].dy,refs[-1].dyaw,refs[-1].update)==(parking.dx,parking.dy,parking.dyaw,parking.update)
                 parking.done=True;parking.mission_active=False
                 wait_for(lambda:states[-1].mission==0 and states[-1].mission_completed,'done returns navigation')
                 wait_for(lambda:refs[-1].v_ref>0,'navigation resumes after done')
@@ -102,6 +108,13 @@ def main():
                          'typed CANCEL reaches module at endpoint')
                 wait_for(lambda:states[-1].route.phase==4,'actual stop permits next CSV request')
                 assert refs[-1].v_ref==0
+                gps.route.index=states[-1].route.requested_index
+                gps.route.acknowledged_request=states[-1].route.request_id
+                gps.route.required_missions=[];gps.at_end=False;gps.zones=[]
+                gps.points=[RefPoint(x=2.5,y=-.3)]
+                wait_for(lambda:states[-1].route.index==1 and states[-1].route.phase==1 and refs[-1].v_ref>0,
+                         'fresh next CSV acknowledgement automatically resumes navigation')
+                assert states[-1].reference_source==1 and abs(refs[-1].ref_points[0].y+.3)<1e-6
                 print('parking_entry_ros_smoke: PASS',flush=True)
             except Exception:
                 log.flush();print(log_path.read_text()[-6000:],file=sys.stderr);raise

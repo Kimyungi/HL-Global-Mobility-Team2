@@ -28,7 +28,7 @@ def test_initial_global_nearest_then_sparse_segment_progresses_with_small_window
         before = path.station
         update(path, 10.1 + .1*k, generation=1.+k*.1)
         assert path.station-before == pytest.approx(.1)
-        assert path.window_high-before == pytest.approx(1. * .1 * 2)
+        assert path.window_high-before == pytest.approx(.65)
     assert path.index == 11
     assert path.station == pytest.approx(11.5)
 
@@ -49,16 +49,32 @@ def test_crossing_does_not_jump_to_later_segment_at_same_position():
     assert path.index == 1
 
 
-def test_large_position_jump_is_clipped_without_global_reacquisition():
+@pytest.mark.parametrize('speed,period,expected_station', [(1., .1, 1.65), (2., .1, 1.8), (1., .2, 1.8)])
+def test_large_position_jump_is_clipped_without_global_reacquisition(speed, period, expected_station):
     path = track([(0., 0.), (10., 0.), (20., 0.)])
     update(path, 1.)
-    update(path, 19., generation=1000.)  # a long outage does not enlarge sample_time
-    assert path.station == pytest.approx(1.2)
+    update(path, 19., speed=speed, period=period, generation=1000.)  # outage does not enlarge sample_time
+    assert path.station == pytest.approx(expected_station)
     assert path.index == 0
 
 
-@pytest.mark.parametrize('speed', [0., math.nan, math.inf, -math.inf])
-def test_zero_or_invalid_speed_freezes_station_and_index(speed):
+def test_zero_speed_tracks_local_motion_and_index_with_half_meter_margin():
+    path = track([(i * .25, 0.) for i in range(41)])
+    update(path, 1., speed=0.)
+    update(path, 1.25, speed=0., generation=2.)
+    assert path.station == pytest.approx(1.25)
+    assert path.index == 5
+    assert (path.window_low, path.window_high) == pytest.approx((.5, 1.5))
+    update(path, 9., speed=0., generation=3.)
+    assert path.station == pytest.approx(1.75)
+    assert path.index == 7
+    update(path, 0., speed=0., generation=4.)
+    assert path.station == pytest.approx(1.25)
+    assert path.index == 5
+
+
+@pytest.mark.parametrize('speed', [math.nan, math.inf, -math.inf])
+def test_invalid_speed_freezes_station_and_index(speed):
     path = track([(0., 0.), (10., 0.), (20., 0.)])
     update(path, 1.)
     update(path, 19., speed=speed, generation=2.)
@@ -70,7 +86,7 @@ def test_reverse_uses_speed_magnitude_and_allows_local_backward_search():
     path = track([(0., 0.), (10., 0.)])
     update(path, 5.)
     update(path, 4., speed=-.5, period=.2, generation=2.)
-    assert path.station == pytest.approx(4.8)
+    assert path.station == pytest.approx(4.35)
 
 
 def test_duplicate_and_regressing_fix_do_not_slide_the_window():
@@ -80,7 +96,7 @@ def test_duplicate_and_regressing_fix_do_not_slide_the_window():
         update(path, 9., generation=generation)
         assert path.station == pytest.approx(1.)
     update(path, 9., generation=11.)
-    assert path.station == pytest.approx(1.2)
+    assert path.station == pytest.approx(1.65)
 
 
 def test_reset_allows_one_new_global_initialization():
@@ -123,13 +139,14 @@ def test_yaw_interpolation_wraps_across_pi_without_flipping_to_zero():
     assert abs(point[2]) == pytest.approx(math.pi)
 
 
-def test_end_of_track_clamps_preview_and_zero_window_at_endpoint_works():
+def test_end_of_track_clamps_preview_and_zero_speed_window():
     path = track([(0., 0.), (1., 0.), (2., 0.)])
     update(path, 2.)
     update(path, 10., speed=0., generation=2.)
     point, diag = path.preview()
     assert point[:2] == (2., 0.)
     assert diag['preview_station_m'] == 2.
+    assert (path.window_low, path.window_high) == pytest.approx((1.5, 2.))
 
 
 @pytest.mark.parametrize('generation,period', [(None, .1), (math.nan, .1), (1., 0.), (1., -1.)])
@@ -153,8 +170,8 @@ def test_engine_returns_one_point_and_zones_use_current_index_not_preview():
     assert snap['idx'] == 5 and not snap['parking_zone']
     assert snap['preview_station_m'] == pytest.approx(7.5, abs=1e-7)
     again = eng.snapshot(*latlon(15.), heading=.2, v_ref=1., generation=2.)
-    assert again['idx'] == 5 and not again['parking_zone']
-    assert again['station_m'] <= snap['station_m']+.2+1e-9
+    assert again['idx'] == 6 and not again['parking_zone']
+    assert again['station_m'] == pytest.approx(snap['station_m']+.65, abs=1e-9)
 
 
 def test_preloaded_route_copies_station_mode_and_keeps_history_independent():

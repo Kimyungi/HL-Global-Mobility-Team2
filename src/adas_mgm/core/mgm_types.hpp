@@ -294,7 +294,7 @@ struct CoreParams
   int32_t zone_enter_confirm_samples;  // independent GNSS fixes; 0 = uncalibrated
   int32_t zone_exit_confirm_samples;
   int32_t route_sequence_enabled;  // opt-in; single CSV and historical parity remain unchanged
-  int32_t parking_zone_entry_active;  // immediate Parking authority; done or current CSV end releases
+  int32_t parking_zone_entry_active;  // enter Parking/search on Zone, GPS until ready; done/current CSV end releases
   int32_t avoidance_enabled;  // parallel Manager: 0 disables ordinary avoidance and LiDAR fallback
 };
 

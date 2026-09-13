@@ -1,13 +1,14 @@
 # MGM 병행 Manager / MBD 단일 명세 — 6차
 
-> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](INTEGRATION_V2_PR_STATUS_20260913.md). 13개 패키지 빌드 완료, Python 471 통과/3 skip.
+> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](INTEGRATION_V2_PR_STATUS_20260913.md). 이번 MGM 격리 빌드 성공, Python 432 통과/3 skip.
 > 전체 CTest는 11/20 통과이며 회귀 정리가 남아 있다. 아래 과거 미빌드/전체 통과 표기보다 이 결과를 우선한다.
 
 > **2026-09-13 현재 주차 정책:** [즉시 주차 진입](MGM_PARKING_ENTRY.md)이 아래 과거 PREPARE/Zone 이탈 정책보다 우선한다.
-> `parking_zone_entry_active=true`: stable Zone 진입 즉시 ACTIVE/PARKING, 준비 중 정지, 정상 종료는 done 또는 현재 CSV 종점이다.
+> `parking_zone_entry_active=true`: stable Zone 진입 즉시 ACTIVE/PARKING, 탐색 중 현재 CSV의 GPS를 추종한다. ready 후 Parking 제어로 인계하며 정상 종료는 done 또는 현재 CSV 종점이다.
 
-> **2026-09-12 GPS:** 최초 최근접 index/연속 station을 저장하고 이후
-> `station ± abs(TargetRef.v_ref) * GPS publish_period * 2` 안에서만 갱신한다.
+> **2026-09-13 GPS:** 최초 최근접 index/연속 station을 저장하고 이후
+> `station ± (abs(TargetRef.v_ref) * GPS publish_period * 1.5 + 0.5m)` 안에서만 갱신한다.
+> v_ref=0일 때도 탐색 반경은 0.5m다.
 > 독립 fix당 1회, 재발행/역행 표본은 재계수하지 않는다. CSV 전환/새 session에서만 초기화한다.
 > 목표는 station +2.5m(종점 클램프), 한쪽 가중치 >=90%는 endpoint snap, 그 외 xy/곡률 선형 및
 > yaw 최단각 보간으로 1점을 발행한다. GPS의 기존 재합류 목표 합성은 사용하지 않는다.

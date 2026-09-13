@@ -1,5 +1,10 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> **2026-09-13 현재 통합 설정:** 일반 주행은 회피와 LiDAR E-stop 모두 ON이다.
+> Mission ACTIVE에서는 준비·실행 전체에서 둘 다 제외하며 종료 후 다시 적용한다.
+> 신호등 OAK 자동 노출 보정 기본값은 `-2`다(차선 카메라와 별도).
+> 아래 과거 OFF/노출 설정 기록보다 이 기준을 우선한다.
+
 > 2026-09-13 정면 라이다 좌표 수정: `parking_enabled=true`인 공유 통합 launch는
 > E-stop yaw를 `lidar_fusion_v2/config/fixed_geometry.yaml`의 a1 -87도에서 읽고,
 > 회피 전방 각도를 동일 yaw에서 +87도로 계산한다. 기존 +90도/270도 해석으로
@@ -7,28 +12,35 @@
 > 일반/no-estop에 공통 적용하며 단일 /scan 방향과 거리 문턱은 유지한다.
 > 현장 검증은 남아 있다. [재현·검증 기록](docs/FRONT_LIDAR_ALIGNMENT.md).
 
-> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](docs/INTEGRATION_V2_PR_STATUS_20260913.md). 13개 패키지 빌드 완료, Python 471 통과/3 skip.
+> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](docs/INTEGRATION_V2_PR_STATUS_20260913.md). 이번 MGM 격리 빌드 성공, Python 432 통과/3 skip.
 > 전체 CTest는 11/20 통과이며 회귀 정리가 남아 있다. 아래 과거 미빌드/전체 통과 표기보다 이 결과를 우선한다.
 
 > 2026-09-13 주차 제어권 변경: v2 `parking_zone_entry_active=true`는 stable Mission Zone
-> 진입(기존 5회 확인) 즉시 MISSION_ACTIVE/PARKING으로 전환한다. 준비 중에도 Parking이
-> 제어권을 소유하며 PREPARE 명령으로 기존 SLAM/검출/계획을 준비하고 0 속도로 대기한다.
-> 현재 요청의 fresh ready 이후 ACTIVATE를 보내며 실행 ack/유효 1점 reference부터 주행한다.
+> 진입(기존 5회 확인) 즉시 MISSION_ACTIVE/PARKING으로 전환한다. 탐색 중에는 현재 CSV의
+> GPS 목표점 1개를 v_base로 추종하며 PREPARE 명령으로 SLAM/검출/계획을 준비한다.
+> 현재 요청의 fresh ready 틱에 Parking 제어로 인계하고 ACTIVATE를 보낸다.
+> 이때부터 실행 ack/유효 Parking reference까지 정지한다. mission_start/handoff도 ready에 기록한다.
 > Zone 이탈/시간/탐색 거리로 복귀하지 않는다. 정상 복귀는 현재 요청의 실행 ack 이후 done,
 > 또는 유효한 현재 CSV 종점 도달이다. 종점에서 미완료 요청은 ROUTE_END=10으로 CANCEL,
-> 실패 기억을 기록하고 기존 실제 정지/새 CSV ack 인계 절차를 따른다. done과 종점 동시면 성공 우선.
-> 모듈 응답/경로 상실은 Parking 상태를 유지한 정지다. 명시 취소/새 session/최종 FINISH,
+> 실패 기억을 기록하고 기존 실제 정지/새 CSV ack 인계 절차를 따른다. 03 종점까지 미준비이면
+> 04 요청·적용·재출발이 자동으로 이어지며 추가 go가 필요 없다. done과 종점 동시면 성공 우선.
+> 탐색 중 GPS 상실은 정지이며 높은 LINE 신뢰도로 대체하지 않는다. 일반 신호/외부/CAN
+> 정지는 탐색에도 적용한다. 일반 LiDAR E-stop과 회피는 ACTIVE 준비·실행 전체에서 제외한다.
+> Parking status 부재 자체는 GPS 탐색을 막지 않는다.
+> ready 이후 모듈 응답/경로 상실은 Parking 제어를 유지한 정지다. 명시 취소/새 session/최종 FINISH,
 > 운전자·CAN 정지는 유지한다. 이 설정은 과거 parking_search_zone_only/수명 제한보다 우선한다.
 > 현행 기본은 즉시 진입 true / 과거 Zone 탐색 false. 과거 시험은 즉시 진입 false를 명시한다.
-> 신호 정지 초기 거리 1.5m는 그대로다. raw dump v19이며 v18 run은 당시 빌드로 재생한다.
+> 탐색의 TargetRef delta는 GPS, 기동의 delta는 Parking SLAM이다. state byte만으로 고르지 않는다.
+> 신호 정지 초기 거리 1.5m는 그대로다. raw dump v20이며 v18/v19 run은 당시 빌드로 재생한다.
 > 세부 기준: [MGM_PARKING_ENTRY.md](docs/MGM_PARKING_ENTRY.md).
 
-> 2026-09-12 GPS station 변경: 최초 유효 fix에서만 전역 최근접 index를 찾는다. 이후에는 저장한
-> 연속 station ± `abs(v_ref) * sample_time * 2` 안의 경로 선분에서만 다음 station/index를 찾는다.
+> 2026-09-13 GPS station 변경: 최초 유효 fix에서만 전역 최근접 index를 찾는다. 이후에는 저장한
+> 연속 station ± `(abs(v_ref) * sample_time * 1.5 + 0.5m)` 안의 경로 선분에서만 다음 station/index를 찾는다.
 > 거리 기준은 경로 누적 길이다. 연속 station을 함께 저장해 CSV 간격보다 작은 이동도 누적한다.
 > sample_time은 GPS `publish_period`(현재 0.1s), v_ref는 `/adas/target_ref`의 최종 명령이다.
 > 같은/역행 fix에는 갱신하지 않는다. 명령 미수신·비유한·기존 GPS stale_timeout 초과는 v_ref=0으로
-> window를 0으로 한다. GPS 공백으로 window를 늘리거나 전역 재탐색하지 않는다.
+> 탐색 반경을 0.5m로 한다. 정지 중에도 새 fix로 이 범위의 station/index를 갱신한다.
+> GPS 공백으로 window를 늘리거나 전역 재탐색하지 않는다.
 > CSV 전환/명시적 새 session에서만 station을 초기화한다. Zone은 현재 위치의 저장 index를 사용한다.
 > preview는 station +2.5m(종점 클램프). 두 점 중 한쪽 가중치가 90% 이상이면 해당 점을 사용하고,
 > 나머지는 xy/곡률을 선형 보간하고 yaw는 짧은 각도 방향으로 보간한다. 반환/발행은 1점이다.
@@ -232,14 +244,6 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 위경도와 `mode: perpendicular|parallel`을 저장하고, `stack_gps`가 기동 시 현재
 트랙의 인덱스 범위로 변환해 `GpsPath.parking_zone/parking_mode`만 발행한다.
 주차 진입·종료 판단은 계속 MGM과 `stack_parking`의 책임이다.
-한라대 기준경로 CSV의 `state`는 코스 미션 표식으로 `1=T자 주차`,
-`2=평행 주차`, `3=신호등`을 뜻한다. 1·2는 트랙 옆 YAML의
-`parking_points`와 같은 지점을 가리킨다. 3은 신호 인식 예상 지점을
-기록하는 메타데이터이며, TRAFFIC 전이를 직접 강제하지 않는다.
-한라대 Path 4의 끝 `(-62.335, -72.648)`과 Path 5의 시작
-`(-64.335, -70.648)`은 평행주차 완료 후 경로 복귀 동작을 사이에 둔 의도적인
-불연속점이므로 일반 경로 연결 규칙으로 합치지 않는다.
-전이 판단은 기존대로 적색 확정과 정지선 검출이 모두 성립할 때 MGM이 한다.
 
 **스테이트별 우선권 (매 10ms, 스테이트 내부에서 결정 — 전역 min/max 규칙 금지):**
 

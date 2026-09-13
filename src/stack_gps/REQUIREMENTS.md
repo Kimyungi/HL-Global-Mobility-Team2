@@ -1,10 +1,11 @@
 # stack_gps — 요구사항
 
-> **2026-09-12 GPS station 계약:** 최초 전체 최근접 index를 저장하고, 다음 유효 GNSS 표본은
-> 저장 station ± `abs(TargetRef.v_ref) * publish_period * 2` 안에서만 탐색한다.
+> **2026-09-13 GPS station 계약:** 최초 전체 최근접 index를 저장하고, 다음 유효 GNSS 표본은
+> 저장 station ± `(abs(TargetRef.v_ref) * publish_period * 1.5 + 0.5m)` 안에서만 탐색한다.
 > 경로 누적 길이로 선분을 제한하며 연속 station도 저장하므로 점 간격보다 작은 이동을 누적한다.
 > 같은/역행 fix는 재탐색하지 않고 GPS 두절 후에도 전역 재탐색하지 않는다. CSV 전환/새 session만 초기화한다.
-> 명령 미수신/비유한/기존 stale_timeout 초과 시 탐색 폭은 0이다. publish_period 기본 0.1s.
+> 정지 중에도 탐색 반경은 0.5m다. ROS의 명령 미수신/비유한/기존 stale_timeout 초과는
+> v_ref=0으로 취급하므로 같은 반경을 사용한다. publish_period 기본 0.1s.
 > preview는 station +2.5m, 한쪽 점 가중치 >=90%면 그 점을 선택하고 그 외에는 xy/yaw/curvature를
 > 같은 가중치로 보간해 1점만 반환한다(yaw는 각도 wrap 적용). 끝에서는 마지막 점을 사용한다.
 > snap 구간의 실제 preview station은 +2.5m에서 선분 길이의 최대 10% 차이가 날 수 있다.

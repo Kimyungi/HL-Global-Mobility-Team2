@@ -1174,7 +1174,8 @@ private:
     // Pose delta follows the selected localization source. Parking reference
     // points are LiDAR-SLAM-relative, so pairing them with GNSS deltas would
     // mix frames even though both fields share the TargetRef wire layout.
-    if (out.state == MGM_STATE_PARKING) {
+    // PARKING's search phase uses GPS points and therefore GNSS pose deltas.
+    if (out.path_source == MGM_SRC_PARKING) {
       msg.dx = m.parking.dx;
       msg.dy = m.parking.dy;
       msg.dyaw = m.parking.dyaw;

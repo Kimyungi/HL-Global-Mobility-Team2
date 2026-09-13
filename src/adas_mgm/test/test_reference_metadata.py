@@ -128,7 +128,7 @@ def test_gps_station_uses_final_command_and_does_not_advance_on_republished_fix(
     command.header.stamp = Time(seconds=clock.ros).to_msg()
     receive(node, command)
     next_sample = snapshot(node, *pos(20.), 0., 2.)
-    assert next_sample['station_m'] == pytest.approx(first['station_m']+.2)
+    assert next_sample['station_m'] == pytest.approx(first['station_m']+.65)
     for _ in range(5):
         same = snapshot(node, *pos(20.), 0., 2.)
         assert same['station_m'] == next_sample['station_m']
@@ -137,34 +137,35 @@ def test_gps_station_uses_final_command_and_does_not_advance_on_republished_fix(
     command.header.stamp = Time(seconds=clock.ros).to_msg()
     receive(node, command)
     stopped = snapshot(node, *pos(20.), 0., 3.)
-    assert stopped['station_m'] == next_sample['station_m']
+    assert stopped['station_m'] == pytest.approx(next_sample['station_m']+.5)
 
 
-def test_gps_station_stale_command_freezes_and_fresh_command_resumes(gps_station_environment):
+def test_gps_station_stale_command_uses_margin_and_fresh_command_adds_speed(gps_station_environment):
     clock, node, receive, snapshot, pos = gps_station_environment
     first = snapshot(node, *pos(5.), 0., 1.)
     command = TargetRef(v_ref=1.)
     command.header.stamp = Time(seconds=clock.ros).to_msg()
     receive(node, command)
     clock.ros += 2.; clock.mono += 2.
-    frozen = snapshot(node, *pos(20.), 0., 2.)
-    assert frozen['station_v_ref'] == 0.
-    assert frozen['station_m'] == first['station_m']
+    stale = snapshot(node, *pos(20.), 0., 2.)
+    assert stale['station_v_ref'] == 0.
+    assert stale['station_m'] == pytest.approx(first['station_m']+.5)
     command.header.stamp = Time(seconds=clock.ros).to_msg()
     receive(node, command)
     resumed = snapshot(node, *pos(20.), 0., 3.)
-    assert resumed['station_m'] == pytest.approx(first['station_m']+.2)
+    assert resumed['station_m'] == pytest.approx(stale['station_m']+.65)
 
 
 @pytest.mark.parametrize('speed,stamp_s', [(math.nan, 100.), (math.inf, 100.), (1., 0.), (1., 101.), (1., 98.)])
-def test_gps_station_invalid_command_does_not_open_window(gps_station_environment, speed, stamp_s):
+def test_gps_station_invalid_command_uses_only_half_meter_margin(gps_station_environment, speed, stamp_s):
     _clock, node, receive, snapshot, pos = gps_station_environment
     first = snapshot(node, *pos(5.), 0., 1.)
     command = TargetRef(v_ref=speed)
     command.header.stamp = Time(seconds=stamp_s).to_msg()
     receive(node, command)
     later = snapshot(node, *pos(20.), 0., 2.)
-    assert later['station_m'] == first['station_m']
+    assert later['station_v_ref'] == 0.
+    assert later['station_m'] == pytest.approx(first['station_m']+.5)
 
 
 def test_gps_station_publishes_one_point_with_matching_fields(gps_station_environment):

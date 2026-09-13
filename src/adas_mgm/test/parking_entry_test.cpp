@@ -22,11 +22,12 @@ void start(Run & r, MissionType type=MissionType::T_PARKING) {
   check(r.out.mission==MissionState::MISSION_IDLE,"entry still requires five independent fixes");
   r.tick();
   check(r.out.mission==MissionState::MISSION_ACTIVE && r.out.state==MGM_STATE_PARKING &&
-    r.out.mission_start && r.out.mission_prepare,"fifth fix immediately takes Parking authority and requests preparation");
-  check(r.out.path_source==MGM_SRC_PARKING && r.out.v_ref==0 && r.out.immediate_stop,
-    "entry holds zero with Parking reference ownership, never Nav continuation");
-  check(r.out.mission_request.handoff.recorded && !r.out.mission_request.ready.recorded &&
-    r.out.parking_calibration==CalibrationState::NOT_REQUIRED,"authority handoff precedes readiness; limits not required");
+    !r.out.mission_start && r.out.mission_prepare,"fifth fix enters Parking search and requests preparation");
+  check(r.out.path_source==MGM_SRC_GPS && near(r.out.v_ref,r.st.params.v_base) &&
+    r.out.n_points==1 && near(r.out.ref_points[0].y,r.s.gps_path.pts[0].y),
+    "Parking search drives the GPS point at navigation speed despite high LINE confidence");
+  check(!r.out.mission_request.handoff.recorded && !r.out.mission_request.ready.recorded &&
+    r.out.parking_calibration==CalibrationState::NOT_REQUIRED,"handoff waits for readiness; limits not required");
 }
 void status(Run & r) {
   r.s.parking_valid=r.s.parking_updated=r.s.parking_search_active=true;
@@ -34,11 +35,18 @@ void status(Run & r) {
   r.s.parking_mission_mode=static_cast<uint8_t>(r.out.mission_request.mission_type);
 }
 void ready(Run & r) {
+  const bool first=!r.out.mission_request.preparation_ready;
   status(r);
   r.s.parking_search_space_found=r.s.parking_preparation_ready=true;
   r.s.parking_preparation_reference=ReferenceSample{static_cast<uint64_t>(r.s.event_time_ns),0,.5f};
   r.s.references[MGM_SRC_PARKING]=r.s.parking_preparation_reference;
   r.tick();
+  if (first) {
+    check(r.out.mission_start && r.out.mission_request.handoff.recorded &&
+      r.out.mission_request.handoff.time_ns==r.out.mission_request.ready.time_ns &&
+      r.out.path_source==MGM_SRC_PARKING && r.out.v_ref==0,
+      "fresh ready hands off once and stops until execution acknowledgement");
+  }
 }
 void execute(Run & r) {
   ready(r);
@@ -59,8 +67,8 @@ int main() {
     r.zone(10,ZoneType::MISSION_ZONE,type,0,false);r.tick(5);
     r.s.monotonic_ns+=3'600'000'000'000; r.s.vehicle_speed=.4f;r.tick();
     check(r.out.mission==MissionState::MISSION_ACTIVE && r.out.mission_request.request_id==id &&
-      !r.out.mission_cancel && !r.out.active_mission_failed && r.out.v_ref==0,
-      "confirmed Zone exit, elapsed time and travel never release Parking");
+      !r.out.mission_cancel && !r.out.active_mission_failed && r.out.v_ref>0 && r.out.path_source==MGM_SRC_GPS,
+      "confirmed Zone exit, elapsed time and travel keep GPS search until this CSV endpoint");
     ready(r);r.s.parking_done=true;r.tick();
     check(!r.out.active_mission_completed && r.out.mission_request.active,"done before execution ack is rejected");
     r.s.parking_done=false;execute(r);
@@ -87,6 +95,59 @@ int main() {
     check(r.out.route.phase==RoutePhase::WAIT_ACK && r.out.route.requested_index==1,"ended mission permits next CSV request");
     status(r);r.s.parking_mission_active=r.s.parking_done=true;r.tick();
     check(!r.out.active_mission_completed && r.out.mission==MissionState::MISSION_IDLE,"late done cannot convert endpoint failure to success");
+    r.s.route.index=r.out.route.requested_index;
+    r.s.route.acknowledged_request=r.out.route.request_id;
+    r.s.route.required_count=0;r.s.gps_at_end=false;
+    r.s.gps_path.pts[0]=CorePoint{2.5f,-.7f,.1f,.05f};
+    r.tick();
+    check(r.out.route.phase==RoutePhase::WAIT_ACK && r.out.v_ref==0,
+      "next CSV metadata alone cannot reuse the old reference generation");
+    ++r.s.references[MGM_SRC_GPS].generation;r.tick();
+    check(r.out.route.index==1 && r.out.route.changed && r.out.v_ref==0,
+      "fresh next CSV ack changes route automatically with a stopped handoff tick");
+    r.tick();
+    check(r.out.route.phase==RoutePhase::RUNNING && r.out.mission==MissionState::MISSION_IDLE &&
+      r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0 && near(r.out.ref_points[0].y,-.7f),
+      "navigation automatically resumes the next CSV point after unsuccessful Parking");
+  }
+  {
+    Run r;configure(r);start(r);
+    r.s.parking_valid=false;r.s.parking_path.n=0;r.tick(60);
+    check(r.out.mission_request.active && r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0 &&
+      r.out.speed_owner==SpeedOwner::NAVIGATION && !r.out.safe_stop_reasons,
+      "absent Parking status/path does not stop search or return to a high-confidence LINE");
+    r.s.gps_valid=false;r.tick();
+    check(r.out.mission==MissionState::MISSION_ACTIVE && r.out.path_source==MGM_SRC_GPS &&
+      r.out.v_ref==0 && (r.out.safe_stop_reasons&SAFE_STOP_REFERENCE_INVALID),
+      "GPS loss during search stops without LINE or LiDAR fallback");
+    r.s.gps_valid=true;r.s.avoid_obstacle_detected=r.s.avoid_avoidable=true;r.tick();
+    check(r.out.v_ref>0 && r.out.path_source==MGM_SRC_GPS && r.out.avoid==AvoidState::INACTIVE,
+      "GPS recovery resumes search; ordinary Avoidance cannot take over the search route");
+    r.s.auto_estop=true;r.tick();
+    check(r.out.v_ref>0 && r.out.safety!=SafetyState::AUTO_ESTOP && r.out.avoid==AvoidState::INACTIVE,
+      "Parking search masks LiDAR E-stop and ordinary avoidance before readiness");
+    r.s.auto_estop=false;r.s.external_stop=true;r.tick();
+    check(r.out.v_ref==0 && (r.out.safe_stop_reasons&SAFE_STOP_EXTERNAL),"external stop applies during GPS search");
+    r.s.external_stop=false;r.s.traffic_fail_safe_stop=true;r.tick();
+    check(r.out.v_ref==0 && (r.out.safe_stop_reasons&SAFE_STOP_TRAFFIC_INPUT),"traffic input fault applies during GPS search");
+    r.s.traffic_fail_safe_stop=false;r.redline();
+    r.s.traffic_stopline_detected=false;r.s.vehicle_speed=0;r.tick();
+    r.s.vehicle_speed=1;r.s.monotonic_ns+=600'000'000;r.tick();
+    check(r.out.path_source==MGM_SRC_GPS && r.out.v_ref==0 && r.out.speed_owner==SpeedOwner::TRAFFIC,
+      "Signal stop profile constrains GPS search while keeping Parking state");
+    r.s.vehicle_speed_valid=false;r.tick();
+    check(r.out.safe_stop_reasons&SAFE_STOP_VEHICLE_SPEED,"Signal speed freshness guard applies during search");
+    r.s.vehicle_speed_valid=true;r.s.traffic_green_active=true;r.s.traffic_red_active=false;r.tick();
+    check(r.out.v_ref>0 && r.out.mission_request.active,"green automatically resumes the same GPS search request");
+  }
+  {
+    Run r;configure(r);start(r);status(r);
+    r.s.parking_preparation_ready=true;
+    r.s.parking_preparation_reference=ReferenceSample{static_cast<uint64_t>(r.s.event_time_ns),0,.5f};
+    r.s.vehicle_speed=0;endpoint(r);
+    check(r.out.mission_cancel && r.out.mission_request.cancel_reason==MissionCancelReason::ROUTE_END &&
+      !r.out.mission_start && !r.out.mission_request.handoff.recorded && r.out.route.phase==RoutePhase::WAIT_ACK,
+      "CSV endpoint beats simultaneous ready and automatically requests the next route");
   }
   {
     Run r;configure(r);start(r);execute(r);r.s.parking_done=true;r.s.vehicle_speed=0;endpoint(r);
@@ -121,6 +182,34 @@ int main() {
     r.s.new_session=true;r.tick();
     check(r.out.mission_cancel && r.out.mission_request.cancel_reason==MissionCancelReason::SESSION_RESET &&
       r.out.mission_request.request_id==id,"session reset cancels old module request");
+  }
+  for (auto type : {MissionType::T_PARKING,MissionType::PARALLEL_PARKING}) {
+    Run r;configure(r);r.gps_zone(true);r.tick(5);
+    r.s.avoid_obstacle_detected=r.s.avoid_avoidable=true;r.tick();
+    check(r.out.avoid==AvoidState::AVOID_ACTIVE && r.out.path_source==MGM_SRC_AVOID && r.out.v_ref>0,
+      "enabled avoidance takes control during ordinary GPS-only navigation");
+    r.s.auto_estop=true;r.tick();
+    check(r.out.v_ref==0 && r.out.safety==SafetyState::AUTO_ESTOP,
+      "ordinary driving honors a fresh LiDAR E-stop");
+    start(r,type);
+    check(r.out.avoid==AvoidState::INACTIVE && r.out.safety!=SafetyState::AUTO_ESTOP && r.out.v_ref>0,
+      "Zone entry clears existing avoidance and E-stop in the same control tick");
+    execute(r);
+    check(r.out.avoid==AvoidState::INACTIVE && r.out.safety!=SafetyState::AUTO_ESTOP && r.out.v_ref<0,
+      "Parking execution also masks continuously asserted ordinary danger");
+    r.s.external_stop=true;r.tick();
+    check(r.out.v_ref==0 && (r.out.safe_stop_reasons&SAFE_STOP_EXTERNAL),
+      "Parking masks neither operator nor CAN external stops");
+    r.s.external_stop=false;r.s.parking_path.n=0;r.tick();
+    check(r.out.v_ref==0 && (r.out.safe_stop_reasons&SAFE_STOP_REFERENCE_INVALID),
+      "Parking still stops for an unavailable maneuver reference");
+    r.s.parking_path.n=1;r.s.parking_done=true;r.s.parking_mission_active=false;r.tick();
+    check(r.out.mission==MissionState::MISSION_IDLE && r.out.v_ref==0 &&
+      r.out.safety==SafetyState::AUTO_ESTOP,
+      "leaving Parking immediately restores LiDAR E-stop");
+    r.s.auto_estop=false;r.tick(2);
+    check(r.out.avoid==AvoidState::AVOID_ACTIVE && r.out.path_source==MGM_SRC_AVOID && r.out.v_ref>0,
+      "leaving Parking restores ordinary avoidance without another enable command");
   }
   std::printf("parking_entry_test: %d checks, %d failures\n",checks,failures);
   return failures?1:0;

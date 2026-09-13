@@ -1,7 +1,11 @@
 # Integration v2 통합 자율주행 시작 — 한라대학교
 
 > 2026-09-13 주차 변경: [즉시 주차 진입](../../docs/MGM_PARKING_ENTRY.md).
-> Zone 진입 즉시 PARKING이며 준비 중 정지한다. 정상 복귀 조건은 주차 완료 또는 현재 CSV 종점이다.
+> Zone 진입 즉시 PARKING이며 탐색 중 현재 CSV의 GPS를 추종한다. ready 후 주차 제어로 인계한다. 미완료 종점은 실패 처리 후 다음 CSV로 자동 전환한다(단일 CSV는 FINISH).
+
+> **현재 설정:** 일반 주행 회피·LiDAR E-stop ON, Mission ACTIVE의 탐색·실행 중 둘 다 제외.
+> 신호등 노출 보정은 `-2`이며 `traffic_exposure_compensation:=0`으로 기본 자동 노출 수준을 선택할 수 있다.
+> 노출 변경은 launch 재시작에 적용하며 차선 카메라 노출에는 영향을 주지 않는다.
 
 2026-09-12 · `integration/v2_main` · 기준 `8697bcb` + 연속 경로 확장·PR #86 데이터 (미커밋) · **실차 검증 전 런북**
 
@@ -237,11 +241,11 @@ V1도 계속 켜 둔다. `RTCM` 수신이 지속되는지 확인하며 RTK가 �
 **5회 / 5회**를 사용한다. params.yaml 및 통합 launch 기본값도 동일하며, 아래 블록에서 다시 묻지 않는다.
 이는 선택한 설정이며 실차 검증 인증값은 아니다.
 주차는 `parking_zone_entry_active=true`로 stable Zone 진입 즉시 PARKING 상태가 된다.
-준비 중 정지 대기하며 시간·거리 제한값은 입력하지 않는다. Zone 이탈로 종료하지 않고,
+탐색 중 GPS 목표점과 v_base로 주행하며 시간·거리 제한값은 입력하지 않는다. Zone 이탈로 종료하지 않고,
 주차 완료 또는 현재 CSV 종점에서 일반 주행으로 복귀한다. 종점 미완료는 reason 10으로 기록한다.
-실패한 주차는 종점에서 done 대기 조건을 남기지 않는다. ACTIVE 주차는 기존 완료 조건을 유지한다.
-GPS/Zone 불명은 실패 이탈로 오인하지 않고 정지 대기한다. 상세 기준은
-[Zone 탐색 정책](../../docs/MGM_ZONE_SEARCH.md)을 따른다.
+종점 실패는 done 대기 조건을 남기지 않는다. 경로 순서가 설정되면 실제 정지와 새 CSV 응답 후 자동 재출발하고,
+단일 CSV이면 FINISH다. ready 이전 GPS 상실은 탐색을 정지하고, ready 이후 Parking 경로 상실은 주차 제어를 유지한 채 정지한다.
+상세 기준은 [주차 상태 / GPS 탐색 정책](../../docs/MGM_PARKING_ENTRY.md)을 따른다.
 
 입력 파일/보정값 검사 실패 시 아래 괄호 안의 절차는 launch 전에 종료된다.
 명령 마지막에서 CAN TX가 활성화되며 `wait_go=true`로 출발 인가 전 목표속도는 0이다.
@@ -270,7 +274,7 @@ for value in sys.argv[2:4]:
     assert value.isdecimal() and 0 < int(value) <= 2147483647, 'Zone 확인 수는 양수 정수'
 for route in plan.files:
     print(route.id, len(route.points), route.csv, route.zones, 'completion:', route.completion)
-print('Zone 확인:', sys.argv[2:4], '주차 탐색: source Zone 내부, 시간/거리 제한 없음')
+print('Zone 확인:', sys.argv[2:4], '주차 탐색: 현재 CSV의 GPS 추종, ready 후 주차 제어, 종료는 done/CSV 종점')
 PYCODE
   ./scripts/v2 vehicle \
     REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
@@ -283,11 +287,12 @@ PYCODE
     zone_exit_confirm_samples:="$FMA_ZONE_EXIT" \
     parking_zone_entry_active:=true \
     escape_after_cycles:=0 \
-    avoid_zone_only:=false \
+    avoidance_enabled:=true avoid_zone_only:=false \
     lane_weights:="$FMA_LANE_WEIGHTS" \
     homography_path:="$FMA_HOMOGRAPHY" \
     usb_speed:=high camera_fps:=10 \
     traffic_enabled:=true traffic_depth_enabled:=false \
+    traffic_exposure_compensation:=-2 \
     traffic_yolo_image_size:=320 \
     traffic_yolo_inference_interval:=2 \
     traffic_red_phase_yolo_inference_interval:=3 \
@@ -307,9 +312,8 @@ MISSION_ZONE은 그대로 사용한다. 주차 파일과 다른 인덱스 구간
 현재 장착에서 맞는지, 실제 정차 위치가 정지선 전 `0 < d <= 1.0m`인지 현장에서 확인한다.
 RGB depth의 optical-Z는 범퍼 거리로 자동 치환하지 않는다.
 
-속도/감속/TTC는 v2 YAML의 기존 값을 쓴다. 기본 `v_base=1.0m/s`, `v_avoid=0.6m/s`는
-**이번 런북에서 새로 승인한 시험 속도가 아니다**. 해당 현장의 검증된 설정을 적용한 뒤
-실행한다. 속도 변경 시 회피 TTC 속도와 제동/센서 여유를 함께 검토하며 `v_base`만 바꾸지 않는다.
+현재 `fixed_speed_enabled=true`에서 비정지 속도 크기는 `v_base=1.0m/s`이며 회피에도 적용한다.
+정지 제어는 유지한다. 과거 `v_avoid=0.6m/s` 설정이 현재 고정 속도를 낮추지는 않는다.
 V2 시작 로그의 실제 `drive_logs/v2_...` 경로를 기록한다.
 
 ## 7. V3 — 출발 전 토픽과 상태 확인
