@@ -47,8 +47,8 @@ struct Run
     s.zones.zone_valid = true;
     s.camera_line_valid = s.gps_valid = s.lidar_valid = s.parking_valid = true;
     s.lane_confidence = .9f;
-    s.lane_path.n = s.gps_path.n = s.avoid_path.n = s.parking_path.n = 2;
-    for (int i = 0; i < 2; ++i) {
+    s.lane_path.n = s.gps_path.n = s.avoid_path.n = s.parking_path.n = 1;
+    for (int i = 0; i < 1; ++i) {
       s.lane_path.pts[i] = CorePoint{float(i+1), .1f, 0, 0};
       s.gps_path.pts[i] = CorePoint{float(i+1), .2f, 0, 0};
       s.avoid_path.pts[i] = CorePoint{float(i+1), .3f, 0, 0};

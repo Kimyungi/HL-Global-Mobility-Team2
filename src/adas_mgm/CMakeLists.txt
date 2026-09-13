@@ -125,6 +125,10 @@ if(BUILD_TESTING OR ADAS_MGM_ENABLE_GENERATED_BACKEND)
 endif()
 
 if(BUILD_TESTING)
+  add_executable(avoid_main_compat_test test/avoid_main_compat_test.cpp)
+  target_link_libraries(avoid_main_compat_test mgm_core)
+  add_test(NAME avoid_main_compat_test COMMAND avoid_main_compat_test)
+
   add_executable(parking_entry_test test/parking_entry_test.cpp)
   target_link_libraries(parking_entry_test mgm_core)
   add_test(NAME parking_entry_test COMMAND parking_entry_test)

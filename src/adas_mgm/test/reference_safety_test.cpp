@@ -14,7 +14,7 @@ void initial_and_geometry()
     "R1: initial zero ref + positive speed prohibited");
   check(reason(boot, SAFE_STOP_REFERENCE_INVALID) && !reason(boot, SAFE_STOP_ALL_SENSORS_LOST),
     "R13: live LiDAR with no drivable path is reference failure, not all sensors lost");
-  boot.s.avoid_path.n = 2; boot.tick();
+  boot.s.avoid_path.n = 1; boot.tick();
   check(boot.out.selected_reference.valid && boot.out.v_ref > 0 && boot.out.avoid_episode_reference_seen,
     "R2: existing valid LiDAR path permits low-speed fallback");
   boot.s.lidar_valid = false; boot.tick();
@@ -23,17 +23,20 @@ void initial_and_geometry()
   for (uint8_t source = 0; source < MGM_SRC_ESCAPE; ++source) {
     Run r; CorePath * paths[] = {&r.s.lane_path,&r.s.gps_path,&r.s.avoid_path,&r.s.parking_path};
     auto & path = *paths[source];
-    path = CorePath{}; path.n = 2;
+    path = CorePath{}; path.n = 1;
     check(!provider_reference(r.s, source).valid, "all providers reject zero-filled geometry");
-    path.pts[1].x = 1.0f;
-    check(provider_reference(r.s, source).valid, "valid path may include origin as first point");
+    path.pts[0].x = 1.0f;
+    check(provider_reference(r.s, source).valid, "one nonzero control point is valid");
+    path.n = 2;
+    check(!provider_reference(r.s, source).valid, "multiple provider points violate v2 control contract");
+    path.n = 1;
     path.pts[0].yaw = std::numeric_limits<float>::quiet_NaN();
     check(!provider_reference(r.s, source).valid, "all providers reject NaN");
-    path.pts[0].yaw = 0; path.pts[1].curvature = std::numeric_limits<float>::infinity();
+    path.pts[0].yaw = 0; path.pts[0].curvature = std::numeric_limits<float>::infinity();
     check(!provider_reference(r.s, source).valid, "all providers reject Inf");
-    path.pts[1].curvature = 0; path.n = MGM_NUM_POINTS + 1;
+    path.pts[0].curvature = 0; path.n = MGM_NUM_POINTS + 1;
     check(!provider_reference(r.s, source).valid, "point count outside fixed bus rejected");
-    path.n = 2; r.s.references[source].generation = 0;
+    path.n = 1; r.s.references[source].generation = 0;
     check(!provider_reference(r.s, source).valid, "old/default buffer without actual generation rejected");
   }
   Run confidence; confidence.s.lane_confidence = 1.1f; confidence.tick();
@@ -50,7 +53,7 @@ void generation_and_clear()
   r.tick();
   check(near(r.out.selected_reference.age_s,.2f) && r.out.selected_reference.generation == first.generation,
     "R3/R6: republish increments generation age, not generation ID");
-  check(r.out.avoid == AvoidState::CLEAR_CONFIRM && r.out.selected_reference.valid && r.out.v_ref > 0,
+  check(r.out.avoid == AvoidState::AVOID_ACTIVE && r.out.selected_reference.valid && r.out.v_ref > 0,
     "R4: valid existing path within existing timeout remains usable");
   r.redline(); r.s.traffic_stopline_detected = false; r.tick();
   check(r.out.path_source == MGM_SRC_AVOID && r.out.speed_owner == SpeedOwner::TRAFFIC,
@@ -97,7 +100,7 @@ void ownership_and_reasons()
     "R13: all sensors alive, selected reference invalid uses distinct reason");
   avoid.s.external_stop = true; avoid.tick();
   check(reason(avoid,SAFE_STOP_EXTERNAL | SAFE_STOP_REFERENCE_INVALID), "R14: independent simultaneous reasons");
-  avoid.s.avoid_path.n = 2; avoid.tick();
+  avoid.s.avoid_path.n = 1; avoid.tick();
   check(reason(avoid,SAFE_STOP_EXTERNAL) && !reason(avoid,SAFE_STOP_REFERENCE_INVALID) && avoid.out.v_ref == 0,
     "R14: recovered reference does not clear external stop");
   avoid.s.external_stop = false; avoid.tick();

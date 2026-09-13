@@ -57,7 +57,7 @@ void latch_and_handoff()
   check(r.out.mission_request.ready.recorded && r.out.mission_request.handoff.recorded &&
     r.out.mission_request.ready.travel_distance>=r.out.mission_request.space.travel_distance,
     "calibration retains separate space/ready/authority milestones and real travel");
-  r.s.parking_mission_active=true; r.s.parking_path.n=2; r.tick();
+  r.s.parking_mission_active=true; r.s.parking_path.n=1; r.tick();
   check(r.out.selected_reference.valid && r.out.v_ref<0 && r.out.speed_owner==SpeedOwner::MISSION &&
     r.out.avoid==AvoidState::INACTIVE,"P20: acknowledged ACTIVE owns signed speed and reference");
   r.s.parking_path.n=0; r.tick();

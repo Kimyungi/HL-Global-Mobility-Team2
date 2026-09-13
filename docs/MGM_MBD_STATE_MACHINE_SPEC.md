@@ -1,5 +1,10 @@
 # MGM 병행 Manager / MBD 단일 명세 — 6차
 
+> **2026-09-13 회피 수정:** [main 동작 복원 메모](AVOIDANCE_MAIN_RESTORE.md)가 아래 과거 회피 고정속도/소실 200틱 종료 설명보다 우선한다.
+> AVOID 첫 CAN 기준점·yaw, .6/.2 m/s 상한, 가감속, 완료/최대 시간 종료 및 종료 후 GPS hold를 복원했다.
+> v2 단일점 계약과 병행 Manager는 유지한다. CTest 21/21 통과; 실차 확인은 남아 있다.
+
+
 > **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](INTEGRATION_V2_PR_STATUS_20260913.md). 이번 MGM 격리 빌드 성공, Python 432 통과/3 skip.
 > 전체 CTest는 11/20 통과이며 회귀 정리가 남아 있다. 아래 과거 미빌드/전체 통과 표기보다 이 결과를 우선한다.
 
@@ -156,19 +161,25 @@ CLEAR_CONFIRM 종료, Recovery 종료/경로 대기, SAFE_STOP 해제. 현재 Mi
 
 일반 DRIVE, usable LiDAR, ACTIVE Mission 아님, GPS-only에서 GPS 상실 아님일 때만 실행한다.
 기존 obstacle_detected && avoidable && avoid-zone 허용 또는 일반 구간의 Nav 불가 fallback이 진입 조건이다.
-장애물 재관측은 ACTIVE 및 두 소실 timer 초기화. 장애물이 사라지면 CLEAR_CONFIRM이다.
-Nav 소스가 복구된 LiDAR-only fallback은 장애물 episode가 없으므로 확인 timer 없이 재선택한다.
+장애물 소실만으로 회피를 끝내지 않는다. `avoid_maneuver_done` 또는 설정된
+`avoid_max_cycles` 도달 시 종료하고 GPS 복귀 hold를 시작한다. Recovery 중에는 이 종료를 적용하지 않는다.
+Nav가 복구되고 장애물이 없는 LiDAR-only fallback은 재선택한다.
 
 | 조건 | 카운트 기준 | 값 / 경계 |
 |---|---|---|
-| LINE low/high | MGM control tick | 기존 n_cycles=50. high는 confidence>=return, low는 confidence<exit |
-| 장애물 소실 확인 | MGM control tick | 200. 첫 소실 표본=1, 199 유지/200 종료 |
-| LINE 복귀 hold | MGM control tick | 300. 위 첫 소실 시점부터 함께 계산. GPS가 있으면 200~300 구간 GPS 우선 |
-| Zone entry/exit | **독립 유효 GNSS generation** | 사용자 지정 5/5. 위 MGM timer와 절대로 합치지 않음 |
+| LINE low/high | MGM control tick | 기존 n_cycles=50 |
+| 회피 최대 길이 | MGM control tick | avoid_max_cycles=1200, 진입 틱 제외; 0이면 제한 없음 |
+| LINE 복귀 hold | MGM control tick | 회피 종료부터 300, 유효 GPS 우선; 기존 LINE 복귀 자격 유지 |
+| Zone entry/exit | 독립 유효 GNSS generation | 사용자 지정 5/5 |
 
-CLEAR_CONFIRM의 invalid/empty/stale 회피 ref는 소유권 유지+0 속도다. 200/300 timer는 계속 진행한다.
-회피 path 생성·maneuver_done 알고리즘은 변경하지 않는다. 병행 Manager의 종료 조건을
-legacy avoid_max_cycles/maneuver_done 기반 flat FSM으로 대체하지 않는다.
+invalid/empty/stale 회피 ref는 소유권 유지+0 속도다. 최대 episode 시간은 정지 중에도 진행한다.
+CLEAR_CONFIRM=2는 enum 호환용으로 남지만 현재 회피에서 진입하지 않는다.
+회피 path 생성·maneuver_done 알고리즘은 유지하고 병행 Manager의 종료 조건을 main과 맞춘다.
+AVOID 출력은 main의 첫 CAN 점에 맞춰 `(x/20, y/20, atan2(y,x), 0)`으로 조립하며
+v2 입력/출력 count는 1을 유지한다. 진입 blend는 10틱이다.
+회피 속도는 provider 제안과 v_avoid=.6 / 좁은 틈 v_narrow=.2 상한을 적용하고
+가속 .5 / 감속 1.5 m/s²로 제한한다. 긴급정지는 즉시이며 GPS 복귀 가속까지 ramp를 유지한다.
+[변경 근거·검증](AVOIDANCE_MAIN_RESTORE.md).
 
 ## 4. Signal / 앞범퍼 정지 목표
 
@@ -435,7 +446,7 @@ PARKING byte만으로 active ack 대기/역진/안전 정지를 구별할 수 �
 | 항목 | 현재 값/정책 | 상태 |
 |---|---|---|
 | lane_conf_exit/return, n_cycles | 기존 .35/.70, 50; 운용 override 유지 | IMPLEMENTED |
-| clear/return hold | 200/300 MGM tick 유지 | IMPLEMENTED |
+| 회피 종료/return hold | maneuver_done 또는 max=1200 / 종료 후 300틱 | IMPLEMENTED |
 | provider freshness | YAML LINE1.0s, GPS/Avoid/Parking .5s; vehicle .2s, Estop .25s | FIELD_VALIDATION_REQUIRED (실제 지연 여유) |
 | parking_search_zone_only | true; source Zone 이탈 실패 후 현재 CSV 주행 | IMPLEMENTED |
 | parking_search_timeout / max_parking_search_distance | zone_only에서는 사용 안 함; 이전 회귀용 -1.0 / -1.0 | NOT_REQUIRED |

@@ -35,10 +35,10 @@ int main()
     active.st.return_hold_left == 0 && active.st.avoid_ticks == 0 &&
     !active.out.avoid_episode_reference_seen, "OFF clears existing authority and return hold");
   Run clear; clear.tick(50); clear.obstacle(); clear.s.avoid_obstacle_detected = false; clear.tick();
-  check(clear.out.avoid == AvoidState::CLEAR_CONFIRM, "fixture enters CLEAR_CONFIRM");
+  check(clear.out.avoid == AvoidState::AVOID_ACTIVE, "disappearance waits for maneuver completion");
   clear.st.params.avoidance_enabled = 0; clear.tick();
   check(clear.out.avoid == AvoidState::INACTIVE && clear.st.managers.clear_count == 0 &&
-    clear.out.path_source == MGM_SRC_LANE, "OFF also clears disappearance confirmation");
+    clear.out.path_source == MGM_SRC_LANE, "OFF also clears pending maneuver completion");
   Run signal; signal.st.params.avoidance_enabled = 0; signal.redline();
   signal.s.traffic_stopline_detected = false; signal.tick();
   signal.s.vehicle_speed = 1; signal.tick(60); signal.s.vehicle_speed = 0; signal.tick();

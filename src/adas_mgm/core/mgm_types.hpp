@@ -336,6 +336,7 @@ struct CoreState
   CorePoint last_raw_target[MGM_NUM_POINTS];
   // 종방향 병합 (rate limit)
   float v;
+  bool avoid_speed_ramp;  // main-compatible ramp during AVOID and back to navigation speed
   // ── 후진 탈출 (2026-08-24)
   int32_t estop_hold_cnt;   // 실제 estop 연속 틱 (watchdog 보정 제외)
   uint8_t escape_phase;     // MGM_ESCAPE_* — AVOID 안의 단계
