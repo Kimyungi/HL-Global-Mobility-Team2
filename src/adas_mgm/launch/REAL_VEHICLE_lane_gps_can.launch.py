@@ -49,6 +49,7 @@
     ML_RUNTIME_READY 인지 확인할 것 (HANDOVER §2.3).
 """
 import csv
+import math
 import os
 from datetime import datetime
 from typing import List
@@ -326,6 +327,20 @@ def build_launch_description(
     v_base_default = float(_yaml['v_base'])
     escape_after_cycles_default = int(_yaml['escape_after_cycles'])
 
+    # Four-LiDAR a1 uses reversion=true and the calibrated raw forward angle
+    # is +87 deg. The single-LiDAR /scan profile uses raw -90 deg instead.
+    # Reusing its +90 deg yaw for a1 turns rear returns into front obstacles.
+    geometry_file = os.path.join(get_package_share_directory('lidar_fusion_v2'),
+                                 'config', 'fixed_geometry.yaml')
+    with open(geometry_file) as stream:
+        a1 = yaml.safe_load(stream)['/**']['ros__parameters']['sensors']['a1']
+    a1_yaw_rad = math.radians(float(a1['yaw_deg']))
+    avoid_params = os.path.join(
+        get_package_share_directory('stack_avoid'), 'config', 'params.yaml')
+    with open(avoid_params) as stream:
+        legacy_forward = yaml.safe_load(stream)['/**'][
+            'ros__parameters']['lidar_mount']['forward_angle_deg']
+
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
         DeclareLaunchArgument('can_interface', default_value='can0'),
@@ -539,7 +554,10 @@ def build_launch_description(
         # /dev/ttyUSB0 고정 금지 — 이 PC에선 USB0=무전기, USB1=IMU, USB2=라이다로
         # 열거된다 (2026-08-11 확인). udev 별칭(ttyUSB_LIDAR, MODE 0666)으로 고정.
         DeclareLaunchArgument('lidar_port', default_value='/dev/ttyUSB_LIDAR'),
-        DeclareLaunchArgument('laser_yaw_in_base_rad', default_value='1.57079632679'),
+        DeclareLaunchArgument('laser_yaw_in_base_rad', default_value=PythonExpression([
+            str(a1_yaw_rad), " if '", LaunchConfiguration('parking_enabled'),
+            "' == 'true' else 1.57079632679",
+        ]), description='Scan yaw: calibrated a1 for four LiDARs; shared with avoidance in that mode'),
         DeclareLaunchArgument('dynamic_enabled', default_value='true'),
         DeclareLaunchArgument('dynamic_stop_distance_m', default_value='1.35'),
         # ── 정적 장애물 estop 문턱 [m] (2026-08-18, v_base 0.6→1.0 과 세트).
@@ -608,8 +626,7 @@ def build_launch_description(
             package='stack_avoid',
             executable='stack_avoid_node',
             name='stack_avoid_node',
-            parameters=[os.path.join(
-                get_package_share_directory('stack_avoid'), 'config', 'params.yaml'), {
+            parameters=[avoid_params, {
                     'target_speed_mps': ParameterValue(
                         LaunchConfiguration('avoid_target_speed_mps'), value_type=float),
                     'scan_topic': PythonExpression([
@@ -617,6 +634,12 @@ def build_launch_description(
                         LaunchConfiguration('parking_enabled'),
                         "' == 'true' else '/scan'",
                     ]),
+                    'lidar_mount.forward_angle_deg': ParameterValue(PythonExpression([
+                        "(-float('", LaunchConfiguration('laser_yaw_in_base_rad'),
+                        "') * ", str(180.0 / math.pi), ") % 360.0 if '",
+                        LaunchConfiguration('parking_enabled'),
+                        "' == 'true' else ", str(float(legacy_forward)),
+                    ]), value_type=float),
                 }],
             output='screen',
         ),
