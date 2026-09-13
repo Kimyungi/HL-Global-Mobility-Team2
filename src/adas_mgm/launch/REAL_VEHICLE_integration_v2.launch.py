@@ -7,7 +7,7 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 
 
-def generate_launch_description():
+def build_launch_description(*, lidar_estop_enabled=True):
     workspace = os.environ.get('FMA_V2_WORKSPACE')
     if not workspace:
         raise RuntimeError('Use the integration/v2_main workspace scripts/v2 vehicle entry.')
@@ -22,6 +22,12 @@ def generate_launch_description():
     # Reuse the full stack and existing CAN token / wait_go / shutdown guards.
     # Only defaults for workspace assets and logs differ at this entry point.
     return module.build_launch_description(
-        log_dir=str(root / 'drive_logs' / datetime.now().strftime('v2_%Y%m%d_%H%M%S_%f')),
+        log_dir=str(root / 'drive_logs' / datetime.now().strftime(
+            ('v2_' if lidar_estop_enabled else 'v2_no_estop_') + '%Y%m%d_%H%M%S_%f')),
         default_homography=str(root / 'src/stack_lane/config/homography.json'),
-        default_lane_weights=str(root / 'src/stack_lane/models/yolopv2.pt'))
+        default_lane_weights=str(root / 'src/stack_lane/models/yolopv2.pt'),
+        lidar_estop_enabled=lidar_estop_enabled)
+
+
+def generate_launch_description():
+    return build_launch_description()

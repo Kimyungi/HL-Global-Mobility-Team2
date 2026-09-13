@@ -1,5 +1,19 @@
 # stack_gps — 요구사항
 
+> **2026-09-12 GPS station 계약:** 최초 전체 최근접 index를 저장하고, 다음 유효 GNSS 표본은
+> 저장 station ± `abs(TargetRef.v_ref) * publish_period * 2` 안에서만 탐색한다.
+> 경로 누적 길이로 선분을 제한하며 연속 station도 저장하므로 점 간격보다 작은 이동을 누적한다.
+> 같은/역행 fix는 재탐색하지 않고 GPS 두절 후에도 전역 재탐색하지 않는다. CSV 전환/새 session만 초기화한다.
+> 명령 미수신/비유한/기존 stale_timeout 초과 시 탐색 폭은 0이다. publish_period 기본 0.1s.
+> preview는 station +2.5m, 한쪽 점 가중치 >=90%면 그 점을 선택하고 그 외에는 xy/yaw/curvature를
+> 같은 가중치로 보간해 1점만 반환한다(yaw는 각도 wrap 적용). 끝에서는 마지막 점을 사용한다.
+> snap 구간의 실제 preview station은 +2.5m에서 선분 길이의 최대 10% 차이가 날 수 있다.
+> 종전 재합류용 첫 점 합성/거리·방위 제한은 station 모드에 적용하지 않는다.
+> `lateral.csv`에는 현재 station/index, window 양끝, 사용 v_ref/sample_time,
+> 요청 preview station/실제 선택 station/snap 여부를 함께 기록한다.
+> 검증: GPS/카메라/ROS 메시지 변환/런처 오프라인 검사 **215 passed**. 업로드된 한라대 7개 CSV,
+> 교차·평행 구간, 중복 fix, 정지/명령 stale, 90% 경계, CSV/session 초기화를 포함한다. 실차 실행은 하지 않았다.
+
 **담당: 김윤기 (팀장)** · 산출물: GPS 단독 주행 (8/2) — 베이스 설치·RTK 포함
 
 ## 역할

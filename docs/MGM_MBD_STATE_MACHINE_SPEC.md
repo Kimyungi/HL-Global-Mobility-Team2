@@ -1,8 +1,54 @@
 # MGM 병행 Manager / MBD 단일 명세 — 6차
 
+> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](INTEGRATION_V2_PR_STATUS_20260913.md). 13개 패키지 빌드 완료, Python 471 통과/3 skip.
+> 전체 CTest는 11/20 통과이며 회귀 정리가 남아 있다. 아래 과거 미빌드/전체 통과 표기보다 이 결과를 우선한다.
+
+> **2026-09-13 현재 주차 정책:** [즉시 주차 진입](MGM_PARKING_ENTRY.md)이 아래 과거 PREPARE/Zone 이탈 정책보다 우선한다.
+> `parking_zone_entry_active=true`: stable Zone 진입 즉시 ACTIVE/PARKING, 준비 중 정지, 정상 종료는 done 또는 현재 CSV 종점이다.
+
+> **2026-09-12 GPS:** 최초 최근접 index/연속 station을 저장하고 이후
+> `station ± abs(TargetRef.v_ref) * GPS publish_period * 2` 안에서만 갱신한다.
+> 독립 fix당 1회, 재발행/역행 표본은 재계수하지 않는다. CSV 전환/새 session에서만 초기화한다.
+> 목표는 station +2.5m(종점 클램프), 한쪽 가중치 >=90%는 endpoint snap, 그 외 xy/곡률 선형 및
+> yaw 최단각 보간으로 1점을 발행한다. GPS의 기존 재합류 목표 합성은 사용하지 않는다.
+
+> **2026-09-12 카메라:** 차량 원점을 피팅 중심선에 최근접 투영한 station에서 +2.5m인
+> 목표점 1개의 xy/yaw/curvature만 반환한다. 내부 다점 피팅/검사는 유지하며 동적 preview 치환은 제거한다.
+> **아래 전체 provider 단일점 계약은 아직 통합 미완료다.** MGM 소스 일부는 미빌드이며,
+> GPS/LINE 생산부의 1점 반환은 오프라인 검증했다. 나머지 생산부와 MGM 설치본 통합은 미완료다.
+
+> **2026-09-12 단일 목표점:** v2 인지 제어 출력/GPS→MGM→TargetRef/CAN의 유효 점 수는 1이다.
+> GPS는 n_points=1이다. LINE의 n_points는 내부 검사 표본 수이며 반환은 1점이다. CSV/Zone/계획은 유지한다.
+> MGM은 단일 입력의 xy/yaw/curvature를 보존하며 1→20 원점 보간을 하지 않는다.
+> 기존 소스 전환 블렌드/hold/freshness/정지 gate는 1점에 적용한다. 다점 제어 입력은 무효다.
+> legacy 배열 용량 20은 역사적 generated 비교용이며 v2의 유효 입력/출력 n은 1이다.
+> Recovery의 기존 직선 목표 span 1.5m를 1점으로 표현한다(Recovery OFF 유지). dump는 v18이다.
+
+> **2026-09-12 일반 회피 OFF:** 현재 v2는 `avoidance_enabled=false`다. 아래 Avoidance 전이는
+> 이 설정이 true일 때만 실행한다. false는 AVOID/CLEAR_CONFIRM/일반 Nav 부재 시 LiDAR fallback과
+> 회피 전용 TTC 정지를 비활성화한다. 현재 AVOID 상태와 복귀 hold도 해제하고 Nav를 재선택한다.
+> 사용할 LINE/GPS reference가 없으면 정지한다. 별도 E-stop·외부/CAN·Reference·Signal·Mission
+> 정책은 유지한다. 인지 노드는 관측용으로 계속 발행한다. ROS startup-only, CoreParams int32이며 dump는 v17이다.
+
+> **2026-09-12 속도 정책 갱신:** v2의 비정지 목표속도 크기는 `v_base`(현재 YAML 1.0m/s)로
+> 고정한다. 주차와 승인된 Recovery 후진도 크기는 동일하고 부호만 음수다. provider의 0 정지 요구,
+> Signal 정지 profile/일반 정지 감속, TTC/외부/CAN/Reference/종점 정지, 인계 정지는 유지한다.
+> 가속 Zone·v_avoid·v_narrow·provider의 비정지 속도 크기는 사용하지 않으며 정상 주행 ramp를 우회한다.
+> 아직 거리를 seed하지 않은 Signal 접근도 고정속도이며, seed 이후의 정지 profile에는 기존 merge를 적용한다.
+> 아래 기존 속도 설명보다 이 갱신을 우선한다. Bus layout 변경 없이 재생 계약 버전은 v16이다.
+
+> 2026-09-12 v2 확장: [경로 순서/전환 계약](MGM_ROUTE_SEQUENCE.md)을 함께 적용한다.
+> RouteControl은 병행 제어 영역이며 한라대는 (01 또는 02)→03→04→05→(06 또는 07)이다.
+> 연속 경로에서 중간 종점은 인계 정지, 마지막 CSV 본경로만 Top FINISH다.
+> 시작/종료 선택을 포함한 sequence hash를 사용한다. 한라대는 직접 연결 없이 선택한 5개 CSV를 사용한다.
+> 단일 CSV는 아래 6차 규칙을 유지한다. 현재 bus/raw dump는 **v15**이고 아래 v12는 6차 이력이다.
+
 2026-09-11, `feat/state-machine`. 코드 변경 전 확정한 6차 기준이며 구현·검증 결과를 아래에 갱신한다.
 이 문서가 현재 C++ `base_state_machine_enabled=true`와 향후 Stateflow 모델의 단일 기준이다.
 3/4/5차 보고서는 변경 이력이다. generated v1.88과 `base_state_machine_enabled=false`는 역사적 비교 경로다.
+
+> 2026-09-12 주차 탐색 변경: [Zone 탐색 정책](MGM_ZONE_SEARCH.md)을 적용한다.
+> PREPARE의 source Zone 확정 이탈은 실패 후 현재 CSV 진행이다. 시간·거리 제한을 쓰지 않는다.
 
 ## 구현 원칙
 
@@ -12,7 +58,8 @@ Top/Nav/Avoid/Signal/Safety/Mission 병행 상태, Mission IDLE→PREPARE→ACTI
 Zone raw membership은 현재 GNSS `reference_stamp`(실제 fix generation)에 근거한 필터를 거친다.
 Zone별 raw/stable 및 연속 확인 수를 분리하고 entry/exit는 stable edge에만 생성한다.
 동일 generation은 재계수하지 않고 invalid/역행 입력은 stable 문맥을 보존하며 후보 count를 초기화한다.
-`zone_enter_confirm_samples`, `zone_exit_confirm_samples`는 0=미설정이며 운영 표본 수를 추정하지 않는다.
+`zone_enter_confirm_samples`, `zone_exit_confirm_samples`는 0=미설정 계약을 유지한다.
+2026-09-12 사용자 지정으로 v2 YAML/통합 launch는 **5/5**를 사용한다. 실차 검증 인증값은 아니다.
 정의된 Zone이 있는데 기준이 미설정/잘못된 경우 stable 문맥을 허가하지 않고
 `ZONE_CONTEXT_UNAVAILABLE` reason으로 일반 주행을 정지한다. ACTIVE Mission의 제어권은 유지한다.
 유효한 빈 Zone 정의는 Normal 문맥이다. 새 session에서는 Zone 이력과 완료 기억을 초기화한다.
@@ -21,9 +68,10 @@ Zone별 raw/stable 및 연속 확인 수를 분리하고 entry/exit는 stable ed
 관측으로 추가하되 잘못된 segment가 지속되는 문제를 debounce 해결로 주장하지 않는다.
 공간 hysteresis 폭/진행 연속성 gate는 실측 전 도입하지 않는다.
 
-Parking 제한은 CALIBRATED(두 유한 양수), UNCALIBRATED(-1 표식 포함),
-INVALID_CONFIG(0/그 밖의 음수/비유한 값)로 구분한다. CALIBRATED는 설정 상태이며 실차 검증 인증이 아니다.
-유효하지 않은 요청은 기존 CALIBRATION_REQUIRED 취소다. CSV 분석은 관측 통계만 계산하며 운영 YAML을 쓰지 않는다.
+v2 Parking 탐색은 `parking_search_zone_only=true`로 요청의 source Zone 안에서만 준비한다.
+확정 Zone 이탈은 실패 후 현재 CSV 주행이다. 시간·거리 제한은 사용하지 않아 NOT_REQUIRED=3으로 표시한다.
+false인 역사적 시간/거리 모드에만 기존 CALIBRATED/UNCALIBRATED/INVALID_CONFIG와 CALIBRATION_REQUIRED 취소를 적용한다.
+CSV 분석은 관측 통계만 계산하며 운영 YAML을 쓰지 않는다.
 
 Traffic 최초 소실 edge에서 앞범퍼 기준 잔여거리 1.5m를 seed한다. 이후 실제 속도의 절댓값과
 monotonic dt를 적분한다. 정지 목표는 잔여 1.0m, 관측 성공 구간은 `0 < d <= 1.0m`다.
@@ -115,7 +163,7 @@ Nav 소스가 복구된 LiDAR-only fallback은 장애물 episode가 없으므로
 | LINE low/high | MGM control tick | 기존 n_cycles=50. high는 confidence>=return, low는 confidence<exit |
 | 장애물 소실 확인 | MGM control tick | 200. 첫 소실 표본=1, 199 유지/200 종료 |
 | LINE 복귀 hold | MGM control tick | 300. 위 첫 소실 시점부터 함께 계산. GPS가 있으면 200~300 구간 GPS 우선 |
-| Zone entry/exit | **독립 유효 GNSS generation** | 운영값 미설정. 위 MGM timer와 절대로 합치지 않음 |
+| Zone entry/exit | **독립 유효 GNSS generation** | 사용자 지정 5/5. 위 MGM timer와 절대로 합치지 않음 |
 
 CLEAR_CONFIRM의 invalid/empty/stale 회피 ref는 소유권 유지+0 속도다. 200/300 timer는 계속 진행한다.
 회피 path 생성·maneuver_done 알고리즘은 변경하지 않는다. 병행 Manager의 종료 조건을
@@ -190,42 +238,52 @@ GPS 공백 전후 step에는 공백 중 이동이 포함될 수 있다. heading_
 
 ## 6. Mission Request / Calibration
 
-유효한 stable MISSION_ZONE entry + DRIVE + 미완료 Mission ID + 현재 요청 없음 → 요청 latch → PREPARE.
+현행 v2의 제어권은 Zone entry 즉시 ACTIVE다. 모듈 PREPARE/ready/ACTIVATE 절차는
+ACTIVE 안에서 수행한다. 완료 또는 현재 CSV 종점에서만 정상 복귀하며 종점 미완료는
+ROUTE_END=10 실패로 기록한다. Zone 이탈은 종료 조건이 아니다.
+아래 PREPARE 제어권·수명 제한 설명은 `parking_zone_entry_active=false`인 과거 모드다.
+
+유효한 stable MISSION_ZONE entry + DRIVE + 미완료·미실패 Mission ID + 현재 요청 없음 → 요청 latch → PREPARE.
 request_id는 ROS event 시각과 보존된 high-water counter의 최댓값으로 만들며 session reset에도 재사용하지 않는다.
 request는 Mission ID/type/source Zone, monotonic 시작/마지막 갱신 시각, elapsed, actual travel,
 ack/space/ready, cancel reason과 다섯 Observation을 가진다.
 
 PREPARE는 Navigation/Avoidance/Signal/Safety를 계속 실행한다. 이때 Mission ref 부재는 정상이다.
 현재 request/mode의 fresh status, search_active, 요청 이후 실제 preparation generation, 기존 localization
-readiness, 아직 넘지 않은 시간/거리 제한, 유효 실제 속도가 모두 충족되면 ACTIVE다. Zone 내부 조건은 없다.
+readiness, 유효한 source Zone의 stable 내부 문맥, 유효 실제 속도가 모두 충족되면 ACTIVE다.
+PREPARE의 확정 source Zone 이탈은 동시 ready보다 우선해 실패/CANCEL한다. GPS/Zone 불명은 정지 대기다.
 해당 틱 Parking만 reference/speed를 소유하고 일반 Avoidance/AUTO_ESTOP은 마스킹한다.
 Nav geometry를 비우며 ACTIVATE ack와 유효 현재 요청 Parking reference까지 0 속도로 대기한다.
 모듈은 PREPARE 중 기존 detector/planner/SLAM/localization만 진행하고 maneuver tick은 ACTIVATE 이후 허가한다.
 
 실행 active ack 이후 현재 ID/mode의 done만 완료로 인정하여 Mission ID별 기억을 쓴다.
 취소/완료 뒤 공통 nav_reselect로 현재 Zone을 재평가한다. 외부 stop은 요청을 보존하며
-PREPARE timeout의 monotonic 실제 경과 시간은 멈추지 않는다. ACTIVE의 duration 상한으로 탐색 제한을 전용하지 않는다.
+monotonic 경과 시간과 실측 이동거리는 관측 기록만 유지한다. 시간/거리 상한은 없으며 ACTIVE는 탐색 이탈 규칙을 적용하지 않는다.
 
 | 취소 reason | 값 | 원인 |
 |---|---:|---|
 | NONE | 0 | 없음 |
-| SEARCH_TIMEOUT | 1 | PREPARE elapsed >= timeout; ready보다 우선 |
-| TRAVEL_DISTANCE | 2 | PREPARE integral(abs(actual_v)*dt) >= limit |
+| SEARCH_TIMEOUT | 1 | 역사적 zone_only=false의 elapsed >= timeout |
+| TRAVEL_DISTANCE | 2 | 역사적 zone_only=false의 integral(abs(actual_v)*dt) >= limit |
 | EXPLICIT | 3 | operator/cancel_mission 이벤트 |
 | FINISH | 4 | 상위 FINISH |
 | SESSION_RESET | 5 | 명시적 새 세션 |
-| CALIBRATION_REQUIRED | 6 | UNCALIBRATED 또는 INVALID_CONFIG |
+| CALIBRATION_REQUIRED | 6 | 역사적 zone_only=false의 UNCALIBRATED 또는 INVALID_CONFIG |
 | MOTION_UNAVAILABLE | 7 | 실제 속도 freshness/finite 상실 또는 monotonic 역행 |
 | MODULE_ABORT | 8 | 현재 요청 search ack 이후 모듈이 종료/취소 응답 |
+| ZONE_EXIT | 9 | PREPARE의 source Zone 이탈 확정 → 실패 기억 + 현재 CSV 주행 |
 
 취소는 완료 기억을 쓰지 않으며 다른 Mission entry를 queue하지 않는다. 이미 지나간 구간을 취소 후 자동 재생하지 않는다.
 
-`parking_calibration_state`: UNCALIBRATED=0 / CALIBRATED=1 / INVALID_CONFIG=2.
-두 값 모두 유한 양수이면 CALIBRATED, 하나라도 -1이면 UNCALIBRATED, 0/다른 음수/비유한 값이 있으면
-INVALID_CONFIG가 우선한다. 설정 상태와 실제 성공률 검증 상태는 구별한다.
-ROS의 두 제한은 YAML 및 런타임 parameter로 연결한다. 변경은 다음 control snapshot 경계에 적용되며
-PREPARE 중 미설정으로 바꾸면 취소한다. raw dump 기록 중에는 header 파라미터와 재생이 달라지지 않도록
-런타임 변경을 거부한다. 이 경우 YAML 변경 후 재시작한다. Zone 확인 수는 ROS startup-only, MBD에서는 CoreParams다.
+ZONE_EXIT만 Mission ID별 `mission_failed`를 기록하며 성공 `mission_completed`는 false다.
+실패 ID는 같은 session에서 재진입해도 재시도하지 않는다. 명시적 새 session이 실패 기억을 지운다.
+CSV의 Mission 종료 조건은 성공 또는 Zone 이탈 실패를 허용하며, 실패 순간에는 현재 CSV를 계속 주행한다.
+한라대는 현재 CSV 종점+실제 정지+새 GPS 응답 이후에 다음 CSV로 이동한다.
+
+`parking_calibration_state`: UNCALIBRATED=0 / CALIBRATED=1 / INVALID_CONFIG=2 / NOT_REQUIRED=3.
+v2 zone_only=true에서는 시간·거리 제한을 사용하지 않고 NOT_REQUIRED다. 사용하지 않는 제한값의 런타임 변경은 거부한다.
+false는 이전 회귀용 정책이며 두 유한 양수 조건/미설정 취소/기록 중 parameter 변경 거부를 유지한다.
+`parking_search_zone_only`와 Zone 확인 수는 startup-only다. CoreParams와 Mission 실패 기억을 MBD bus에 함께 옮긴다.
 
 분석:
 
@@ -236,7 +294,7 @@ python3 src/adas_mgm/tools/analyze_mission_calibration.py /path/to/mission_event
 
 복수 CSV를 받을 수 있고 file+request ID별로 분리한다. elapsed_s(monotonic lifetime)를 사용하여
 entry→search/space/ready/handoff 시간 및 ready/handoff 실제 누적 이동거리를 집계한다.
-타입별 성공(done)/timeout/distance cancel/그 외 cancel/incomplete 수와 평균/최대/p50/p90/p95/p99,
+타입별 성공(done)/zone_exit_failure/역사적 timeout/distance cancel/그 외 cancel/incomplete 수와 평균/최대/p50/p90/p95/p99,
 각 통계의 유효 표본 수를 제공한다. 누락 이벤트는 0으로 만들지 않는다. JSON은 모든 event의 실제 속도/ENU/idx/ID를 포함한다.
 충돌하는 ID/이벤트나 잘못된 schema/음수 수치를 거부한다. 작은 성공 표본의 percentile은 운영 상한의 근거가 아니다.
 출력은 항상 CALIBRATION_REQUIRED이며 YAML/운영값을 생성하지 않는다.
@@ -251,10 +309,13 @@ trigger→ready 이동을 측정한 뒤 위치를 결정하고 기존 range를 �
 그 외 Nav LINE→LINE, GPS_BACKUP/GPS_ONLY→GPS. 실제 Recovery 후진 phase는 기존 Escape reference를 사용한다.
 Zone/Signal은 reference를 생성하지 않는다. STOPPED_WAIT에도 기존 선택 경로 문맥을 유지한다.
 
-속도: FINISH/disable/외부/SAFE_STOP/AUTO_ESTOP은 즉시 0. ACTIVE는 기존 Parking 속도와
-path_blocked 요구. 일반 Signal 접근은 선택 주행 속도와 기존 신호 profile의 최소값,
-STOPPED_WAIT는 0. 일반 TTC/wrong-way/지정 정지 guard를 유지한다. Recovery는 승인된 기존 음수 속도.
-주차/Recovery 음수 ramp가 일반 전진 소유권에 넘어가는 틱은 즉시 0으로 한다.
+속도: 비정지 목표속도 크기는 `v_base` 하나다. LINE/GPS/AVOID/주차 전진은 +v_base,
+주차/승인된 Recovery 후진은 -v_base이며 일반 주행 ramp를 거치지 않는다.
+FINISH/disable/외부/SAFE_STOP/AUTO_ESTOP은 즉시 0. Parking의 0·path_blocked 요구와
+TTC/wrong-way/지정 정지 guard를 유지한다. Signal은 최초 거리 seed 전에는 고정속도,
+seed 후에는 기존 신호 정지 profile과 merge를 적용한다. STOPPED_WAIT는 0이다.
+그 밖의 일반 정지 요구도 기존 감속 merge를 유지한다. 주차/Recovery 음수 출력이
+일반 전진 소유권에 넘어가는 틱은 즉시 0이며 다음 주행 틱부터 고정속도다.
 
 Reference available=점 존재, fresh=알려진 실제 generation의 monotonic age가 기존 timeout 이내,
 valid=available+fresh+센서/모듈 사용 조건+1..20점+전 성분 finite+모든 xy가 0인 기본 버퍼 아님.
@@ -283,6 +344,7 @@ Mission/Avoidance가 invalid라고 제어권을 다른 provider에 넘기지 않
 | TRAFFIC_INPUT / 32 | TrafficStop.fail_safe_stop 또는 수신 이력 뒤 Traffic timeout | fresh fail_safe_stop=false 또는 ACTIVE | Traffic 입력→Safety | mask 아니오; producer latch 가능 / 조건부 | 적용 | 미적용 |
 | VEHICLE_SPEED / 64 | Signal 접근/정지 중 actual speed invalid/nonfinite 또는 monotonic 역행 | 속도/시계 유효 또는 Signal 제약 해제 또는 ACTIVE | Signal→Safety | 아니오 / 조건부 | 적용 | 미적용 |
 | REAR_UNAVAILABLE / 128 | Escape 선택 승인에서 rear bool/valid/CLEAR 중 하나라도 불충족 | Escape 선택 종료 또는 rear 인증 회복 | Recovery ref→Safety | 아니오 / 조건부 | 후진 선택 때만 | 미적용 |
+| MISSION_ZONE_UNKNOWN / 1024 | zone_only PREPARE의 source Zone 문맥 불명 | source Zone 유효 또는 PREPARE 종료 | Mission/Zone→Safety | 아니오 / 조건부 | 적용 | 미적용 |
 | ZONE_CONTEXT_UNAVAILABLE / 256 | Zone 정의를 관측했으나 확인 수 미설정/음수 | 유효 확인 수로 재기동/새 구성, 또는 ACTIVE | Zone→Safety | 아니오 / 조건부 | 적용 | 미적용 |
 
 TRAFFIC_INPUT의 구체적 생산 근거: `stack_traffic/node.py` 정상 `_publish()` 호출은
@@ -374,9 +436,10 @@ PARKING byte만으로 active ack 대기/역진/안전 정지를 구별할 수 �
 | lane_conf_exit/return, n_cycles | 기존 .35/.70, 50; 운용 override 유지 | IMPLEMENTED |
 | clear/return hold | 200/300 MGM tick 유지 | IMPLEMENTED |
 | provider freshness | YAML LINE1.0s, GPS/Avoid/Parking .5s; vehicle .2s, Estop .25s | FIELD_VALIDATION_REQUIRED (실제 지연 여유) |
-| parking_search_timeout / max_parking_search_distance | -1.0 / -1.0; 두 유한 양수 필요 | CALIBRATION_REQUIRED |
+| parking_search_zone_only | true; source Zone 이탈 실패 후 현재 CSV 주행 | IMPLEMENTED |
+| parking_search_timeout / max_parking_search_distance | zone_only에서는 사용 안 함; 이전 회귀용 -1.0 / -1.0 | NOT_REQUIRED |
 | Mission Search trigger | 기존 index_range/start/end, 임의 경계 추가 없음 | CALIBRATION_REQUIRED |
-| Zone enter/exit confirm | 0 / 0 미설정, 양수 정수만 유효 | CALIBRATION_REQUIRED |
+| Zone enter/exit confirm | 사용자 지정 5 / 5; 0은 미설정, 양수 정수만 유효 | FIELD_VALIDATION_REQUIRED |
 | Zone spatial hysteresis / segment continuity | 관측 자료 노출, 새 폭/알고리즘 없음 | CALIBRATION_REQUIRED |
 | traffic_ramp_distance_m / traffic_stop_offset_m | 사용자 지정 1.5m / 1.0m | FIELD_VALIDATION_REQUIRED (범퍼 seed/실제 정차 위치) |
 | escape_after_cycles | 0 disabled 유지 | CALIBRATION_REQUIRED |

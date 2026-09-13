@@ -1,5 +1,16 @@
 # MBD 착수 킷 — 김재민 (Simulink/Stateflow → 생성 C 코드 트랙)
 
+> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](INTEGRATION_V2_PR_STATUS_20260913.md). 13개 패키지 빌드 완료, Python 471 통과/3 skip.
+> 전체 CTest는 11/20 통과이며 회귀 정리가 남아 있다. 아래 과거 미빌드/전체 통과 표기보다 이 결과를 우선한다.
+
+> **구현 상태 정정:** 아래 전체 provider 1점 계약은 통합 미완료 설계다. MGM 변경 소스는 미빌드이며
+> GPS/LINE은 station preview 1점 반환을 오프라인 검증했다. 나머지 생산부와 MGM 설치본 통합은 미완료다.
+
+> **2026-09-12:** v2 제어 경로는 입력/출력 모두 유효 목표점 1개다(`MGM_CONTROL_POINTS=1`).
+> CorePath/Output 배열의 20 용량은 legacy 호환 저장 공간이며 현재 n은 1 또는 무효 입력 0이다.
+> n>1도 무효다. MBD에서 1→20 보간을 구현하지 않는다. xy/yaw/curvature와 실제 generation을 보존한다.
+> 현재 dump는 v18이며 과거 기록은 해당 역사적 빌드로 재생한다.
+
 > **6차 단일 기준:** [MGM_MBD_STATE_MACHINE_SPEC.md](MGM_MBD_STATE_MACHINE_SPEC.md). 현재 MBD 정본은 병행 Top/Nav/Avoid/Signal/Safety/Mission이며 legacy 5-state byte는 호환 projection이다.
 > Zone 확인은 독립 GNSS sample이며 0=미설정. Parking 제한 -1, Recovery OFF 유지. 새 bus/dump는 v12이며 이전 버전 설명/시험 절차는 역사적 비교 범위다.
 > 실제 운용 전 Zone/Parking/후방 corridor calibration과 현장 검증이 필요하다.

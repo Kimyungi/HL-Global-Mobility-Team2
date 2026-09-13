@@ -43,7 +43,8 @@ def draw_info_text(vis: np.ndarray, estimate: LaneEstimate, infer_ms: float, is_
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
 
 
-def draw_bev_debug(bev_mask: np.ndarray, fit_result: LaneFitResult, grid: BevGrid, lookahead_m: float) -> np.ndarray:
+def draw_bev_debug(bev_mask: np.ndarray, fit_result: LaneFitResult, grid: BevGrid, lookahead_m: float,
+                   preview: LaneEstimate | None = None) -> np.ndarray:
     vis = cv2.cvtColor((bev_mask * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
 
     def draw_side(side, color) -> None:
@@ -68,10 +69,13 @@ def draw_bev_debug(bev_mask: np.ndarray, fit_result: LaneFitResult, grid: BevGri
         pts = np.stack([cols_l, rows_l], axis=1).astype(int)
         cv2.polylines(vis, [pts], False, (0, 255, 255), 2)
 
-        la_y = float(np.polyval(fit_result.center_coeffs, lookahead_m))
-        la_col, la_row = grid.world_to_px(np.array([lookahead_m]), np.array([la_y]))
-        cv2.drawMarker(vis, (int(la_col[0]), int(la_row[0])), (0, 255, 0),
-                        markerType=cv2.MARKER_STAR, markerSize=20, thickness=2)
+        if preview is None or preview.mode != 'none':
+            # Show the returned station preview, including smoothing, in both panels.
+            la_x = preview.x if preview is not None else lookahead_m
+            la_y = preview.y if preview is not None else float(np.polyval(fit_result.center_coeffs, la_x))
+            la_col, la_row = grid.world_to_px(np.array([la_x]), np.array([la_y]))
+            cv2.drawMarker(vis, (int(la_col[0]), int(la_row[0])), (0, 255, 0),
+                            markerType=cv2.MARKER_STAR, markerSize=20, thickness=2)
 
     return vis
 
@@ -84,7 +88,7 @@ def build_debug_frame(canvas: np.ndarray, ll_mask: np.ndarray, estimate: LaneEst
     draw_info_text(vis, estimate, infer_ms, is_placeholder)
     draw_ref_point_on_canvas(vis, estimate, H_inv)
 
-    bev_vis = draw_bev_debug(debug["bev_mask"], debug["fit"], grid, lookahead_m)
+    bev_vis = draw_bev_debug(debug["bev_mask"], debug["fit"], grid, lookahead_m, preview=estimate)
     target_w = max(1, vis.shape[0] * bev_vis.shape[1] // bev_vis.shape[0])
     bev_vis_resized = cv2.resize(bev_vis, (target_w, vis.shape[0]))
     return np.hstack([vis, bev_vis_resized])

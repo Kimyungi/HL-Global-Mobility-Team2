@@ -29,13 +29,14 @@ ReferenceStatus provider_reference(const CoreSnapshot & s, uint8_t source)
   r.available = paths[source]->n > 0;
   r.fresh = sample.generation != 0 && std::isfinite(sample.age_s) && sample.age_s >= 0 &&
     std::isfinite(sample.timeout_s) && sample.timeout_s > 0 && sample.age_s <= sample.timeout_s;
-  r.valid = r.available && r.fresh && usable[source] &&
+  r.valid = paths[source]->n == MGM_CONTROL_POINTS && r.fresh && usable[source] &&
     reference_geometry_valid(paths[source]->pts, paths[source]->n);
   return r;
 }
 void final_reference_gate(CoreOutput & out, CoreState & st)
 {
-  const bool geometry = reference_geometry_valid(out.ref_points, out.n_points);
+  const bool geometry = out.n_points == MGM_CONTROL_POINTS &&
+    reference_geometry_valid(out.ref_points, out.n_points);
   if (!geometry || !out.selected_reference.fresh ||
     out.selected_reference.source != out.path_source)
   {

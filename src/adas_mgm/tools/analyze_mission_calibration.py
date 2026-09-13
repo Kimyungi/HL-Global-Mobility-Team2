@@ -77,7 +77,9 @@ def analyze(paths):
             raise ValueError(f'{path}: request {request_id} has both done and cancel')
         reason = events.get('cancel', {}).get('cancel_reason', 0)
         outcome = ('success' if 'done' in events else 'timeout' if reason == 1 else
-                   'distance_cancel' if reason == 2 else 'cancel' if 'cancel' in events else 'incomplete')
+                   'distance_cancel' if reason == 2 else 'zone_exit_failure' if reason == 9 else
+                   'route_end_failure' if reason == 10 else
+                   'cancel' if 'cancel' in events else 'incomplete')
         group = groups[kind]
         group['outcomes'][outcome] += 1
         metrics = {}

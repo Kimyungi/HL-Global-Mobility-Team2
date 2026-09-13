@@ -16,7 +16,7 @@ enum class MissionType : uint8_t {NONE, T_PARKING, PARALLEL_PARKING};
 enum class SpeedOwner : uint8_t {NAVIGATION, AVOIDANCE, TRAFFIC, MISSION, SAFETY, FINISH};
 enum class ZoneType : uint8_t {NORMAL_ZONE, GPS_ONLY_ZONE, MISSION_ZONE};
 
-enum class CalibrationState : uint8_t {UNCALIBRATED=0, CALIBRATED=1, INVALID_CONFIG=2};
+enum class CalibrationState : uint8_t {UNCALIBRATED=0, CALIBRATED=1, INVALID_CONFIG=2, NOT_REQUIRED=3};
 enum class RearCorridorState : uint8_t {UNKNOWN=0, CLEAR=1, BLOCKED=2};
 enum class RecoveryBlockReason : uint8_t {
   NONE, CONFIG_DISABLED, REAR_UNKNOWN, REAR_BLOCKED, REAR_INVALID,
@@ -49,6 +49,8 @@ enum SafeStopReason : uint32_t
   SAFE_STOP_VEHICLE_SPEED = 1u << 6,
   SAFE_STOP_REAR_UNAVAILABLE = 1u << 7,
   SAFE_STOP_ZONE_CONTEXT_UNAVAILABLE = 1u << 8,
+  SAFE_STOP_ROUTE_SEQUENCE = 1u << 9,
+  SAFE_STOP_MISSION_ZONE_UNKNOWN = 1u << 10,
 };
 struct ReferenceSample
 {
@@ -115,7 +117,7 @@ struct ZoneState
 enum class MissionCancelReason : uint8_t
 {
   NONE, SEARCH_TIMEOUT, TRAVEL_DISTANCE, EXPLICIT, FINISH, SESSION_RESET,
-  CALIBRATION_REQUIRED, MOTION_UNAVAILABLE, MODULE_ABORT
+  CALIBRATION_REQUIRED, MOTION_UNAVAILABLE, MODULE_ABORT, ZONE_EXIT, ROUTE_END
 };
 enum MissionEvent : uint32_t
 {
@@ -153,6 +155,27 @@ struct MissionRequest
   MissionObservation zone_entry, search_start, space, ready, handoff;
 };
 
+enum class RoutePhase : uint8_t {DISABLED=0, RUNNING=1, WAIT_MISSION=2, WAIT_STOP=3, WAIT_ACK=4, FINISHED=5, FAULT=6};
+enum class RouteCompletion : uint8_t {ENDPOINT_AND_MISSIONS=0, MISSIONS_COMPLETE=1};
+struct RouteFeedback {
+  RouteCompletion completion;
+  bool enabled;
+  bool connecting, next_connecting;
+  uint64_t sequence_id, instance_id, acknowledged_request;
+  int32_t index, count, required_count;
+  uint8_t required_missions[256];
+};
+struct RouteControl {
+  bool enabled;
+  RoutePhase phase;
+  RouteCompletion completion;
+  uint64_t sequence_id, instance_id, request_id;
+  int32_t index, count, requested_index;
+  bool seen_nonterminal, end_reached, changed, session_reset_pending;
+  bool connecting, next_connecting, requested_connecting;
+  uint64_t last_generation, request_generation;
+  bool required_missions[256];
+};
 struct ManagerState
 {
   TopState top;
@@ -167,6 +190,7 @@ struct ManagerState
   int32_t clear_count;
   bool avoid_fallback_only;
   bool mission_completed[MGM_MISSION_CAPACITY];
+  bool mission_failed[MGM_MISSION_CAPACITY];  // terminal zone-exit failure, distinct from success
   uint8_t active_mission;
   bool mission_feedback_seen;
   bool mission_start;
@@ -181,6 +205,7 @@ struct ManagerState
   RecoveryDiagnostics recovery;
   int64_t previous_tick_ns;
   bool previous_tick_known, previous_reverse_command;
+  RouteControl route;
 };
 }  // namespace adas_mgm
 #endif

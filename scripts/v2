@@ -4,8 +4,8 @@ set -eo pipefail
 V2_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 V2_ACTION=${1:-check}
 case "$V2_ACTION" in
-  build|check|test|bench|vehicle|go|state|stop) ;;
-  *) echo 'Usage: scripts/v2 [build|check|test|bench|vehicle [launch arguments]|go [options]|state|stop]' >&2; exit 2 ;;
+  build|check|test|bench|vehicle|vehicle-no-estop|go|state|stop) ;;
+  *) echo 'Usage: scripts/v2 [build|check|test|bench|vehicle|vehicle-no-estop [launch arguments]|go [options]|state|stop]' >&2; exit 2 ;;
 esac
 if [[ ${FMA_V2_CLEAN:-} != "$V2_ROOT" ]]; then
   exec env -i HOME="$HOME" USER="${USER:-}" LANG="${LANG:-C.UTF-8}" \
@@ -35,12 +35,26 @@ case "$V2_ACTION" in
     ctest --test-dir "$V2_ROOT/build_v2/adas_mgm" --output-on-failure
     export PYTHONPATH="$V2_ROOT/src/stack_gps:$V2_ROOT/src/stack_lane:$V2_ROOT/src/stack_parking:$V2_ROOT/src/stack_estop:$V2_ROOT/src/stack_avoid:$V2_ROOT/src/lidar_fusion_v2:$V2_ROOT/src/stack_traffic:$PYTHONPATH"
     /usr/bin/python3 -m pytest -q src/stack_gps/test src/stack_estop/test \
-      src/stack_parking/test src/stack_avoid/test src/lidar_fusion_v2/test \
+      src/stack_parking/test src/stack_avoid/test src/lidar_fusion_v2/test src/stack_lane/test \
       src/stack_traffic/test src/adas_mgm/test/test_reference_metadata.py \
-      src/adas_mgm/test/test_mission_calibration.py scripts/test_v2_launch.py
+      src/adas_mgm/test/test_mission_calibration.py scripts/test_v2_launch.py \
+      scripts/test_v2_recover_lidars.py
     export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=174
-    exec /usr/bin/python3 src/adas_mgm/test/manager_ros_smoke.py \
+    /usr/bin/python3 src/adas_mgm/test/manager_ros_smoke.py \
       "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=178
+    /usr/bin/python3 src/adas_mgm/test/parking_entry_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=176
+    for V2_TEST_START in 01 02; do
+      for V2_TEST_END in 06 07; do
+        /usr/bin/python3 src/adas_mgm/test/route_sequence_ros_smoke.py \
+          "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node" \
+          --start "$V2_TEST_START" --end "$V2_TEST_END"
+      done
+    done
+    /usr/bin/python3 src/adas_mgm/test/route_sequence_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node" --start 01 --end 07 --fail-search
     ;;
   bench)
     export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=175
@@ -49,6 +63,10 @@ case "$V2_ACTION" in
   vehicle)
     shift
     exec ros2 launch adas_mgm REAL_VEHICLE_integration_v2.launch.py "$@"
+    ;;
+  vehicle-no-estop)
+    shift
+    exec ros2 launch adas_mgm REAL_VEHICLE_integration_v2_no_estop.launch.py "$@"
     ;;
   go)
     shift

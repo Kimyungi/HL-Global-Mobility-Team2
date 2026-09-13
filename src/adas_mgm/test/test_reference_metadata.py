@@ -15,7 +15,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan, PointField
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header
-from fma_interfaces.msg import LanePath, GpsPath, AvoidStatus, ParkingStatus, RefPoint
+from fma_interfaces.msg import LanePath, GpsPath, AvoidStatus, ParkingStatus, RefPoint, TargetRef
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -45,6 +45,23 @@ def environment():
 
 
 def stamp(msg): return msg.reference_stamp.sec * 1_000_000_000 + msg.reference_stamp.nanosec
+
+
+def test_line_serializes_exactly_one_station_preview():
+    from rclpy.serialization import serialize_message, deserialize_message
+    from stack_lane.lane_path import _point_from_fit
+    from stack_lane.station_preview import station_preview_x
+    coeffs = np.array([.06, -.1, .2])
+    _, target_x = station_preview_x(coeffs)
+    point = _point_from_fit(coeffs, target_x)
+    fn = method('src/stack_lane/stack_lane/node.py', '_fill_reference', {'RefPoint': RefPoint})
+    msg = LanePath()
+    fn(NS(), msg, NS(points=[point], confidence=.8))
+    received = deserialize_message(serialize_message(msg), LanePath)
+    ref, = received.points
+    for field in ('x', 'y', 'yaw', 'curvature'):
+        assert getattr(ref, field) == pytest.approx(getattr(point, field), rel=1e-6)
+    assert received.confidence == pytest.approx(.8)
 
 
 def test_line_held_search_does_not_refresh_generation(environment):
@@ -83,6 +100,95 @@ def test_gps_same_fix_republication_keeps_generation(environment):
     assert stamp(first) == stamp(repeated)
     new = GpsPath(); fn(node,new,10.9)
     assert stamp(new) > stamp(first)
+
+
+@pytest.fixture
+def gps_station_environment(environment):
+    from stack_gps.path_engine import PathEngine, M_PER_DEG_LAT
+    clock, ns, node = environment
+    longitude_scale = M_PER_DEG_LAT * math.cos(math.radians(37.5))
+    position = lambda x: (37.5, 127. + x / longitude_scale)
+    node.engine = PathEngine([position(float(i)) for i in range(31)], station_tracking=True)
+    node.stale_timeout = 1.5
+    node.station_sample_time = .1
+    node._station_v_ref = 0.
+    node._station_target_stamp = 0
+    node._station_target_received = None
+    node._station_target_age = 0.
+    receive = method('src/stack_gps/stack_gps/node.py', '_on_target_ref', ns)
+    snapshot = method('src/stack_gps/stack_gps/node.py', '_snapshot_at_station', ns)
+    return clock, node, receive, snapshot, position
+
+
+def test_gps_station_uses_final_command_and_does_not_advance_on_republished_fix(gps_station_environment):
+    clock, node, receive, snapshot, pos = gps_station_environment
+    first = snapshot(node, *pos(5.), 0., 1.)
+    assert first['station_v_ref'] == 0.
+    command = TargetRef(v_ref=1.)
+    command.header.stamp = Time(seconds=clock.ros).to_msg()
+    receive(node, command)
+    next_sample = snapshot(node, *pos(20.), 0., 2.)
+    assert next_sample['station_m'] == pytest.approx(first['station_m']+.2)
+    for _ in range(5):
+        same = snapshot(node, *pos(20.), 0., 2.)
+        assert same['station_m'] == next_sample['station_m']
+    clock.ros += .1; clock.mono += .1
+    command.v_ref = 0.
+    command.header.stamp = Time(seconds=clock.ros).to_msg()
+    receive(node, command)
+    stopped = snapshot(node, *pos(20.), 0., 3.)
+    assert stopped['station_m'] == next_sample['station_m']
+
+
+def test_gps_station_stale_command_freezes_and_fresh_command_resumes(gps_station_environment):
+    clock, node, receive, snapshot, pos = gps_station_environment
+    first = snapshot(node, *pos(5.), 0., 1.)
+    command = TargetRef(v_ref=1.)
+    command.header.stamp = Time(seconds=clock.ros).to_msg()
+    receive(node, command)
+    clock.ros += 2.; clock.mono += 2.
+    frozen = snapshot(node, *pos(20.), 0., 2.)
+    assert frozen['station_v_ref'] == 0.
+    assert frozen['station_m'] == first['station_m']
+    command.header.stamp = Time(seconds=clock.ros).to_msg()
+    receive(node, command)
+    resumed = snapshot(node, *pos(20.), 0., 3.)
+    assert resumed['station_m'] == pytest.approx(first['station_m']+.2)
+
+
+@pytest.mark.parametrize('speed,stamp_s', [(math.nan, 100.), (math.inf, 100.), (1., 0.), (1., 101.), (1., 98.)])
+def test_gps_station_invalid_command_does_not_open_window(gps_station_environment, speed, stamp_s):
+    _clock, node, receive, snapshot, pos = gps_station_environment
+    first = snapshot(node, *pos(5.), 0., 1.)
+    command = TargetRef(v_ref=speed)
+    command.header.stamp = Time(seconds=stamp_s).to_msg()
+    receive(node, command)
+    later = snapshot(node, *pos(20.), 0., 2.)
+    assert later['station_m'] == first['station_m']
+
+
+def test_gps_station_publishes_one_point_with_matching_fields(gps_station_environment):
+    from rclpy.serialization import serialize_message, deserialize_message
+    _clock, node, _receive, snapshot, pos = gps_station_environment
+    snap = snapshot(node, *pos(5.), .3, 1.)
+    fill = method('src/stack_gps/stack_gps/node.py', '_fill_station_reference', {'RefPoint': RefPoint})
+    msg = GpsPath()
+    fill(node, msg, snap)
+    received = deserialize_message(serialize_message(msg), GpsPath)
+    point, = received.points
+    assert (point.x, point.y, point.yaw, point.curvature) == pytest.approx(snap['points'][0], rel=1e-6)
+
+
+def test_gps_explicit_new_session_resets_station_history(gps_station_environment):
+    _clock, node, _receive, snapshot, pos = gps_station_environment
+    snapshot(node, *pos(5.), 0., 1.)
+    reset = method('src/stack_gps/stack_gps/node.py', '_on_start_session', {})
+    reset(node, NS(data=False))
+    assert node.engine.station_path.station is not None
+    reset(node, NS(data=True))
+    assert node.engine.station_path.station is None
+    restarted = snapshot(node, *pos(20.), 0., 2.)
+    assert restarted['station_m'] == pytest.approx(20., abs=1e-7)
 
 
 def test_parking_timer_uses_actual_localization_stamp(environment):

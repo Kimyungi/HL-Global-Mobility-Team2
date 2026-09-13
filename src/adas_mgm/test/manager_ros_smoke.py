@@ -81,6 +81,8 @@ def main():
     log = tempfile.TemporaryFile(mode='w+')
     proc = subprocess.Popen([
         sys.argv[1], '--ros-args', '-p', 'wait_go:=true', '-p', 'v_base:=1.0',
+        '-p', 'parking_search_zone_only:=false',  # historical lifetime policy regression
+        '-p', 'parking_zone_entry_active:=false',
         '-p', 'a_up:=100.0', '-p', 'a_down:=100.0',
         '-p', 'zone_enter_confirm_samples:=3', '-p', 'zone_exit_confirm_samples:=3', '-p', 'parking_search_timeout:=30.0', '-p', 'max_parking_search_distance:=30.0',
         '-p', 'mission_events_csv_path:=' + event_csv,

@@ -35,7 +35,14 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v10: actual reference generation/age/timeout inputs.
 // v11: mission preparation session, clocks, telemetry and calibrated limits.
 // v12: GNSS Zone stability, rear corridor validity, calibration parameters.
-constexpr uint32_t kDumpVersion = 12;
+// v13: sequenced route feedback/control and opt-in parameter.
+// v14: explicit connection segment and CSV stage handshakes.
+// v15: source-Zone search policy and separate failed-Mission memory.
+// v16: fixed non-stop speed in parallel Manager; unchanged layout, new replay semantics.
+// v17: explicit ordinary-avoidance enable parameter.
+// v18: one-point control input/output contract; legacy bus capacity is unchanged.
+// v19: immediate Zone-entry Parking authority and current-route endpoint cancellation.
+constexpr uint32_t kDumpVersion = 19;
 
 struct DumpHeader
 {

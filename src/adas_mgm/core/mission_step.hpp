@@ -4,6 +4,7 @@
 namespace adas_mgm
 {
 CalibrationState parking_calibration(const CoreParams & params);
+bool mission_search_zone_known(const CoreState & state);
 void cancel_mission(CoreState & st, MissionCancelReason reason);
 // Returns true when authority/request ended; caller reselects current navigation.
 bool mission_step(const CoreSnapshot & s, CoreState & st);

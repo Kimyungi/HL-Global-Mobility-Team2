@@ -65,6 +65,8 @@ flowchart TD
 ## 빌드 및 실행 순서
 
 1. 최초 1회 udev 규칙을 설치해 네 물리 포트를 고정한다.
+   아래 고정 ID_PATH는 당시 PC 배치다. USB 경로가 달라져 링크가 사라진 현재 v2 현장 복구는
+   [한라대 런북의 내부 일련번호 확인 절차](../adas_mgm/RUNBOOK_integration_v2_halla.md#라이다-4대가-unknown-error로-종료되며-devlidar_가-없을-때)를 사용한다.
 2. 워크스페이스에서 패키지를 빌드하고 환경을 적용한다.
 3. `bringup.launch.py`로 네 드라이버, 통합 노드와 전용 RViz를 실행한다.
 4. 로그의 `active=['a1', 'a2', 'b1', 'b2']`를 확인한다.

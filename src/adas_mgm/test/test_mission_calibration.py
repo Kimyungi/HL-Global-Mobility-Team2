@@ -78,3 +78,11 @@ def test_monotonic_lifetime_not_ros_clock_and_invalid_position(tmp_path):
     assert result['groups']['T_PARKING']['metrics']['entry_to_ready_s']['mean'] == 2
     assert result['requests'][0]['events']['ready']['x'] is None
     json.dumps(result, allow_nan=False)
+
+
+@pytest.mark.parametrize('reason,outcome', [(9, 'zone_exit_failure'), (10, 'route_end_failure')])
+def test_mission_boundary_is_a_failure_not_success_or_timeout(tmp_path, reason, outcome):
+    rows = [row(101, 'zone_entry', 0, 0), row(101, 'cancel', 10, 2, reason=reason)]
+    result = module.analyze([write(tmp_path, rows)])
+    assert result['groups']['T_PARKING']['outcomes'] == {outcome: 1}
+    assert result['requests'][0]['cancel_reason'] == reason

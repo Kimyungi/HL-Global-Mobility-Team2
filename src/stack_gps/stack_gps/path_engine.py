@@ -18,6 +18,7 @@ stack_gps 노드의 로직 코어. CLAUDE.md §5.5의 정신에 따라 ROS 없�
 import csv
 import math
 import time
+from .station_path import StationPath
 
 M_PER_DEG_LAT = 111_320.0
 
@@ -110,6 +111,8 @@ class PathEngine:
     zone_ranges: [(start_idx, end_idx)] 포함 구간 목록 (웨이포인트 인덱스 기준).
     """
 
+    # Below rejoin constants and station_tracking=False are historical replay behavior.
+    # ROS v2 uses StationPath; these values do not alter its station preview.
     # ref 시작점이 "전방"으로 인정되는 최소 vehicle-frame x [m].
     # 0으로 두면 옆구리(x≈0) 점이 뽑혀 도달 곡률이 폭주한다(2026-08-05 위빙).
     MIN_FORWARD_M = 0.3
@@ -216,8 +219,12 @@ class PathEngine:
                  target_max_m=None, target_min_m=None, e_lpf_s=None,
                  curve_ff=None, curve_margin=None,
                  stop_ranges=(), avoid_ranges=(), gps_only_ranges=(),
-                 parallel_parking_ranges=()):
-        """lookahead_m: ref 시작점을 최근접점이 아니라 이만큼 전방의 트랙
+                 parallel_parking_ranges=(), station_tracking=False):
+        """station_tracking=True: bounded station search and one +2.5m preview.
+        generation (distinct fix), v_ref and sample_time are supplied to snapshot().
+        The following lookahead/rejoin options describe only historical False mode.
+
+        lookahead_m: ref 시작점을 최근접점이 아니라 이만큼 전방의 트랙
         점으로 민다. dSPACE는 첫 점만 목표로 쓰므로(stack_avoid 실측 주석)
         최근접점(차 옆구리, x≈0)을 주면 도달 곡률 κ=2y/(x²+y²)가 폭주해
         풀조향 위빙을 유발한다 — 회피(0.4m 호 lookahead)와 같은 원리로
@@ -229,6 +236,8 @@ class PathEngine:
         직접 갈아끼운다 (2026-08-17). 셋 다 "dSPACE 조향이 느리던 시절"에 맞춰
         잡은 보상값이라 조향 응답 특성이 바뀌면 함께 재조정해야 한다."""
         self.n_points = n_points
+        # ROS v2 always enables this. False retains historical offline replay semantics.
+        self.station_tracking = bool(station_tracking)
         self.accel_ranges = list(accel_ranges)
         self.parking_ranges = list(parking_ranges)
         self.parallel_parking_ranges = list(parallel_parking_ranges)
@@ -299,6 +308,36 @@ class PathEngine:
             arc = sum(seg[a:b])
             dyaw = wrap_angle(self.yaw[b] - self.yaw[a])
             self.curvature.append(dyaw / arc if arc > 1e-6 else 0.0)
+
+        self.station_path = StationPath(self.e, self.n, self.yaw, self.curvature) if self.station_tracking else None
+
+    def reset_station(self):
+        if self.station_path is not None:
+            self.station_path.reset()
+
+    def _station_snapshot(self, lat, lon, heading, v_ref, sample_time, generation):
+        ev, nv = self.to_enu(lat, lon)
+        track = self.station_path
+        track.update(ev, nv, v_ref=v_ref, sample_time=sample_time, generation=generation)
+        idx = track.index
+        psi = self.yaw[idx] if heading is None else heading
+        if not math.isfinite(psi):
+            raise ValueError('invalid station heading')
+        (pe, pn, yaw, curvature), diagnostics = track.preview()
+        c, s = math.cos(psi), math.sin(psi)
+        de, dn = pe-ev, pn-nv
+        foot_e, foot_n = track.position()
+        perpendicular = self._in_ranges(idx, self.parking_ranges)
+        parallel = self._in_ranges(idx, self.parallel_parking_ranges)
+        return dict(diagnostics, points=[(c*de+s*dn, -s*de+c*dn, wrap_angle(yaw-psi), curvature)],
+                    idx=idx, cross_track_m=math.hypot(foot_e-ev, foot_n-nv),
+                    accel_zone=self._in_ranges(idx, self.accel_ranges),
+                    parking_zone=perpendicular or parallel,
+                    parking_mode='perpendicular' if perpendicular else 'parallel' if parallel else None,
+                    stop_zone=self._zone_id(idx, self.stop_ranges),
+                    avoid_zone=self._in_ranges(idx, self.avoid_ranges),
+                    gps_only_zone=self._in_ranges(idx, self.gps_only_ranges),
+                    at_end=idx >= len(self.e)-2)
 
     def set_lookahead(self, lookahead_m):
         """주행 중 lookahead 변경 (ROS 파라미터 콜백용) — 폴백 인덱스도 재계산."""
@@ -450,18 +489,21 @@ class PathEngine:
             return fallback
         return min(idx + self._la_pts, last)
 
-    def snapshot(self, lat, lon, heading=None, now=None):
+    def snapshot(self, lat, lon, heading=None, now=None, *, v_ref=0.0, sample_time=0.1, generation=None):
         """현재 fix → dict(points, accel_zone, parking_zone, stop_zone, avoid_zone,
         gps_only_zone, idx, cross_track_m).
 
-        points: [(x, y, yaw, curvature)] vehicle frame, 최근접점부터 앞으로
-        n_points개 (트랙 끝에서는 남은 만큼만).
+        station_tracking=True: one station preview, with index/station history.
+        generation is required; v_ref/sample_time bound each new fix's search.
+        False: historical n_points window and rejoin geometry for offline replay.
 
         heading: 차량 헤딩(ENU rad, 예: RMC 이동방향). None이면 "최근접 경로
         접선 = 차량 헤딩" 가정으로 폴백 — 정지·출발 직후 등 헤딩을 모를 때만
         쓰고, 이때는 차가 트랙 위에 진행 방향으로 정렬돼 있어야 유효하다
         (2026-08-01 첫 주행에서 이 가정 위반으로 선회 발산 — COG 도입 계기).
         """
+        if self.station_tracking:
+            return self._station_snapshot(lat, lon, heading, v_ref, sample_time, generation)
         ev, nv = self.to_enu(lat, lon)
         idx, _vertex_dist = self._nearest_idx(ev, nv)
         fe, fn, dist = self._foot_on_track(idx, ev, nv)   # 선분까지 수직거리

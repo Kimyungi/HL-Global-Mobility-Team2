@@ -89,23 +89,35 @@ fma_interfaces::msg::ZoneContext toRosZone(const ZoneContext & zone)
 }
 
 // msg → CoreSnapshot 변환 (포맷 변환만 — 판단 금지)
-void toCorePath(const std::vector<fma_interfaces::msg::RefPoint> & in, CorePath & out)
+void toCorePath(const std::vector<fma_interfaces::msg::RefPoint> & in, CorePath & out,
+  bool single_point)
 {
-  out.n = static_cast<int32_t>(std::min<size_t>(in.size(), MGM_NUM_POINTS + 1));
-  for (int32_t i = 0; i < std::min(out.n, MGM_NUM_POINTS); ++i) {
+  const int32_t limit = single_point ? MGM_CONTROL_POINTS : MGM_NUM_POINTS;
+  // Preserve an oversized-input marker; never silently accept a partial path.
+  out.n = static_cast<int32_t>(std::min<size_t>(in.size(), limit + 1));
+  for (int32_t i = 0; i < std::min(out.n, limit); ++i) {
     out.pts[i] = CorePoint{in[i].x, in[i].y, in[i].yaw, in[i].curvature};
   }
 }
 
-CoreSnapshot toSnapshot(const LatestMsgs & m)
+CoreSnapshot toSnapshot(const LatestMsgs & m, bool single_point)
 {
   CoreSnapshot s{};
   s.lane_confidence = m.lane.confidence;
-  toCorePath(m.lane.points, s.lane_path);
-  toCorePath(m.gps.points, s.gps_path);
+  toCorePath(m.lane.points, s.lane_path, single_point);
+  toCorePath(m.gps.points, s.gps_path, single_point);
   s.gps_accel_zone = m.gps.accel_zone;
   s.gps_parking_zone = m.gps.parking_zone;
   s.gps_at_end = m.gps.at_end;
+  const auto & route = m.gps.route;
+  s.route.enabled = route.enabled;
+  s.route.connecting = route.connecting; s.route.next_connecting = route.next_connecting;
+  s.route.completion = static_cast<adas_mgm::RouteCompletion>(route.completion);
+  s.route.sequence_id = route.sequence_id; s.route.instance_id = route.instance_id;
+  s.route.acknowledged_request = route.acknowledged_request;
+  s.route.index = route.index; s.route.count = route.count;
+  s.route.required_count = static_cast<int32_t>(std::min<size_t>(route.required_missions.size(), 257));
+  for (int i=0; i<std::min(s.route.required_count, 256); ++i) {s.route.required_missions[i] = route.required_missions[i];}
   s.gps_cross_track = m.gps.cross_track_m;
   s.gps_stop_zone = m.gps.stop_zone;      // 0 = 아님, 1~ = 지정 정지 지점 번호
   s.gps_avoid_zone = m.gps.avoid_zone;    // 회피 허용 구간 안인가
@@ -126,12 +138,12 @@ CoreSnapshot toSnapshot(const LatestMsgs & m)
   s.avoid_ttc = m.avoid.ttc;
   s.avoid_narrow_gap = m.avoid.narrow_gap;
   s.avoid_maneuver_done = m.avoid.maneuver_done;
-  toCorePath(m.avoid.points, s.avoid_path);
+  toCorePath(m.avoid.points, s.avoid_path, single_point);
   s.avoid_v_suggest = m.avoid.v_suggest;
   s.parking_space_found = m.parking.space_found;
   s.parking_path_blocked = m.parking.path_blocked;
   s.parking_done = m.parking.done;
-  toCorePath(m.parking.points, s.parking_path);
+  toCorePath(m.parking.points, s.parking_path, single_point);
   s.parking_v_suggest = m.parking.v_suggest;
   s.traffic_stop_required = m.traffic.stop_required;
   s.traffic_red_active = m.traffic.red_active;
@@ -285,12 +297,28 @@ public:
     p.base_state_machine_enabled = base_managers_ ? 1 : 0;
     rcl_interfaces::msg::ParameterDescriptor zone_descriptor;
     zone_descriptor.read_only = true;
+    p.avoidance_enabled = declare_parameter<bool>("avoidance_enabled", true, zone_descriptor) ? 1 : 0;
+    if (base_managers_ && !p.avoidance_enabled) {
+      RCLCPP_WARN(get_logger(), "Ordinary avoidance OFF: no AVOID/fallback or avoidance TTC stop; perception remains available");
+    }
+    p.route_sequence_enabled = declare_parameter<bool>("route_sequence_enabled", false, zone_descriptor) ? 1 : 0;
+    if (p.route_sequence_enabled && (!base_managers_ || backend_name != "core")) {
+      throw std::runtime_error("route sequence requires the parallel core backend");
+    }
     zone_descriptor.description = "GNSS confirmation calibration; restart to change fixed zone context policy";
     p.zone_enter_confirm_samples = declare_parameter<int>("zone_enter_confirm_samples", 0, zone_descriptor);
     p.zone_exit_confirm_samples = declare_parameter<int>("zone_exit_confirm_samples", 0, zone_descriptor);
+    p.parking_zone_entry_active = declare_parameter<bool>("parking_zone_entry_active", base_managers_, zone_descriptor) ? 1 : 0;
+    if (p.parking_zone_entry_active && (!base_managers_ || backend_name != "core")) {
+      throw std::runtime_error("immediate Parking entry requires the parallel core backend");
+    }
+    p.parking_search_zone_only = declare_parameter<bool>("parking_search_zone_only", base_managers_, zone_descriptor) ? 1 : 0;
+    if (p.parking_search_zone_only && (!base_managers_ || backend_name != "core")) {
+      throw std::runtime_error("zone-only Parking search requires the parallel core backend");
+    }
     p.parking_search_timeout = declare_parameter<double>("parking_search_timeout", -1.0);
     p.max_parking_search_distance = declare_parameter<double>("max_parking_search_distance", -1.0);
-    if (base_managers_ && (!std::isfinite(p.parking_search_timeout) ||
+    if (base_managers_ && !p.parking_zone_entry_active && !p.parking_search_zone_only && (!std::isfinite(p.parking_search_timeout) ||
       p.parking_search_timeout <= 0 || !std::isfinite(p.max_parking_search_distance) ||
       p.max_parking_search_distance <= 0))
     {
@@ -331,6 +359,12 @@ public:
       }
     }
 
+    rcl_interfaces::msg::ParameterDescriptor lidar_estop_descriptor;
+    lidar_estop_descriptor.read_only = true;
+    lidar_estop_descriptor.description =
+      "startup-only LiDAR E-stop input enable; false is an explicit test configuration";
+    lidar_estop_enabled_ = declare_parameter<bool>(
+      "lidar_estop_enabled", true, lidar_estop_descriptor);
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기
     estop_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("estop_stale_timeout_sec", 0.25) * 1e9);
@@ -386,6 +420,15 @@ public:
     // estop 경로 재사용(코어에 새 정지 로직 없음). 인가는 tools/go 스크립트가
     // RTK FIXED 확인 후 발행한다.
     wait_go_ = declare_parameter<bool>("wait_go", false);
+    if (!lidar_estop_enabled_) {
+      if (!base_managers_ || backend_name != "core" || !wait_go_ || p.escape_after_cycles != 0) {
+        throw std::runtime_error(
+          "lidar_estop_enabled=false requires parallel core, wait_go=true and escape_after_cycles=0");
+      }
+      RCLCPP_WARN(get_logger(),
+        "LiDAR E-stop input DISABLED: static/dynamic stop and input watchdog excluded. "
+        "Operator/CAN/reference/traffic/avoidance TTC stops remain active.");
+    }
     // 구독은 wait_go 와 무관하게 **항상** 만든다 — CAN 고장 래치(§5.7 ⑥)의 해제도
     // 같은 인가를 쓰기 때문이다. wait_go 는 "출발 전에도 인가가 필요한가"만 정한다.
     sub_go_ = create_subscription<std_msgs::msg::Bool>(
@@ -504,7 +547,7 @@ public:
     pending_parking_timeout_ = p.parking_search_timeout;
     pending_parking_distance_ = p.max_parking_search_distance;
     calibration_callback_ = add_on_set_parameters_callback(
-      [this](const std::vector<rclcpp::Parameter> & values) {
+      [this, zone_only=bool(p.parking_zone_entry_active || p.parking_search_zone_only)](const std::vector<rclcpp::Parameter> & values) {
         rcl_interfaces::msg::SetParametersResult result; result.successful = true;
         bool changed = false;
         std::lock_guard<std::mutex> lock(mtx_);
@@ -518,7 +561,9 @@ public:
           if (value.get_name() == "parking_search_timeout") {timeout = value.as_double();}
           else {distance = value.as_double();}
         }
-        if (changed && (!base_managers_ || dump_.is_open())) {
+        if (changed && zone_only) {
+          result.successful = false; result.reason = "Zone-only search does not use time/distance limits";
+        } else if (changed && (!base_managers_ || dump_.is_open())) {
           result.successful = false;
           result.reason = "Parking tuning requires base core without snapshot dump; a recorded dump has fixed header parameters. Set YAML and restart.";
         } else if (changed) {
@@ -654,7 +699,12 @@ private:
     // estop 입력 신선도 watchdog — 판단이 아니라 입력 컨디셔닝 (§3 dSPACE
     // counter watchdog의 PC측 대응물). stack_estop 미수신/사망 시 스냅샷의
     // estop을 true로 보정하고, 정지 판단(v_ref=0) 자체는 코어가 한다.
-    const bool estop_stale = estop_rx_ns < 0 || monotonicNs() - estop_rx_ns > estop_stale_ns_;
+    // A disabled test input is removed BEFORE operator/CAN conditioning, so
+    // no later blanket estop=false can erase another stop source. Even an
+    // unexpected publisher cannot restore LiDAR/rear authority in this mode.
+    if (!lidar_estop_enabled_) {m.estop = fma_interfaces::msg::EstopRequest{};}
+    const bool estop_stale = lidar_estop_enabled_ &&
+      (estop_rx_ns < 0 || monotonicNs() - estop_rx_ns > estop_stale_ns_);
     // 보정 전 "실제 수신값" 보존 — at_end 래치 해제는 이 값으로만 한다 (CLAUDE.md
     // §4 래치). stale이면 마지막 값을 조작 의사로 신뢰할 수 없으므로 false.
     const bool estop_real = !estop_stale && m.estop.estop;
@@ -803,7 +853,7 @@ private:
           can_latched_.load() ? " · 래치" : "");
       }
     }
-    CoreSnapshot s = toSnapshot(m);
+    CoreSnapshot s = toSnapshot(m, base_managers_);
     if (base_managers_) {
       const auto stamp_ns = [](const auto & stamp) {
         return static_cast<int64_t>(stamp.sec) * 1'000'000'000 + stamp.nanosec;
@@ -949,6 +999,18 @@ private:
     if (base_managers_) {
       fma_interfaces::msg::MgmState status;
       status.header.stamp = now();
+      status.route.enabled = out.route.enabled;
+      status.route.connecting = out.route.connecting;
+      status.route.next_connecting = out.route.next_connecting;
+      status.route.requested_connecting = out.route.requested_connecting;
+      status.route.phase = static_cast<uint8_t>(out.route.phase);
+      status.route.completion = static_cast<uint8_t>(out.route.completion);
+      status.route.sequence_id = out.route.sequence_id; status.route.instance_id = out.route.instance_id;
+      status.route.request_id = out.route.request_id;
+      status.route.index = out.route.index; status.route.count = out.route.count;
+      status.route.requested_index = out.route.requested_index;
+      status.route.seen_nonterminal = out.route.seen_nonterminal;
+      status.route.end_reached = out.route.end_reached;
       status.top = static_cast<uint8_t>(out.top);
       status.navigation = static_cast<uint8_t>(out.nav);
       status.avoidance = static_cast<uint8_t>(out.avoid);
@@ -990,6 +1052,9 @@ private:
       status.parking_space_found = request.space_found;
       status.parking_ready = request.preparation_ready;
       status.mission_completed = out.active_mission_completed;
+      status.mission_failed = out.active_mission_failed;
+      status.parking_search_zone_only = backend_->params().parking_search_zone_only != 0;
+      status.parking_zone_entry_active = backend_->params().parking_zone_entry_active != 0;
       status.mission_cancel_reason = static_cast<uint8_t>(request.cancel_reason);
       status.mission_events = out.mission_events;
       status.zone_entry_observation = toRosObservation(request.zone_entry);
@@ -1076,7 +1141,7 @@ private:
       } else if (request.active) {
         pending_mission_command_.request_id = request.request_id;
         pending_mission_command_.mission_mode = static_cast<uint8_t>(request.mission_type);
-        pending_mission_command_.action = out.mission == MissionState::MISSION_PREPARE ?
+        pending_mission_command_.action = !request.preparation_ready ?
           ParkingCommand::PREPARE : ParkingCommand::ACTIVATE;
       } else if (pending_mission_command_.action != ParkingCommand::CANCEL) {
         pending_mission_command_.action = 0;
@@ -1191,6 +1256,7 @@ private:
   std::atomic<bool> can_latched_{false};   // CAN 고장 래치 — /operator/go 재인가로만 해제
   bool stop_holding_prev_{false};   // 지정 지점 정차 로그용 (코어 상태의 직전 값)
   bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
+  bool lidar_estop_enabled_{true};   // startup-only, separate test launcher
   bool base_managers_{false};
   ReferenceClock reference_clocks_[MGM_SRC_ESCAPE];
   ReferenceClock preparation_clock_;
