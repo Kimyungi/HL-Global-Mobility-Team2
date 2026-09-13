@@ -27,13 +27,22 @@ def test_existing_gps_and_parking_ranges_are_reused_and_overlap_retained():
     assert not any(inside for _, inside in zones.snapshot(0))
 
 
-def test_range_edges_are_inclusive_and_lookahead_target_does_not_trigger_zone():
-    eng = engine(gps_only_ranges=[(10, 20)], lookahead_m=4.)
+def test_range_edges_are_inclusive_and_preview_extends_only_gps_only_zone():
+    eng = engine(gps_only_ranges=[(10, 20)], parking_ranges=[(10, 20)], lookahead_m=4.)
     zones = ZoneMap.from_engine(eng)
-    for index in (10, 20):
-        assert zones.snapshot(index)[0][1]
-    for index in (9, 21):
-        assert not zones.snapshot(index)[0][1]
+    gps_only = next(z for z in zones.definitions if z.zone_type == ZoneType.GPS_ONLY_ZONE)
+    mission = next(z for z in zones.definitions if z.zone_type == ZoneType.MISSION_ZONE)
+    membership = dict(zones.snapshot(9, 10))
+    assert membership[gps_only]
+    assert not membership[mission]
+    membership = dict(zones.snapshot(20, 21))
+    assert membership[gps_only]
+    assert membership[mission]
+    membership = dict(zones.snapshot(21, 20))
+    assert membership[gps_only]
+    assert not membership[mission]
+    membership = dict(zones.snapshot(9, 9))
+    assert not membership[gps_only] and not membership[mission]
     snap = eng.snapshot(*en_to_latlon(0, 0), heading=0)
     assert snap['idx'] == 0
     assert snap['points'][0][0] > 0

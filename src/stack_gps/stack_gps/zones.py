@@ -1,7 +1,8 @@
 """Spatial Zone definitions layered on the existing GPS range classifier.
 
 No path generation, waypoint reach detector, distance threshold or course order.
-The input index is the current-position nearest idx, never the lookahead target.
+Mission membership uses only the current station index. GPS-only membership may
+also use the discrete waypoint nearest the station preview.
 """
 from dataclasses import dataclass
 from enum import IntEnum
@@ -62,11 +63,21 @@ class ZoneMap:
                 raise ValueError('only MISSION_ZONE can carry a mission_type')
             seen.add(zone.zone_id)
 
-    def snapshot(self, current_position_index):
-        """All memberships, including false levels for configured zones."""
-        return tuple((zone, PathEngine._in_ranges(
-            current_position_index, [(zone.start_index, zone.end_index)]))
-            for zone in self.definitions)
+    def snapshot(self, current_position_index, preview_position_index=None):
+        """All memberships, including false levels for configured zones.
+
+        A preview may extend only GPS-only navigation membership. Mission Zones
+        stay tied to the current station so a lookahead cannot start parking.
+        """
+        memberships = []
+        for zone in self.definitions:
+            bounds = [(zone.start_index, zone.end_index)]
+            in_zone = PathEngine._in_ranges(current_position_index, bounds)
+            if (not in_zone and preview_position_index is not None and
+                    zone.zone_type == ZoneType.GPS_ONLY_ZONE):
+                in_zone = PathEngine._in_ranges(preview_position_index, bounds)
+            memberships.append((zone, in_zone))
+        return tuple(memberships)
 
     @classmethod
     def from_engine(cls, engine, explicit=()):

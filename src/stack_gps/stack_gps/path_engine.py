@@ -329,6 +329,12 @@ class PathEngine:
         foot_e, foot_n = track.position()
         perpendicular = self._in_ranges(idx, self.parking_ranges)
         parallel = self._in_ranges(idx, self.parallel_parking_ranges)
+        preview_idx = diagnostics['preview_index']
+        # Only GPS-only navigation is allowed to enter early from the preview.
+        # Parking and all other behaviour-changing ranges remain tied to the
+        # current station index below.
+        gps_only = (self._in_ranges(idx, self.gps_only_ranges) or
+                    self._in_ranges(preview_idx, self.gps_only_ranges))
         return dict(diagnostics, points=[(c*de+s*dn, -s*de+c*dn, wrap_angle(yaw-psi), curvature)],
                     idx=idx, cross_track_m=math.hypot(foot_e-ev, foot_n-nv),
                     accel_zone=self._in_ranges(idx, self.accel_ranges),
@@ -336,7 +342,7 @@ class PathEngine:
                     parking_mode='perpendicular' if perpendicular else 'parallel' if parallel else None,
                     stop_zone=self._zone_id(idx, self.stop_ranges),
                     avoid_zone=self._in_ranges(idx, self.avoid_ranges),
-                    gps_only_zone=self._in_ranges(idx, self.gps_only_ranges),
+                    gps_only_zone=gps_only,
                     at_end=idx >= len(self.e)-2)
 
     def set_lookahead(self, lookahead_m):

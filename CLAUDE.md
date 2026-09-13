@@ -1,5 +1,12 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> **2026-09-13 GPS-only Zone 선행 진입:** 일반 `GPS_ONLY_ZONE` membership은
+> 현재 station 최근접 웨이포인트와 station+2.5m preview에 가장 가까운 CSV
+> 웨이포인트 중 하나라도 Zone 범위 안이면 true다. preview의 주행 기준점 보간은
+> 유지하되 Zone 판정에는 보간 비율이 아니라 가장 가까운 한쪽 웨이포인트 index를 쓴다.
+> `MISSION_ZONE`과 주차·정지·회피·가속처럼 동작/state를 바꾸는 나머지 판정은
+> preview를 사용하지 않고 현재 station index만 사용한다.
+
 > **2026-09-13 주차 맵 재관측 반경:** 기존 맵 점의 재관측 일치 반경은
 > `0.02m`다. 같은 voxel이 아닌 점은 2cm 이내에서만 기존 셀의 hit로 인정한다.
 > 4m freespace 삭제 범위와 tentative/confirmed miss 횟수, 빈 bin을 unknown으로
@@ -51,7 +58,8 @@
 > 같은/역행 fix에는 갱신하지 않는다. 명령 미수신·비유한·기존 GPS stale_timeout 초과는 v_ref=0으로
 > 탐색 반경을 0.5m로 한다. 정지 중에도 새 fix로 이 범위의 station/index를 갱신한다.
 > GPS 공백으로 window를 늘리거나 전역 재탐색하지 않는다.
-> CSV 전환/명시적 새 session에서만 station을 초기화한다. Zone은 현재 위치의 저장 index를 사용한다.
+> CSV 전환/명시적 새 session에서만 station을 초기화한다. GPS-only Zone은 현재 위치의
+> 저장 index와 preview 최근접 index의 OR를 사용하고, 그 밖의 Zone은 현재 위치 index만 사용한다.
 > preview는 station +2.5m(종점 클램프). 두 점 중 한쪽 가중치가 90% 이상이면 해당 점을 사용하고,
 > 나머지는 xy/곡률을 선형 보간하고 yaw는 짧은 각도 방향으로 보간한다. 반환/발행은 1점이다.
 > endpoint snap일 때는 +2.5m에서 최대 선분 길이의 10%만큼 달라질 수 있다.

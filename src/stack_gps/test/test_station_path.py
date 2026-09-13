@@ -108,9 +108,10 @@ def test_reset_allows_one_new_global_initialization():
     assert path.index == 2
 
 
-@pytest.mark.parametrize('fraction,weight', [(.09, 0.), (.1, 0.), (.1001, .1001),
-                                          (.5, .5), (.8999, .8999), (.9, 1.), (.91, 1.)])
-def test_preview_ninety_percent_boundaries(fraction, weight):
+@pytest.mark.parametrize('fraction,weight,nearest_index', [
+    (.09, 0., 1), (.1, 0., 1), (.1001, .1001, 1), (.5, .5, 1),
+    (.8999, .8999, 2), (.9, 1., 2), (.91, 1., 2)])
+def test_preview_ninety_percent_boundaries(fraction, weight, nearest_index):
     # Starting at 5+fraction puts station+2.5 at fraction along the [7.5, 8.5] segment.
     path = track([(0., 0.), (7.5, 0.), (8.5, 0.), (10., 0.)],
                  yaw=[0., .2, .6, .8], curvature=[0., .1, .3, .4])
@@ -119,6 +120,7 @@ def test_preview_ninety_percent_boundaries(fraction, weight):
     assert point == pytest.approx((7.5+weight, 0., .2+.4*weight, .1+.2*weight))
     assert diag['preview_requested_station_m'] == pytest.approx(7.5+fraction)
     assert diag['preview_station_m'] == pytest.approx(7.5+weight)
+    assert diag['preview_index'] == nearest_index
     assert diag['preview_snapped'] is (weight in (0., 1.))
 
 
@@ -161,16 +163,18 @@ def latlon(x, y=0.):
     return 37.5 + y/M_PER_DEG_LAT, 127. + x/(M_PER_DEG_LAT*math.cos(math.radians(37.5)))
 
 
-def test_engine_returns_one_point_and_zones_use_current_index_not_preview():
+def test_engine_gps_only_uses_station_or_nearest_preview_but_parking_uses_station_only():
     eng = PathEngine([latlon(float(i)) for i in range(21)], station_tracking=True,
-                     n_points=30, parking_ranges=[(7, 9)])
+                     n_points=30, gps_only_ranges=[(7, 9)], parking_ranges=[(7, 9)])
     snap = eng.snapshot(*latlon(5.), heading=.2, v_ref=1., generation=1.)
     point, = snap['points']
     assert point == pytest.approx((2.5*math.cos(.2), -2.5*math.sin(.2), -.2, 0.), abs=1e-7)
-    assert snap['idx'] == 5 and not snap['parking_zone']
+    assert snap['idx'] == 5 and snap['preview_index'] == 7
+    assert snap['gps_only_zone'] and not snap['parking_zone']
     assert snap['preview_station_m'] == pytest.approx(7.5, abs=1e-7)
     again = eng.snapshot(*latlon(15.), heading=.2, v_ref=1., generation=2.)
-    assert again['idx'] == 6 and not again['parking_zone']
+    assert again['idx'] == 6 and again['preview_index'] == 8
+    assert again['gps_only_zone'] and not again['parking_zone']
     assert again['station_m'] == pytest.approx(snap['station_m']+.65, abs=1e-9)
 
 
