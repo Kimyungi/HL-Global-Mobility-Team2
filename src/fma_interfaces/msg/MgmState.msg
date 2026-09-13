@@ -1,6 +1,8 @@
 # Parallel manager diagnostics, published once per MGM tick. These fields are
 # not additional control commands; /adas/target_ref remains the sole output.
 std_msgs/Header header
+RouteControl route
+uint32 SAFE_STOP_ROUTE_SEQUENCE=512
 uint8 MISSION_IDLE=0
 uint8 MISSION_ACTIVE=1
 uint8 MISSION_PREPARE=2
@@ -63,6 +65,9 @@ bool parking_search_acknowledged
 bool parking_space_found
 bool parking_ready
 bool mission_completed
+bool mission_failed  # Zone-exit (historical) or route-end failure; never a success
+bool parking_search_zone_only
+bool parking_zone_entry_active
 uint8 CANCEL_NONE=0
 uint8 CANCEL_SEARCH_TIMEOUT=1
 uint8 CANCEL_TRAVEL_DISTANCE=2
@@ -72,6 +77,8 @@ uint8 CANCEL_SESSION_RESET=5
 uint8 CANCEL_CALIBRATION_REQUIRED=6
 uint8 CANCEL_MOTION_UNAVAILABLE=7
 uint8 CANCEL_MODULE_ABORT=8
+uint8 CANCEL_ZONE_EXIT=9
+uint8 CANCEL_ROUTE_END=10
 uint8 mission_cancel_reason
 uint32 mission_events
 MissionObservation zone_entry_observation
@@ -83,9 +90,11 @@ MissionObservation handoff_observation
 uint8 UNCALIBRATED=0
 uint8 CALIBRATED=1
 uint8 INVALID_CONFIG=2
+uint8 NOT_REQUIRED=3  # time/distance calibration not used by zone-only search
 uint8 parking_calibration_state
 uint8 zone_calibration_state
 uint32 SAFE_STOP_ZONE_CONTEXT_UNAVAILABLE=256
+uint32 SAFE_STOP_MISSION_ZONE_UNKNOWN=1024
 uint64 zone_generation
 int32 zone_enter_confirm_samples
 int32 zone_exit_confirm_samples

@@ -22,6 +22,8 @@ GGA 사이(수백 ms)를 보간 — dSPACE 프레임과 ENU 정렬 방법 확정
 import math
 import os
 import time
+import uuid
+from types import SimpleNamespace
 
 import rclpy
 import yaml
@@ -29,8 +31,9 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.duration import Duration
 
-from fma_interfaces.msg import EstopRequest, GpsPath, RefPoint, ZoneContext
-from rcl_interfaces.msg import SetParametersResult
+from fma_interfaces.msg import EstopRequest, GpsPath, RefPoint, ZoneContext, MgmState, TargetRef
+from rcl_interfaces.msg import SetParametersResult, ParameterDescriptor
+from std_msgs.msg import Bool
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Path
 from rclpy.qos import DurabilityPolicy, QoSProfile
@@ -38,6 +41,7 @@ from sensor_msgs.msg import Imu, NavSatFix
 from tf2_ros import TransformBroadcaster
 
 from stack_gps.zones import ZoneMap, load_zone_definitions
+from stack_gps.route_plan import RoutePlan, copy_geometry
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
 from stack_gps.imu_link import ImuLink
@@ -144,48 +148,38 @@ def _load_zones_file(path, logger):
     return stops, avoid, gps_only, parking
 
 
+class _RouteLog:
+    """A skipped spatial definition would change Mission completion requirements."""
+    def __init__(self, logger):
+        self.logger = logger
+
+    def __getattr__(self, name):
+        return getattr(self.logger, name)
+
+    def error(self, message):
+        raise ValueError(message)
+
+
 class StackGpsNode(Node):
 
     def __init__(self):
         super().__init__('stack_gps_node')
         self.declare_parameter('waypoint_csv', '')
+        self.declare_parameter('route_sequence_file', '')
+        self.declare_parameter('route_start_id', '')
+        self.declare_parameter('route_end_id', '')
         self.declare_parameter('rtcm_host', '')       # 빈 값 = 주입 안 함
         self.declare_parameter('rtcm_port', 2101)
         self.declare_parameter('serial_port', '/dev/ttyRover')
         self.declare_parameter('baud', 115200)
-        self.declare_parameter('n_points', 30)
-        # dSPACE는 첫 ref점만 목표로 사용(stack_avoid 실측) — 최근접점(옆구리)을
-        # 주면 도달 곡률 폭주로 풀조향 위빙. 전방 lookahead 점을 첫 점으로.
-        # 짧을수록 강한 조향(이기돈 회피=0.4), 트랙 추종은 1.0 권장. 0 = 구동작.
-        self.declare_parameter('ref_lookahead_m', 1.0)
-        # ── 재합류 기하 3종 (2026-08-17에 상수 → 파라미터). 셋 다 **dSPACE 조향이
-        # 느리던 시절의 보상값**이라, 조향 특성이 바뀌면 함께 재조정해야 한다.
-        # 주행 중 `ros2 param set /stack_gps_node <이름> <값>` 으로 즉시 반영된다
-        # (RUNBOOK_avoid_field_test.md §5 "GPS 구간만 오실레이션" 행 참조).
-        #   rejoin_rate_damp_s : ψₑ 변화율 선행 보상 [s]. 조향 PI 도입으로 기본 0.
-        #   rejoin_full_cross_m: 접근각 α 가 최대(25°)가 되는 횡오차 [m]. 작을수록
-        #                        고이득 (0.5 = 50°/m). 올리면 이득이 반비례로 감소.
-        #   rejoin_target_max_m: 목표점 거리 상한 [m]. 짧을수록 고이득(κ=2sinb/d).
-        #                        ⚠ 이것만 올려도 안 는다 — 실제 거리는
-        #                        min(트랙점거리, 상한) 이라 ref_lookahead_m 도 같이.
-        #   rejoin_target_min_m: 목표점 거리 **하한** [m] (2026-08-17 신설). 실측상
-        #                        거리는 82%가 하한에 붙어 있으므로 **실효 이득을
-        #                        정하는 건 사실상 이 값**이다. 올리면 잡음 증폭이
-        #                        반비례로 준다. 밴드 [1.27, 1.8] 밖은 미검증.
-        #   rejoin_e_lpf_s     : 접근각이 쓰는 횡오차 e 의 저역통과 [s]. 0 = 끔.
-        #                        ψₑ 에는 걸지 말 것 — 그쪽은 백색 성분이 0이라
-        #                        필터가 실동작만 죽인다(path_engine 클래스 주석).
-        self.declare_parameter('rejoin_rate_damp_s', PathEngine.REJOIN_RATE_DAMP_S)
-        self.declare_parameter('rejoin_full_cross_m', PathEngine.REJOIN_FULL_CROSS_M)
-        self.declare_parameter('rejoin_target_max_m', PathEngine.REJOIN_TARGET_MAX_M)
-        self.declare_parameter('rejoin_target_min_m', PathEngine.REJOIN_TARGET_MIN_M)
-        self.declare_parameter('rejoin_e_lpf_s', PathEngine.REJOIN_E_LPF_S)
-        # 곡선 대응 (2026-08-18) — 주행 중 `ros2 param set` 으로 끄고 켤 수 있다.
-        #   rejoin_curve_ff     : 트랙 곡률 선행 보상 이득 (0 = 끔 = 종전 동작)
-        #   rejoin_curve_margin : 곡선에서 목표를 당기는 기준 (0 = 끔)
-        self.declare_parameter('rejoin_curve_ff', PathEngine.REJOIN_CURVE_FF)
-        self.declare_parameter('rejoin_curve_margin', PathEngine.REJOIN_CURVE_MARGIN)
-        self.declare_parameter('publish_period', 0.1)
+        self.declare_parameter('n_points', 1, ParameterDescriptor(read_only=True))
+        # Fixed station +2.5m preview; publish_period is the station search sample_time.
+        self.declare_parameter('publish_period', 0.1, ParameterDescriptor(read_only=True))
+        self.station_sample_time = float(self.get_parameter('publish_period').value)
+        if not math.isfinite(self.station_sample_time) or self.station_sample_time <= 0.0:
+            raise ValueError('publish_period must be finite and positive')
+        if self.get_parameter('n_points').value != 1:
+            raise ValueError('v2 GPS returns exactly one station preview point (n_points=1)')
         self.declare_parameter('stale_timeout', 1.5)  # [s] 이보다 오래된 fix는 무효
         # v_base(MGM params.yaml)보다 낮아야 이동 중 COG가 잡힌다.
         # 0.25에서 COG 노이즈 ~7° 수준 — 융합 저역통과가 흡수 (저속 시험 대응)
@@ -234,7 +228,24 @@ class StackGpsNode(Node):
         self.declare_parameter('error_log_csv', '')  # 지정 시 매 틱 횡오차 CSV 기록
 
         p = self.get_parameter
+        start_id, end_id = p('route_start_id').value, p('route_end_id').value
+        if (start_id or end_id) and not p('route_sequence_file').value:
+            raise ValueError('route_start_id/route_end_id require route_sequence_file')
+        self._route_plan = RoutePlan(p('route_sequence_file').value, start_id, end_id) if p('route_sequence_file').value else None
+        self._route_loading = self._route_plan is not None
+        self._route_instance = (uuid.uuid4().int & ((1 << 64) - 1)) or 1
         csv_path = p('waypoint_csv').value
+        if self._route_plan:
+            first = str(self._route_plan.files[0].csv)
+            if csv_path and os.path.realpath(csv_path) != first:
+                raise ValueError('waypoint_csv must be empty or the first sequence CSV')
+            csv_path = first
+            for key in ('accel_zone_ranges', 'parking_zone_ranges', 'parallel_parking_zone_ranges'):
+                if list(p(key).value) not in ([], [0]):
+                    raise ValueError(f'{key}: sequence uses per-route Zone files')
+            for key in ('stop_points_latlon', 'avoid_zone_latlon', 'gps_only_zone_latlon'):
+                if p(key).value:
+                    raise ValueError(f'{key}: sequence uses per-route Zone files')
         if not csv_path:
             raise RuntimeError(
                 "waypoint_csv 파라미터가 필요합니다 — "
@@ -249,19 +260,23 @@ class StackGpsNode(Node):
             'parallel_parking_zone_ranges', self.get_logger())
 
         pts = load_waypoints_csv(csv_path, log=self.get_logger().warn)
-        self.engine = PathEngine(pts, n_points=int(p('n_points').value),
+        self.engine = PathEngine(pts, n_points=1, station_tracking=True,
                                  accel_ranges=accel, parking_ranges=parking,
-                                 lookahead_m=float(p('ref_lookahead_m').value),
-                                 rate_damp_s=float(p('rejoin_rate_damp_s').value),
-                                 full_cross_m=float(p('rejoin_full_cross_m').value),
-                                 target_max_m=float(p('rejoin_target_max_m').value),
-                                 target_min_m=float(p('rejoin_target_min_m').value),
-                                 e_lpf_s=float(p('rejoin_e_lpf_s').value),
-                                 curve_ff=float(p('rejoin_curve_ff').value),
-                                 curve_margin=float(p('rejoin_curve_margin').value),
                                  parallel_parking_ranges=parallel_parking)
-        self._setup_zones(p)
-        self.add_on_set_parameters_callback(self._on_param)
+        if self._route_plan:
+            initial_engine = self.engine
+            def factory(files):
+                # Each route gets independent station history; source geometry stays unchanged.
+                self.engine = copy_geometry(initial_engine, files.points)
+                self._setup_zones(lambda key: SimpleNamespace(value=str(files.zones)) if key == 'zones_file' else p(key))
+                return self.engine, self.zone_map
+            self._route_plan.bind(factory)
+            self.engine = self._route_plan.engines[0]
+            self.zone_map = self._route_plan.zone_maps[0]
+            self.get_logger().info(f'Route sequence ready: {len(self._route_plan.files)} routes, id={self._route_plan.sequence_id}')
+        else:
+            self._setup_zones(p)
+        self._route_loading = False
         self.get_logger().info(
             f"재합류 기하: lookahead {self.engine.lookahead_m:.2f}m "
             f"rate_damp {self.engine.rate_damp_s:.2f}s "
@@ -328,7 +343,9 @@ class StackGpsNode(Node):
             self._err_log = open(log_path, 'w', buffering=1)  # line-buffered
             self._err_log.write(
                 "stamp_s,lat,lon,quality,idx,cross_track_m,at_end,fix_age_s,"
-                "heading_deg,heading_src,imu_yaw_deg,offset_deg,go\n")
+                "heading_deg,heading_src,imu_yaw_deg,offset_deg,go,route_index,route_id,sequence_id,route_connecting,"
+                "station_m,station_window_low_m,station_window_high_m,station_v_ref,station_sample_time_s,"
+                "preview_requested_station_m,preview_station_m,preview_snapped\n")
             self.get_logger().info(f"횡오차 로그: {log_path}")
         self._last_fix_t = None  # 새 GGA 판별용 (gps_fix는 새 측정에만 발행)
         # 자율/수동 구분 로그용 — GO(estop 해제) 발행 중인지. 판단 아님, 기록만.
@@ -336,7 +353,14 @@ class StackGpsNode(Node):
         self._go_t = None
         self.sub_estop = self.create_subscription(
             EstopRequest, '/perception/estop', self._on_estop, 1)
+        self._station_v_ref = 0.0
+        self._station_target_stamp = 0
+        self._station_target_received = None
+        self._station_target_age = 0.0
+        self.sub_target = self.create_subscription(TargetRef, '/adas/target_ref', self._on_target_ref, 1)
+        self.sub_session = self.create_subscription(Bool, '/operator/start_session', self._on_start_session, 1)
         self.pub = self.create_publisher(GpsPath, '/perception/gps_path', 1)
+        self.sub_route = self.create_subscription(MgmState, '/adas/mgm_state', self._on_route_control, 1) if self._route_plan else None
         # Raw gyro-integrated yaw has an arbitrary zero.  Consumers must use
         # orientation differences, not treat it as an absolute ENU heading.
         self.pub_imu = self.create_publisher(
@@ -349,6 +373,12 @@ class StackGpsNode(Node):
         # 기록 트랙 전체 — map(ENU, 트랙 첫 점 원점) 프레임, latched 1회 발행
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.pub_track = self.create_publisher(Path, '/perception/gps_track_viz', latched)
+        self._publish_track()
+        self.timer = self.create_timer(float(p('publish_period').value), self.tick)
+        self.status_timer = self.create_timer(2.0, self.report_status)
+        self.add_on_set_parameters_callback(self._on_param)
+
+    def _publish_track(self):
         track = Path()
         track.header.frame_id = 'map'
         track.header.stamp = self.get_clock().now().to_msg()
@@ -357,12 +387,80 @@ class StackGpsNode(Node):
             ps.header = track.header
             ps.pose.position.x = float(self.engine.e[i])
             ps.pose.position.y = float(self.engine.n[i])
+            if self._route_plan:
+                lat, lon = self._route_plan.active_points[i]
+                ps.pose.position.x, ps.pose.position.y = self._route_plan.position(lat, lon)
             ps.pose.orientation.z = math.sin(self.engine.yaw[i] / 2.0)
             ps.pose.orientation.w = math.cos(self.engine.yaw[i] / 2.0)
             track.poses.append(ps)
         self.pub_track.publish(track)
-        self.timer = self.create_timer(float(p('publish_period').value), self.tick)
-        self.status_timer = self.create_timer(2.0, self.report_status)
+
+    def _on_target_ref(self, msg):
+        stamp = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        age = (self.get_clock().now().nanoseconds - stamp) * 1e-9
+        if not math.isfinite(msg.v_ref) or stamp <= 0 or not 0 <= age <= self.stale_timeout:
+            self._station_v_ref = 0.0
+            self._station_target_received = None
+            return
+        if stamp <= self._station_target_stamp:
+            return
+        self._station_v_ref = float(msg.v_ref)
+        self._station_target_stamp = stamp
+        self._station_target_received = time.monotonic()
+        self._station_target_age = age
+
+    def _snapshot_at_station(self, lat, lon, heading, fix_t):
+        v_ref = 0.0
+        if self._station_target_received is not None:
+            age = self._station_target_age + time.monotonic() - self._station_target_received
+            if 0 <= age <= self.stale_timeout:
+                v_ref = self._station_v_ref
+        snap = self.engine.snapshot(lat, lon, heading, v_ref=v_ref,
+                                    sample_time=self.station_sample_time, generation=fix_t)
+        snap['station_v_ref'] = v_ref
+        return snap
+
+    def _on_start_session(self, msg):
+        if msg.data:
+            self.engine.reset_station()
+            self._last_snap = None
+
+    def _fill_station_reference(self, msg, snap):
+        point, = snap['points']
+        x, y, yaw, curvature = map(float, point)
+        msg.points = [RefPoint(x=x, y=y, yaw=yaw, curvature=curvature)]
+
+    def _on_route_control(self, msg):
+        plan = self._route_plan
+        if plan is None or not msg.route.enabled or msg.route.phase != msg.route.WAIT_ACK:
+            return
+        stamp = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        age = (self.get_clock().now().nanoseconds - stamp) * 1e-9
+        if stamp <= 0 or not 0 <= age <= self.stale_timeout:
+            return
+        r = msg.route
+        if not plan.apply(r.sequence_id, r.instance_id, self._route_instance, r.request_id, r.requested_index, r.requested_connecting):
+            return
+        self.engine = plan.active_engine
+        self.zone_map = plan.active_zones
+        self._zone_telemetry_fix = self._zone_telemetry_previous = None
+        self._last_snap = None
+        self._publish_track()
+        self.get_logger().info(f'Route applied: index={plan.index}, id={plan.files[plan.index].id}, connecting={plan.connecting}, request={r.request_id}')
+
+    def _fill_route(self, msg):
+        plan = self._route_plan
+        if plan is None:
+            return
+        r = msg.route
+        r.enabled = True
+        r.connecting, r.next_connecting = plan.connecting, plan.next_connecting
+        r.sequence_id, r.instance_id = plan.sequence_id, self._route_instance
+        r.index, r.count, r.acknowledged_request = plan.index, len(plan.files), plan.acknowledged_request
+        r.required_missions = list(plan.required[plan.index])
+        files = plan.files[plan.index]
+        r.completion = files.completion
+        r.route_id, r.waypoint_csv, r.zones_file = files.id, str(files.csv), str(files.zones)
 
     def _publish_imu(self, stamp) -> None:
         if self.imu is None:
@@ -402,6 +500,7 @@ class StackGpsNode(Node):
 
     def tick(self):
         msg = GpsPath()
+        self._fill_route(msg)
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
         self._publish_imu(msg.header.stamp)
@@ -468,7 +567,13 @@ class StackGpsNode(Node):
         else:
             heading, self._heading_src = None, '접선'
 
-        snap = self.engine.snapshot(lat, lon, heading)
+        try:
+            snap = self._snapshot_at_station(lat, lon, heading, fix_t)
+        except ValueError as exc:
+            self.get_logger().error(f'GPS station sample rejected: {exc}')
+            msg.fix_quality = 0
+            self.pub.publish(msg)
+            return
         yaw = heading if heading is not None else self.engine.yaw[snap['idx']]
         msg.heading_source = (
             GpsPath.HEADING_FUSED if self._heading_src == '융합'
@@ -476,7 +581,8 @@ class StackGpsNode(Node):
             else GpsPath.HEADING_TANGENT)
         # The GGA link can return the same latest sample on more than one timer
         # tick.  Count and calculate motion only once per actual GNSS sample.
-        east, north = self.engine.to_enu(lat, lon)
+        local_position = self.engine.to_enu(lat, lon)
+        east, north = self._route_plan.position(lat, lon) if self._route_plan else local_position
         msg.position_valid = True
         msg.position_x, msg.position_y = float(east), float(north)
         msg.track_index = int(snap['idx'])
@@ -485,11 +591,7 @@ class StackGpsNode(Node):
         msg.dx, msg.dy, msg.dyaw = delta
         msg.update = update
         self._set_reference_stamp(msg, fix_t)
-        for x, y, pt_yaw, curv in snap['points']:
-            rp = RefPoint()
-            rp.x, rp.y, rp.yaw, rp.curvature = (float(x), float(y),
-                                                float(pt_yaw), float(curv))
-            msg.points.append(rp)
+        self._fill_station_reference(msg, snap)
         msg.accel_zone = snap['accel_zone']
         msg.parking_zone = snap['parking_zone']
         msg.parking_mode = (
@@ -499,10 +601,12 @@ class StackGpsNode(Node):
             if snap['parking_mode'] == 'parallel'
             else GpsPath.PARKING_NONE)
         msg.stop_zone = int(snap['stop_zone'])
+        if self._route_plan and msg.stop_zone:
+            msg.stop_zone += self._route_plan.stop_offsets[self._route_plan.index]
         msg.avoid_zone = snap['avoid_zone']
         msg.gps_only_zone = snap['gps_only_zone']
         self._fill_zone_context(msg, snap['idx'])
-        self._fill_zone_telemetry(msg, fix_t, east, north, yaw, heading is not None)
+        self._fill_zone_telemetry(msg, fix_t, east, north, yaw, heading is not None, local_position)
         msg.at_end = snap['at_end']
         msg.fix_quality = quality
         msg.cross_track_m = float(snap['cross_track_m'])
@@ -526,7 +630,10 @@ class StackGpsNode(Node):
                 f"{t:.3f},{lat:.7f},{lon:.7f},{quality},{snap['idx']},"
                 f"{snap['cross_track_m']:.3f},{int(snap['at_end'])},{age:.3f},"
                 f"{math.degrees(yaw):.1f},{self._heading_src},"
-                f"{imu_deg},{off_deg},{go}\n")
+                f"{imu_deg},{off_deg},{go},{msg.route.index},{msg.route.route_id},{msg.route.sequence_id},{int(msg.route.connecting)},"
+                f"{snap['station_m']:.6f},{snap['station_window_low_m']:.6f},{snap['station_window_high_m']:.6f},"
+                f"{snap['station_v_ref']:.6f},{self.station_sample_time:.6f},"
+                f"{snap['preview_requested_station_m']:.6f},{snap['preview_station_m']:.6f},{int(snap['preview_snapped'])}\n")
 
         viz = Path()
         viz.header = msg.header
@@ -550,7 +657,7 @@ class StackGpsNode(Node):
             self.pub_fix.publish(nsf)
 
         # TF map(ENU) → base_link: 위치 = fix, 헤딩 = 엔진과 동일 소스(COG/접선)
-        ev, nv = self.engine.to_enu(lat, lon)
+        ev, nv = east, north
         tf = TransformStamped()
         tf.header.stamp = msg.header.stamp
         tf.header.frame_id = 'map'
@@ -589,7 +696,7 @@ class StackGpsNode(Node):
             context.raw_in_zone = in_zone
             msg.zones.append(context)
 
-    def _fill_zone_telemetry(self, msg, fix_t, east, north, yaw, heading_valid):
+    def _fill_zone_telemetry(self, msg, fix_t, east, north, yaw, heading_valid, local_position=None):
         """Record existing localization observations, without altering nearest/path selection."""
         if fix_t != self._zone_telemetry_fix:
             previous = self._zone_telemetry_previous
@@ -602,10 +709,11 @@ class StackGpsNode(Node):
         (msg.previous_track_index, msg.position_step_m,
          msg.vehicle_heading_rad, msg.vehicle_heading_valid) = self._zone_telemetry_values
         definitions = {z.zone_id: z for z in self.zone_map.definitions}
+        local_e, local_n = local_position if local_position is not None else (east, north)
         for context in msg.zones:
             zone = definitions[context.zone_id]
             context.boundary_distance_m = min(
-                math.hypot(east-self.engine.e[i], north-self.engine.n[i])
+                math.hypot(local_e-self.engine.e[i], local_n-self.engine.n[i])
                 for i in (zone.start_index, zone.end_index))
 
     def _setup_zones(self, p):
@@ -615,7 +723,7 @@ class StackGpsNode(Node):
         "이 구간에서만 회피한다" 같은 판단은 전부 MGM 스테이트 머신에 있다
         (CLAUDE.md §5.1) — stack_gps 는 "지금 몇 번 구간 안인가"만 싣는다.
         """
-        log = self.get_logger()
+        log = _RouteLog(self.get_logger()) if getattr(self, '_route_loading', False) else self.get_logger()
         snap_max = float(p('stop_zone_snap_max_m').value)
         span = float(p('stop_zone_span_m').value)
 
@@ -726,58 +834,13 @@ class StackGpsNode(Node):
                      "AVOID 전이가 어디서도 일어나지 않는다 (장애물은 estop 정지)")
 
     def _on_param(self, params):
-        """재합류 기하 6종의 주행 중 조정 (2026-08-17).
-
-        런북 §5 표의 stack_avoid 노브들과 같은 용법 — 재시작 없이 한 번에 하나씩
-        바꿔 보고, 확정값은 launch 기본값에 반영해야 다음 세션에 살아남는다.
-        판단이 아니라 기하 이득이라 노드에서 직접 반영한다(경로 소스는 그대로).
-        """
         for prm in params:
-            v = float(prm.value)
-            if prm.name == 'ref_lookahead_m':
-                if v < 0.0:
-                    return SetParametersResult(
-                        successful=False, reason='ref_lookahead_m 은 0 이상')
-                self.engine.set_lookahead(v)
-            elif prm.name == 'rejoin_rate_damp_s':
-                if v < 0.0:
-                    return SetParametersResult(
-                        successful=False, reason='rejoin_rate_damp_s 는 0 이상')
-                self.engine.rate_damp_s = v
-            elif prm.name == 'rejoin_full_cross_m':
-                if v <= 0.0:
-                    return SetParametersResult(
-                        successful=False, reason='rejoin_full_cross_m 은 양수')
-                self.engine.full_cross_m = v
-            elif prm.name == 'rejoin_target_max_m':
-                # 하한(2·R_min·sinβ ≈ 1.27m)보다 낮게 잡아도 하한이 이기므로 무의미
-                if v <= 0.0:
-                    return SetParametersResult(
-                        successful=False, reason='rejoin_target_max_m 은 양수')
-                self.engine.target_max_m = v
-            elif prm.name == 'rejoin_target_min_m':
-                if v <= 0.0:
-                    return SetParametersResult(
-                        successful=False, reason='rejoin_target_min_m 은 양수')
-                self.engine.target_min_m = v
-            elif prm.name == 'rejoin_e_lpf_s':
-                if v < 0.0:
-                    return SetParametersResult(
-                        successful=False, reason='rejoin_e_lpf_s 는 0 이상 (0=끔)')
-                self.engine.e_lpf_s = v
-            elif prm.name == 'rejoin_curve_ff':
-                if v < 0.0:
-                    return SetParametersResult(
-                        successful=False, reason='rejoin_curve_ff 는 0 이상 (0=끔)')
-                self.engine.curve_ff = v
-            elif prm.name == 'rejoin_curve_margin':
-                if v < 0.0:
-                    return SetParametersResult(
-                        successful=False, reason='rejoin_curve_margin 은 0 이상 (0=끔)')
-                self.engine.curve_margin = v
-            else:
-                continue
-            self.get_logger().warn(f"재합류 기하 변경: {prm.name} = {v:.3f}")
+            if (getattr(self, '_route_plan', None) is not None or
+                    prm.name in ('n_points', 'publish_period', 'route_sequence_file', 'route_start_id',
+                                 'route_end_id', 'waypoint_csv', 'zones_file', 'ref_lookahead_m') or
+                    prm.name.startswith('rejoin_')):
+                return SetParametersResult(successful=False,
+                    reason='station preview/route configuration is startup-only; legacy rejoin is disabled')
         return SetParametersResult(successful=True)
 
     def report_status(self):

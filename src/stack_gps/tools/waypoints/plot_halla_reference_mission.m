@@ -1,4 +1,4 @@
-%% Plot Halla reference paths, GPS-only rectangles, and parking points.
+%% Plot Halla reference paths, GPS-only zones, and mission state points.
 clear;
 close all;
 clc;
@@ -31,6 +31,8 @@ for zoneId = 1:3
 end
 
 pathHandles = gobjects(7, 1);
+stateEast = nan(3, 1);
+stateNorth = nan(3, 1);
 for pathId = 1:7
     pathFile = fullfile(waypointDir, ...
         sprintf('waypoints_halla_reference_path_%02d.csv', pathId));
@@ -38,19 +40,35 @@ for pathId = 1:7
     pathHandles(pathId) = plot(ax, T.east_m, T.north_m, '-', ...
         'Color', pathColors(pathId, :), 'LineWidth', 2.0, ...
         'DisplayName', sprintf('Path %d', pathId));
+    for zoneId = 1:3
+        zoneRows = T.zone_id == zoneId;
+        plot(ax, T.east_m(zoneRows), T.north_m(zoneRows), '.', ...
+            'Color', zoneColors(zoneId, :), 'MarkerSize', 7, ...
+            'HandleVisibility', 'off');
+    end
+    for stateId = 1:3
+        stateRow = find(T.state == stateId, 1);
+        if ~isempty(stateRow)
+            stateEast(stateId) = T.east_m(stateRow);
+            stateNorth(stateId) = T.north_m(stateRow);
+        end
+    end
 end
 
-parkingEast = [-31.8932, -62.7363];
-parkingNorth = [-33.4497, -65.9110];
-parkingLabels = ["T PARKING", "PARALLEL PARKING"];
-parkingMarkers = ['p', 's'];
-for k = 1:2
-    plot(ax, parkingEast(k), parkingNorth(k), parkingMarkers(k), ...
+stateLabels = ["STATE 1: T PARKING", "STATE 2: PARALLEL PARKING", ...
+    "STATE 3: TRAFFIC SIGNAL"];
+stateMarkers = ['p', 's', 'd'];
+stateColors = [0 0 0; 0.55 0 0.75; 0.85 0 0];
+stateHandles = gobjects(3, 1);
+for stateId = 1:3
+    stateHandles(stateId) = plot(ax, stateEast(stateId), stateNorth(stateId), ...
+        stateMarkers(stateId), ...
         'MarkerSize', 13, 'MarkerFaceColor', 'w', ...
-        'MarkerEdgeColor', 'k', 'LineWidth', 1.8, ...
-        'HandleVisibility', 'off');
-    text(ax, parkingEast(k), parkingNorth(k), "  " + parkingLabels(k), ...
-        'FontWeight', 'bold', 'Color', 'k', 'VerticalAlignment', 'bottom');
+        'MarkerEdgeColor', stateColors(stateId, :), 'LineWidth', 1.8, ...
+        'DisplayName', stateLabels(stateId));
+    text(ax, stateEast(stateId), stateNorth(stateId), ...
+        "  " + stateLabels(stateId), 'FontWeight', 'bold', ...
+        'Color', stateColors(stateId, :), 'VerticalAlignment', 'bottom');
 end
 
 axis(ax, 'equal');
@@ -58,8 +76,8 @@ grid(ax, 'on');
 box(ax, 'on');
 xlabel(ax, 'east\_m (m)');
 ylabel(ax, 'north\_m (m)');
-title(ax, 'Halla Reference Paths, GPS-only Zones, and Parking Points');
-legend(ax, [pathHandles; zoneHandles], 'Location', 'eastoutside');
+title(ax, 'Halla Reference Paths, GPS-only Zones, and Mission States');
+legend(ax, [pathHandles; zoneHandles; stateHandles], 'Location', 'eastoutside');
 
 outputFile = fullfile(waypointDir, 'halla_reference_mission.png');
 exportgraphics(ax, outputFile, 'Resolution', 200);

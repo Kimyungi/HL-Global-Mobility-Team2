@@ -1,7 +1,10 @@
 # adas_mgm — Decision 계층 (10ms MGM 루프)
 
+> 현재 주차: [Zone 진입 즉시 PARKING](../../docs/MGM_PARKING_ENTRY.md).
+> 준비 중 정지하고, 완료 또는 현재 CSV 종점에서 복귀한다. 아래 과거 PREPARE 주행 정책보다 우선한다.
+
 > **6차 단일 기준:** [MGM_MBD_STATE_MACHINE_SPEC.md](../../docs/MGM_MBD_STATE_MACHINE_SPEC.md). 현재 MBD 정본은 병행 Top/Nav/Avoid/Signal/Safety/Mission이며 legacy 5-state byte는 호환 projection이다.
-> Zone 확인은 독립 GNSS sample이며 0=미설정. Parking 제한 -1, Recovery OFF 유지. 새 bus/dump는 v12이며 이전 버전 설명/시험 절차는 역사적 비교 범위다.
+> Zone 확인은 독립 GNSS sample이며 0=미설정. Parking 제한 -1, Recovery OFF 유지. 현재 bus/dump는 v15(연속 경로 확장, 6차는 v12)이며 이전 버전 설명/시험 절차는 역사적 비교 범위다.
 > 실제 운용 전 Zone/Parking/후방 corridor calibration과 현장 검증이 필요하다.
 
 ## 2026-09-11 공통 베이스 상태 머신
@@ -24,14 +27,23 @@ invalid/stale 경로는 제어권을 유지한 채 속도를 0으로 차단합�
 
 구조·규칙의 단일 소스는 워크스페이스 루트 `CLAUDE.md` (§2, §4, §5, §5.5). 이 문서는 실행·측정 절차만 다룬다.
 
-실차 통합 실행은 다음 두 문서를 순서대로 사용한다.
+**Integration v2의 통합 실행은 코스에 맞는 새 런북을 사용한다.**
+
+- [한라대학교 — Integration v2](RUNBOOK_integration_v2_halla.md): 업로드된 기준경로 (01 또는 02)→03→04→05→(06 또는 07)과 경로별 Zone/Mission 인계.
+- [용인 Course A — Integration v2](RUNBOOK_integration_v2_yongin.md): 업로드된 2,141점 CSV, 별도 Mission Zone 준비.
+
+두 런북은 v2 전용 설치/launch, 출발 점검, Mission PREPARE→ACTIVE, 종료와 기록 절차를 다룬다.
+실차 검증 전 기준이며 Zone/Parking 보정값은 측정한 값을 입력한다.
+
+아래 두 문서는 기존 통합 구성의 측정/운영 절차다. v2의 시작 명령과 신호/주차 상태 설명은
+위 코스별 런북 및 6차 명세를 우선한다.
 
 1. [`RUNBOOK_full_measurement_20260904.md`](RUNBOOK_full_measurement_20260904.md) —
    처음 설치하거나 장착 위치가 바뀐 경우의 임계값 측정
 2. [`RUNBOOK_full_operation_20260904.md`](RUNBOOK_full_operation_20260904.md) —
    측정 완료 후 차선·GPS·회피·긴급정지·신호등을 함께 실행
 
-신호등 실차 정지의 표준 실행은 운영 런북의
+기존 구성의 신호등 실차 정지 실행은 운영 런북의
 `REAL_VEHICLE_lane_gps_can.launch.py` 명령 블록 하나다. 야간 국소 대비·평행
 에지 쌍 정지선 검출과 `stack_traffic_node` 2초 자동 재시작도 이 구성에 포함된다.
 
@@ -191,3 +203,9 @@ ulimit -r   # 90 확인
 5. 판정(§7): 최악 지연 × 2 를 watchdog 타임아웃으로 잡았을 때 안전한가 → v1 유지 / v3 이관.
 
 기록 양식: `최악 lateness ____ us (측정일 ____, 부하: baseline/풀가동, 시간 ____ h)` — 결과는 CLAUDE.md §7 옆에 남길 것.
+
+연속 CSV 운용: [경로 순서/전환 계약](../../docs/MGM_ROUTE_SEQUENCE.md).
+한라대는 `route_sequence_file:=<v2>/src/stack_gps/waypoints/halla_route_sequence.yaml`로
+`route_start_id:=01 route_end_id:=07`이면 01→03→04→05→07 순서다. 두 선택 인자는 필수다. 경로별 Mission 완료를 보존하며 마지막 파일만 FINISH다. 현재 raw dump는 v15이다.
+
+현재 Parking 탐색은 [Zone 탐색 정책](../../docs/MGM_ZONE_SEARCH.md)을 따른다. source Zone 이탈 실패 뒤 현재 CSV를 계속 주행하며 시간·거리 제한을 쓰지 않는다.

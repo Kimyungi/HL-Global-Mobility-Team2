@@ -3,7 +3,7 @@
 // 구조는 CLAUDE.md 그대로 세 단계:
 //   판단(스테이트 머신, §4 — 시스템에서 유일한 곳)
 //   → 실행 1: ref 조립 (§5.1/§5.6 — 포맷 변환·전환 연속 처리만)
-//   → 실행 2: 종방향 병합 (§5.6 — rate limit만, immediate_stop은 우회)
+//   → 실행 2: 종방향 병합 (v2 고정 주행 / 정지 rate limit, immediate_stop 우회)
 #include "mgm_step.hpp"
 #include "manager_step.hpp"
 #include "reference_safety.hpp"
@@ -485,7 +485,7 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         // (immediate_stop 아님 → a_down rate limit 적용). 판정·타이머는
         // transition()에 있고 여기서는 그 결정을 속도로 옮기기만 한다.
         out.v_ref = 0.0f;
-      } else if (s.gps_accel_zone) {
+      } else if (s.gps_accel_zone && !st.params.base_state_machine_enabled) {
         out.v_ref = st.params.v_accel_zone;
       } else {
         out.v_ref = st.params.v_base;
@@ -519,6 +519,10 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       if (s.estop || s.avoid_ttc < st.params.ttc_stop) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
+      } else if (st.params.base_state_machine_enabled) {
+        // Manager uses only stop/direction, then assigns the common v_base.
+        // Do not turn a narrow-gap cap into a synthetic zero-speed request.
+        out.v_ref = s.avoid_v_suggest;
       } else {
         // 종방향은 회피 기하가 결정, 여유 폭 좁으면 감속
         out.v_ref = s.avoid_narrow_gap ?
@@ -604,10 +608,11 @@ const CorePath * select_path(uint8_t src, const CoreSnapshot & s)
 // 곧게 빼는 것이 후진 탈출에서 유일하게 예측 가능한 기하다.
 constexpr float kEscapeRefSpanM = 1.5f;
 
-void build_escape_ref(CorePoint * out)
+void build_escape_ref(CorePoint * out, bool single_point)
 {
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-    const float t = static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
+    const float t = single_point ? 1.0f :
+      static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
     out[i].x = kEscapeRefSpanM * t;
     out[i].y = 0.0f;
     out[i].yaw = 0.0f;
@@ -627,10 +632,11 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   // 출력 유효분은 n_out개 (와이어에는 유효 점만 실린다 — PROTOCOL.md)
   CorePoint target[MGM_NUM_POINTS];
   const bool escape = (src == MGM_SRC_ESCAPE);
+  const bool single_point = st.params.base_state_machine_enabled;
   if (escape) {
-    build_escape_ref(target);
+    build_escape_ref(target, single_point);
   }
-  const int32_t n = escape ? MGM_NUM_POINTS :
+  const int32_t n = single_point ? MGM_CONTROL_POINTS : escape ? MGM_NUM_POINTS :
     (path->n < MGM_NUM_POINTS ? path->n : MGM_NUM_POINTS);
   const int32_t last = n - 1;
   if (!escape) {
@@ -645,7 +651,7 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   // "1점=str 무반응" 실측의 재확인이며, "원인은 저속"이라는 2026-08-10 재해석을 반증.
   // dSPACE 수정 없이 PC 조립에서 해결 — 와이어에는 항상 다점이 실린다.
   int32_t n_wire = n;
-  if (n == 1) {
+  if (n == 1 && !single_point) {
     const CorePoint tgt = path->pts[0];
     const float yaw = atan2f(tgt.y, tgt.x);
     // ★ 등간격(첫 점 = 목표/20 ≈ 7.5cm)은 **의도적으로 유지한다.** 첫 점이
@@ -724,11 +730,21 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   }
 }
 
-// ── 실행 2: 종방향 병합 — rate limit만. immediate_stop은 스테이트의 결정으로 우회.
+// ── 실행 2: v2는 고정 주행 목표, 정지 제어/legacy에는 기존 rate limit 적용.
 float merge(const CoreOutput & d, CoreState & st)
 {
   if (d.immediate_stop) {
     st.v = 0.0f;  // 긴급 정지·TTC 바닥은 램프 없이 즉시 (스테이트 머신이 결정)
+    return st.v;
+  }
+  const bool signal_stop_profile = d.speed_owner == SpeedOwner::TRAFFIC &&
+    st.traffic_distance_latched;
+  if (st.params.base_state_machine_enabled && d.v_ref != 0.0f &&
+    !signal_stop_profile)
+  {
+    // Upper layer sends a fixed motion target immediately. Zero requests and
+    // the distance-based Signal stop profile retain the existing stop ramp.
+    st.v = d.v_ref;
     return st.v;
   }
   const float lo = st.v - st.params.a_down * MGM_PERIOD_S;
@@ -777,6 +793,12 @@ CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
     prioritize(in, st, out);
   }
   CoreSnapshot execution = in;
+  if (out.route.changed) {
+    st.has_raw_target = false;
+    st.blend_left = 0;
+    st.last_src = out.path_source;  // never blend geometry from different route frames
+    st.v = 0.0f;
+  }
   if (st.params.base_state_machine_enabled && out.mission == MissionState::MISSION_ACTIVE) {
     if (out.mission_start) {
       // Discard general navigation geometry on exclusive mission handoff.

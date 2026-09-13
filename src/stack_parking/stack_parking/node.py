@@ -852,7 +852,7 @@ class StackParkingNode(Node):
             vehicle_speed = float(self.latest_vehicle.v)
         if self.search_running and not self.execution_authorized:
             # Observe/map/plan in _process_slam, but do not advance approach,
-            # reverse, wait or exit while navigation still owns the vehicle.
+            # reverse, wait or exit before ACTIVATE (MGM may already own PARKING).
             mission_output = MissionOutput(
                 state=self.mission.state, space_found=False, path_blocked=False,
                 done=False, reference_local=None, v_suggest_mps=0.0,

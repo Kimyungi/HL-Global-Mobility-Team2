@@ -160,6 +160,9 @@ DecisionBackend::DecisionBackend(
 : params_(params)
 {
   if (requested == "core") {
+    if (params_.route_sequence_enabled && !params_.base_state_machine_enabled) {
+      throw std::invalid_argument("route sequence requires parallel managers");
+    }
     mgm_init(core_state_, params_);
     return;
   }
@@ -172,6 +175,7 @@ DecisionBackend::DecisionBackend(
             "generated v1.88 does not implement parallel managers; "
             "set base_state_machine_enabled=false for historical model tests");
   }
+  if (params_.route_sequence_enabled) {throw std::invalid_argument("generated backend has no route sequence support");}
   if (!generated_scope_acknowledged) {
     throw std::invalid_argument(
             "backend=generated requires generated_backend_acknowledge_limited_scope=true");

@@ -20,7 +20,11 @@ def main():
             raise RuntimeError(f'{package} resolves outside v2: {prefix}')
     contracts = (
         (GpsPath(), 'reference_stamp'), (GpsPath(), 'zones'),
+        (GpsPath(), 'route'), (MgmState(), 'route'),
+        (GpsPath().route, 'connecting'), (MgmState().route, 'requested_connecting'),
         (ParkingCommand(), 'request_id'), (ParkingStatus(), 'preparation_stamp'),
+        (MgmState(), 'mission_failed'), (MgmState(), 'parking_search_zone_only'),
+        (MgmState(), 'parking_zone_entry_active'),
         (EstopRequest(), 'rear_corridor_state'), (MgmState(), 'parking_calibration_state'),
     )
     for message, field in contracts:
@@ -31,10 +35,15 @@ def main():
     if params.get('backend') != 'core' or not params.get('base_state_machine_enabled', True):
         raise RuntimeError('v2 requires backend=core and base_state_machine_enabled=true')
     print(f'V2_INSTALL_READY: {len(packages)} package prefixes and v2 message contract; {root}')
-    print('Calibration: zone enter/exit =', params['zone_enter_confirm_samples'],
-          params['zone_exit_confirm_samples'], '; parking seconds/metres =',
-          params['parking_search_timeout'], params['max_parking_search_distance'],
+    print('Parking policy:', 'immediate entry; stop to prepare; release on done or CSV end'
+          if params['parking_zone_entry_active'] else
+          'source Zone only; no time/distance limit' if params['parking_search_zone_only'] else 'legacy time/distance limits')
+    print('Zone enter/exit =', params['zone_enter_confirm_samples'], params['zone_exit_confirm_samples'],
           '; recovery delay =', params['escape_after_cycles'])
+    if not params['parking_zone_entry_active'] and not params['parking_search_zone_only']:
+        print('Legacy parking limits seconds/metres =', params['parking_search_timeout'],
+              params['max_parking_search_distance'])
+
 
 
 if __name__ == '__main__':

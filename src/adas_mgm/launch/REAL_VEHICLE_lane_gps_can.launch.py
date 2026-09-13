@@ -162,11 +162,15 @@ def ydlidar_file(*parts):
 DEFAULT_YDLIDAR_PARAMS = ydlidar_file('params', 'Tmini-Plus-SH.yaml')
 
 
-def validate(context, log_dir=LOG_DIR):
+def validate(context, log_dir=LOG_DIR, lidar_estop_enabled=True):
     if LaunchConfiguration('REAL_VEHICLE_CONFIRM').perform(context) != CONFIRM_TOKEN:
         raise RuntimeError(
             'REAL VEHICLE launch refused. '
             'Set REAL_VEHICLE_CONFIRM:=' + CONFIRM_TOKEN)
+    if not lidar_estop_enabled:
+        if int(LaunchConfiguration('escape_after_cycles').perform(context)) != 0:
+            raise RuntimeError('LiDAR E-stop excluded test requires escape_after_cycles:=0')
+        print('[launch] LiDAR E-stop input DISABLED — separate test configuration')
     traffic_enabled = LaunchConfiguration('traffic_enabled').perform(context).lower() == 'true'
     traffic_require_stop_gate = (
         LaunchConfiguration('traffic_require_stop_gate').perform(context).lower() == 'true')
@@ -183,6 +187,24 @@ def validate(context, log_dir=LOG_DIR):
             '운영 신호등 정지 게이트가 비활성입니다. 검증된 '
             'traffic_stop_y_ratio:=<0보다 크고 1.10 이하>를 지정하세요.')
     waypoint_csv = LaunchConfiguration('waypoint_csv').perform(context)
+    route_file = LaunchConfiguration('route_sequence_file').perform(context)
+    start_id = LaunchConfiguration('route_start_id').perform(context)
+    end_id = LaunchConfiguration('route_end_id').perform(context)
+    if (start_id or end_id) and not route_file:
+        raise RuntimeError('route_start_id/route_end_id require route_sequence_file')
+    if route_file:
+        from stack_gps.route_plan import RoutePlan
+        plan = RoutePlan(route_file, start_id, end_id)
+        first = plan.files[0]
+        if waypoint_csv and os.path.realpath(waypoint_csv) != str(first.csv):
+            raise RuntimeError('waypoint_csv must match the first route in route_sequence_file')
+        explicit_zones = LaunchConfiguration('zones_file').perform(context)
+        if explicit_zones and os.path.realpath(explicit_zones) != str(first.zones):
+            raise RuntimeError('sequence Zone overrides belong in each manifest entry')
+        waypoint_csv = str(first.csv)
+        context.launch_configurations['waypoint_csv'] = waypoint_csv
+        context.launch_configurations['zones_file'] = str(first.zones)
+        print(f'[launch] route sequence: {" -> ".join(r.id for r in plan.files)}, identity={plan.sequence_id}')
     if not waypoint_csv:
         raise RuntimeError('waypoint_csv:=<코스 CSV 경로> 를 지정하세요 (stack_gps 필수)')
     # CSV를 여기서 실제로 읽어본다. 경로 오타나 1~4점짜리 잔여 파일(FIXED 확인용
@@ -282,12 +304,14 @@ def validate(context, log_dir=LOG_DIR):
     print(f'[record] 로그 디렉터리: {log_dir}')
     # 확정한 구간 파일 경로를 노드에 넘긴다. 이 OpaqueFunction 은 LaunchDescription
     # 목록에서 노드들보다 **앞**에 있으므로 여기서 설정한 값이 아래 Node 에 잡힌다.
-    return [SetLaunchConfiguration('zones_file_resolved', zones_file)]
+    return [SetLaunchConfiguration('zones_file_resolved', zones_file),
+            SetLaunchConfiguration('route_sequence_enabled_resolved', 'true' if route_file else 'false')]
 
 
 def build_launch_description(
         log_dir=LOG_DIR, default_homography=DEFAULT_HOMOGRAPHY,
-        default_lane_weights=os.path.expanduser('~/FMA_ws/src/stack_lane/models/yolopv2.pt')):
+        default_lane_weights=os.path.expanduser('~/FMA_ws/src/stack_lane/models/yolopv2.pt'),
+        *, lidar_estop_enabled=True):
     mgm_params = os.path.join(
         get_package_share_directory('adas_mgm'), 'config', 'params.yaml')
 
@@ -306,8 +330,16 @@ def build_launch_description(
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
         DeclareLaunchArgument('can_interface', default_value='can0'),
         # Unset calibration: do not assign operational search limits from guesses.
-        DeclareLaunchArgument('zone_enter_confirm_samples', default_value='0'),
-        DeclareLaunchArgument('zone_exit_confirm_samples', default_value='0'),
+        DeclareLaunchArgument('zone_enter_confirm_samples', default_value=str(_yaml['zone_enter_confirm_samples'])),
+        DeclareLaunchArgument('route_sequence_file', default_value='',
+                              description='Ordered CSV/Zone manifest; empty keeps single-route operation'),
+        DeclareLaunchArgument('route_start_id', default_value='', description='Explicit sequence start ID: 01 or 02 for Halla'),
+        DeclareLaunchArgument('route_end_id', default_value='', description='Explicit sequence end ID: 06 or 07 for Halla'),
+        DeclareLaunchArgument('zone_exit_confirm_samples', default_value=str(_yaml['zone_exit_confirm_samples'])),
+        DeclareLaunchArgument('parking_zone_entry_active', default_value=str(_yaml['parking_zone_entry_active']).lower(),
+                              description='Enter Parking at Zone entry; release on done or current CSV endpoint'),
+        DeclareLaunchArgument('parking_search_zone_only', default_value=str(_yaml['parking_search_zone_only']).lower(),
+                              description='Search only inside the source Mission Zone; exit records failure'),
         DeclareLaunchArgument('parking_search_timeout', default_value='-1.0'),
         DeclareLaunchArgument('max_parking_search_distance', default_value='-1.0'),
         DeclareLaunchArgument(
@@ -334,19 +366,7 @@ def build_launch_description(
             'parallel_parking_zone_ranges', default_value='[0]',
             description='Parallel-parking waypoint ranges [start,end,...]'),
 
-        # ── GPS 재합류 기하 (2026-08-17). 셋 다 "dSPACE 조향이 느리던 시절"의
-        # 보상값이라 조향 PI 도입 후 재조정 대상이다. 주행 중에도 바꿀 수 있다:
-        #   ros2 param set /stack_gps_node rejoin_full_cross_m 1.0
-        # 빈 값 = stack_gps 노드 기본값 사용(= path_engine.py 의 REJOIN_*).
-        DeclareLaunchArgument('ref_lookahead_m', default_value='1.0'),
-        DeclareLaunchArgument('rejoin_rate_damp_s', default_value='0.0'),
-        DeclareLaunchArgument('rejoin_full_cross_m', default_value='0.5'),
-        DeclareLaunchArgument('rejoin_target_max_m', default_value='1.8'),
-        # 하한 — 실측상 ref[0] 거리의 82%가 하한에 붙으므로 **실효 이득은 이 값이
-        # 정한다**. 1.267(기하 바닥) → 1.8 로 올린 것이 2026-08-17 잡음 대책의 핵심.
-        DeclareLaunchArgument('rejoin_target_min_m', default_value='1.8'),
-        # 접근각이 쓰는 횡오차의 저역통과 [s]. 0 = 끔. ψₑ 쪽엔 절대 걸지 말 것.
-        DeclareLaunchArgument('rejoin_e_lpf_s', default_value='0.15'),
+        # GPS: bounded station search and one fixed +2.5m preview.
 
         # ── 지정 지점 정지 (2026-08-18) — 트랙 위 특정 장소에서 자동으로 서고
         # 다시 출발한다 (언덕 정차 시험). 지점은 **구간 파일**(mark_zone 이 기록)에서
@@ -387,6 +407,8 @@ def build_launch_description(
         # ⚠ 켠 상태에서 구간 밖 장애물을 만나면 회피가 아니라 stack_estop 정지로 대응한다
         #   (MGM 의 TTC 안전 바닥은 AVOID 스테이트 안에서만 걸리기 때문).
         DeclareLaunchArgument('avoid_zone_latlon', default_value=''),
+        DeclareLaunchArgument('avoidance_enabled', default_value=str(_yaml['avoidance_enabled']).lower(),
+                              description='Enable ordinary avoidance authority and its TTC stop; perception stays on'),
         DeclareLaunchArgument('avoid_zone_only', default_value='false'),
 
         # ── GPS 전용 모드: LANE 전이 차단 (히스테리시스 임계를 2.0으로 — confidence는
@@ -423,6 +445,8 @@ def build_launch_description(
         #   mgm_jitter.csv(주기 지터)와 stack_lane의 파이프라인 지연 로그를 확인해
         #   기록 부하가 제어 루프를 건드리지 않았는지 확인할 것.
         DeclareLaunchArgument('lane_debug', default_value='false'),
+        DeclareLaunchArgument('traffic_show_debug', default_value='false',
+                              description='Show the traffic camera detection window'),
         DeclareLaunchArgument('lane_csv', default_value='false',
                               description='Frame CSV without debug image overhead'),
         DeclareLaunchArgument('gps_error_log_csv',
@@ -507,56 +531,7 @@ def build_launch_description(
         # 급하면 lane_device:=cpu 로 폴백 (느리지만 뜨긴 한다).
         DeclareLaunchArgument('lane_device', default_value='xpu',
                               description="YOLOPv2 추론 장치: 'xpu'(인텔 GPU)/'cpu'/cuda 인덱스"),
-        # 1.8 → 0.0(외삽 끔, ref[0] = points_x_start 2.5m 균일) — 2026-08-15.
-        # 구 값 1.8은 TESTING_LOG §7.3의 v_base 0.5 시절 잠정 최적값이다(표본 51초).
-        # **차선 추종 루프는 이득 과다다** — 목표를 당길수록(=이득↑) 위빙이 커진다:
-        #   ref[0] 2.08m (run_0815_163614)  |str| 0.0566  헤딩 표준편차  9.22°
-        #   ref[0] 1.88m (run_0815_170539)  |str| 0.0875  헤딩 표준편차 10.83°
-        # 목표를 0.2m 당겼더니 조향량 +55%, 위빙 +17%로 되레 나빠졌다. 지연은
-        # 0.44→0.27s로 줄었는데도 그렇다 — 지연이 아니라 이득이 지배한다.
-        # v_base를 0.5→0.6으로 올리면서 실현율이 14%→24%로 올라간 것(§3 ①)도
-        # 같은 방향으로 이득을 밀어올렸다. 미리보기 시간 = L/v 로 보면 1.8m@0.5는
-        # 3.6s인데 0.6에서 같은 3.6s를 쓰려면 2.16m가 필요하다 — 즉 속도를 올린
-        # 만큼 lookahead도 나갔어야 했다.
-        # 0.0으로 두면 외삽 자체가 꺼져 ref[0]이 카메라 최소 가시거리 2.5m로
-        # **균일**해진다(이득 최저 + 변조 없음). 이득 가설의 깨끗한 검증이다.
-        # ⚠ 이 값을 다시 당길 땐 v_base와 함께 볼 것 — 짝지어 움직여야 한다.
-        # 0.0(외삽 끔) → 2.0 (2026-08-16). PR #35로 이 인자의 의미가 **고정 거리에서
-        # "가장 공격적인 기준값"으로 바뀌었다** — 실제 거리는 c0(드리프트)·c2(곡률)에
-        # 따라 이 값 ~ points_x_start(2.5m) 사이에서 매 프레임 정해지고, R_min 하한이
-        # 하드 가드로 걸린다. 이탈이 클수록 물러나므로 "가까운 점을 조준해 조향이
-        # 포화되던" 실패 모드가 구조적으로 막힌다.
-        #
-        # ⚠ 값은 이현준 기본값 1.15가 아니라 **2.0**을 쓴다. 차선 추종 루프는
-        # 이득 과다이며 목표를 당길수록 위빙이 커진다는 게 실측이다:
-        #     고정 1.88m → 헤딩 표준편차 10.83°  (run_0815_170539)
-        #     고정 2.08m → 9.22°                (run_0815_163614)
-        #     고정 2.54m → 7.86°                (run_0815_172512)
-        # 실측 5336프레임에 PR #35 알고리즘을 오프라인으로 돌려본 결과, base별로
-        # **1.9m 미만이 차지하는 비율**이 이렇게 갈린다:
-        #     base 1.15 → 84.9%   base 1.50 → 81.1%   base 1.80 → 69.3%
-        #     base 2.00 →  0.0%   base 2.20 →  0.0%
-        # 1.15는 위빙이 가장 심했던 1.88m보다 더 공격적인 영역에서 85%를 보낸다.
-        # 2.0이면 가장 공격적일 때조차 실측으로 확인된 안전 구간(≥2.0m) 안이면서,
-        # 이탈 시 2.5m로 물러나는 적응 동작은 그대로 시험된다.
-        # 다음 run에서 위빙이 줄면 1.8 → 1.5 순으로 낮춰가며 최적점을 찾을 것.
-        DeclareLaunchArgument('ref_point0_lookahead_m', default_value='2.0'),
-        DeclareLaunchArgument('ref_point0_extrap_mode', default_value='linear'),
-        # 0.5(stack_lane 기본) → 0.30 (2026-08-15). 이 게이트가 풀렸다 걸렸다 하면
-        # ref[0] 거리가 1.8m ↔ points_x_start 2.5m 로 **0.70m 계단 점프**하고,
-        # 조향 응답이 거리에 강하게 의존하므로(CLAUDE.md §3 ③) 루프 이득이 같이
-        # 튄다. run_0815_163614 실측: 신뢰도 분포가 임계 0.5 바로 양옆에 최대 밀집
-        # (0.4~0.5 1887틱 / 0.5~0.6 2186틱)이라 **120초에 82회, 평균 1.5초마다** 전환.
-        # 그 구간 LANE 헤딩 표준편차 9.22°(GPS 6.07°)·명령→조향 지연 0.60s(GPS 0.18s).
-        # 0.30이면 미적용이 33.1% → 1.1%로 떨어져 전환이 사실상 사라진다
-        # (0.45→19.8%, 0.40→10.5%, 0.35→4.1%, 0.25→1.0% — 0.30이 평탄부 시작).
-        # 안전성: 이 외삽은 **가시구간(2.5~6.0m) 폴리곤을 그대로 뒤로 평가**하는 것이라
-        # 별도 추정이 아니다 — 실측 8213프레임에서 |가시구간 2차피팅 예측 − 실제 ref[0].y|
-        # 중앙값 1.8mm·p90 7.6mm, 임계 바로 위(0.5~0.6) 구간도 2.5mm로 열화 없음.
-        # 게다가 미적용 프레임이 오히려 더 단순한 경로였다(2차피팅 잔차 0.00003 vs
-        # 0.00025m, |ly19| 0.34 vs 0.84m) — 신뢰도는 피팅 품질보다 차선 곡률·복잡도를
-        # 따라간다. stack_lane 패키지 기본값(0.5)은 단독 시험용으로 그대로 두었다.
-        DeclareLaunchArgument('ref_point0_min_confidence', default_value='0.30'),
+        # Camera preview is fixed at station +2.5m; only coefficient smoothing remains tunable.
         DeclareLaunchArgument('coeff_smoothing_alpha', default_value='0.3'),
 
         # ── stack_estop (REAL_VEHICLE_stack_estop_mgm_can과 동일)
@@ -581,7 +556,7 @@ def build_launch_description(
         DeclareLaunchArgument('ttc_stop', default_value=str(_yaml['ttc_stop'])),
         DeclareLaunchArgument('v_accel_zone', default_value=str(_yaml['v_accel_zone'])),
 
-        OpaqueFunction(function=validate, args=[log_dir]),
+        OpaqueFunction(function=validate, args=[log_dir, lidar_estop_enabled]),
 
         LifecycleNode(
             package='ydlidar_ros2_driver',
@@ -650,6 +625,7 @@ def build_launch_description(
             package='stack_estop',
             executable='stack_estop_node',
             name='stack_estop_node',
+            condition=IfCondition(str(lidar_estop_enabled).lower()),
             remappings=[('/scan', PythonExpression([
                 "'/lidar/a1/scan' if '",
                 LaunchConfiguration('parking_enabled'),
@@ -684,18 +660,7 @@ def build_launch_description(
                 'waypoint_csv': LaunchConfiguration('waypoint_csv'),
                 'rtcm_host': LaunchConfiguration('rtcm_host'),
                 'error_log_csv': LaunchConfiguration('gps_error_log_csv'),
-                'ref_lookahead_m': ParameterValue(
-                    LaunchConfiguration('ref_lookahead_m'), value_type=float),
-                'rejoin_rate_damp_s': ParameterValue(
-                    LaunchConfiguration('rejoin_rate_damp_s'), value_type=float),
-                'rejoin_full_cross_m': ParameterValue(
-                    LaunchConfiguration('rejoin_full_cross_m'), value_type=float),
-                'rejoin_target_max_m': ParameterValue(
-                    LaunchConfiguration('rejoin_target_max_m'), value_type=float),
-                'rejoin_target_min_m': ParameterValue(
-                    LaunchConfiguration('rejoin_target_min_m'), value_type=float),
-                'rejoin_e_lpf_s': ParameterValue(
-                    LaunchConfiguration('rejoin_e_lpf_s'), value_type=float),
+                'n_points': 1,
                 'parking_zone_ranges': ParameterValue(
                     LaunchConfiguration('t_parking_zone_ranges'),
                     value_type=List[int]),
@@ -711,6 +676,9 @@ def build_launch_description(
                     LaunchConfiguration('stop_zone_span_m'), value_type=float),
                 'parking_zone_span_m': ParameterValue(
                     LaunchConfiguration('parking_zone_span_m'), value_type=float),
+                'route_sequence_file': LaunchConfiguration('route_sequence_file'),
+                'route_start_id': ParameterValue(LaunchConfiguration('route_start_id'), value_type=str),
+                'route_end_id': ParameterValue(LaunchConfiguration('route_end_id'), value_type=str),
             }],
             output='screen',
             # 이 노드가 죽으면 launch 전체를 내린다 (2026-08-15). 예전에는 혼자
@@ -734,11 +702,7 @@ def build_launch_description(
                     LaunchConfiguration('camera_fps'), value_type=int),
                 'usb_speed': LaunchConfiguration('usb_speed'),
                 'device': LaunchConfiguration('lane_device'),
-                'ref_point0_lookahead_m': ParameterValue(
-                    LaunchConfiguration('ref_point0_lookahead_m'), value_type=float),
-                'ref_point0_extrap_mode': LaunchConfiguration('ref_point0_extrap_mode'),
-                'ref_point0_min_confidence': ParameterValue(
-                    LaunchConfiguration('ref_point0_min_confidence'), value_type=float),
+                # Camera returns one point at current station +2.5m (fixed in stack_lane).
                 # 진단 run 전용 (lane_debug 인자 주석 참조)
                 'publish_debug_image': ParameterValue(
                     LaunchConfiguration('lane_debug'), value_type=bool),
@@ -769,6 +733,8 @@ def build_launch_description(
             parameters=[{
                 # 노드 기본은 'opencv'(USB 웹캠) — 실차는 반드시 oak 로 바꾼다.
                 'camera_backend': 'oak',
+                'show_debug': ParameterValue(
+                    LaunchConfiguration('traffic_show_debug'), value_type=bool),
                 'oak_mxid': LaunchConfiguration('traffic_mxid'),
                 # 차선 카메라와 같은 대책을 공유한다 — USB3 로 열거되면 GNSS L1 이
                 # 덮여 RTK 가 죽는다 (CLAUDE.md §6). 두 카메라가 따로 놀면 안 된다.
@@ -811,6 +777,7 @@ def build_launch_description(
             executable='mgm_node',
             name='mgm_node',
             parameters=[mgm_params, {   # 기존 REAL_VEHICLE launch의 params 누락 수정
+                'lidar_estop_enabled': lidar_estop_enabled,
                 # run별 진단 산출물 — back-to-back 재현(§5.5)과 지터 판정(§7)
                 'snapshot_dump_path': os.path.join(log_dir, 'mgm_snapshots.bin'),
                 'jitter_csv_path': os.path.join(log_dir, 'mgm_jitter.csv'),
@@ -822,6 +789,8 @@ def build_launch_description(
                     LaunchConfiguration('zone_enter_confirm_samples'), value_type=int),
                 'zone_exit_confirm_samples': ParameterValue(
                     LaunchConfiguration('zone_exit_confirm_samples'), value_type=int),
+                'parking_search_zone_only': ParameterValue(LaunchConfiguration('parking_search_zone_only'), value_type=bool),
+                'parking_zone_entry_active': ParameterValue(LaunchConfiguration('parking_zone_entry_active'), value_type=bool),
                 'zone_observations_csv_path': os.path.join(log_dir, 'zone_observations.csv'),
                 'parking_search_timeout': ParameterValue(
                     LaunchConfiguration('parking_search_timeout'), value_type=float),
@@ -830,6 +799,8 @@ def build_launch_description(
                 # 출발 인가 게이트 — launch 직후 정지 대기, `ros2 run adas_mgm go`
                 # (RTK FIXED 등 점검 통과 시)로 출발 (2026-08-11)
                 'wait_go': True,
+                'route_sequence_enabled': ParameterValue(
+                    LaunchConfiguration('route_sequence_enabled_resolved'), value_type=bool),
                 # 시험별 목표속도. 기본은 params.yaml 값을 그대로 따르며, 실차 시험에서
                 # 명시적으로 낮출 때만 launch 인자로 덮어쓴다.
                 'ttc_stop': ParameterValue(
@@ -857,6 +828,8 @@ def build_launch_description(
                     ["int(round(float('", LaunchConfiguration('stop_hold_sec'), "') * 100))"]),
                     value_type=int),
                 # 회피 허용 구간 밖 AVOID 전이 금지 (기본 끔 — 위 인자 주석 참조)
+                'avoidance_enabled': ParameterValue(
+                    LaunchConfiguration('avoidance_enabled'), value_type=bool),
                 'avoid_zone_only': ParameterValue(
                     LaunchConfiguration('avoid_zone_only'), value_type=bool),
             }],

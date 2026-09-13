@@ -12,8 +12,8 @@
 namespace adas_mgm
 {
 
-constexpr int32_t MGM_NUM_POINTS = 20;   // ref points 최대치 (CAN ID 예약 폭, PROTOCOL.md)
-                                         // 실제 점 수는 현재 모든 소스 1 (n은 확장 대비 가변)
+constexpr int32_t MGM_NUM_POINTS = 20;   // historical/generated bus storage capacity only
+constexpr int32_t MGM_CONTROL_POINTS = 1;  // v2 valid provider and TargetRef count; CAN v5
 constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
 // 안전 폴백이 내보내는 최소 전방 ref 거리 [m]. 값이 작은 이유: avoid 1점 계약을
 // 20점으로 보간하면 첫 점이 목표의 1/20(1.5m 목표 → 0.075m)이라 정상값도 작다.
@@ -172,6 +172,7 @@ struct CoreSnapshot
   int32_t gps_track_index;
   bool rear_sensor_valid;  // includes actual rear generation freshness in wrapper
   RearCorridorState rear_corridor_state;
+  RouteFeedback route;
 };
 
 // 튜닝 파라미터 — params.yaml과 1:1, Simulink에서는 tunable parameter
@@ -180,7 +181,7 @@ struct CoreParams
   float lane_conf_exit;    // lane→waypoint 이탈 임계
   float lane_conf_return;  // waypoint→lane 복귀 임계 (히스테리시스 분리)
   int32_t n_cycles;        // N주기 연속 조건
-  float v_base;            // [m/s]
+  float v_base;            // [m/s] parallel Manager: common non-stop speed magnitude
   float v_accel_zone;      // [m/s]
   float v_narrow;          // [m/s] avoid 여유 폭 좁을 때 상한
   float ttc_stop;          // [s] TTC 안전 바닥
@@ -287,10 +288,14 @@ struct CoreParams
   float traffic_stop_offset;
   // 0: historical/generated parity; 1: parallel managers. ROS core defaults to 1.
   int32_t base_state_machine_enabled;
+  int32_t parking_search_zone_only;    // 1: source Zone bounds PREPARE; 0: historical time/distance limits
   double parking_search_timeout;       // seconds; <=0 means uncalibrated
   double max_parking_search_distance;  // metres; <=0 means uncalibrated
   int32_t zone_enter_confirm_samples;  // independent GNSS fixes; 0 = uncalibrated
   int32_t zone_exit_confirm_samples;
+  int32_t route_sequence_enabled;  // opt-in; single CSV and historical parity remain unchanged
+  int32_t parking_zone_entry_active;  // immediate Parking authority; done or current CSV end releases
+  int32_t avoidance_enabled;  // parallel Manager: 0 disables ordinary avoidance and LiDAR fallback
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -363,7 +368,7 @@ struct CoreOutput
   uint8_t path_source;     // MGM_SRC_* (디버그·back-to-back 비교용)
   bool immediate_stop;     // 디버그·back-to-back 비교용
   float v_ref;             // [m/s] 병합 최종 목표 속도. 정지 = 0
-  int32_t n_points;        // 유효 점 수 (1~20) — CAN에는 이만큼만 실린다
+  int32_t n_points;        // v2: exactly 1; legacy may use 1..20 (CAN v5 sends one)
   CorePoint ref_points[MGM_NUM_POINTS];
   // The legacy state byte above remains a CAN-compatible path projection.
   TopState top;
@@ -388,9 +393,11 @@ struct CoreOutput
   uint32_t safe_stop_reasons;
   bool avoid_episode_reference_seen;
   CalibrationState parking_calibration;
+  bool active_mission_failed;
   RecoveryDiagnostics recovery;
   float traffic_remaining_m;
   bool traffic_distance_known, traffic_stop_in_success_region;
+  RouteControl route;
 };
 
 }  // namespace adas_mgm

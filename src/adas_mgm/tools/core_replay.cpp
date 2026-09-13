@@ -82,6 +82,8 @@ int main(int argc, char ** argv)
       h.params.stop_zone_hold_cycles = static_cast<int32_t>(val);
     } else if (key == "avoid_zone_only") {
       h.params.avoid_zone_only = static_cast<int32_t>(val);
+    } else if (key == "avoidance_enabled") {
+      h.params.avoidance_enabled = static_cast<int32_t>(val);
     } else {
       std::fprintf(stderr, "무시: 알 수 없는 파라미터 %s\n", key.c_str());
       continue;
@@ -100,6 +102,9 @@ int main(int argc, char ** argv)
   }
   if (h.params.base_state_machine_enabled) {
     out << ",top,navigation,avoidance,signal,safety,mission,mission_type,speed_owner,reference_available,ref_valid,ref_fresh,ref_age_s,ref_generation,stop_reasons,parking_calibration,zone_calibration,zone_generation,recovery_configured,rear_sensor_valid,rear_corridor_state,recovery_eligible,recovery_block_reason,recovery_attempts,reverse_command_time_s,reverse_measured_distance_m,reverse_distance_complete,last_recovery_reason,traffic_remaining_m,traffic_stop_success";
+  }
+  if (h.params.base_state_machine_enabled) {
+    out << ",route_phase,route_index,route_count,route_sequence_id,route_instance_id,route_request_id,route_requested_index,route_end_reached,route_completion,route_connecting,route_requested_connecting,mission_failed,mission_cancel_reason,parking_search_zone_only,parking_zone_entry_active";
   }
   out << "\n";
 
@@ -136,6 +141,11 @@ int main(int argc, char ** argv)
           << ',' << o.recovery.command_time_s << ',' << o.recovery.measured_distance_m
           << ',' << o.recovery.measured_distance_complete << ',' << static_cast<int>(o.recovery.last_reason)
           << ',' << o.traffic_remaining_m << ',' << o.traffic_stop_in_success_region;
+      out << ',' << static_cast<int>(o.route.phase) << ',' << o.route.index << ',' << o.route.count
+          << ',' << o.route.sequence_id << ',' << o.route.instance_id << ',' << o.route.request_id
+          << ',' << o.route.requested_index << ',' << o.route.end_reached << ',' << static_cast<int>(o.route.completion) << ',' << o.route.connecting << ',' << o.route.requested_connecting
+          << ',' << o.active_mission_failed << ',' << static_cast<int>(o.mission_request.cancel_reason)
+          << ',' << h.params.parking_search_zone_only << ',' << h.params.parking_zone_entry_active;
     }
     out << '\n';
     ++tick;

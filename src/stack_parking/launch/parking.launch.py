@@ -1,4 +1,4 @@
-"""Run the parking stack, optionally bringing up the existing four-LiDAR stack.
+"""Run the parking stack, optionally bringing up the v2 four-LiDAR stack.
 
 Examples:
   ros2 launch stack_parking parking.launch.py
@@ -17,7 +17,6 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     params = PathJoinSubstitution([
         FindPackageShare('stack_parking'), 'config', 'parking_params.yaml'])
-    multi_share = FindPackageShare('multi_lidar_fusion')
     fusion_share = FindPackageShare('lidar_fusion_v2')
     merged_cloud_topic = '/parking/nearest_merged_cloud'
     start_multi = LaunchConfiguration('start_multi_lidar')
@@ -25,11 +24,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'start_multi_lidar', default_value='false',
             description=(
-                'Start existing four drivers and multi_lidar_fusion; '
+                'Start the v2 four-driver profiles and lidar_fusion_v2; '
                 'false if already running')),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
-                multi_share, 'launch', 'multi_lidar_drivers.launch.py'])),
+                fusion_share, 'launch', 'drivers.launch.py'])),
             condition=IfCondition(start_multi)),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([

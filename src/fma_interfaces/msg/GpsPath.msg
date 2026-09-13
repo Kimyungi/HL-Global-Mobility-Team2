@@ -87,3 +87,4 @@ int32 previous_track_index -1
 float64 position_step_m
 float64 vehicle_heading_rad
 bool vehicle_heading_valid
+RouteFeedback route

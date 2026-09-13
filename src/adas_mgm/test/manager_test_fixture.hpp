@@ -18,6 +18,7 @@ CoreParams params()
 {
   CoreParams p{};
   p.base_state_machine_enabled = 1;
+  p.avoidance_enabled = 1;  // existing avoidance scenarios explicitly enable the manager
   p.zone_enter_confirm_samples = p.zone_exit_confirm_samples = 1;  // test-only edge fixtures
   // Synthetic test-only limits; deliberately absent from operating defaults.
   p.parking_search_timeout = 30.; p.max_parking_search_distance = 30.;
