@@ -1,6 +1,7 @@
 # Integration v2 — PR 검토 기준 (2026-09-13)
 
-대상 브랜치는 `integration/v2_main`이다. 기존 `main`은 변경하지 않는다.
+사용자 지정 PR 대상 브랜치는 `main`이다. 초기 integration v2 구축 커밋부터 현재 변경과
+현장 로그까지 함께 검토한다. PR은 아직 merge하지 않았으며 로컬 main checkout과는 별개다.
 이 문서의 검증 결과가 과거 문서의 미빌드 표기나 전체 통과 수치보다 우선한다.
 현재 PR은 전체 회귀 검증이 끝나지 않은 Draft다.
 
