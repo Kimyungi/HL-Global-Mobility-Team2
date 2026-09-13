@@ -325,7 +325,8 @@ def build_launch_description(
     lane_exit_default = float(_yaml['lane_conf_exit'])
     lane_return_default = float(_yaml['lane_conf_return'])
     v_base_default = float(_yaml['v_base'])
-    escape_after_cycles_default = int(_yaml['escape_after_cycles'])
+    # The no-estop entry must remain recovery-disabled even when the RC profile enables it.
+    escape_after_cycles_default = int(_yaml['escape_after_cycles']) if lidar_estop_enabled else 0
 
     # Four-LiDAR a1 uses reversion=true and the calibrated raw forward angle
     # is +87 deg. The single-LiDAR /scan profile uses raw -90 deg instead.

@@ -1,5 +1,10 @@
 # Integration v2 통합 자율주행 시작 — 한라대학교
 
+> **1/10 무인 RC 시험 후진:** E-stop 연속 1000틱(정상 주기 10초) 뒤 −0.8m/s로 최대
+> 162틱(1.62초, 명령상 약 1.3m) 후진한다. `escape_require_rear_clear=false`로 후방
+> CLEAR를 요구하지 않으며, 주차 ACTIVE에서는 후진 복구를 실행하지 않는다.
+> [현재 후진 설정과 종료 조건](../../docs/RC_REVERSE_RECOVERY.md)을 적용한다.
+
 > 2026-09-13 주차 변경: [즉시 주차 진입](../../docs/MGM_PARKING_ENTRY.md).
 > Zone 진입 즉시 PARKING이며 탐색 중 현재 CSV의 GPS를 추종한다. ready 후 주차 제어로 인계한다. 미완료 종점은 실패 처리 후 다음 CSV로 자동 전환한다(단일 CSV는 FINISH).
 
@@ -286,7 +291,7 @@ PYCODE
     zone_enter_confirm_samples:="$FMA_ZONE_ENTER" \
     zone_exit_confirm_samples:="$FMA_ZONE_EXIT" \
     parking_zone_entry_active:=true \
-    escape_after_cycles:=0 \
+    escape_after_cycles:=1000 \
     avoidance_enabled:=true avoid_zone_only:=false \
     lane_weights:="$FMA_LANE_WEIGHTS" \
     homography_path:="$FMA_HOMOGRAPHY" \
@@ -353,7 +358,7 @@ v2ros ros2 param get /mgm_node escape_after_cycles
 |---|---|
 | GPS | `fix_quality=4` 지속, 올바른 코스/실제 위치/index, `reference_stamp` 실제 fix 갱신 |
 | Estop | 장애물 없을 때 `estop=false`, `scan_valid=true`; 후방 corridor UNKNOWN은 현재 정상 |
-| MGM backend | `core`, `base_state_machine_enabled=true`, `escape_after_cycles=0` |
+| MGM backend | `core`, `base_state_machine_enabled=true`, `escape_after_cycles=1000` |
 | Top / 최종 명령 | `top=0`(ENABLE), `v_ref=0`; go 대기로 EXTERNAL bit 8이 있는 것은 정상 |
 | Reference | 현재 선택 소스의 `selected_reference_valid/fresh=true`; 모든 provider를 동시에 요구하지 않음 |
 | Parking 준비 전 | `mission=0`, 요청 inactive, 이전 세션의 done/ref가 현재 실행으로 인정되지 않음 |

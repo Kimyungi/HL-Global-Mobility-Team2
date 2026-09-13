@@ -1,5 +1,9 @@
 # Integration v2_main — 실차 검증 전 통합 기준
 
+> **2026-09-13 무인 RC 시험 후진:** [현재 설정](RC_REVERSE_RECOVERY.md)이 아래 과거 Recovery OFF/필수 CLEAR/고정속도 설명보다 우선한다.
+> 일반 v2 설정은 `escape_after_cycles=1000`, `v_escape=-0.8`, `escape_max_cycles=162`,
+> `escape_require_rear_clear=false`. 주차·외부·CAN 정지는 유지하며 no-estop/MBD/bench는 복구 OFF다. raw dump v22.
+
 > **2026-09-13 현재 통합 설정:** 일반 주행은 회피와 LiDAR E-stop 모두 ON이다.
 > Mission ACTIVE에서는 준비·실행 전체에서 둘 다 제외하며 종료 후 다시 적용한다.
 > 신호등 OAK 자동 노출 보정 기본값은 `-2`다(차선 카메라와 별도).

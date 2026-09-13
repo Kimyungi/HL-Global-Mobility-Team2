@@ -121,9 +121,9 @@ void recovery_and_jitter()
   check(off.st.params.escape_after_cycles == 0 && off.st.escape_phase == MGM_ESCAPE_NONE,
     "R15: zero means disabled, never immediate recovery");
   off.st.params.escape_after_cycles = 1; off.s.estop_rear_clear = false;
-  off.st.params.escape_require_rear_clear = 0; off.tick(1001);
+  off.st.params.escape_require_rear_clear = 1; off.tick(1001);
   check(off.st.escape_phase == MGM_ESCAPE_NONE && off.out.v_ref == 0,
-    "R16: new manager cannot auto-reverse without rear_clear, including legacy bypass config");
+    "R16: rear certification enabled prevents auto-reverse without rear_clear");
   off.s.estop_rear_clear = true; off.tick();
   check(off.out.path_source == MGM_SRC_ESCAPE && off.out.selected_reference.valid && off.out.v_ref < 0,
     "existing Escape reference remains valid with all existing inputs and rear confirmation");

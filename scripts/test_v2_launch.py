@@ -52,6 +52,7 @@ def test_vehicle_defaults_use_v2_and_refuse_before_hardware(monkeypatch):
     assert values['parking_zone_entry_active'] == 'true'
     assert values['parking_search_zone_only'] == 'false'
     assert values['avoidance_enabled'] == 'true'
+    assert values['escape_after_cycles'] == '1000'
     assert values['parking_search_timeout'] == values['max_parking_search_distance'] == '-1.0'
     before = set((ROOT / 'drive_logs').glob('*'))
     validation = next(item for item in description.entities if isinstance(item, OpaqueFunction))
@@ -83,6 +84,7 @@ def test_avoidance_on_default_and_explicit_override_reach_mgm(monkeypatch, entry
     assert params['avoidance_enabled'] is (enabled != 'false')
     assert params['parking_zone_entry_active'] is True
     assert params['lidar_estop_enabled'] is ('no_estop' not in entry)
+    assert params['escape_after_cycles'] == (0 if 'no_estop' in entry else 1000)
     gps = next(item for item in description.entities
                if isinstance(item, Node) and item.node_package == 'stack_gps')
     context.launch_configurations['zones_file_resolved'] = ''

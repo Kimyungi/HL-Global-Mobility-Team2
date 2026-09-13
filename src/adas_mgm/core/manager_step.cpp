@@ -24,6 +24,13 @@ float fixed_motion_speed(float request, float speed)
   }
   return std::copysign(speed, request);
 }
+bool recovery_rear_allowed(const CoreSnapshot & s, const CoreParams & p)
+{
+  // The unoccupied RC test profile can explicitly opt out of rear certification.
+  // Preserve the actual rear diagnostics; do not fabricate CLEAR input.
+  return !p.escape_require_rear_clear || (s.estop_rear_clear && s.rear_sensor_valid &&
+    s.rear_corridor_state == RearCorridorState::CLEAR);
+}
 bool line_valid(const CoreSnapshot & s)
 {
   return provider_reference(s, MGM_SRC_LANE).valid;
@@ -330,11 +337,13 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool rear_clear = s.estop_rear_clear && s.rear_sensor_valid &&
     s.rear_corridor_state == RearCorridorState::CLEAR;
   recovery.estop_rear_clear = rear_clear;
+  const bool rear_required = st.params.escape_require_rear_clear != 0;
+  const bool rear_allowed = recovery_rear_allowed(s, st.params);
   auto & diag = m.recovery;
   diag.block_reason = !diag.configured ? RecoveryBlockReason::CONFIG_DISABLED :
-    s.rear_corridor_state == RearCorridorState::UNKNOWN ? RecoveryBlockReason::REAR_UNKNOWN :
-    s.rear_corridor_state == RearCorridorState::BLOCKED ? RecoveryBlockReason::REAR_BLOCKED :
-    !rear_clear ? RecoveryBlockReason::REAR_INVALID :
+    rear_required && s.rear_corridor_state == RearCorridorState::UNKNOWN ? RecoveryBlockReason::REAR_UNKNOWN :
+    rear_required && s.rear_corridor_state == RearCorridorState::BLOCKED ? RecoveryBlockReason::REAR_BLOCKED :
+    !rear_allowed ? RecoveryBlockReason::REAR_INVALID :
     m.top != TopState::AUTONOMOUS_DRIVE ? RecoveryBlockReason::NOT_DRIVING :
     mission ? RecoveryBlockReason::MISSION_ACTIVE :
     sensor_stop || fault_stop || st.stop_zone_holding ? RecoveryBlockReason::FORCED_STOP :
@@ -344,7 +353,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool enter_recovery = update_escape(recovery, st,
     !mission && !sensor_stop && !fault_stop && !signal_stop && !st.stop_zone_holding &&
     m.top == TopState::AUTONOMOUS_DRIVE &&
-    (st.escape_phase != MGM_ESCAPE_REVERSING || rear_clear));
+    (st.escape_phase != MGM_ESCAPE_REVERSING || rear_allowed));
   diag.eligible = diag.block_reason == RecoveryBlockReason::NONE && (enter_recovery ||
     st.escape_phase == MGM_ESCAPE_REVERSING);
   if (diag.block_reason == RecoveryBlockReason::NONE && !diag.eligible) {
@@ -352,11 +361,11 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   }
   if (was_reversing && st.escape_phase == MGM_ESCAPE_NONE) {
     diag.last_reason = !diag.configured ? RecoveryReason::CONFIG_DISABLED :
-      !rear_clear ? RecoveryReason::REAR_LOST : !s.auto_estop ? RecoveryReason::DANGER_CLEARED :
+      !rear_allowed ? RecoveryReason::REAR_LOST : !s.auto_estop ? RecoveryReason::DANGER_CLEARED :
       (!mission && !sensor_stop && !fault_stop && !signal_stop && !st.stop_zone_holding &&
        m.top == TopState::AUTONOMOUS_DRIVE) ? RecoveryReason::TIME_LIMIT : RecoveryReason::AUTHORITY_LOST;
   }
-  if (enter_recovery && rear_clear && diag.configured) {
+  if (enter_recovery && rear_allowed && diag.configured) {
     ++diag.attempt_count;
     diag.last_reason = RecoveryReason::ENTERED;
     st.escape_phase = MGM_ESCAPE_REVERSING;
@@ -480,16 +489,16 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
     if (st.escape_phase == MGM_ESCAPE_REVERSING) {
       out.path_source = MGM_SRC_ESCAPE;
 
-      out.v_ref = fixed_motion_speed(st.params.v_escape, st.params.v_base);
+      out.v_ref = st.params.v_escape;  // Recovery has its own requested speed magnitude.
       out.immediate_stop = false;
       auto & escape = out.references[MGM_SRC_ESCAPE];
       escape.source = MGM_SRC_ESCAPE;
       escape.available = true;  // existing deterministic generator, checked after assemble
       escape.fresh = true; escape.age_s = 0.0f;
-      escape.valid = s.estop_rear_clear && s.rear_sensor_valid &&
-        s.rear_corridor_state == RearCorridorState::CLEAR && st.params.escape_after_cycles > 0 &&
+      const bool rear_allowed = recovery_rear_allowed(s, st.params);
+      escape.valid = rear_allowed && st.params.escape_after_cycles > 0 &&
         st.params.escape_max_cycles > 0 && std::isfinite(st.params.v_escape) && st.params.v_escape < 0;
-      if (!s.estop_rear_clear || !s.rear_sensor_valid || s.rear_corridor_state != RearCorridorState::CLEAR) {out.safe_stop_reasons |= SAFE_STOP_REAR_UNAVAILABLE;}
+      if (!rear_allowed) {out.safe_stop_reasons |= SAFE_STOP_REAR_UNAVAILABLE;}
     } else {
       out.v_ref = 0.0f;
       out.immediate_stop = true;  // existing recovery ended, waiting for real ref

@@ -44,7 +44,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v19: immediate Zone-entry Parking authority and current-route endpoint cancellation.
 // v20: PARKING search follows GPS until ready; unchanged layout, new authority semantics.
 // v21: main-compatible AVOID wire target, speed ramp and completion; unchanged snapshot layout.
-constexpr uint32_t kDumpVersion = 21;
+// v22: independent recovery speed and explicit optional rear requirement in parallel Manager.
+constexpr uint32_t kDumpVersion = 22;
 
 struct DumpHeader
 {

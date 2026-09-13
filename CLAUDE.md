@@ -1,5 +1,9 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> **2026-09-13 무인 RC 시험 후진:** [현재 설정](docs/RC_REVERSE_RECOVERY.md)이 아래 과거 Recovery OFF/필수 CLEAR/고정속도 설명보다 우선한다.
+> 일반 v2 설정은 `escape_after_cycles=1000`, `v_escape=-0.8`, `escape_max_cycles=162`,
+> `escape_require_rear_clear=false`. 주차·외부·CAN 정지는 유지하며 no-estop/MBD/bench는 복구 OFF다. raw dump v22.
+
 > **2026-09-13 GPS-only Zone 선행 진입:** 일반 `GPS_ONLY_ZONE` membership은
 > 현재 station 최근접 웨이포인트와 station+2.5m preview에 가장 가까운 CSV
 > 웨이포인트 중 하나라도 Zone 범위 안이면 true다. preview의 주행 기준점 보간은

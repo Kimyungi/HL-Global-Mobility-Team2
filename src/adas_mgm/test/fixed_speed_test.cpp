@@ -69,12 +69,70 @@ void parking_and_recovery()
   r.s.parking_done = true; r.tick();
   check(r.out.v_ref == 0 && r.out.immediate_stop, "reverse-to-navigation handoff stays zero");
   r.tick(); check(near(r.out.v_ref, 1.f), "navigation resumes at fixed speed after handoff");
-  Run escape; escape.st.params.escape_after_cycles = 1; escape.tick();
+  Run escape; escape.st.params.escape_after_cycles = 1;
+  escape.st.params.v_escape = -.8f; escape.tick();
   escape.s.auto_estop = true; escape.tick(2);
-  check(escape.out.path_source == MGM_SRC_ESCAPE && near(escape.out.v_ref, -1.f),
-    "certified recovery uses same fixed magnitude and reverse sign");
+  check(escape.out.path_source == MGM_SRC_ESCAPE && near(escape.out.v_ref, -.8f),
+    "recovery speed is independent of navigation magnitude");
   escape.s.rear_sensor_valid = false; escape.tick();
   check(escape.out.v_ref == 0, "rear loss still terminates reverse motion");
+}
+
+void rc_recovery()
+{
+  Run r;
+  r.st.params.escape_after_cycles = 1000;
+  r.st.params.escape_max_cycles = 162;
+  r.st.params.v_escape = -.8f;
+  r.st.params.escape_require_rear_clear = 0;
+  r.s.estop_rear_clear = r.s.rear_sensor_valid = false;
+  r.s.rear_corridor_state = RearCorridorState::UNKNOWN;
+  r.tick();  // Forward output arms the existing recovery algorithm.
+  r.s.auto_estop = true;
+  r.tick(999);
+  check(r.out.v_ref == 0 && r.st.escape_phase == MGM_ESCAPE_NONE,
+    "RC recovery waits for the complete E-stop delay");
+  r.tick();
+  check(r.out.path_source == MGM_SRC_ESCAPE && near(r.out.v_ref, -.8f),
+    "explicit rear opt-out permits configured recovery with UNKNOWN input");
+  check(!(r.out.safe_stop_reasons & SAFE_STOP_REAR_UNAVAILABLE) &&
+    !r.st.managers.recovery.rear_sensor_valid &&
+    r.st.managers.recovery.rear_corridor_state == RearCorridorState::UNKNOWN,
+    "rear opt-out does not fabricate CLEAR diagnostics");
+  int reverse_commands = 0;
+  for (int i = 0; i < 200 && r.out.v_ref < 0; ++i) {
+    ++reverse_commands;
+    check(near(r.out.v_ref, -.8f), "every recovery command uses configured speed");
+    r.tick();
+  }
+  check(reverse_commands == 162 && r.out.v_ref == 0 &&
+    near(reverse_commands * .01f * .8f, 1.296f),
+    "RC recovery ends after 162 commands, nominally 1.296 metres");
+
+  Run stop;
+  stop.st.params.escape_after_cycles = 1;
+  stop.st.params.escape_require_rear_clear = 0;
+  stop.s.estop_rear_clear = stop.s.rear_sensor_valid = false;
+  stop.s.rear_corridor_state = RearCorridorState::BLOCKED;
+  stop.tick(); stop.s.auto_estop = true; stop.tick();
+  check(stop.out.v_ref < 0, "rear opt-out also ignores BLOCKED input");
+  stop.s.external_stop = true; stop.tick();
+  check(stop.out.v_ref == 0 && stop.out.immediate_stop,
+    "operator and CAN external stop still ends opted-out recovery immediately");
+  stop.s.external_stop = false; stop.tick(3);
+  check(stop.out.v_ref < 0, "recovery can rearm after the existing delay");
+  stop.st.params.escape_require_rear_clear = 1; stop.tick();
+  check(stop.out.v_ref == 0 && stop.st.escape_phase == MGM_ESCAPE_NONE,
+    "reenabling rear certification restores its veto during reverse");
+
+  Run mission;
+  mission.st.params.escape_after_cycles = 1;
+  mission.st.params.escape_require_rear_clear = 0;
+  mission.tick(); mission.mission();
+  mission.s.auto_estop = true; mission.tick(3);
+  check(mission.st.escape_phase == MGM_ESCAPE_NONE &&
+    mission.out.path_source != MGM_SRC_ESCAPE,
+    "Mission ownership excludes recovery even with rear opt-out");
 }
 
 void signal_and_invalid()
@@ -102,7 +160,7 @@ void signal_and_invalid()
 }
 int main()
 {
-  motion(); stops(); parking_and_recovery(); signal_and_invalid();
+  motion(); stops(); parking_and_recovery(); rc_recovery(); signal_and_invalid();
   std::printf("fixed_speed_test: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }
