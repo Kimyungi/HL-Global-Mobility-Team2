@@ -1,4 +1,4 @@
-"""Front/rear LiDAR ICP parking pipeline ROS 2 wrapper.
+"""Vehicle/GPS localization and LiDAR mapping parking pipeline ROS 2 wrapper.
 
 Decision ownership remains in ``adas_mgm``. Until a stable, feasible parking
 space exists this node publishes ``space_found=False`` and the existing lane or
@@ -191,13 +191,13 @@ class StackParkingNode(Node):
             1.0 / max(1.0, slam_rate), self._process_slam)
         if self._merged_mode:
             self.get_logger().info(
-                'merged-cloud ICP parking ready: merged=%s rear_scan=%s '
+                'merged-cloud parking ready: merged=%s rear_scan=%s '
                 'slam=%.1fHz stage=%s manual=/parking/manual_command '
                 '(start perpendicular right | start parallel right | cancel)'
                 % (merged_topic, rear_topic, slam_rate, self.pipeline.stage.value))
         else:
             self.get_logger().info(
-                'front/rear ICP parking ready: front=%s rear_cloud=%s rear_scan=%s '
+                'front/rear parking ready: front=%s rear_cloud=%s rear_scan=%s '
                 'slam=%.1fHz stage=%s manual=/parking/manual_command '
                 '(start perpendicular right | start parallel right | cancel)'
                 % (front_topic, rear_cloud_topic, rear_topic, slam_rate,
@@ -274,6 +274,8 @@ class StackParkingNode(Node):
             'vehicle.wheelbase_m': 0.595,
             'vehicle.min_turn_radius_m': 1.15,
             'lidar.rear_x_m': -0.110354,
+            'icp.map_correction_enabled': False,
+            'icp.unobserved_delete_misses': 5,
             'icp.scan_voxel_m': 0.06,
             'icp.max_scan_points': 900,
             # Keep the fallback consistent with parking_params.yaml.  Eight
@@ -348,6 +350,8 @@ class StackParkingNode(Node):
 
     def _icp_config(self) -> IcpConfig:
         return IcpConfig(
+            map_correction_enabled=bool(self._p('icp.map_correction_enabled')),
+            unobserved_delete_misses=int(self._p('icp.unobserved_delete_misses')),
             scan_voxel_m=float(self._p('icp.scan_voxel_m')),
             max_scan_points=int(self._p('icp.max_scan_points')),
             map_voxel_m=float(self._p('icp.map_voxel_m')),
@@ -501,6 +505,8 @@ class StackParkingNode(Node):
             self.prior.update_gps(
                 int(msg.update), dx, dy, float(msg.dyaw),
                 int(msg.fix_quality), bool(self._p('gps.use_yaw_fallback')))
+        else:
+            self.prior.invalidate_gps()
         if not bool(self._p('auto_trigger_gps_zone')):
             return
         if not msg.parking_zone:
@@ -783,7 +789,11 @@ class StackParkingNode(Node):
         prior_pose = self.prior.predict(stamp_s)
         result = self.slam.update(
             points,
-            prior_pose,
+            prior_pose if (
+                self.slam.config.map_correction_enabled
+                or self.prior.last_status.velocity_fresh
+                or self.prior.last_status.gps_corrected
+            ) else None,
             update_map=self.pipeline.mapping_enabled,
         )
         self.last_icp_result = result
@@ -867,8 +877,6 @@ class StackParkingNode(Node):
     def _localization_valid(self, now_s: float) -> bool:
         if not self.slam.initialized:
             return False
-        if self.last_icp_result is not None and self.last_icp_result.accepted:
-            return True
         return now_s - self.last_icp_accepted_s <= float(self._p('slam_stale_timeout_s'))
 
     def _tick(self) -> None:
@@ -1215,6 +1223,8 @@ class StackParkingNode(Node):
             'slam_valid': str(localization_ok),
             'icp_accepted': str(bool(icp.accepted) if icp else False),
             'icp_reason': icp.reason if icp else 'no_scan_yet',
+            'map_correction_enabled': str(self.slam.config.map_correction_enabled),
+            'unobserved_delete_misses': str(self.slam.config.unobserved_delete_misses),
             'icp_rmse_m': ('%.4f' % icp.rmse_m) if icp and math.isfinite(icp.rmse_m) else 'inf',
             'icp_matches': str(icp.correspondences if icp else 0),
             'map_points': str(len(self.slam.map)),

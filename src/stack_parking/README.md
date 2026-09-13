@@ -1,4 +1,4 @@
-# stack_parking — 전·후 LiDAR ICP 주차
+# stack_parking — 차량/GPS 측위와 LiDAR 맵 기반 주차
 
 `lidar_fusion_v2`의 4-LiDAR nearest-wins 스캔을 주차 전용 cloud로 변환해
 SLAM·공간 탐지·경로 제어에 사용한다. 주차 결과는 `/perception/parking`으로
@@ -6,24 +6,23 @@ MGM에 넘기며 `/adas/target_ref`는 MGM만 발행한다.
 
 ## 파이프라인
 
-1. **SLAM** — 전·후 cloud를 timestamp로 한 쌍씩 소비하여 최대 10Hz로 ICP를
-   bootstrap한다. `parking_map` 시작 자세는 `(0,0,0)`이다.
+1. **SLAM** — 전·후 cloud를 timestamp로 한 쌍씩 소비하거나 통합 cloud를
+   받아 최대 10Hz로 위치와 맵을 갱신한다. `parking_map` 시작 자세는 `(0,0,0)`이다.
 2. **MAPPING** — `space_found=false`인 동안 endpoint map을 누적한다. dSPACE
-   `VehicleVector.v/str`의 자전거 모델로 ICP prior를 만들고,
-   `VehicleVector.x/y/yaw`와 IMU는 사용하지 않는다. 필요 시 RTK FIXED `GpsPath`의 새 delta만
-   innovation gate 뒤 x/y drift 보정에 쓴다. 기존 맵 점은 2cm 이내에서 다시 관측될 때만
-   동일 셀의 hit로 인정한다.
+   `VehicleVector.v/str`의 자전거 모델로 위치를 예측하고,
+   RTK FIXED `GpsPath`의 새 delta를 innovation gate 뒤 x/y drift 보정에 쓴다.
+   기본 설정에서 맵 정합과 `VehicleVector.x/y/yaw`, 직접 IMU 입력은 사용하지 않는다.
 3. `GpsPath.parking_zone` 상승 에지와 `parking_mode`에서 평행(1자)/직각(T자),
    좌/우를 결정한다. 양쪽 정적 경계가 있는 gap을 3 frame 연속 확인한다. 직각 주차는 gap 내부 후면
    벽 지지점까지 요구한다. 측면 경계 후보는 최대 3m까지 탐색하며, 직각 주차의 후면 벽
    깊이는 이 상한과 별도로 `perpendicular_min_depth_m`을 적용한다. 별도 평행주차 시험 노드의
    초기 고정 벽 탐색도 같은 3m 상한을 사용하며, 공통 SLAM 맵의 2cm 재관측 정책을 그대로 받는다.
 4. **LOCALIZATION** — 후축 기준 최소 회전반경 1.15m의 원호 경로를 만들고 차량
-   직사각 footprint로 정적 충돌 검사를 한다. 계획 순간 map을 동결하고 연속 ICP
-   정합을 확인하는 동안에는 아직 `space_found=false`를 유지한다.
+   직사각 footprint로 정적 충돌 검사를 한다. 계획 순간 map을 동결하고 연속 유효
+   위치 갱신을 확인하는 동안에는 아직 `space_found=false`를 유지한다.
 5. **PARKING** — localization 확인 뒤에만 MGM 출력을 활성화한다. 원호 시작점이 앞이면 전진 접근 경로를 먼저 보낸다. 이미 지난 경우에는 scan
    lane을 직선 후진해 원호 시작점에 합류한다.
-6. map-frame 경로에서 약 1m preview를 뽑아 현재 ICP 자세 기준 `base_link`의
+6. map-frame 경로에서 약 1m preview를 뽑아 현재 차량/GPS 자세 기준 `base_link`의
    `{x,y,yaw,curvature}` 한 점으로 변환한다. 회전 중 `|v|=0.55m/s`, 마지막
    zero-curvature 도킹 구간만 `0.15m/s`다.
 7. 후방 a2 scan의 보정 거리에서 서로 가까운 5개 이상 ray가 0.20m 이하가 되면
@@ -97,21 +96,44 @@ ros2 topic echo /parking/diagnostics
   nearest-wins 통합 입력. 공용 스캔은 12m를 유지하고 주차 노드에서만
   4m로 필터링한다.
 - `/lidar/a2/scan` — 후방 20cm 완료 조건.
-- `/vehicle/vector` — `v`만 motion prior와 정지 확인에 사용.
-- `/perception/imu` — `stack_gps`가 10Hz로 발행하는 자이로 적분 상대 yaw.
+- `/vehicle/vector` — 실제 속도 `v`와 조향 `str`로 bicycle 모델 위치를
+  예측한다. `x/y/yaw`는 사용하지 않는다.
+- `/perception/imu` — 선택 입력. 기본 `prior.use_imu: false`.
 - `/perception/gps_path` — quality 4(RTK FIXED) + `HEADING_FUSED`인
-  `dx/dy/dyaw/update`만 사용. IMU가 신선하면 `dyaw`는 쓰지 않고, IMU가 끊겼을
-  때만 k-1 yaw 증분으로 폴백한다. TANGENT와 후진 시 180° 모호한 COG는 거부한다.
+  `dx/dy/dyaw/update`만 사용. 기본 위치 보정 gain은 0.15, 오차 허용 범위는
+  1.5m, 1회 보정 상한은 0.2m다. yaw는 차량 속도·조향을 우선하며,
+  IMU와 차량 bicycle 예측을 사용할 수 없을 때 GPS `dyaw`로 폴백한다.
+  TANGENT와 후진 시 180° 모호한 COG는 거부한다. 품질 저하나 update 누락 후에는
+  현재 위치를 GPS 적분의 새 기준으로 잡는다.
+
+기본 `icp.map_correction_enabled: false`에서는 차량 피드백 + GPS 위치가
+그대로 `/parking/slam_pose`가 된다. 라이다 점은 이 위치에 배치해 맵을 만들며,
+맵 정합으로 차량 위치를 수정하지 않는다. GPS 보정이 없으면 차량 피드백으로
+추정한다. GPS 보정을 받으려면 실제 `stack_gps`가 위 토픽을 발행해야 하며,
+단독 시험의 합성 GPS 주차 게이트는 측위 입력으로 사용되지 않는다.
+
+`icp.unobserved_delete_misses`를 양의 정수 N으로 설정하면 차량 기준
+`icp.freespace_clear_radius_m`(4m) 이내의 점은 주변
+`icp.observation_match_radius_m`(2cm)에 연속 N회 관측이 없을 때 삭제한다.
+가려진 점과 빈 방향도 미관측으로 세며, 다시 관측하면 횟수를 초기화한다.
+잠정/확정 점에 같은 N을 적용한다. 횟수는 새로 소비한 스캔 기준이며,
+다운샘플링으로 빠진 점은 미관측으로 세지 않는다. 4m 밖의 점에는 이 삭제
+규칙을 적용하지 않고, 맵 동결 단계에서는 점을 추가하거나 삭제하지 않는다.
+기본값은 **5회**다. 4회까지 유지하고 5회째 미관측 시 삭제한다.
+0으로 설정하면 기존의 더 먼 반사점이 확인되어야 삭제하는 방식을 사용한다.
+별도 `slam_only` 뷰어는 차량/GPS 입력이 없는 라이다 ICP 시험 도구다.
 
 출력:
 
-- `/perception/parking` — 기존 경로/속도와 함께 10Hz LiDAR SLAM
+- `/perception/parking` — 기존 경로/속도와 함께 10Hz 차량/GPS 측위
   `dx/dy/dyaw/update`를 전달하는 `ParkingStatus` 계약.
 - `/parking/slam_pose` — 제어용 10Hz pose. `/parking/slam_scan`은 디버그 주기.
 - `/parking/local_map`, `/parking/debug_markers` — mapping/space 단계.
 - `/parking/reference_path`, `/parking/active_path` — map 위 경로 단계.
 - `/parking/pipeline_stage` — `slam|mapping|localization|parking`.
-- `/parking/diagnostics` — ICP RMSE/match 수, rear clearance, state/progress.
+- `/parking/diagnostics` — 위치 추정 방식(`icp_reason=vehicle_gps_prior`),
+  GPS 보정 여부, 맵 상태, state/progress. 맵 정합을 끄면 ICP RMSE는 `inf`,
+  match 수는 0이며 정합 실패를 뜻하지 않는다.
 
 ## RViz 4단계
 
@@ -122,9 +144,9 @@ rviz2 -d $(ros2 pkg prefix stack_parking)/share/stack_parking/config/parking_3_l
 rviz2 -d $(ros2 pkg prefix stack_parking)/share/stack_parking/config/parking_4_parking.rviz
 ```
 
-1. SLAM: 현재 registered scan, 누적 map, ICP vehicle pose.
+1. SLAM: 현재 registered scan, 누적 map, 차량/GPS vehicle pose.
 2. MAPPING: endpoint map, 검출 공간, 최소반경 시작점과 최종 pose.
-3. LOCALIZATION: 동결 map에 대한 현재 scan 정합과 계획 경로.
+3. LOCALIZATION: 동결 map 위 차량/GPS 위치의 현재 scan과 계획 경로.
 4. PARKING: 전체 진입 경로, 현재 gear segment, 1m preview.
 
 기존 `parking_3_reference_path.rviz`는 호환용으로 그대로 남겨 둔다. 모든 화면의
