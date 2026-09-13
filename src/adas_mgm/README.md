@@ -4,7 +4,7 @@
 
 실차 통합 실행은 다음 두 문서를 순서대로 사용한다.
 
-1. [`RUNBOOK_full_measurement_20260830.md`](RUNBOOK_full_measurement_20260830.md) —
+1. [`RUNBOOK_full_measurement_20260904.md`](RUNBOOK_full_measurement_20260904.md) —
    처음 설치하거나 장착 위치가 바뀐 경우의 임계값 측정
 2. [`RUNBOOK_full_operation_20260904.md`](RUNBOOK_full_operation_20260904.md) —
    측정 완료 후 차선·GPS·회피·긴급정지·신호등을 함께 실행

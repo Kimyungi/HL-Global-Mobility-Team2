@@ -216,3 +216,29 @@ class TestNodeInitialization(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCentralProfile(unittest.TestCase):
+    def test_profile_matches_training_crop_and_disables_full_frame_tracker(self):
+        import numpy as np
+        from stack_traffic.logic import CENTRAL_TRAFFIC_ROI, normalized_roi_to_bbox
+        os.environ['ROS_LOG_DIR'] = '/tmp/stack_traffic_test_ros_logs'
+        rclpy.init(args=['--ros-args', '-p', 'camera_backend:=oak',
+                         '-p', 'central_traffic_only:=true',
+                         '-p', 'template_tracking_enabled:=true'])
+        node = None
+        try:
+            with patch('stack_traffic.node.YOLO', FakeYolo), patch('stack_traffic.node.OakRgbdCamera', FakeOakCamera):
+                node = StackTrafficNode()
+            frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+            crop, bbox = node._prepare_detection_frame(frame)
+            self.assertEqual(bbox, (384, 0, 896, 360))
+            self.assertEqual(bbox, normalized_roi_to_bbox(frame.shape, *CENTRAL_TRAFFIC_ROI))
+            self.assertEqual(crop.shape, (360, 512, 3))
+            self.assertFalse(node.template_tracking_enabled)
+            self.assertTrue(node.central_traffic_only)
+            self.assertEqual(node._prepare_detection_frame(frame)[1], bbox)
+        finally:
+            if node is not None:
+                node.destroy_node()
+            rclpy.shutdown()
