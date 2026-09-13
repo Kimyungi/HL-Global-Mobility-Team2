@@ -59,7 +59,7 @@ int main() {
     Run r; enable(r); fix(r,true); r.tick(100);
     check(!r.out.route.seen_nonterminal && r.out.route.request_id==0 && r.out.v_ref==0, "startup at endpoint cannot skip route");
     r.s.gps_valid=false; r.s.gps_path.n=0; fix(r);
-    check(r.out.v_ref==0 && (r.out.safe_stop_reasons & SAFE_STOP_ROUTE_SEQUENCE), "GPS outage stops sequence even when LINE exists");
+    check(r.out.v_ref>0 && !(r.out.safe_stop_reasons & SAFE_STOP_ROUTE_SEQUENCE) && r.out.route.index==0, "GPS outage allows camera on ordinary CSV without advancing the route");
   }
   {
     Run r; enable(r); fix(r); r.s.route.instance_id++; fix(r);

@@ -217,8 +217,14 @@ if(BUILD_TESTING)
     COMMAND transition_log_test)
 endif()
 
+if(BUILD_TESTING)
+  add_executable(startup_navigation_test test/startup_navigation_test.cpp)
+  target_link_libraries(startup_navigation_test mgm_core)
+  add_test(NAME startup_navigation_test COMMAND startup_navigation_test)
+endif()
+
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS tools/go tools/state tools/can_watchdog_check.py
+install(PROGRAMS tools/go tools/start_readiness.py tools/state tools/can_watchdog_check.py
   tools/straight_lane_publisher.py tools/analyze_mission_calibration.py tools/integration_view.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})

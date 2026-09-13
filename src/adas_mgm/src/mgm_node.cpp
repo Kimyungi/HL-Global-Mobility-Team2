@@ -30,6 +30,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rcl_interfaces/msg/parameter_descriptor.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/header.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "fma_interfaces/msg/mgm_state.hpp"
 #include "fma_interfaces/msg/lane_path.hpp"
@@ -61,6 +62,7 @@ constexpr int64_t kPeriodNs = 10'000'000;  // 10ms 고정
 struct LatestMsgs
 {
   fma_interfaces::msg::LanePath lane;
+  std_msgs::msg::Header camera_frame;
   fma_interfaces::msg::GpsPath gps;
   fma_interfaces::msg::AvoidStatus avoid;
   fma_interfaces::msg::ParkingStatus parking;
@@ -437,6 +439,11 @@ public:
       "/operator/go", rclcpp::QoS(1),
       [this](std_msgs::msg::Bool::ConstSharedPtr m) {
         std::lock_guard<std::mutex> lk(mtx_);
+        if (m->data && wait_go_ && base_managers_ && !start_ready_.load()) {
+          RCLCPP_WARN(get_logger(), "출발 인가 대기: 카메라 영상 또는 GPS FIXED(4) 필요");
+          return;
+        }
+        if (m->data) {operator_stop_ = false;}
         if (m->data && !go_received_) {
           RCLCPP_INFO(get_logger(), "출발 인가 수신 — 주행 시작");
         }
@@ -456,7 +463,9 @@ public:
     sub_operator_stop_ = create_subscription<std_msgs::msg::Bool>(
       "/operator/stop", rclcpp::QoS(1),
       [this](std_msgs::msg::Bool::ConstSharedPtr m) {
-        std::lock_guard<std::mutex> lk(mtx_); operator_stop_ = m->data;
+        std::lock_guard<std::mutex> lk(mtx_);
+        operator_stop_ = m->data;
+        if (m->data) {go_received_ = false;}
       });
     sub_mission_cancel_ = create_subscription<std_msgs::msg::Bool>(
       "/operator/cancel_mission", rclcpp::QoS(1),
@@ -498,6 +507,12 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         msgs_.lane = *m;
         last_lane_rx_ns_ = monotonicNs();});
+    sub_camera_ = create_subscription<std_msgs::msg::Header>(
+      "/perception/lane_camera", qos,
+      [this](std_msgs::msg::Header::ConstSharedPtr m) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.camera_frame = *m;
+      });
     sub_gps_ = create_subscription<fma_interfaces::msg::GpsPath>(
       "/perception/gps_path", qos,
       [this](fma_interfaces::msg::GpsPath::ConstSharedPtr m) {
@@ -905,6 +920,17 @@ private:
     // Sensor/message availability stays separate from drivable path validity.
     s.camera_line_valid = !lane_stale;
     s.gps_valid = !gps_stale && m.gps.fix_quality != 0;
+    s.route_metadata_fresh = !gps_stale;
+    const auto camera_stamp = m.camera_frame.stamp;
+    const auto camera_sample = camera_clock_.observe(
+      static_cast<int64_t>(camera_stamp.sec)*1'000'000'000+camera_stamp.nanosec,
+      s.event_time_ns, s.monotonic_ns, lane_stale_ns_);
+    s.camera_available = camera_sample.generation != 0 &&
+      std::isfinite(camera_sample.age_s) && camera_sample.age_s >= 0 &&
+      camera_sample.timeout_s > 0 && camera_sample.age_s <= camera_sample.timeout_s;
+    s.gps_fixed_ready = m.gps.fix_quality == 4 && provider_reference(s, MGM_SRC_GPS).valid;
+    s.start_gate_enabled = wait_go_ && base_managers_;
+    start_ready_ = s.camera_available || s.gps_fixed_ready;
     s.lidar_valid = !avoid_stale && m.avoid.scan_valid;
     s.auto_estop = estop_real && m.estop.scan_valid;
     s.parking_valid = !parking_stale;
@@ -1014,6 +1040,10 @@ private:
       status.route.requested_index = out.route.requested_index;
       status.route.seen_nonterminal = out.route.seen_nonterminal;
       status.route.end_reached = out.route.end_reached;
+      status.camera_available = s.camera_available;
+      status.gps_fixed_ready = s.gps_fixed_ready;
+      status.start_ready = s.camera_available || s.gps_fixed_ready;
+      status.go_authorized = go;
       status.top = static_cast<uint8_t>(out.top);
       status.navigation = static_cast<uint8_t>(out.nav);
       status.avoidance = static_cast<uint8_t>(out.avoid);
@@ -1269,6 +1299,8 @@ private:
   bool base_managers_{false};
   ReferenceClock reference_clocks_[MGM_SRC_ESCAPE];
   ReferenceClock preparation_clock_;
+  ReferenceClock camera_clock_;
+  std::atomic<bool> start_ready_{false};
   bool session_requested_{false};
   bool operator_stop_{false};
   bool mission_cancel_requested_{false};
@@ -1289,6 +1321,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_session_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_operator_stop_;
   rclcpp::Subscription<fma_interfaces::msg::LanePath>::SharedPtr sub_lane_;
+  rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr sub_camera_;
   rclcpp::Subscription<fma_interfaces::msg::GpsPath>::SharedPtr sub_gps_;
   rclcpp::Subscription<fma_interfaces::msg::AvoidStatus>::SharedPtr sub_avoid_;
   rclcpp::Subscription<fma_interfaces::msg::ParkingStatus>::SharedPtr sub_parking_;

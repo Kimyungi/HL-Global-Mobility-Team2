@@ -4,8 +4,8 @@ set -eo pipefail
 V2_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 V2_ACTION=${1:-check}
 case "$V2_ACTION" in
-  build|check|test|bench|vehicle|vehicle-no-estop|drive|view|go|state|stop) ;;
-  *) echo 'Usage: scripts/v2 [build|check|test|bench|vehicle|vehicle-no-estop|drive [launch arguments]|view|go [options]|state|stop]' >&2; exit 2 ;;
+  build|check|test|bench|vehicle|vehicle-no-estop|prepare|gps-start|gps-status|gps-off|drive|view|go|state|stop) ;;
+  *) echo 'Usage: scripts/v2 [build|check|test|bench|vehicle|vehicle-no-estop|prepare|gps-start|gps-status|gps-off|drive [launch arguments]|view|go [options]|state|stop]' >&2; exit 2 ;;
 esac
 if [[ ${FMA_V2_CLEAN:-} != "$V2_ROOT" ]]; then
   exec env -i HOME="$HOME" USER="${USER:-}" LANG="${LANG:-C.UTF-8}" \
@@ -35,15 +35,22 @@ case "$V2_ACTION" in
   test)
     ctest --test-dir "$V2_ROOT/build_v2/adas_mgm" --output-on-failure
     export PYTHONPATH="$V2_ROOT/src/stack_gps:$V2_ROOT/src/stack_lane:$V2_ROOT/src/stack_parking:$V2_ROOT/src/stack_estop:$V2_ROOT/src/stack_avoid:$V2_ROOT/src/lidar_fusion_v2:$V2_ROOT/src/stack_traffic:$PYTHONPATH"
-    /usr/bin/python3 -m pytest -q src/stack_gps/test src/stack_estop/test \
+    # GPS and avoidance both contain test_station_path.py; ROS launch_testing
+    # imports bare module names, so collect the GPS suite in its own process.
+    /usr/bin/python3 -m pytest -q src/stack_gps/test
+    /usr/bin/python3 -m pytest -q src/stack_estop/test \
       src/stack_parking/test src/stack_avoid/test src/lidar_fusion_v2/test src/stack_lane/test \
       src/stack_traffic/test src/adas_mgm/test/test_reference_metadata.py \
-      src/adas_mgm/test/test_mission_calibration.py scripts/test_v2_launch.py \
+      src/adas_mgm/test/test_mission_calibration.py src/adas_mgm/test/test_start_readiness.py \
+      scripts/test_v2_preparation.py scripts/test_v2_launch.py \
       scripts/test_v2_recover_lidars.py scripts/test_v2_front_lidar.py
     ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=181 /usr/bin/python3 -m pytest -q \
       src/adas_mgm/test/test_integration_view.py
     export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=174
     /usr/bin/python3 src/adas_mgm/test/manager_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=182
+    /usr/bin/python3 src/adas_mgm/test/startup_ros_smoke.py \
       "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
     export ROS_DOMAIN_ID=178
     /usr/bin/python3 src/adas_mgm/test/parking_entry_ros_smoke.py \
@@ -66,7 +73,17 @@ case "$V2_ACTION" in
     export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=175
     exec ros2 launch adas_mgm integration_v2_bench.launch.py
     ;;
-  drive)
+  gps-start|gps-status|gps-off)
+    case "$V2_ACTION" in
+      gps-start) V2_GPS_ACTION=start ;;
+      gps-status) V2_GPS_ACTION=status ;;
+      gps-off) V2_GPS_ACTION=stop ;;
+    esac
+    exec /usr/bin/python3 -m stack_gps.persistent_service "$V2_GPS_ACTION" \
+      --config "$V2_ROOT/src/stack_gps/config/persistent_gps.yaml" \
+      --relay-script "$V2_ROOT/src/stack_gps/tools/base_station/rtcm_server.py"
+    ;;
+  prepare|drive)
     shift
     exec ros2 launch "$V2_ROOT/src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py" "$@"
     ;;

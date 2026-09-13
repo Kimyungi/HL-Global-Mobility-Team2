@@ -56,7 +56,7 @@ void nav_reselect(const CoreSnapshot & s, CoreState & st)
     st.managers.nav = NavState::GPS_BACKUP;
   } else if (st.managers.gps_only_context) {
     st.managers.nav = NavState::GPS_ONLY_NAV;
-  } else if (line_return_ready(s, st)) {
+  } else if (line_return_ready(s, st) || (!gps_valid(s) && line_valid(s))) {
     st.managers.nav = NavState::LINE;
   } else if (gps_valid(s)) {
     st.managers.nav = NavState::GPS_BACKUP;
@@ -184,7 +184,10 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.recovery.eligible = false; m.recovery.block_reason = RecoveryBlockReason::NOT_DRIVING;
     return;
   }
-  m.top = s.autonomous_enabled ? TopState::AUTONOMOUS_DRIVE : TopState::AUTONOMOUS_ENABLE;
+  const bool starting_ready = !s.start_gate_enabled || s.camera_available || s.gps_fixed_ready;
+  const bool already_driving = m.top == TopState::AUTONOMOUS_DRIVE;
+  m.top = s.autonomous_enabled && (already_driving || starting_ready) ?
+    TopState::AUTONOMOUS_DRIVE : TopState::AUTONOMOUS_ENABLE;
 
   const bool line = line_valid(s);
   const bool gps = gps_valid(s);
@@ -204,7 +207,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     if ((!line || st.lane_low_cnt >= st.params.n_cycles) && gps) {
       m.nav = NavState::GPS_BACKUP;
     }
-  } else if (line_return_ready(s, st)) {
+  } else if (line_return_ready(s, st) || (!gps && line)) {
     m.nav = NavState::LINE;
   }
 

@@ -171,6 +171,7 @@ class StackGpsNode(Node):
         self.declare_parameter('rtcm_host', '')       # 빈 값 = 주입 안 함
         self.declare_parameter('rtcm_port', 2101)
         self.declare_parameter('serial_port', '/dev/ttyRover')
+        self.declare_parameter('link_mode', 'direct', ParameterDescriptor(read_only=True))
         self.declare_parameter('baud', 115200)
         self.declare_parameter('n_points', 1, ParameterDescriptor(read_only=True))
         # Fixed station +2.5m preview; publish_period is the station search sample_time.
@@ -300,7 +301,15 @@ class StackGpsNode(Node):
         # 0 이하면 끔. 판정은 fix 품질이 아니라 **NMEA 무수신**으로만 한다.
         self.declare_parameter('usb_reset_after_s', 20.0)
         self.declare_parameter('usb_reset_cooldown_s', 60.0)
-        self.link = GgaLink(
+        mode = p('link_mode').value
+        if mode not in ('direct', 'persistent'):
+            raise ValueError('link_mode must be direct or persistent')
+        if mode == 'persistent':
+            from stack_gps.persistent_link import PersistentGgaLink
+            link_type = PersistentGgaLink
+        else:
+            link_type = GgaLink
+        self.link = link_type(
             serial_port=p('serial_port').value, baud=int(p('baud').value),
             rtcm_host=rtcm_host, rtcm_port=int(p('rtcm_port').value),
             log=lambda m: self.get_logger().info(f"[link] {m}"),

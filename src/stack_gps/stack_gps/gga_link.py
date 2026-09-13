@@ -187,7 +187,7 @@ class GgaLink:
         while not self._stop.is_set():
             try:
                 if ser is None:
-                    ser = serial.Serial(self._serial_port, self._baud, timeout=0.2)
+                    ser = serial.Serial(self._serial_port, self._baud, timeout=0.2, exclusive=True)
                     self._log(f"로버 시리얼 연결: {self._serial_port}")
                 # RTCM 연결 실패는 GGA 수신을 막지 않는다 (베이스 죽어도 위치는 계속)
                 if sock is None and self._rtcm_host and time.monotonic() >= next_rtcm_try:

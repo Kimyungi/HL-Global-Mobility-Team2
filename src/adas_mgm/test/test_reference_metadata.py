@@ -282,3 +282,19 @@ def test_fusion_timer_does_not_launder_cached_sensor_stamps(environment):
     assert node.scan_pub.messages[-1].header.stamp==node.latest['a2'].header.stamp
     node.latest['a1'].header.stamp=Time(seconds=100.1).to_msg(); fn(node)
     assert node.scan_pub.messages[-1].header.stamp==node.latest['a1'].header.stamp
+
+
+def test_camera_heartbeat_uses_capture_time_even_without_lane_detection(environment):
+    clock, ns, node = environment
+    node.camera_pub = Pub()
+    publish = method('src/stack_lane/stack_lane/node.py', '_publish_camera_status', dict(ns, Header=Header))
+    publish(node, 9.9)
+    first = node.camera_pub.messages[-1].stamp
+    clock.ros += .2
+    clock.mono += .2
+    publish(node, 9.9)
+    assert node.camera_pub.messages[-1].stamp == first
+    publish(node, None)
+    assert node.camera_pub.messages[-1].stamp.sec == 0
+    publish(node, clock.mono)
+    assert node.camera_pub.messages[-1].stamp != first

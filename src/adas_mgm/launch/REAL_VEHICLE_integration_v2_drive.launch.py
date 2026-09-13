@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
+from launch.actions import (DeclareLaunchArgument,
                             IncludeLaunchDescription, OpaqueFunction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -45,6 +45,14 @@ def start_stack(context):
                  'waypoint_csv', 'zones_file'):
         if context.launch_configurations.get(name, ''):
             raise RuntimeError(f'Use start_waypoint/end_waypoint instead of {name}')
+    # Hardware receiver ownership outlives this route/CAN/RViz launch.
+    from stack_gps.persistent_service import configuration, ensure_running
+    config = configuration(root / 'src/stack_gps/config/persistent_gps.yaml',
+                           start_relay=value('start_rtcm') == 'true',
+                           relay_device=value('rtcm_device'),
+                           rtcm_host=value('rtcm_host'))
+    ensure_running(config, root / 'src/stack_gps/tools/base_station/rtcm_server.py')
+    context.launch_configurations['gps_link_mode'] = 'persistent'
     run = (Path(value('run_log_dir')).expanduser().resolve() if value('run_log_dir')
            else root / 'drive_logs' / datetime.now().strftime('v2_%Y%m%d_%H%M%S_%f'))
     run.mkdir(parents=True, exist_ok=False)
@@ -60,10 +68,6 @@ def start_stack(context):
         default_lane_weights=str(root / 'src/stack_lane/models/yolopv2.pt'),
         lidar_estop_enabled=True)
     actions = list(stack.entities)
-    if value('start_rtcm') == 'true':
-        actions.append(ExecuteProcess(cmd=[
-            '/usr/bin/python3', '-u', str(root / 'src/stack_gps/tools/base_station/rtcm_server.py'),
-            '--port', value('rtcm_device'), '--tcp-port', '2101'], output='screen'))
     if value('rviz') == 'true':
         actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(
             str(share / 'launch/integration_v2_view.launch.py'))))
@@ -93,6 +97,7 @@ def generate_launch_description():
                               description='New session directory; empty uses workspace drive_logs'),
         DeclareLaunchArgument('start_rtcm', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('rtcm_device', default_value='/dev/ttyRadio'),
+        DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
         DeclareLaunchArgument('rviz', default_value='true', choices=['true', 'false']),
         *[DeclareLaunchArgument(k, default_value=v) for k, v in profile.items()],
         OpaqueFunction(function=start_stack),

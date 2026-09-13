@@ -275,7 +275,13 @@ class IntegrationView(Node):
         frame = np.full((1160,720,3), (28,25,23), np.uint8)
         def text(value, y, color=(230,230,230), scale=.61):
             cv2.putText(frame, value[:88], (16,y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
-        text('INTEGRATION V2 | VEHICLE FIXED VIEW', 30, (255,230,120), .72)
+        preparation = ('PREP: NO MGM DATA' if state is None else
+                       f'PREP: {"READY" if state.start_ready else "WAIT"} | '
+                       f'CAM {"ON" if state.camera_available else "--"} | '
+                       f'GPS {"FIXED" if state.gps_fixed_ready else "--"} | '
+                       f'GO {"YES" if state.go_authorized else "NO"}')
+        text(preparation, 30, (130,245,130) if state is not None and state.start_ready
+             else (255,230,120), .62)
         light = 'NO DATA / STALE' if traffic is None else 'RED + GREEN' if traffic.red_active and traffic.green_active else 'RED' if traffic.red_active else 'GREEN' if traffic.green_active else 'UNKNOWN'
         text('LIGHT: '+light, 61, (90,90,255) if traffic is not None and traffic.red_active else
              (130,245,130) if traffic is not None and traffic.green_active else (160,160,160))

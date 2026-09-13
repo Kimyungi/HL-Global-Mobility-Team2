@@ -1,5 +1,11 @@
 # Integration v2_main — 실차 검증 전 통합 기준
 
+> 2026-09-14 주행 준비 변경: `scripts/v2 prepare`는 전체 스택을 준비하고,
+> GPS/RTCM은 별도 상주 서비스로 유지한다. `go`는 카메라 프레임 **또는**
+> GPS FIXED(4)로 인가하고, `stop → go`는 GPS를 재시작하지 않는다.
+> 일반 CSV 구간은 GPS 상실 시 유효한 카메라 경로로 주행한다. raw dump v26.
+> 상세: [주행 준비](DRIVE_PREPARATION.md). 아래 과거 전체 센서 필수 출발 조건보다 우선한다.
+
 > 2026-09-14 PR #93/#94 통합: 회피 station+1m 기준점과 GPS_RETURN 정렬 조건,
 > 주차 벽 수집을 함께 적용한다. 통합 raw dump는 v25이며 아래 v23/v24 기록보다 우선한다.
 
