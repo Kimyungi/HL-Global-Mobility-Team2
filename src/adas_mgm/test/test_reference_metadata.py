@@ -215,6 +215,7 @@ def test_avoid_generation_comes_from_scan_not_heartbeat(environment):
     fn = method('src/stack_avoid/stack_avoid/node.py','on_scan',ns)
     node.front_scan_pub = Pub(); node.pub = Pub()
     node._front_only_scan = lambda scan:scan
+    node._scan_surfaces = lambda scan:[]
     node._nearest_front_obstacle = lambda scan:(2.,0.)
     node._gap_target = lambda scan,gap:RefPoint(x=1.5,y=.3)
     node._ego_speed = lambda:.6

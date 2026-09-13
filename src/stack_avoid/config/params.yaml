@@ -87,6 +87,9 @@
       #   과대 대기 시 횡오차 누적은 "통과 유지점 (1.5,0)"이 막는다(2026-08-13 도입).
       clear_gap_max_m:   3.0    # [튜닝] 클리어런스에 쓰는 마지막 감지거리 상한 [m]
       clear_margin_m:    0.3    # [튜닝] 통과 판정 추가 여유 [m]
-      depth_band_m:      0.6    # [튜닝] 장애물 전방거리 ±이 값 안의 blocker를 양쪽 고려 [m]
-      cluster_min_points: 3
-      cluster_dist_m:     0.10
+      depth_band_m:      0.6    # [튜닝] 이 깊이 밴드에 걸친 연결 윤곽 전체를 고려 [m]
+      # 연결 거리 = min(max_link, max(cluster_dist, scale × 빔 간 예상 간격)).
+      # 무효 빔/거리 불연속은 분리. 고립점·2점 장애물도 버리지 않는다.
+      cluster_dist_m:     0.10  # 인접 빔 연결 거리 하한 [m]
+      surface_link_scale: 3.0  # 각도 해상도에 따른 간격 배수
+      surface_max_link_m: 0.30 # 서로 다른 물체의 과도한 연결 방지 상한 [m]
