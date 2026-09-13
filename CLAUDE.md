@@ -1,5 +1,24 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> **2026-09-13 GPS-only Zone 선행 진입:** 일반 `GPS_ONLY_ZONE` membership은
+> 현재 station 최근접 웨이포인트와 station+2.5m preview에 가장 가까운 CSV
+> 웨이포인트 중 하나라도 Zone 범위 안이면 true다. preview의 주행 기준점 보간은
+> 유지하되 Zone 판정에는 보간 비율이 아니라 가장 가까운 한쪽 웨이포인트 index를 쓴다.
+> `MISSION_ZONE`과 주차·정지·회피·가속처럼 동작/state를 바꾸는 나머지 판정은
+> preview를 사용하지 않고 현재 station index만 사용한다.
+
+> **2026-09-13 주차 맵 재관측 반경:** 기존 맵 점의 재관측 일치 반경은
+> `0.02m`다. 같은 voxel이 아닌 점은 2cm 이내에서만 기존 셀의 hit로 인정한다.
+> 4m freespace 삭제 범위와 tentative/confirmed miss 횟수, 빈 bin을 unknown으로
+> 취급하는 정책은 변경하지 않는다.
+
+> **2026-09-13 주차 측면 탐색 거리:** 사용자 지정으로 주차공간 검출의 측면 경계
+> 최대거리는 T자·평행 모두 `3.0m`다. 통합 `SpaceDetector`뿐 아니라 별도
+> `parallel_parking_node`가 상속하는 `WallGapDetector`의 초기 벽 탐색에도 같은
+> 기본값을 적용한다. T자 주차의 후면 벽 판정은 이 상한과 분리해
+> `perpendicular_min_depth_m` 이후의 지지점을 사용한다. 측면 탐색 상한을 늘려도
+> 후면 벽이 반드시 3m보다 멀어야 하는 조건으로 바뀌지 않는다.
+
 > **2026-09-13 회피 수정:** [main 동작 복원 메모](docs/AVOIDANCE_MAIN_RESTORE.md)가 아래 과거 회피 고정속도/소실 200틱 종료 설명보다 우선한다.
 > AVOID 첫 CAN 기준점·yaw, .6/.2 m/s 상한, 가감속, 완료/최대 시간 종료 및 종료 후 GPS hold를 복원했다.
 > v2 단일점 계약과 병행 Manager는 유지한다. CTest 21/21 통과; 실차 확인은 남아 있다.
@@ -46,7 +65,8 @@
 > 같은/역행 fix에는 갱신하지 않는다. 명령 미수신·비유한·기존 GPS stale_timeout 초과는 v_ref=0으로
 > 탐색 반경을 0.5m로 한다. 정지 중에도 새 fix로 이 범위의 station/index를 갱신한다.
 > GPS 공백으로 window를 늘리거나 전역 재탐색하지 않는다.
-> CSV 전환/명시적 새 session에서만 station을 초기화한다. Zone은 현재 위치의 저장 index를 사용한다.
+> CSV 전환/명시적 새 session에서만 station을 초기화한다. GPS-only Zone은 현재 위치의
+> 저장 index와 preview 최근접 index의 OR를 사용하고, 그 밖의 Zone은 현재 위치 index만 사용한다.
 > preview는 station +2.5m(종점 클램프). 두 점 중 한쪽 가중치가 90% 이상이면 해당 점을 사용하고,
 > 나머지는 xy/곡률을 선형 보간하고 yaw는 짧은 각도 방향으로 보간한다. 반환/발행은 1점이다.
 > endpoint snap일 때는 +2.5m에서 최대 선분 길이의 10%만큼 달라질 수 있다.

@@ -11,10 +11,13 @@ MGM에 넘기며 `/adas/target_ref`는 MGM만 발행한다.
 2. **MAPPING** — `space_found=false`인 동안 endpoint map을 누적한다. dSPACE
    `VehicleVector.v/str`의 자전거 모델로 ICP prior를 만들고,
    `VehicleVector.x/y/yaw`와 IMU는 사용하지 않는다. 필요 시 RTK FIXED `GpsPath`의 새 delta만
-   innovation gate 뒤 x/y drift 보정에 쓴다.
+   innovation gate 뒤 x/y drift 보정에 쓴다. 기존 맵 점은 2cm 이내에서 다시 관측될 때만
+   동일 셀의 hit로 인정한다.
 3. `GpsPath.parking_zone` 상승 에지와 `parking_mode`에서 평행(1자)/직각(T자),
    좌/우를 결정한다. 양쪽 정적 경계가 있는 gap을 3 frame 연속 확인한다. 직각 주차는 gap 내부 후면
-   벽 지지점까지 요구한다.
+   벽 지지점까지 요구한다. 측면 경계 후보는 최대 3m까지 탐색하며, 직각 주차의 후면 벽
+   깊이는 이 상한과 별도로 `perpendicular_min_depth_m`을 적용한다. 별도 평행주차 시험 노드의
+   초기 고정 벽 탐색도 같은 3m 상한을 사용하며, 공통 SLAM 맵의 2cm 재관측 정책을 그대로 받는다.
 4. **LOCALIZATION** — 후축 기준 최소 회전반경 1.15m의 원호 경로를 만들고 차량
    직사각 footprint로 정적 충돌 검사를 한다. 계획 순간 map을 동결하고 연속 ICP
    정합을 확인하는 동안에는 아직 `space_found=false`를 유지한다.

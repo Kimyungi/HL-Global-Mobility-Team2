@@ -59,7 +59,8 @@ uint8 stop_zone
 # fix 상실 시 false = 보수적(회피 금지) 쪽으로 떨어진다.
 bool avoid_zone
 
-# GPS 전용 구간 안인가 (2026-08-18). 이 구간에서는 MGM 이 LANE 전이를 하지 않고
+# GPS 전용 구간 안인가 (2026-08-18). 현재 station 또는 station preview에 가장
+# 가까운 CSV 웨이포인트가 구간 안이면 true다. 이 구간에서는 MGM 이 LANE 전이를 하지 않고
 # WAYPOINT 로 고정한다 — 차선 검출을 믿기 어려운 구간(역광·노면 표시 혼재 등)을
 # 코스 단위가 아니라 **구간 단위**로 지정하기 위한 것. launch 의 gps_only:=true 는
 # run 전체에 걸리는 반면 이쪽은 그 구간에서만 걸린다.

@@ -11,7 +11,8 @@ uint8 zone_type
 uint8 mission_type
 uint8 mission_id       # independent completion-memory key, 0..255
 bool in_zone
-# GPS publishes membership; MGM alone computes these edges per zone_id.
+# GPS publishes membership; GPS_ONLY uses station OR nearest preview waypoint,
+# while MISSION uses station only. MGM alone computes these edges per zone_id.
 bool zone_entered
 bool zone_exited
 

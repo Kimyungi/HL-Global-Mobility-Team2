@@ -101,8 +101,18 @@ class StationPath:
                  self.n[i] + t*(self.n[i+1]-self.n[i]),
                  _wrap(self.yaw[i] + t*_wrap(self.yaw[i+1]-self.yaw[i])),
                  self.curvature[i] + t*(self.curvature[i+1]-self.curvature[i]))
+        # The driving reference stays interpolated, but discrete metadata such
+        # as GPS-only Zone membership must belong to one recorded waypoint.
+        # Resolve it to the geometrically nearer endpoint; an exact tie keeps
+        # the earlier index for deterministic boundary behaviour.
+        preview_index = min(
+            (i, i+1),
+            key=lambda index: (
+                math.hypot(point[0]-self.e[index], point[1]-self.n[index]),
+                index))
         return point, {'station_m': self.station, 'preview_requested_station_m': requested,
                        'preview_station_m': self.s[i] + t*(self.s[i+1]-self.s[i]),
+                       'preview_index': preview_index,
                        'preview_snapped': snapped, 'preview_right_weight': t,
                        'station_window_low_m': self.window_low,
                        'station_window_high_m': self.window_high}

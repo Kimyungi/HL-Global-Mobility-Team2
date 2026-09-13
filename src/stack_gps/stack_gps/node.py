@@ -345,7 +345,7 @@ class StackGpsNode(Node):
                 "stamp_s,lat,lon,quality,idx,cross_track_m,at_end,fix_age_s,"
                 "heading_deg,heading_src,imu_yaw_deg,offset_deg,go,route_index,route_id,sequence_id,route_connecting,"
                 "station_m,station_window_low_m,station_window_high_m,station_v_ref,station_sample_time_s,"
-                "preview_requested_station_m,preview_station_m,preview_snapped\n")
+                "preview_requested_station_m,preview_station_m,preview_index,preview_snapped\n")
             self.get_logger().info(f"횡오차 로그: {log_path}")
         self._last_fix_t = None  # 새 GGA 판별용 (gps_fix는 새 측정에만 발행)
         # 자율/수동 구분 로그용 — GO(estop 해제) 발행 중인지. 판단 아님, 기록만.
@@ -605,7 +605,7 @@ class StackGpsNode(Node):
             msg.stop_zone += self._route_plan.stop_offsets[self._route_plan.index]
         msg.avoid_zone = snap['avoid_zone']
         msg.gps_only_zone = snap['gps_only_zone']
-        self._fill_zone_context(msg, snap['idx'])
+        self._fill_zone_context(msg, snap['idx'], snap.get('preview_index'))
         self._fill_zone_telemetry(msg, fix_t, east, north, yaw, heading is not None, local_position)
         msg.at_end = snap['at_end']
         msg.fix_quality = quality
@@ -633,7 +633,8 @@ class StackGpsNode(Node):
                 f"{imu_deg},{off_deg},{go},{msg.route.index},{msg.route.route_id},{msg.route.sequence_id},{int(msg.route.connecting)},"
                 f"{snap['station_m']:.6f},{snap['station_window_low_m']:.6f},{snap['station_window_high_m']:.6f},"
                 f"{snap['station_v_ref']:.6f},{self.station_sample_time:.6f},"
-                f"{snap['preview_requested_station_m']:.6f},{snap['preview_station_m']:.6f},{int(snap['preview_snapped'])}\n")
+                f"{snap['preview_requested_station_m']:.6f},{snap['preview_station_m']:.6f},"
+                f"{snap['preview_index']},{int(snap['preview_snapped'])}\n")
 
         viz = Path()
         viz.header = msg.header
@@ -682,10 +683,11 @@ class StackGpsNode(Node):
         if self._reference_stamp is not None:
             msg.reference_stamp = self._reference_stamp
 
-    def _fill_zone_context(self, msg, current_position_index):
-        """Publish spatial memberships; MGM creates per-Zone entry/exit edges."""
+    def _fill_zone_context(self, msg, current_position_index, preview_position_index=None):
+        """Publish memberships; only GPS-only Zones may use preview OR station."""
         msg.zone_valid = True
-        for definition, in_zone in self.zone_map.snapshot(current_position_index):
+        for definition, in_zone in self.zone_map.snapshot(
+                current_position_index, preview_position_index):
             context = ZoneContext()
             context.zone_valid = True
             context.zone_id = definition.zone_id
