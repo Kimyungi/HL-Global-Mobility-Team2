@@ -17,19 +17,18 @@ void motion()
   r.gps_zone(true); r.tick();
   check(r.out.path_source == MGM_SRC_GPS && near(r.out.v_ref, .8f), "GPS uses same target");
   r.obstacle();
-  for (float suggestion : {.02f, .6f, 2.f}) {
-    r.s.avoid_v_suggest = suggestion;
-    r.s.avoid_narrow_gap = true;
-    r.st.params.v_narrow = 0.f; r.st.params.v_avoid = .1f;
-    r.tick();
-    check(r.out.path_source == MGM_SRC_AVOID && near(r.out.v_ref, .8f),
-      "AVOID ignores non-stop suggestion magnitude and narrow/avoid caps");
-  }
+  r.s.avoid_v_suggest = 2.f;
+  r.st.params.v_avoid = .6f; r.st.params.v_narrow = .2f;
+  r.tick(40);
+  check(r.out.path_source == MGM_SRC_AVOID && near(r.out.v_ref,.6f),
+    "AVOID is the main-compatible exception to fixed v2 navigation speed");
+  r.s.avoid_narrow_gap = true; r.tick(40);
+  check(near(r.out.v_ref,.2f), "AVOID retains main narrow-gap cap");
   r.s.avoid_v_suggest = 0.f; r.tick();
-  check(near(r.out.v_ref, .785f), "provider zero request retains normal stop deceleration");
+  check(near(r.out.v_ref, .185f), "provider zero request retains normal stop deceleration");
   r.tick(60); check(r.out.v_ref == 0.f, "provider zero reaches stop");
   r.s.avoid_v_suggest = .01f; r.tick();
-  check(near(r.out.v_ref, .8f), "motion resumes at fixed target");
+  check(near(r.out.v_ref, .005f), "avoidance resumes through main acceleration ramp");
 }
 
 void stops()
@@ -39,7 +38,7 @@ void stops()
   check(r.out.safety == SafetyState::AUTO_ESTOP && r.out.v_ref == 0 && r.st.v == 0,
     "TTC still immediately stops fixed-speed motion");
   r.s.avoid_ttc = 100.f; r.tick();
-  check(near(r.out.v_ref, 1.f), "TTC release has no acceleration ramp");
+  check(near(r.out.v_ref, .005f), "TTC release uses avoidance acceleration ramp");
   r.s.external_stop = true; r.tick();
   check(r.out.v_ref == 0 && r.out.immediate_stop, "operator/CAN external stop preserved");
   r.s.external_stop = false; r.s.auto_estop = true; r.tick();

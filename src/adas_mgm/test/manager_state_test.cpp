@@ -51,18 +51,21 @@ void avoidance()
   Run r; r.obstacle();
   check(r.out.avoid==AvoidState::AVOID_ACTIVE && r.out.path_source==MGM_SRC_AVOID,"10: obstacle selects avoidance");
   r.s.avoid_obstacle_detected=false;
-  r.tick(199);
-  check(r.out.avoid==AvoidState::CLEAR_CONFIRM && r.out.path_source==MGM_SRC_AVOID,"11: clear 199 keeps avoidance");
-  r.tick(); check(r.out.avoid==AvoidState::INACTIVE && r.out.nav==NavState::GPS_BACKUP,"11: clear 200 ends avoidance into GPS");
+  r.tick(250);
+  check(r.out.avoid==AvoidState::AVOID_ACTIVE && r.out.path_source==MGM_SRC_AVOID,"11: disappearance alone keeps avoidance");
+  r.s.avoid_maneuver_done=true; r.tick();
+  check(r.out.avoid==AvoidState::INACTIVE && r.out.nav==NavState::GPS_BACKUP,"11: completion ends avoidance into GPS");
   check(r.st.lane_high_cnt==50,"high confidence accumulates throughout avoidance");
-  r.tick(99); check(r.out.nav==NavState::GPS_BACKUP,"12: clear 299 keeps GPS hold");
-  r.tick(); check(r.out.nav==NavState::LINE,"12: clear 300 returns LINE, not total 5 seconds");
+  r.s.avoid_maneuver_done=false;
+  r.tick(299); check(r.out.nav==NavState::GPS_BACKUP,"12: GPS hold lasts 299 ticks after completion");
+  r.tick(); check(r.out.nav==NavState::LINE,"12: GPS hold ends 300 ticks after completion");
   Run redetect; redetect.obstacle(); redetect.s.avoid_obstacle_detected=false; redetect.tick(199);
   redetect.s.avoid_obstacle_detected=true; redetect.tick();
-  check(redetect.out.avoid==AvoidState::AVOID_ACTIVE && redetect.st.managers.clear_count==0,"13: redetection resets clear");
+  check(redetect.out.avoid==AvoidState::AVOID_ACTIVE && redetect.st.managers.clear_count==0,"13: redetection keeps episode active");
   redetect.s.avoid_obstacle_detected=false; redetect.tick(200);
-  check(redetect.out.nav==NavState::GPS_BACKUP,"13: new disappearance restarts LINE hold");
+  check(redetect.out.avoid==AvoidState::AVOID_ACTIVE && redetect.st.return_hold_left==0,"13: disappearance cannot start return hold");
   Run nogps; nogps.obstacle(); nogps.s.avoid_obstacle_detected=false; nogps.tick(199);
+  nogps.s.avoid_maneuver_done=true; nogps.tick();
   nogps.s.gps_valid=false; nogps.tick();
   check(nogps.out.nav==NavState::LINE && nogps.out.path_source==MGM_SRC_LANE,"GPS loss bypasses hold after high 50");
   Run notready; notready.st.managers.nav=NavState::GPS_BACKUP;
@@ -155,8 +158,8 @@ void safety()
   finish.s.new_session=true; finish.s.auto_estop=false;  finish.tick();
   check(finish.out.top==TopState::AUTONOMOUS_DRIVE,"explicit new session clears FINISH");
   Run concurrent; concurrent.redline(); concurrent.s.auto_estop=true; concurrent.obstacle();
-  check(concurrent.out.path_source==MGM_SRC_AVOID && concurrent.out.n_points==2 &&
-    near(concurrent.out.ref_points[0].y,.3f) && concurrent.out.v_ref==0 &&
+  check(concurrent.out.path_source==MGM_SRC_AVOID && concurrent.out.n_points==1 &&
+    near(concurrent.out.ref_points[0].y,.3f/MGM_NUM_POINTS) && concurrent.out.v_ref==0 &&
     concurrent.out.speed_owner==SpeedOwner::SAFETY,"30: simultaneous requests yield single chosen reference and speed/brake");
   Run enable; enable.s.autonomous_enabled=false; enable.tick();
   check(enable.out.top==TopState::AUTONOMOUS_ENABLE && enable.out.v_ref==0,"enable gate holds output");

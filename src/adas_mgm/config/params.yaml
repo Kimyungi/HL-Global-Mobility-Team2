@@ -80,14 +80,14 @@ mgm_node:
     #   · 회피가 **구간 게이트**로 묶여 지정 구간 밖에서는 아예 진입하지 않는다
     # 차선 구간은 그 run 에서도 1.0 m/s 에서 멀쩡했다 (cross 평균 0.061~0.114m).
     # ⚠ stack_avoid 의 target_speed_mps 도 **반드시 같이** 1.0 으로 (TTC 자차속도).
-    # v2 병행 Manager: 모든 비정지 목표속도 크기. 후진은 -v_base.
-    # 아래 역사적 속도 분리 설명은 legacy 전용이다. v2는 정상 주행 ramp를 우회하고
-    # v_accel_zone/v_narrow/v_avoid를 사용하지 않는다. 정지 제어는 유지한다.
+    # v2 일반 Navigation/주차 목표속도 크기. 후진은 -v_base.
+    # AVOID는 main 기준 v_avoid/v_narrow 상한과 a_up/a_down을 적용한다.
+    # 회피 종료 후 Navigation 속도 복귀까지 ramp를 유지한다. 정지는 기존 우선순위다.
     v_base: 1.0
     v_accel_zone: 1.0
     v_narrow: 0.2
 
-    # AVOID 스테이트 전용 속도 상한 [m/s] — **0 = 상한 없음(구동작), 현재 꺼짐.**
+    # AVOID 스테이트 전용 속도 상한 [m/s] — **0 = 상한 없음(구동작), 현재 0.6 적용.**
     #
     # 기구는 남겨 두되(2026-08-17 신설, core_replay 로 검증 완료) v_base 가 0.6 이라
     # 지금은 쓸 일이 없어 끈다. v_base 를 1.0 이상으로 올릴 때 **회피 구간만 0.6 으로

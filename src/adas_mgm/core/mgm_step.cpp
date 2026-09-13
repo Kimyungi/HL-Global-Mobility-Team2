@@ -519,9 +519,9 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       if (s.estop || s.avoid_ttc < st.params.ttc_stop) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
-      } else if (st.params.base_state_machine_enabled) {
-        // Manager uses only stop/direction, then assigns the common v_base.
-        // Do not turn a narrow-gap cap into a synthetic zero-speed request.
+      } else if (!std::isfinite(s.avoid_v_suggest)) {
+        // Preserve invalid-input evidence for the v2 final gate; min() must
+        // not turn a NaN suggestion into a finite speed cap.
         out.v_ref = s.avoid_v_suggest;
       } else {
         // 종방향은 회피 기하가 결정, 여유 폭 좁으면 감속
@@ -645,12 +645,19 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     }
   }
 
-  // 단일 목표점 소스(avoid)는 원점→목표 직선 보간으로 20점 경로화 (§5.1 포맷 변환).
-  // 근거 (2026-08-12 실차, run_0812_234253): 같은 run·같은 속도(v_ref 0.44)에서
-  // 20점(gps)=조향 정상 / 1점(avoid)=str 무반응으로 콘에 직진 → estop. 2026-08-08
-  // "1점=str 무반응" 실측의 재확인이며, "원인은 저속"이라는 2026-08-10 재해석을 반증.
-  // dSPACE 수정 없이 PC 조립에서 해결 — 와이어에는 항상 다점이 실린다.
+  // Legacy expands a singleton into twenty interpolated points. CAN v5 sends
+  // only point zero; v2 reproduces that AVOID geometry with a one-point output.
+  // See docs/AVOIDANCE_MAIN_RESTORE.md for the pinned main comparison.
   int32_t n_wire = n;
+  if (single_point && src == MGM_SRC_AVOID) {
+    // main c76f287 expanded the provider target into 20 points; the unchanged
+    // CAN v5 bridge transmitted only point zero. Preserve that wire geometry,
+    // including its heading, while keeping v2's one-point input/output contract.
+    const CorePoint tgt = path->pts[0];
+    const CorePoint first{tgt.x / MGM_NUM_POINTS, tgt.y / MGM_NUM_POINTS,
+      atan2f(tgt.y, tgt.x), 0.0f};
+    for (auto & point : target) {point = first;}
+  }
   if (n == 1 && !single_point) {
     const CorePoint tgt = path->pts[0];
     const float yaw = atan2f(tgt.y, tgt.x);
@@ -694,11 +701,12 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.blend_from[i] = st.ref_out[i];
     }
-    // 회피 진입은 기존 GPS/차선 경로를 섞지 않고 선택된 회피 경로를 즉시 채택한다.
-    // 회피 종료 후 트랙 복귀 등 다른 전환은 기존 블렌드를 유지한다.
+    // Restore main's blend on avoidance entry/return. Parking and recovery
+    // keep their v2 exclusive-ownership handoff.
     const bool exclusive_owner = st.params.base_state_machine_enabled &&
       (src == MGM_SRC_PARKING || src == MGM_SRC_ESCAPE);
-    st.blend_left = (src == MGM_SRC_AVOID || exclusive_owner) ? 0 : st.params.blend_cycles;
+    const bool legacy_avoid_entry = !st.params.base_state_machine_enabled && src == MGM_SRC_AVOID;
+    st.blend_left = (exclusive_owner || legacy_avoid_entry) ? 0 : st.params.blend_cycles;
     st.last_src = src;
   }
 
@@ -730,9 +738,13 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   }
 }
 
-// ── 실행 2: v2는 고정 주행 목표, 정지 제어/legacy에는 기존 rate limit 적용.
+// ── 실행 2: 회피/복귀·정지 제어·legacy에는 rate limit, 나머지 v2는 고정 주행 목표.
 float merge(const CoreOutput & d, CoreState & st)
 {
+  if (d.path_source == MGM_SRC_AVOID) {st.avoid_speed_ramp = true;}
+  else if (d.path_source != MGM_SRC_LANE && d.path_source != MGM_SRC_GPS) {
+    st.avoid_speed_ramp = false;
+  }
   if (d.immediate_stop) {
     st.v = 0.0f;  // 긴급 정지·TTC 바닥은 램프 없이 즉시 (스테이트 머신이 결정)
     return st.v;
@@ -740,7 +752,7 @@ float merge(const CoreOutput & d, CoreState & st)
   const bool signal_stop_profile = d.speed_owner == SpeedOwner::TRAFFIC &&
     st.traffic_distance_latched;
   if (st.params.base_state_machine_enabled && d.v_ref != 0.0f &&
-    !signal_stop_profile)
+    !signal_stop_profile && !st.avoid_speed_ramp)
   {
     // Upper layer sends a fixed motion target immediately. Zero requests and
     // the distance-based Signal stop profile retain the existing stop ramp.
@@ -753,6 +765,7 @@ float merge(const CoreOutput & d, CoreState & st)
   if (v < lo) {v = lo;}
   if (v > hi) {v = hi;}
   st.v = v;
+  if (d.path_source != MGM_SRC_AVOID && v == d.v_ref) {st.avoid_speed_ramp = false;}
   return st.v;
 }
 

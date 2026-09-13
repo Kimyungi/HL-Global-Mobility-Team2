@@ -8,7 +8,8 @@
 ## 현재 구조
 
 TopState 아래 Navigation/Avoidance/Signal/Safety/Mission을 병행 실행한다.
-NAV_RESELECT는 저장 상태가 아닌 공통 선택 함수다. 50/200/300 MGM cycle 조건은 유지한다.
+NAV_RESELECT는 저장 상태가 아닌 공통 선택 함수다. LINE 판정 50틱, 회피 완료/최대 시간 후 GPS 복귀 hold 300틱을 적용한다.
+회피 상세는 [main 동작 복원 메모](AVOIDANCE_MAIN_RESTORE.md)를 따른다.
 legacy LANE/WAYPOINT/AVOID/PARKING/TRAFFIC byte는 CAN/debug 호환 표시이며 전체 FSM이 아니다.
 
 ## Zone entry

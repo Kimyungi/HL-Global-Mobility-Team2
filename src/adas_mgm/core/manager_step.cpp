@@ -215,8 +215,8 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     !(m.gps_only_context && !gps) && m.top == TopState::AUTONOMOUS_DRIVE;
   const bool avoid_entry = (s.avoid_obstacle_detected && s.avoid_avoidable &&
     (st.params.avoid_zone_only == 0 || s.gps_avoid_zone)) || fallback;
+  const bool was_avoiding = m.avoid != AvoidState::INACTIVE;
   if (!avoid_allowed) {
-    const bool was_avoiding = m.avoid != AvoidState::INACTIVE;
     m.avoid = AvoidState::INACTIVE;
     m.clear_count = 0;
     m.avoid_fallback_only = false;
@@ -229,38 +229,35 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
       m.avoid = AvoidState::AVOID_ACTIVE;
       m.avoid_fallback_only = fallback && !s.avoid_obstacle_detected;
     }
-  } else if (s.avoid_obstacle_detected) {
-    m.avoid = AvoidState::AVOID_ACTIVE;
-    m.avoid_fallback_only = false;
-    m.clear_count = 0;
-    // A new disappearance must start both timers again.
-    st.return_hold_left = 0;
-  } else if (m.avoid_fallback_only && !fallback) {
+  } else if (m.avoid_fallback_only && !fallback && !s.avoid_obstacle_detected) {
     // No obstacle episode occurred: a recovered navigation source replaces the
     // LiDAR-only request without fabricating an obstacle-clear timer.
     m.avoid = AvoidState::INACTIVE;
     m.avoid_fallback_only = false;
     nav_reselect(s, st);
-  } else if (!fallback) {
-    if (m.avoid != AvoidState::CLEAR_CONFIRM) {
-      m.avoid = AvoidState::CLEAR_CONFIRM;
-      m.clear_count = 0;
-      st.return_hold_left = std::max(0, st.params.avoid_return_hold_cycles - 1);
-    }
-    ++m.clear_count;  // first clear sample is cycle 1 of both timers
-    if (m.clear_count >= MGM_CLEAR_CYCLES) {
-      m.avoid = AvoidState::INACTIVE;
-      m.clear_count = 0;
-      nav_reselect(s, st);
-    }
+  } else if (!m.avoid_fallback_only && st.escape_phase == MGM_ESCAPE_NONE &&
+    (s.avoid_maneuver_done ||
+    (st.params.avoid_max_cycles > 0 && st.avoid_ticks >= st.params.avoid_max_cycles)))
+  {
+    // main: disappearing from the forward corridor is not passing the object.
+    // Wait for the producer's maneuver completion (or the configured episode
+    // limit), then start the full GPS return hold. Never finish reverse recovery.
+    m.avoid = AvoidState::INACTIVE;
+    m.clear_count = 0;
+    st.return_hold_left = st.params.avoid_return_hold_cycles;
+    m.nav = m.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
+  } else {
+    m.avoid = AvoidState::AVOID_ACTIVE;
+    m.clear_count = 0;
+    if (s.avoid_obstacle_detected) {m.avoid_fallback_only = false;}
   }
-  // GPS owns 2..3s after disappearance even if pre-avoid navigation was LINE.
+  // The GPS hold begins on actual avoidance exit, as it did in main.
   if (!m.gps_only_context && st.return_hold_left > 0 && gps) {
     m.nav = NavState::GPS_BACKUP;
   }
   if (mission_searches_along_gps(st)) {nav_reselect(s, st);}
-  st.avoid_ticks = m.avoid != AvoidState::INACTIVE ? st.avoid_ticks + 1 : 0;
-  if (m.avoid == AvoidState::INACTIVE || st.avoid_ticks == 1) {
+  st.avoid_ticks = m.avoid != AvoidState::INACTIVE && was_avoiding ? st.avoid_ticks + 1 : 0;
+  if (m.avoid == AvoidState::INACTIVE || !was_avoiding) {
     m.avoid_episode_reference_seen = false;
   }
   if (m.avoid != AvoidState::INACTIVE && provider_reference(s, MGM_SRC_AVOID).valid) {
@@ -413,7 +410,9 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   request.estop = false;  // independent safety arbitration below
   request.traffic_stop_required = false;
   CoreOutput out = existing_source_request(request, st, source_state);
-  out.v_ref = fixed_motion_speed(out.v_ref, st.params.v_base);
+  if (source_state != MGM_STATE_AVOID) {
+    out.v_ref = fixed_motion_speed(out.v_ref, st.params.v_base);
+  }
   out.top = m.top; out.nav = m.nav; out.avoid = m.avoid; out.signal = m.signal;
   out.parking_calibration = parking_calibration(st.params);
   out.recovery = m.recovery;

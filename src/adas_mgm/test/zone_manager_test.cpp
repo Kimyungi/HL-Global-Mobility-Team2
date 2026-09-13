@@ -113,13 +113,16 @@ void authority_and_gaps()
       near(clear.out.ref_points[i].yaw,last.ref_points[i].yaw) &&
       near(clear.out.ref_points[i].curvature,last.ref_points[i].curvature);
   }
-  check(clear.out.avoid==AvoidState::CLEAR_CONFIRM && held && !clear.out.reference_available,
+  check(clear.out.avoid==AvoidState::AVOID_ACTIVE && held && !clear.out.reference_available,
     "Z23: empty avoidance path holds last assembled reference unchanged, no residual-point advance");
   check(clear.out.v_ref==0 && clear.out.path_source==MGM_SRC_AVOID &&
     (clear.out.safe_stop_reasons & SAFE_STOP_REFERENCE_INVALID),
     "Z23 revision 4: held geometry is a stop output; invalid avoidance retains authority");
-  clear.tick(); check(clear.out.avoid==AvoidState::INACTIVE && clear.out.path_source==MGM_SRC_GPS,
-    "Z23: clear 200 returns through existing navigation selection");
+  clear.tick(); check(clear.out.avoid==AvoidState::AVOID_ACTIVE && clear.out.v_ref==0,
+    "Z23: disappearance cannot release invalid active avoidance");
+  clear.s.avoid_maneuver_done=true; clear.tick();
+  check(clear.out.avoid==AvoidState::INACTIVE && clear.out.path_source==MGM_SRC_GPS,
+    "Z23: producer completion returns through navigation selection");
   Run empty; empty.s.camera_line_valid=empty.s.gps_valid=false; empty.s.avoid_path.n=0; empty.tick();
   check(empty.out.path_source==MGM_SRC_AVOID && empty.out.n_points==1 &&
     empty.out.ref_points[0].x==0 && empty.out.ref_points[0].y==0 && empty.out.v_ref==0 &&

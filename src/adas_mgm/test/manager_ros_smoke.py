@@ -56,13 +56,13 @@ def main():
     vehicle = messages['/vehicle/vector']
     can = messages['/bridge/can_health']
     lane.confidence = .9
-    lane.points = [RefPoint(x=1., y=.1), RefPoint(x=2., y=.1)]
+    lane.points = [RefPoint(x=1., y=.1)]
     gps.fix_quality = 4
-    gps.points = [RefPoint(x=1., y=.2), RefPoint(x=2., y=.2)]
+    gps.points = [RefPoint(x=1., y=.2)]
     avoid.scan_valid = estop.scan_valid = True
     avoid.ttc = 100.
     avoid.v_suggest = .6
-    avoid.points = [RefPoint(x=1., y=.3), RefPoint(x=2., y=.3)]
+    avoid.points = [RefPoint(x=1., y=.3)]
     can.link_up = True
     status = []
     refs = []
@@ -214,7 +214,7 @@ def main():
         spin(.1)
         assert any(c.action == ParkingCommand.ACTIVATE and c.request_id == request_id for c in commands)
         parking.mission_active = True
-        parking.points = [RefPoint(x=-1., y=.4), RefPoint(x=-2., y=.4)]
+        parking.points = [RefPoint(x=-1., y=.4)]
         parking.v_suggest = -.3
         expect(lambda s, r: s.mission == 1 and s.safety == 0 and r.v_ref < 0,
                'parking acknowledgement permits mission speed and masks LiDAR brake')
