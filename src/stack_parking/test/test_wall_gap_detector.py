@@ -16,11 +16,11 @@ from stack_parking.wall_gap_detector import (
 class FixedReferenceWallTest(unittest.TestCase):
 
     @staticmethod
-    def _scene(angle_deg=12.0, with_clutter=True):
+    def _scene(angle_deg=12.0, with_clutter=True, wall_distance_m=1.0):
         angle = math.radians(angle_deg)
         tangent = np.array([math.cos(angle), math.sin(angle)])
         normal = np.array([-math.sin(angle), math.cos(angle)])
-        anchor = normal * 1.0
+        anchor = normal * wall_distance_m
         first_s = np.linspace(-0.7, 0.8, 35)
         second_s = np.linspace(2.2, 4.0, 40)
         wall = np.vstack((
@@ -40,6 +40,29 @@ class FixedReferenceWallTest(unittest.TestCase):
             search_sides=(SIDE_LEFT,),
             initial_wall_max_angle_deg=30.0,
         ))
+
+    def test_default_initial_wall_search_reaches_three_metres(self):
+        self.assertAlmostEqual(WallGapConfig().far_m, 3.0)
+        points, _, _, _ = self._scene(
+            with_clutter=False, wall_distance_m=2.5)
+        detector = self._detector()
+        detector.set_seed(Pose2(), SIDE_LEFT)
+        detector.update(points, Pose2())
+        self.assertIn(SIDE_LEFT, detector.reference_walls)
+        self.assertAlmostEqual(
+            detector.reference_walls[SIDE_LEFT].distance_from_seed_m,
+            2.5,
+            places=6,
+        )
+
+        # Preserve the detector's existing +/-12cm line-fit tolerance around
+        # the configured limit; a wall clearly beyond that band is rejected.
+        outside_points, _, _, _ = self._scene(
+            with_clutter=False, wall_distance_m=3.25)
+        outside = self._detector()
+        outside.set_seed(Pose2(), SIDE_LEFT)
+        outside.update(outside_points, Pose2())
+        self.assertNotIn(SIDE_LEFT, outside.reference_walls)
 
     def test_first_wall_slope_and_offset_band_lock_in_map_frame(self):
         points, anchor, tangent, _ = self._scene()

@@ -29,7 +29,7 @@ class WallGapConfig:
     # Initial search band, measured from the vehicle pose captured by
     # set_seed(). It is used only to acquire the first reference wall.
     near_m: float = 0.3
-    far_m: float = 1.6
+    far_m: float = 3.0
     # Half-width of the offset band around the locked reference line. After
     # acquisition this replaces the vehicle-relative near/far band.
     wall_line_offset_m: float = 0.12
