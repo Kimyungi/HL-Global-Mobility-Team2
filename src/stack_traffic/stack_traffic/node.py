@@ -64,6 +64,7 @@ from stack_traffic.logic import (
 from stack_traffic.oak_camera import (
     OakRgbdCamera,
     normalize_oak_usb_speed,
+    validate_exposure_compensation,
 )
 from stack_traffic.stopline_detector import (
     StopLineDetection,
@@ -662,6 +663,7 @@ class StackTrafficNode(Node):
                 maximum_depth_m=self.maximum_depth_m,
                 mxid=self.oak_mxid,
                 usb_speed=self.oak_usb_speed,
+                exposure_compensation=self.oak_exposure_compensation,
             )
             return
 
@@ -693,7 +695,8 @@ class StackTrafficNode(Node):
                 f"oak:{self.oak_width}x{self.oak_height}@"
                 f"{self.oak_fps:g}/{depth_mode}/mxid={connected_mxid}/"
                 f"usb_requested={self.oak_usb_speed.upper()}/"
-                f"usb_actual={usb_speed}"
+                f"usb_actual={usb_speed}/"
+                f"ae_compensation={self.oak_exposure_compensation}"
             )
         return f"opencv:{self.camera_source}"
 
@@ -723,6 +726,14 @@ class StackTrafficNode(Node):
         #   HDOP 도 RTCM 도 정상으로 보이는 채 FIXED 만 안 잡혀 원인을 찾기 어렵다.
         #   안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 명시적으로 올린다.
         self.declare_parameter("oak_usb_speed", "high")
+        # 신호등 RGB 센서만 두 단계 어둡게. SDK -9..9, 0=원래 자동 노출.
+        self.declare_parameter(
+            "oak_exposure_compensation", -2,
+            ParameterDescriptor(
+                read_only=True,
+                description="RGB auto-exposure compensation (-9..9); restart to apply",
+            ),
+        )
         self.declare_parameter("oak_depth_enabled", True)
         # 작은 물체를 후처리가 지우는지 확인하는 raw 진단 기본값.
         self.declare_parameter("oak_depth_confidence_threshold", 245)
@@ -863,6 +874,9 @@ class StackTrafficNode(Node):
         )
         self.oak_depth_enabled = bool(
             self.get_parameter("oak_depth_enabled").value
+        )
+        self.oak_exposure_compensation = validate_exposure_compensation(
+            self.get_parameter("oak_exposure_compensation").value
         )
         self.oak_depth_confidence_threshold = int(
             self.get_parameter("oak_depth_confidence_threshold").value

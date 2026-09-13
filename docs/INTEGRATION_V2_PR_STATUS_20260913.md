@@ -1,62 +1,71 @@
-# Integration v2 — PR 검토 기준 (2026-09-13)
+# Integration v2 — 회피·E-stop·신호등 노출 통합 (2026-09-13)
 
-사용자 지정 PR 대상 브랜치는 `main`이다. 초기 integration v2 구축 커밋부터 현재 변경과
-현장 로그까지 함께 검토한다. PR은 아직 merge하지 않았으며 로컬 main checkout과는 별개다.
-이 문서의 검증 결과가 과거 문서의 미빌드 표기나 전체 통과 수치보다 우선한다.
-현재 PR은 전체 회귀 검증이 끝나지 않은 Draft다.
+이번 변경의 대상은 `integration/v2_main`이다. 기준은 PR #88 merge commit
+`2852a5ce98912f54fe8da5b80c5d0b8c8f24b023`이며 기존 `main`을 변경하지 않는다.
+PR #85의 주차 경로, #86의 한라대 GPS, #87의 v2 통합, #88의 정면 LiDAR 방향 수정은
+이미 이 기준 브랜치에 포함돼 있다. 이전 이 문서의 main 대상/Draft 설명은 당시 검토 이력이다.
 
-## 현재 변경
+## 통합 동작
 
-- 한라대 경로는 `(01 또는 02) → 03 → 04 → 05 → (06 또는 07)`이다.
-  시작/종료 경로를 실행 전에 명시하며 최근 현장 선택은 01/07이다.
-  업로드된 경로별 CSV/Zone, 경로 순서·종점·새 reference 응답을 연결했다.
-- GPS station은 최초 최근접 위치에서 시작해 저장 station 기준
-  `abs(v_ref) * sample_time * 2` 범위로 갱신한다. station +2.5m preview의
-  두 점 가중치 중 하나가 90% 이상이면 해당 점, 그 외에는 보간한다.
-- 카메라는 피팅 중심선의 차량 투영 station에서 +2.5m 목표점 하나를 발행한다.
-  MGM의 현재 입력/최종 출력 계약은 1점이며 유효성 gate를 통과해야 한다.
-- 비정지 속도 크기는 v_base(현재 1m/s)로 통일했다. 정지 제어는 기존 정책이다.
-  일반 회피는 기본 OFF이며 LiDAR E-stop만 제외하는 별도 시험 런처가 있다.
-  일반 런처의 LiDAR E-stop, 외부/운전자/CAN/reference 정지는 유지한다.
-- 주차 Zone 진입 5회 확인 즉시 ACTIVE/PARKING이다. 주차 상태에서 준비하며 정지 대기,
-  현재 요청 ready→ACTIVATE ack/유효 reference 이후 실행한다. 정상 복귀는 done 또는
-  현재 CSV 종점이며 미완료 종점은 ROUTE_END=10 실패로 기록한다. Zone 이탈은 종료하지 않는다.
-- 4-LiDAR 드라이버 연결·장치 링크 복구, NMEA 읽기 진단 도구, 한라대/용인 런북을 포함한다.
-- 현재 dump는 v19다. 9월 12일 현장 run은 v18이며 당시 빌드로 재생해야 한다.
-  신호 정지 거리 seed는 1.5m, 잔여거리 목표는 1.0m 그대로다.
+- 일반 주행은 `avoidance_enabled=true`, `lidar_estop_enabled=true`다.
+  `scripts/v2 vehicle`이 일반 진입점이고 `vehicle-no-estop`은 E-stop 제외 시험용으로 남는다.
+  회피와 E-stop은 정면 `/lidar/a1/scan`을 사용하며 PR #88의 장착 방향 해석을 유지한다.
+- Mission ACTIVE에서는 GPS 탐색과 실제 주차 기동 전체에 일반 회피와 LiDAR E-stop을
+  적용하지 않는다. 종료 틱부터 일반 주행 조건을 다시 평가한다. 운전자/CAN 정지는 유지한다.
+- stable 주차 Zone entry에서 ACTIVE/PARKING이 되며 PREPARE 명령으로 모듈을 준비한다.
+  ready 이전에는 현재 CSV의 GPS 1점과 v_base로 탐색한다. 이때 신호·GPS reference 정지는
+  유지하며 Parking status 부재 자체로 정지하지 않는다. ready 틱에 Parking 제어로 인계하고
+  ACTIVATE 실행 ack와 유효 reference가 올 때까지 정지한다.
+- 주차 완료 또는 현재 CSV 종점에서 복귀한다. 03 종점까지 미준비이면 ROUTE_END=10으로
+  실패를 기록하고 실제 정지와 04의 새 reference 응답 후 자동 주행한다. 추가 go는 필요 없다.
+  TargetRef pose delta는 state byte가 아니라 실제 GPS/Parking reference 소스에 맞춘다.
+- GPS station의 다음 탐색 반경은 사용자 지정 `abs(v_ref) * sample_time * 1.5 + 0.5m`다.
+  유효한 0 속도 명령에서도 0.5m 안에서 갱신한다. 기존 단일 preview station +2.5m와
+  90% endpoint snap은 유지한다. raw dump는 이 제어권 변경을 구별하기 위해 v20이다.
+- 신호등 카메라는 `oak_exposure_compensation=-2`, 통합 launch는
+  `traffic_exposure_compensation=-2`를 기본으로 전달한다. DepthAI 2/3의 RGB 자동 노출
+  보정을 사용하며 정수 -9..9만 허용한다. 0은 보정 없는 자동 노출이다.
+  startup-only 설정으로 재시작 시 적용하고 차선 카메라는 변경하지 않는다.
+- 한라대/용인 런북의 시작 명령에 회피 ON과 신호등 노출 -2를 명시했다.
+  기존 속도 고정 및 정지 제어, 신호 거리 seed 1.5m/목표 1.0m, Recovery OFF를 유지한다.
 
 ## 검증 결과
 
+격리 checkout `/tmp/fma-v2-safety-exposure-merge`에서 실행했다.
+MGM은 별도 `/tmp/fma-v2-safety-exposure-build`에 CMake build했으며
+ROS Humble과 기존 v2 메시지/의존성 underlay를 사용했다. 이번 변경에는 메시지 schema 변경이 없다.
+Python/launch 검사는 후보 소스와 후보 adas_mgm 설치 prefix를 사용했다.
+
 | 검사 | 결과 |
 |---|---|
-| v2 colcon build | 13개 패키지 성공 |
-| 설치 prefix/메시지/정책 검사 | 성공 |
-| 관련 Python 전체 | 471 passed, 3 skipped; 기존 SciPy/NumPy 버전 경고 1건 |
-| 신규 즉시 주차 코어 | 75 checks 통과 |
-| 즉시 주차 ROS mock | 12개 연결 확인 통과; localhost domain 178 |
-| 전체 CTest | **11/20 통과, 9개 실패** |
+| 후보 MGM 및 C++ 시험 대상 build | 성공 |
+| 관련 Python | **432 passed, 3 skipped** |
+| `parking_entry_test` | **134 checks, 0 failures** |
+| `parking_entry_ros_smoke.py` | **13 PASS**, localhost domain 178 |
+| `parking_search_route_ros_smoke.py` | 업로드된 01→03, 03 탐색 실패→04 자동 주행 **PASS**, domain 179 |
+| 후보 전체 CTest | **11/20 통과, 9개 실패** |
+| 기준 `2852a5c` 별도 build/CTest | **11/20 통과, 후보와 동일한 실패 목록·assertion** |
 
-실패한 CTest는 `fixed_speed_test`, `avoidance_disabled_test`, `route_sequence_test`,
+기존 실패는 `fixed_speed_test`, `avoidance_disabled_test`, `route_sequence_test`,
 `stabilization_test`, `reference_safety_test`, `zone_manager_test`,
 `mission_preparation_test`, `mission_zone_search_test`, `manager_state_test`다.
-이 시험들의 공통 `manager_test_fixture.hpp`에는 2점 입력이 남아 있고 현재 core는
-1점 입력을 요구한다. 오래된 속도/기하 기대값 등을 포함한 전체 회귀 정리가 남아 있다.
-모든 실패가 fixture 변경만으로 해소된다고 검증한 상태는 아니다.
+두 build의 실패 assertion 목록 242줄과 각 실패 수가 동일하다. 따라서 전체 회귀 통과를
+주장하지 않는다. 공통 fixture의 과거 2점 입력/속도 기대값 등이 남아 있으나, 모든 실패가
+fixture 변경만으로 해결된다고 검증한 상태는 아니다.
 
-Python 재현은 `scripts/v2 test`의 Python 블록과 동일한 패키지/test 경로를 사용했다.
-`scripts/v2 test`는 전체 CTest 실패에서 종료되므로 현재 전체 통과 명령으로 제시하지 않는다.
-이번 PR 준비 중 센서·차량·CAN bridge를 실행하지 않았다.
+Python 대상은 `stack_gps/test`, `stack_traffic/test`, `stack_estop/test`,
+`stack_avoid/test`, `stack_parking/test`, MGM `test_reference_metadata.py`,
+`scripts/test_v2_launch.py`, `scripts/test_v2_front_lidar.py`다.
+런처 시험은 노드 실행 없이 일반/시험용 E-stop 분리, 회피 기본 ON/명시 OFF,
+노출 -2/0/-3 전달과 차선 카메라 분리를 검사한다.
 
-## 실제 주행 기록과 남은 확인
+ROS 시험은 실제 MGM 실행 파일에 모의 입력을 연결한다. 두 번째 시험은 실제 GPS wrapper와
+업로드된 한라대 CSV/Zone을 사용하며 GNSS/차속만 합성한다. 센서·CAN bridge를 시작하지 않았다.
+작업 폴더의 기존 주행 파일과 설치본은 덮어쓰지 않았으며 별도 checkout으로 PR을 준비했다.
 
-9월 12일 run은 `drive_logs/v2_no_estop_20260912_223321_282247`에 CSV·메타데이터
-12개 파일(약 15MB)로 포함했다. 약 49.2GB rosbag DB와 약 609MB raw dump는 로컬 보관이며
-Git에 추가하지 않았다. manifest와 SHA256SUMS에 원본 정보가 있다.
+## 남은 현장 확인
 
-그 run은 주차 정책 변경 전 기록이다. T자·평행 모두 PREPARE 진입 약 1.3초 뒤 Zone 이탈로
-취소됐으며, 지금의 즉시 ACTIVE 정책을 실차 검증한 기록이 아니다.
-소스 기준점은 `8697bcb`와 당시 미커밋 변경이며 현재 PR 전체와 동일한 실행 버전은 아니다.
-
-GPS station의 이동 탐색 범위는 MGM의 최종 목표속도에 의존한다. 목표속도 0인 상태에서
-조이스틱 등으로 실제 차량을 움직이면 station 갱신이 제한되는 문제는 후속 작업이다.
-주차 공간 검출/경로 생성 성공률과 새 주차 종료 정책의 현장 검증도 남아 있다.
+이번 시험은 장애물·정지선 검출 성공률, 실제 제동거리, 주차 공간 생성 성공률을 인증하지 않는다.
+GPS heading이 반대로 초기화되는 현상은 이번 변경에서 수정하지 않았다.
+실차 rosbag/학습용 사진, 통합 RViz의 별도 작업 파일은 이번 변경에 추가하지 않는다.
+과거 커밋된 9월 12일 CSV·메타데이터와 로컬 보관 원본은 보존한다.

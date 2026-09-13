@@ -13,7 +13,7 @@ mgm_node:
     # Configure GPS parking ranges or explicit Zone definitions in zones_file.
     # MGM has no waypoint-reached topic or waypoint-ID mission mapping.
 
-    # Take Parking authority at stable Zone entry; prepare while stopped.
+    # Enter Parking at stable Zone entry; follow GPS while searching, Parking owns control after ready.
     # Normal release: parking done or current CSV endpoint. Zone exit is not a release.
     parking_zone_entry_active: true
     parking_search_zone_only: false  # historical PREPARE policy, only if immediate entry is false
@@ -121,8 +121,10 @@ mgm_node:
     #     막혀(run_mbd_0825_162752) 08-25 에 되돌렸다.
     # ⚠ 켜면 구간 밖 장애물의 방어선은 stack_estop 뿐이다 (MGM 의 TTC 안전 바닥은
     #   AVOID 스테이트 안에서만 걸린다).
-    # User requested ordinary avoidance OFF. Keep perception for observation.
-    avoidance_enabled: false
+    # Ordinary driving enables LiDAR E-stop and avoidance. Mission ACTIVE masks
+    # both during Parking search and execution; operator/CAN stops still apply.
+    lidar_estop_enabled: true
+    avoidance_enabled: true
     avoid_zone_only: false
 
     # ── 후진 탈출 (2026-08-24, §4) — 회피 불가 장애물 앞에서 estop 이 무한히

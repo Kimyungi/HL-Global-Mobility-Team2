@@ -36,6 +36,18 @@ bool mission_search_zone_known(const CoreState & st)
     zone.mission_type == m.request.mission_type;
 }
 
+bool mission_searches_along_gps(const CoreState & st)
+{
+  const auto & m = st.managers;
+  return st.params.parking_zone_entry_active && m.mission == MissionState::MISSION_ACTIVE &&
+    m.request.active && !m.request.preparation_ready;
+}
+
+bool mission_reference_authority(const CoreState & st)
+{
+  return st.managers.mission == MissionState::MISSION_ACTIVE && !mission_searches_along_gps(st);
+}
+
 void cancel_mission(CoreState & st, MissionCancelReason reason)
 {
   auto & m = st.managers;
@@ -110,6 +122,9 @@ bool active_parking_step(const CoreSnapshot & s, CoreState & st, bool matching)
     {
       r.preparation_ready = true;
       r.ready = observe(s, m); m.mission_events |= MISSION_EVENT_READY;
+      m.mission_start = true;
+      m.mission_feedback_seen = false;
+      r.handoff = observe(s, m); m.mission_events |= MISSION_EVENT_HANDOFF;
       // Activation ack must arrive on a subsequent status, after ACTIVATE is sent.
       return false;
     }
@@ -119,8 +134,8 @@ bool active_parking_step(const CoreSnapshot & s, CoreState & st, bool matching)
   } else if (!s.parking_mission_active && !s.parking_done) {
     m.mission_feedback_seen = false;
   }
-  // Missing readiness, module abort, Zone exit and expired reference keep PARKING.
-  // manager_decision/final_reference_gate hold zero until execution is usable again.
+  // Before readiness, PARKING follows GPS while the module searches. After the
+  // handoff, lost execution feedback/reference holds zero; never resume GPS mid-maneuver.
   return false;
 }
 }
@@ -239,8 +254,7 @@ bool mission_step(const CoreSnapshot & s, CoreState & st)
     m.mission_prepare = true;
     if (st.params.parking_zone_entry_active) {
       m.mission = MissionState::MISSION_ACTIVE;
-      m.mission_start = true;
-      r.handoff = observe(s, m); m.mission_events |= MISSION_EVENT_HANDOFF;
+      // State entry starts preparation; exclusive Parking control starts at ready.
     } else if (!st.params.parking_search_zone_only && parking_calibration(st.params) != CalibrationState::CALIBRATED) {
       cancel_mission(st, MissionCancelReason::CALIBRATION_REQUIRED);
     } else if (!s.vehicle_speed_valid || !std::isfinite(s.vehicle_speed)) {

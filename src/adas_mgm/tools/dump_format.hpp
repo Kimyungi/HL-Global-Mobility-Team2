@@ -42,7 +42,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v17: explicit ordinary-avoidance enable parameter.
 // v18: one-point control input/output contract; legacy bus capacity is unchanged.
 // v19: immediate Zone-entry Parking authority and current-route endpoint cancellation.
-constexpr uint32_t kDumpVersion = 19;
+// v20: PARKING search follows GPS until ready; unchanged layout, new authority semantics.
+constexpr uint32_t kDumpVersion = 20;
 
 struct DumpHeader
 {

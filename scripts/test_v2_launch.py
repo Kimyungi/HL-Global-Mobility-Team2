@@ -51,7 +51,7 @@ def test_vehicle_defaults_use_v2_and_refuse_before_hardware(monkeypatch):
     assert values['zone_enter_confirm_samples'] == values['zone_exit_confirm_samples'] == '5'
     assert values['parking_zone_entry_active'] == 'true'
     assert values['parking_search_zone_only'] == 'false'
-    assert values['avoidance_enabled'] == 'false'
+    assert values['avoidance_enabled'] == 'true'
     assert values['parking_search_timeout'] == values['max_parking_search_distance'] == '-1.0'
     before = set((ROOT / 'drive_logs').glob('*'))
     validation = next(item for item in description.entities if isinstance(item, OpaqueFunction))
@@ -64,8 +64,8 @@ def test_vehicle_defaults_use_v2_and_refuse_before_hardware(monkeypatch):
     'REAL_VEHICLE_integration_v2.launch.py',
     'REAL_VEHICLE_integration_v2_no_estop.launch.py',
 ])
-@pytest.mark.parametrize('enabled', [None, 'true'])
-def test_avoidance_off_default_and_explicit_enable_reach_mgm(monkeypatch, entry, enabled):
+@pytest.mark.parametrize('enabled', [None, 'true', 'false'])
+def test_avoidance_on_default_and_explicit_override_reach_mgm(monkeypatch, entry, enabled):
     from launch_ros.utilities import evaluate_parameters
     monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
     description = load(entry).generate_launch_description()
@@ -80,7 +80,7 @@ def test_avoidance_off_default_and_explicit_enable_reach_mgm(monkeypatch, entry,
                if isinstance(item, Node) and item.node_package == 'adas_mgm')
     # Resolve only parameter values; do not execute nodes or validation actions.
     params = evaluate_parameters(context, mgm._Node__parameters)[1]
-    assert params['avoidance_enabled'] is (enabled == 'true')
+    assert params['avoidance_enabled'] is (enabled != 'false')
     assert params['parking_zone_entry_active'] is True
     assert params['lidar_estop_enabled'] is ('no_estop' not in entry)
     gps = next(item for item in description.entities
@@ -89,6 +89,28 @@ def test_avoidance_off_default_and_explicit_enable_reach_mgm(monkeypatch, entry,
     gps_params = evaluate_parameters(context, gps._Node__parameters)[0]
     assert gps_params['n_points'] == 1
     assert not any(key.startswith('rejoin_') or key == 'ref_lookahead_m' for key in gps_params)
+
+
+
+@pytest.mark.parametrize('exposure,expected', [(None, -2), ('0', 0), ('-3', -3)])
+def test_traffic_exposure_reaches_only_traffic(monkeypatch, exposure, expected):
+    from launch_ros.utilities import evaluate_parameters
+    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
+    description = load('REAL_VEHICLE_integration_v2.launch.py').generate_launch_description()
+    context = LaunchContext()
+    if exposure is not None:
+        context.launch_configurations['traffic_exposure_compensation'] = exposure
+    for item in description.entities:
+        if isinstance(item, DeclareLaunchArgument):
+            item.execute(context)
+    traffic = next(item for item in description.entities
+                   if isinstance(item, Node) and item.node_package == 'stack_traffic')
+    params = evaluate_parameters(context, traffic._Node__parameters)[0]
+    assert params['oak_exposure_compensation'] == expected
+    lane = next(item for item in description.entities
+                if isinstance(item, Node) and item.node_package == 'stack_lane')
+    lane_params = evaluate_parameters(context, lane._Node__parameters)[0]
+    assert 'oak_exposure_compensation' not in lane_params
 
 
 def test_vehicle_rejects_foreign_install(monkeypatch, tmp_path):

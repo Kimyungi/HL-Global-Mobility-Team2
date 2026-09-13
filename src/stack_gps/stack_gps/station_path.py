@@ -63,7 +63,7 @@ class StationPath:
             segments = range(max(0, nearest-1), min(last_segment, nearest)+1)
             low, high = 0.0, self.s[-1]
         else:
-            radius = abs(v_ref) * sample_time * 2.0 if math.isfinite(v_ref) else 0.0
+            radius = abs(v_ref) * sample_time * 1.5 + 0.5 if math.isfinite(v_ref) else 0.0
             if not math.isfinite(radius):
                 radius = 0.0
             low, high = max(0.0, self.station-radius), min(self.s[-1], self.station+radius)
@@ -72,7 +72,7 @@ class StationPath:
             segments = range(min(first, last_segment), last+1)
         best, segment, pe, pn = self._project(east, north, segments, low, high)
         self.station = best[2]
-        # Closest CSV vertex to the bounded station; even the index stays put at zero speed.
+        # Closest CSV vertex to the bounded station, including the zero-speed margin.
         self.index = min((segment, segment+1),
                          key=lambda i: (math.hypot(self.e[i]-pe, self.n[i]-pn), i))
         self.generation = generation

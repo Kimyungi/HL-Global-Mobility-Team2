@@ -1,10 +1,15 @@
 # Integration v2_main — 실차 검증 전 통합 기준
 
-> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](INTEGRATION_V2_PR_STATUS_20260913.md). 13개 패키지 빌드 완료, Python 471 통과/3 skip.
+> **2026-09-13 현재 통합 설정:** 일반 주행은 회피와 LiDAR E-stop 모두 ON이다.
+> Mission ACTIVE에서는 준비·실행 전체에서 둘 다 제외하며 종료 후 다시 적용한다.
+> 신호등 OAK 자동 노출 보정 기본값은 `-2`다(차선 카메라와 별도).
+> 아래 과거 OFF/노출 설정 기록보다 이 기준을 우선한다.
+
+> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](INTEGRATION_V2_PR_STATUS_20260913.md). 이번 MGM 격리 빌드 성공, Python 432 통과/3 skip.
 > 전체 CTest는 11/20 통과이며 회귀 정리가 남아 있다. 아래 과거 미빌드/전체 통과 표기보다 이 결과를 우선한다.
 
 > **2026-09-13 현재 주차 정책:** [즉시 주차 진입](MGM_PARKING_ENTRY.md)이 아래 과거 PREPARE/Zone 이탈 정책보다 우선한다.
-> `parking_zone_entry_active=true`: stable Zone 진입 즉시 ACTIVE/PARKING, 준비 중 정지, 정상 종료는 done 또는 현재 CSV 종점이다.
+> `parking_zone_entry_active=true`: stable Zone 진입 즉시 ACTIVE/PARKING, 탐색 중 현재 CSV의 GPS를 추종한다. ready 후 Parking 제어로 인계하며 정상 종료는 done 또는 현재 CSV 종점이다.
 
 2026-09-11. 별도 `integration/v2_main` 브랜치를 사용한다. 기반은 최신
 `origin/main`의 `c76f287`이며, 기존 main 브랜치·작업 폴더·설치 환경은 보존한다.

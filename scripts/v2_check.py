@@ -35,7 +35,7 @@ def main():
     if params.get('backend') != 'core' or not params.get('base_state_machine_enabled', True):
         raise RuntimeError('v2 requires backend=core and base_state_machine_enabled=true')
     print(f'V2_INSTALL_READY: {len(packages)} package prefixes and v2 message contract; {root}')
-    print('Parking policy:', 'immediate entry; stop to prepare; release on done or CSV end'
+    print('Parking policy:', 'immediate entry; GPS search until ready; done or CSV end releases to navigation'
           if params['parking_zone_entry_active'] else
           'source Zone only; no time/distance limit' if params['parking_search_zone_only'] else 'legacy time/distance limits')
     print('Zone enter/exit =', params['zone_enter_confirm_samples'], params['zone_exit_confirm_samples'],

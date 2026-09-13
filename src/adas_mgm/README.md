@@ -1,7 +1,7 @@
 # adas_mgm — Decision 계층 (10ms MGM 루프)
 
 > 현재 주차: [Zone 진입 즉시 PARKING](../../docs/MGM_PARKING_ENTRY.md).
-> 준비 중 정지하고, 완료 또는 현재 CSV 종점에서 복귀한다. 아래 과거 PREPARE 주행 정책보다 우선한다.
+> 탐색 중 현재 CSV의 GPS를 추종하고 ready 후 주차 제어로 인계한다. 완료 또는 현재 CSV 종점에서 복귀하며, 종점 실패는 다음 CSV로 자동 전환한다. 아래 과거 PREPARE 주행 정책보다 우선한다.
 
 > **6차 단일 기준:** [MGM_MBD_STATE_MACHINE_SPEC.md](../../docs/MGM_MBD_STATE_MACHINE_SPEC.md). 현재 MBD 정본은 병행 Top/Nav/Avoid/Signal/Safety/Mission이며 legacy 5-state byte는 호환 projection이다.
 > Zone 확인은 독립 GNSS sample이며 0=미설정. Parking 제한 -1, Recovery OFF 유지. 현재 bus/dump는 v15(연속 경로 확장, 6차는 v12)이며 이전 버전 설명/시험 절차는 역사적 비교 범위다.
