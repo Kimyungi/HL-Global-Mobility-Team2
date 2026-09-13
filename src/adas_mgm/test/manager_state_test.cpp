@@ -159,7 +159,7 @@ void safety()
   check(finish.out.top==TopState::AUTONOMOUS_DRIVE,"explicit new session clears FINISH");
   Run concurrent; concurrent.redline(); concurrent.s.auto_estop=true; concurrent.obstacle();
   check(concurrent.out.path_source==MGM_SRC_AVOID && concurrent.out.n_points==1 &&
-    near(concurrent.out.ref_points[0].y,.3f/MGM_NUM_POINTS) && concurrent.out.v_ref==0 &&
+    near(concurrent.out.ref_points[0].y,.3f) && concurrent.out.v_ref==0 &&
     concurrent.out.speed_owner==SpeedOwner::SAFETY,"30: simultaneous requests yield single chosen reference and speed/brake");
   Run enable; enable.s.autonomous_enabled=false; enable.tick();
   check(enable.out.top==TopState::AUTONOMOUS_ENABLE && enable.out.v_ref==0,"enable gate holds output");

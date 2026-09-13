@@ -1,5 +1,14 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> **2026-09-14 회피 station 경로:** 회피는 내부 다점 경로를 유지하고 매 새 스캔에서
+> 이전 station ±`(abs(v_ref) * sample_time + 0.5m)` 안으로 투영한다. 출력은 경로
+> 누적거리 station+1m의 점 1개이며 MGM은 xy/yaw/curvature를 축소 없이 전달한다.
+> 장애물 뒤쪽이 불명확하면 회피 후 직선 꼬리를 유지하고, 신선한 GPS 기준점까지
+> 차량 폭·길이를 고려한 연결 경로가 관측상 비어 있을 때만 복귀 경로를 만든다.
+> 경로는 신선한 GPS 위치/헤딩 또는 VehicleVector pose에 고정하며, 동일 episode
+> 중 좌표 소스를 바꾸지 않는다. 자세 상실 시 경로를 전진시키거나 완료하지 않는다.
+> 상세: `docs/AVOID_STATION_PATH.md`. 아래 과거 회피점 1/20 축소 규칙보다 우선한다.
+
 > **2026-09-13 무인 RC 시험 후진:** [현재 설정](docs/RC_REVERSE_RECOVERY.md)이 아래 과거 Recovery OFF/필수 CLEAR/고정속도 설명보다 우선한다.
 > 일반 v2 설정은 `escape_after_cycles=1000`, `v_escape=-0.8`, `escape_max_cycles=162`,
 > `escape_require_rear_clear=false`. 주차·외부·CAN 정지는 유지하며 no-estop/MBD/bench는 복구 OFF다. raw dump v22.

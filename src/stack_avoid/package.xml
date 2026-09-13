@@ -11,6 +11,8 @@
   <depend>fma_interfaces</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>rcl_interfaces</depend>
   <depend>visualization_msgs</depend>
