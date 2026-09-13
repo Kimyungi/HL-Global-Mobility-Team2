@@ -645,19 +645,9 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     }
   }
 
-  // Legacy expands a singleton into twenty interpolated points. CAN v5 sends
-  // only point zero; v2 reproduces that AVOID geometry with a one-point output.
-  // See docs/AVOIDANCE_MAIN_RESTORE.md for the pinned main comparison.
+  // v2 providers already return their station preview. Preserve its full
+  // geometry (including AVOID station+1m); only legacy expands a singleton.
   int32_t n_wire = n;
-  if (single_point && src == MGM_SRC_AVOID) {
-    // main c76f287 expanded the provider target into 20 points; the unchanged
-    // CAN v5 bridge transmitted only point zero. Preserve that wire geometry,
-    // including its heading, while keeping v2's one-point input/output contract.
-    const CorePoint tgt = path->pts[0];
-    const CorePoint first{tgt.x / MGM_NUM_POINTS, tgt.y / MGM_NUM_POINTS,
-      atan2f(tgt.y, tgt.x), 0.0f};
-    for (auto & point : target) {point = first;}
-  }
   if (n == 1 && !single_point) {
     const CorePoint tgt = path->pts[0];
     const float yaw = atan2f(tgt.y, tgt.x);

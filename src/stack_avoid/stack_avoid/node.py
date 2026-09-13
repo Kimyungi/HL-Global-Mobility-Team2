@@ -1,26 +1,13 @@
-"""stack_avoid — 장애물 인지, 회피 가능 판정 재료(TTC·측방), 회피 경로
-담당: 이기돈
+"""LiDAR surface avoidance with a persistent path and bounded station tracking.
 
-- 전방 2D LiDAR 스캔(`/scan`)의 인접 반사점을 연결 윤곽으로 구성해 거리·TTC 산출.
-- 장애물 감지 시 윤곽 전체의 측방 점유 구간을 차폭·여유만큼 확장해 열림을 탐색.
-  통과 가능·최소 편차 열림으로 회피 목표점 1개 생성 → `points[]`.
-  (avoid n_points=1: dSPACE quintic이 현재 자세에서 이 목표점으로 궤적을 채움)
-- 모든 차량/센서/튜닝 값은 `config/params.yaml`에서 로드(하드코딩 금지, CLAUDE.md §5).
-- LiDAR 장착 오프셋으로 vehicle frame(base_link=후축 중심) 보정 + static TF 발행.
-- narrow_gap: offset_max 안에 통과 가능한 열림이 없으면 True (감속 근거).
-- ttc 자차속도: dSPACE VehicleVector.v(신선) 우선, 미수신/오래되면 target_speed 폴백.
-- avoidable/maneuver_done/v_suggest: 2026-08-12 MGM 통합 시 구현 (팀장).
-  ★ 이기돈 검증 필요 — 특히 maneuver_done 클리어런스 시간은 실차 회피 주행으로
-  확인할 것. v_suggest는 감속 금지(조향 하한 0.5 m/s, 이기돈 실측) — on_scan 주석 참조.
-
-설계 메모:
-- 앞 LiDAR로 반응형 회피 (맵 생성 없음, REQUIREMENTS §계약).
-- 스캔이 들어올 때마다(≈100ms) AvoidStatus 발행 → MGM은 최신 스냅샷을 pull.
-- ttc는 장애물 없으면 반드시 큰 값(1e9). 정지/모드 결정은 이 스택 금지 → MGM 몫.
-- 이 노드는 MGM 10ms 루프와 별도 프로세스 (CLAUDE.md §5.2).
+Whole-contour gaps seed footprint-checked paths. Each fresh localized scan
+returns one vehicle-frame point at station+1m, including tangent/curvature.
+Unknown obstacle backs retain a straight tail; observed free space to the GPS
+reference enables a return connector. Completion requires reaching that return.
+TTC and avoidability are perception inputs; MGM owns speed and mode decisions.
+Vehicle and sensor dimensions come from config/params.yaml.
 """
 import math
-import time
 
 import rclpy
 from rclpy.node import Node
@@ -31,8 +18,9 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import TransformStamped
 from tf2_ros import StaticTransformBroadcaster
 from fma_interfaces.msg import AvoidStatus, RefPoint, VehicleVector
+from stack_avoid.path_io import StationPathIO, stamp_ns
 from stack_avoid.surfaces import (
-    scan_surfaces, nearest_in_corridor, blocked_intervals, gap_centers,
+    scan_surfaces, nearest_in_corridor,
     outside_intervals, surface_clearance, occluded,
 )
 
@@ -59,7 +47,7 @@ def euler_to_quat(roll: float, pitch: float, yaw: float):
     )
 
 
-class StackAvoidNode(Node):
+class StackAvoidNode(StationPathIO, Node):
 
     def __init__(self):
         super().__init__('stack_avoid_node')
@@ -68,7 +56,7 @@ class StackAvoidNode(Node):
         self.scan_topic = self.declare_parameter('scan_topic', '/scan').value
         self.target_speed = self.declare_parameter('target_speed_mps', 0.5).value
 
-        # 차량 제원 (통로 폭 계산에 차폭, maneuver_done 클리어런스에 전장 사용)
+        # 차량 제원 (경로 전체의 회전된 차체 footprint 검사에 사용)
         self.vehicle_width = self.declare_parameter('vehicle.width_m', 0.62).value
         self.vehicle_len = self.declare_parameter('vehicle.length_m', 0.85).value
 
@@ -108,27 +96,6 @@ class StackAvoidNode(Node):
                 self.cluster_dist, self.surface_link_scale, self.surface_max_link):
             raise ValueError('surface link parameters must be finite and positive; max >= cluster_dist')
         self._surfaces = []
-        # ★ 목표 y 변화율 상한 [m/s]. 0 이면 제한 없음(구동작).
-        # 아래 bag 수치는 기존 점 기반 구현의 튜닝 기록이며 새 표면 모델 실측은 별도다.
-        #   3.0 = 10Hz 스캔에서 프레임당 0.30m. 2개 bag 재생으로 정한 값 —
-        #   1m 초과 점프를 24·32회 → 2·0회로 줄이면서 narrow_gap 은 늘지 않았다.
-        self.target_rate_mps = float(
-            self.declare_parameter('avoid.target_rate_limit_mps', 3.0).value)
-        # dt 이상치일 때 대체용 스캔 주기 [Hz] (T-mini Plus 실측 10Hz)
-        self.scan_rate_hz = float(self.declare_parameter('avoid.scan_rate_hz', 10.0).value)
-        # maneuver_done 클리어런스 여유 [m] — 완료 판정 통과거리 = 마지막 감지거리
-        # + 전장 + 이 값. 실차 튜닝: ros2 param set /stack_avoid_node avoid.clear_margin_m
-        self.clear_margin = float(self.declare_parameter('avoid.clear_margin_m', 0.3).value)
-        # 클리어런스 계산에 쓰는 "마지막 감지거리"의 상한 [m].
-        # 2026-08-13에 1.0m 하드코딩으로 넣었다가 2026-08-14 실차에서 **측면 충돌**을
-        # 유발했다: 감지는 3.0m에서 시작해 1.1초 뒤(≈2.45m 지점) 소실됐는데, 상한
-        # 1.0m 때문에 통과거리를 2.15m로 잡아 4.3s 만에 done → GPS 복귀로 트랙에
-        # 되돌아가는 순간 콘이 0.8m 앞에 재출현(ttc 0.1)했다. 필요한 통과거리는
-        # 2.45+0.85+0.3 = 3.6m(7.2s)였으므로 1.45m 부족했다.
-        # 감지거리는 본래 detect_range로 유계이므로 기본값을 그에 맞춘다.
-        # 과대 대기로 인한 횡오차 누적은 아래 "통과 유지점"이 막는다.
-        self.clear_gap_max = float(
-            self.declare_parameter('avoid.clear_gap_max_m', 3.0).value)
         # obstacle_detected 해제 히스테리시스 [m] — 진입은 detect_range, 해제는
         # detect_range + 이 값. 경계에 걸친 물체(벽·연석)가 깜빡이면 그때마다
         # 클리어런스 타이머가 리셋돼 maneuver_done이 영원히 안 선다
@@ -137,17 +104,8 @@ class StackAvoidNode(Node):
         self.detect_hysteresis = float(
             self.declare_parameter('avoid.detect_hysteresis_m', 0.4).value)
         self._detected_prev = False     # 히스테리시스 상태
-        self._prev_center = None        # 직전 목표 y (rate limit 상태)
-        self._prev_center_t = None
-
-        # maneuver_done 내부 상태 (REQUIREMENTS §계약 — "스캔에 안 보임 = 완료" 금지.
-        # 최근 장애물의 짧은 유지 같은 내부 상태는 허용된 정상 구현)
-        self._maneuver_armed = False    # detected+avoidable을 낸 적 있음 → 완료 판정 대상
-        self._clear_since = None        # 전방 통로 무감지가 시작된 시각 [monotonic]
-        self._last_gap = None           # 마지막 감지 거리 [m] — 클리어런스 시간 계산용
-        self._done_until = 0.0          # maneuver_done=True 펄스 만료 시각 [monotonic]
-
         self._recompute_derived()
+        self._init_path_tracking()
 
         # ── I/O ──────────────────────────────────────────────────────────
         # LaserScan은 Best Effort(sensor data QoS) — 구독도 맞춰야 수신됨.
@@ -212,6 +170,10 @@ class StackAvoidNode(Node):
     def _on_set_params(self, params):
         """런타임 파라미터 변경 반영. scan_topic·장착값은 재시작 권장."""
         proposed = {p.name: p.value for p in params}
+        width = proposed.get('vehicle.width_m', self.vehicle_width)
+        margin = proposed.get('avoid.lateral_margin_m', self.lateral_margin)
+        if not (math.isfinite(width) and width > 0 and math.isfinite(margin) and margin >= 0):
+            return SetParametersResult(successful=False, reason='invalid vehicle width or lateral margin')
         if not self._valid_surface_params(
                 proposed.get('avoid.cluster_dist_m', self.cluster_dist),
                 proposed.get('avoid.surface_link_scale', self.surface_link_scale),
@@ -241,12 +203,6 @@ class StackAvoidNode(Node):
                 self.surface_link_scale = float(p.value)
             elif p.name == 'avoid.surface_max_link_m':
                 self.surface_max_link = float(p.value)
-            elif p.name == 'avoid.target_rate_limit_mps':
-                self.target_rate_mps = float(p.value)
-            elif p.name == 'avoid.clear_margin_m':
-                self.clear_margin = float(p.value)
-            elif p.name == 'avoid.clear_gap_max_m':
-                self.clear_gap_max = float(p.value)
             elif p.name == 'vehicle.width_m':
                 self.vehicle_width = p.value
             elif p.name == 'lidar_mount.forward_angle_deg':
@@ -260,6 +216,7 @@ class StackAvoidNode(Node):
 
     def on_vehicle_vector(self, vv: VehicleVector):
         """dSPACE 상태추정 수신 → 자차속도 갱신 (TTC 계산 입력). 후진도 대비해 절대값."""
+        self._store_vehicle_pose(vv)
         self.ego_v = abs(float(vv.v))
         self.ego_v_stamp = self.get_clock().now()
 
@@ -275,106 +232,54 @@ class StackAvoidNode(Node):
         return self.target_speed
 
     def on_scan(self, scan: LaserScan):
-        """전방 통로 안 최근접 장애물 → 거리·TTC + 회피 목표점 발행."""
-        self.front_scan_pub.publish(self._front_only_scan(scan))  # 시각화용
-        self._surfaces = self._scan_surfaces(scan)
-        obs = self._nearest_front_obstacle(scan)   # (gap, y_veh) or None
-        gap = obs[0] if obs is not None else None
-
+        """One fresh scan advances the persistent path station at most once."""
+        stamp = stamp_ns(scan.header.stamp)
+        if stamp > 0 and stamp <= self._path_last_scan:
+            return
         msg = AvoidStatus()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'base_link'
+        msg.ttc = TTC_INF
+        msg.v_suggest = float(self.target_speed)
         msg.scan_valid = bool(
             scan.ranges and math.isfinite(scan.angle_min)
-            and math.isfinite(scan.angle_increment) and scan.angle_increment != 0.0
+            and math.isfinite(scan.angle_increment) and scan.angle_increment != 0.
             and math.isfinite(scan.range_min) and math.isfinite(scan.range_max)
-            and scan.range_max >= scan.range_min)
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'base_link'          # points[]는 vehicle frame(후축 원점)
-
-        # 히스테리시스: 진입 detect_range, 해제 detect_range + detect_hysteresis.
-        # 경계에 걸친 물체가 깜빡이면 클리어런스 타이머가 매번 리셋된다(위 주석).
-        if gap is None:
-            self._detected_prev = False
-        else:
-            thr = (self.detect_range + self.detect_hysteresis
-                   if self._detected_prev else self.detect_range)
-            self._detected_prev = gap < thr
+            and scan.range_max >= scan.range_min
+            and self._fresh_stamp(stamp, self.path_pose_timeout)
+            and any(r == math.inf or (math.isfinite(r) and scan.range_min <= r <= scan.range_max)
+                    for r in scan.ranges))
+        if not msg.scan_valid:
+            # Invalid data cannot certify clearance, advance station or finish.
+            msg.obstacle_detected = self._detected_prev
+            self.pub.publish(msg)
+            return
+        self._path_last_scan = stamp
+        self.front_scan_pub.publish(self._front_only_scan(scan))
+        self._surfaces = self._scan_surfaces(scan)
+        obs = self._nearest_front_obstacle(scan)
+        gap = obs[0] if obs is not None else None
+        threshold = self.detect_range+(self.detect_hysteresis if self._detected_prev else 0.)
+        self._detected_prev = gap is not None and gap < threshold
         msg.obstacle_detected = self._detected_prev
-
-        # TTC = 거리 ÷ 자차속도 (정적 장애물 가정, REQUIREMENTS). 정지 중이면 INF.
-        # 자차속도는 dSPACE VehicleVector.v(신선) 우선, 미수신/오래되면 target_speed 폴백.
         speed = self._ego_speed()
-        if gap is None or speed <= EPS_SPEED:
-            msg.ttc = TTC_INF
-        else:
-            msg.ttc = float(gap / speed)
-
-        # 회피 목표점 1개(follow-the-gap, 양쪽 고려), vehicle frame — 감지 시에만.
-        # offset_max 안에 통과 가능한 열림이 없으면 None (여유 미달 지점을 억지로
-        # 내지 않음 — 팀장 리뷰 반영). 이 경우 narrow_gap 으로 감속 근거만 제공.
-        if msg.obstacle_detected:
-            tgt = self._gap_target(scan, gap)
-        else:
-            tgt = None
-            self._prev_center = None        # 장애물 없음 → rate limit 이력 리셋
-        msg.points = [tgt] if tgt is not None else []
-
-        # avoidable (stage2, 2026-08-12 MGM 통합): 측방 여유 확보(목표점 성립) AND
-        # TTC 여유. 판정 "재료"만 — lane/waypoint→avoid 전이 결정은 MGM (§계약).
-        msg.avoidable = tgt is not None and msg.ttc >= self.ttc_stop
-        # 감지했으나 offset_max 안에 통과 가능한 열림이 없음 = 통로 좁음 → 감속 근거.
-        msg.narrow_gap = msg.obstacle_detected and tgt is None
-
-        # maneuver_done (stage4, 2026-08-12 MGM 통합) — "스캔에 안 보임 = 완료" 금지
-        # (REQUIREMENTS: 지나치는 중엔 전방 시야에서 사라져도 아직 차 옆에 있다).
-        # 완료 = [마지막 감지 거리 + 전장 + 여유]를 현재 속도로 통과하는 시간 동안
-        # 전방 무감지가 유지된 시점. 속도는 _ego_speed()(VehicleVector 미연결 시
-        # target_speed 폴백)라 시간 기반이 곧 거리 기반이다. 정지 중(속도≈0)엔
-        # 지나가지 못하므로 완료가 서지 않는 것이 올바른 동작.
-        # ★ 이기돈 검증 필요: 여유 0.3m·펄스 0.5s는 초기값 — 실차 회피로 확인.
-        now_mono = time.monotonic()
-        if msg.obstacle_detected:
-            self._last_gap = gap
-            self._clear_since = None
-            self._done_until = 0.0          # 새 장애물 → 이전 완료 펄스 무효
-            if msg.avoidable:
-                self._maneuver_armed = True  # MGM이 AVOID로 들어갔을 수 있음
-        elif self._maneuver_armed:
-            if self._clear_since is None:
-                self._clear_since = now_mono
-            # 감지 소실은 대부분 회피 조향으로 장애물이 통로를 **측방** 이탈한
-            # 것이지 통과한 것이 아니다 — 그 시점의 종방향 거리를 그대로 써야
-            # "차 뒤로 보낼" 거리가 나온다. 상한을 1.0m로 조이면 조기 복귀로
-            # 측면을 스친다 (2026-08-14 실차 2회, clear_gap_max_m 주석 참조).
-            clear_dist = (min(self._last_gap or self.clear_gap_max, self.clear_gap_max)
-                          + self.vehicle_len + self.clear_margin)
-            if speed > EPS_SPEED and \
-                    now_mono - self._clear_since >= clear_dist / speed:
-                self._maneuver_armed = False
-                self._done_until = now_mono + 0.5   # MGM(10ms 루프)이 소비할 펄스
-            # 통과 유지점 — 대기 중 빈 경로를 내면 MGM 조립이 직전 목표를 감쇠
-            # hold하다 원점 부근의 퇴화 ref가 되어 조향이 표류한다 (2026-08-13
-            # run_003037 실측: ref가 (0.05,-0.2)까지 수축 → 복귀 전 이탈 1m).
-            # 전방 직진점(현 헤딩 유지)으로 통과 구간을 안정화한다.
-            if tgt is None:
-                msg.points = [self._rp(1.5, 0.0)]
-        msg.maneuver_done = (not msg.obstacle_detected) and now_mono < self._done_until
-
-        # v_suggest (stage3, 2026-08-12 MGM 통합): 목표속도 그대로 — **회피 중 감속 금지**.
-        # 근거 (이기돈 실측): dSPACE 조향은 v_ref ≥ 0.5 m/s 이상이어야 제대로 반응.
-        # 기하 비례 감속(초기 구현, 계수 0.4)은 v_ref를 0.44까지 내려 조향 하한을 깨서
-        # 회피 자체를 무너뜨렸다 (run_0812_234253 — 직진 후 estop). 감속하면 조향이
-        # 죽는 구조라 회피 중 종방향 안전은 TTC 즉시정지 바닥(MGM)·estop이 담당하고,
-        # narrow 시 v_narrow 상한도 MGM 우선권 표 몫.
-        msg.v_suggest = float(self.target_speed)
-
-        if msg.scan_valid and msg.points:
-            msg.reference_stamp = scan.header.stamp
+        if gap is not None and math.isfinite(speed) and speed > EPS_SPEED:
+            msg.ttc = float(gap/speed)
+        if msg.obstacle_detected and self._completed:
+            self._planner.reset()
+            self._pose_source = None
+            self._completed = False
+        if not self._completed:
+            point, done, generation = self._station_reference(scan, gap, msg.obstacle_detected)
+            if point is not None:
+                msg.points = [self._rp(*point)]
+                msg.reference_stamp.sec = generation//1_000_000_000
+                msg.reference_stamp.nanosec = generation%1_000_000_000
+            self._completed = done and not msg.obstacle_detected
+        msg.maneuver_done = self._completed
+        msg.avoidable = bool(msg.points) and msg.ttc >= self.ttc_stop
+        msg.narrow_gap = msg.obstacle_detected and not msg.points
         self.pub.publish(msg)
-
-        # 튜닝 보조 로그(비권위적): ttc_stop 임계 확인용. 정지 결정은 MGM.
-        if msg.obstacle_detected and msg.ttc < self.ttc_stop:
-            self.get_logger().debug(
-                f"ttc {msg.ttc:.2f}s < ttc_stop {self.ttc_stop}s (gap {gap:.2f}m)")
 
     # 목표가 표면보다 이만큼 이상 멀면 "뒤"로 본다 [m]. 측정 잡음·클러스터 두께 흡수.
     BEHIND_TOL_M = 0.10
@@ -423,43 +328,6 @@ class StackAvoidNode(Node):
         return (outside_intervals(y, intervals)
                 and surface_clearance((x, y), self._surfaces) >= clear - 1e-6
                 and not self._behind_surface(scan, x, y))
-
-    def _gap_target(self, scan: LaserScan, gap: float):
-        """Select one target outside inflated, whole-contour occupied intervals.
-
-        The depth band selects obstacles, but never cuts their contour. Thus a
-        diagonal wall's sliced endpoint cannot become a fictitious way around it.
-        Output remains one vehicle-frame target for the existing controller.
-        """
-        obs_x = self.lidar_x + gap
-        clear = self.vehicle_width / 2.0 + self.lateral_margin
-        intervals = blocked_intervals(
-            self._surfaces, obs_x - self.depth_band, obs_x + self.depth_band, clear)
-        reach = [y for y in gap_centers(intervals, self.offset_max)
-                 if self._target_clear(scan, obs_x, y, intervals, clear)]
-        if not reach:
-            self._prev_center = None
-            return None
-        center = min(reach, key=abs)
-        center = self._rate_limit(scan, obs_x, center, intervals, clear)
-        return self._rp(obs_x, center)
-
-    def _rate_limit(self, scan, obs_x, center, intervals, clear):
-        """Limit target motion only when the intermediate target clears surfaces."""
-        prev = self._prev_center
-        if prev is not None and self.target_rate_mps > 0.0:
-            now = self.get_clock().now().nanoseconds * 1e-9
-            dt = now - self._prev_center_t if self._prev_center_t else 0.0
-            if not 0.0 < dt < 1.0:
-                dt = 1.0 / max(1.0, self.scan_rate_hz)
-            step = self.target_rate_mps * dt
-            if abs(center - prev) > step:
-                limited = prev + math.copysign(step, center - prev)
-                if self._target_clear(scan, obs_x, limited, intervals, clear):
-                    center = limited
-        self._prev_center = center
-        self._prev_center_t = self.get_clock().now().nanoseconds * 1e-9
-        return center
 
     @staticmethod
     def _rp(x: float, y: float, yaw: float = 0.0, curvature: float = 0.0) -> RefPoint:

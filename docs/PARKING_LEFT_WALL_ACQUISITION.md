@@ -58,7 +58,7 @@ ACTIVATE 응답을 받아야 Parking reference로 전환한다. 완료 이전 re
 
 메시지·MGM·Parking을 함께 빌드한 다음 통합 노드를 새로 실행해야 적용된다.
 센서가 연결되지 않은 현재 세션에 출발 인가를 새로 발행하지 않았다.
-CoreSnapshot 변경으로 raw dump는 v24다. v23 dump는 당시 빌드로 재생한다.
+회피 station 경로와 통합한 raw dump는 v25다. v23/v24 dump는 당시 빌드로 재생한다.
 
 검증: 새 core 시험 8개와 기존 wall-gap 시험 4개 통과. 5개 generation 경계,
 재발행 제외, 중심점 소실, 이동 보상, 가까운 가림점 우선, 불일치 프레임,

@@ -38,7 +38,7 @@ GPS `StationPath.heading()`은 현재 station 양쪽의 기존 경로 tangent를
 `MgmState.avoidance=3`이 GPS_RETURN을 나타낸다. 같은 메시지의
 `avoid_return_cross_track_m`, `avoid_return_yaw_error_rad`, `avoid_return_error_valid`로
 판정 입력을 확인한다. GPS 메시지와 raw dump에도 오차/validity를 기록한다.
-메시지 변경에 따라 interfaces와 의존 패키지를 함께 빌드해야 한다. raw dump는 **v23**이며
+메시지 변경에 따라 interfaces와 의존 패키지를 함께 빌드해야 한다. 회피 station 경로·주차 벽 수집과 통합한 raw dump는 **v25**이며
 기존 주행의 v22 기록은 해당 버전 빌드로 재생한다.
 
 검증: 관련 13개 패키지 빌드 성공, CTest 21/21, GPS·메시지 Python 177개 통과.

@@ -1,5 +1,8 @@
 # Integration v2_main — 실차 검증 전 통합 기준
 
+> 2026-09-14 PR #93/#94 통합: 회피 station+1m 기준점과 GPS_RETURN 정렬 조건,
+> 주차 벽 수집을 함께 적용한다. 통합 raw dump는 v25이며 아래 v23/v24 기록보다 우선한다.
+
 > **통합 실행 + RViz (2026-09-14):** [최신 실행 명령과 런처 위치](INTEGRATION_V2_DRIVE_QUICKSTART.md).
 > `scripts/v2 drive`로 차량 RTCM·통합 노드·RViz를 함께 실행하고 01/02 출발 또는 03/04 중간 재시작을 선택한다.
 
