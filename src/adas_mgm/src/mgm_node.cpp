@@ -237,7 +237,7 @@ public:
       static_cast<float>(declare_parameter<double>("lane_entry_max_cross_m", 0.5));
     // AVOID 최대 지속 틱 (0 이하 = 상한 없음)
     p.avoid_max_cycles =
-      static_cast<int32_t>(declare_parameter<int>("avoid_max_cycles", 1200));
+      static_cast<int32_t>(declare_parameter<int>("avoid_max_cycles", 0));
     // 0 = 상한 없음(구동작). params.yaml 미적용 launch에서 조용히 감속되지 않도록
     // 기본값은 끔으로 둔다 — 켜는 건 params.yaml의 명시적 선택이어야 한다.
     p.v_avoid = static_cast<float>(declare_parameter<double>("v_avoid", 0.0));

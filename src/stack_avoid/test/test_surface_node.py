@@ -8,6 +8,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 
 from stack_avoid.node import StackAvoidNode
+from stack_avoid.path_planner import AvoidPathPlanner
 from stack_avoid.surfaces import Surface, surface_clearance
 
 
@@ -26,11 +27,22 @@ def node():
            get_logger=lambda: NS(debug=lambda msg: None, info=lambda msg: None),
            _ego_speed=lambda: 1., _publish_static_tf=lambda: None,
            _recompute_derived=lambda: None)
+    n.path_sample_time, n.path_spacing, n.path_preview, n.path_tail = .1, .05, 1., 3.
+    n.path_pose_timeout = n.path_command_timeout = n.path_gps_timeout = .5
+    n._planner = AvoidPathPlanner(width=.62, length=.85, front=.76, margin=.15, min_radius=1.15)
+    n._poses = {'vehicle': ((0., 0., 0.), 99_900_000_000)}
+    n._pose_source = None
+    n._gps_goals, n._gps_stamp = {}, 0
+    n._command_stamp, n._command_v, n._path_last_scan = 0, 0., 0
+    n._completed = False
+    n._publish_path = lambda scan, pose: None
     n.messages = []
     n.pub = NS(publish=n.messages.append)
     n.front_scan_pub = NS(publish=lambda msg: None)
-    for name in ('on_scan', '_scan_surfaces', '_nearest_front_obstacle', '_gap_target',
-                 '_target_clear', '_behind_surface', '_rate_limit', '_front_only_scan',
+    for name in ('on_scan', '_scan_surfaces', '_nearest_front_obstacle',
+                 '_target_clear', '_behind_surface', '_front_only_scan',
+                 '_fresh_stamp', '_path_pose', '_path_goals', '_station_reference',
+                 '_on_gps_path', '_store_vehicle_pose', '_on_path_command', '_on_path_session',
                  '_on_set_params'):
         setattr(n, name, MethodType(getattr(StackAvoidNode, name), n))
     n._rp = StackAvoidNode._rp
@@ -71,7 +83,8 @@ def test_finite_obstacle_produces_one_target_with_surface_clearance(node):
     assert msg.ttc == pytest.approx(2.)
     assert len(msg.points) == 1
     p = msg.points[0]
-    assert p.x == pytest.approx(2.76)
+    assert 0.0 < p.x <= 1.0
+    assert n_preview_distance(node) == pytest.approx(1.)
     assert surface_clearance((p.x, p.y), node._surfaces) >= .46 - 1e-6
     assert msg.reference_stamp == scan.header.stamp
 
@@ -96,8 +109,8 @@ def test_obstacles_on_both_sides_keep_real_opening(node):
     node._surfaces = node._scan_surfaces(scan)
     # Exercise gap selection independently: this opening does not block straight travel.
     assert node._nearest_front_obstacle(scan) is None
-    target = node._gap_target(scan, 2.)
-    assert target is not None and target.y == pytest.approx(0., abs=.03)
+    goals = node._path_goals(scan, 2.)
+    assert goals and goals[0][1] == pytest.approx(0., abs=.03)
 
 
 def test_small_single_return_is_not_filtered_out(node):
@@ -110,25 +123,27 @@ def test_small_single_return_is_not_filtered_out(node):
 
 def test_new_clear_scan_does_not_reuse_old_surfaces_or_complete_immediately(node):
     node.on_scan(scene_scan([((2., -.2), (2., .2))]))
-    node.on_scan(scene_scan([]))
+    clear = scene_scan([])
+    clear.header.stamp = Time(seconds=100.).to_msg()
+    node.on_scan(clear)
     msg = node.messages[-1]
     assert node._surfaces == []
     assert not msg.obstacle_detected and not msg.maneuver_done
     assert msg.ttc == pytest.approx(1e9)
 
 
-def test_rate_limit_never_moves_target_into_contour_interior(node):
+def n_preview_distance(node):
+    path = node._planner.path
+    return min(path.s[-1], path.station+node.path_preview)-path.station
+
+
+def test_duplicate_scan_does_not_advance_or_republish_station(node):
     scan = scene_scan([((2., -.2), (2., .2))])
-    node._surfaces = node._scan_surfaces(scan)
-    node._prev_center, node._prev_center_t = -.7, 99.9
-    y = node._rate_limit(scan, 2.76, .7, [(-.66, .66)], .46)
-    assert y == .7  # The proposed -0.4 intermediate lies in the obstacle band.
-
-
-def test_rate_limit_still_smooths_motion_on_clear_side(node):
-    node._prev_center, node._prev_center_t = .7, 99.9
-    y = node._rate_limit(scene_scan([]), 2.76, 1.3, [(-.66, .66)], .46)
-    assert y == pytest.approx(1.)
+    node.on_scan(scan)
+    count = len(node.messages)
+    station = node._planner.path.station
+    node.on_scan(scan)
+    assert len(node.messages) == count and node._planner.path.station == station
 
 
 def test_target_on_surface_rejected_even_if_not_behind_it(node):

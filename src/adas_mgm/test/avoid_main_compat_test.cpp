@@ -1,4 +1,4 @@
-// Wire-level expectations from main c76f287; no ROS, sensors or CAN TX.
+// Station-preview wire geometry and existing avoidance motion policy; no CAN TX.
 #include "manager_test_fixture.hpp"
 #include <limits>
 using namespace manager_test;
@@ -12,7 +12,7 @@ void configure(Run & r)
   r.st.params.blend_cycles = 10;
   r.st.params.avoid_max_cycles = 1200;
   r.s.avoid_v_suggest = 1.f;
-  r.s.avoid_path.pts[0] = CorePoint{3.76f, .66f, 0, 0};
+  r.s.avoid_path.pts[0] = CorePoint{.96f, .24f, .21f, .12f};
 }
 
 void wire_geometry_and_speed()
@@ -22,14 +22,14 @@ void wire_geometry_and_speed()
   r.obstacle();
   check(r.out.path_source == MGM_SRC_AVOID && r.out.n_points == 1,
     "AVOID preserves v2 single wire point");
-  check(near(r.out.ref_points[0].x, from.x + (.188f-from.x)/11.f),
+  check(near(r.out.ref_points[0].x, from.x + (.96f-from.x)/11.f),
     "entry uses main ten-cycle blend, not an immediate endpoint jump");
   check(near(r.out.v_ref, .985f), "entry decelerates with main a_down");
   r.tick(10);
-  check(near(r.out.ref_points[0].x, .188f) && near(r.out.ref_points[0].y, .033f),
-    "wire point matches main provider target divided by twenty");
-  check(near(r.out.ref_points[0].yaw, std::atan2(.66f,3.76f)) &&
-    r.out.ref_points[0].curvature == 0, "wire heading/curvature match main");
+  check(near(r.out.ref_points[0].x, .96f) && near(r.out.ref_points[0].y, .24f),
+    "wire point preserves the station preview without scaling");
+  check(near(r.out.ref_points[0].yaw, .21f) &&
+    near(r.out.ref_points[0].curvature, .12f), "wire heading/curvature preserve path tangent");
   r.tick(16);
   check(near(r.out.v_ref,.6f), "normal avoidance reaches main .6 cap");
   r.s.avoid_narrow_gap = true; r.tick(27);
@@ -37,9 +37,9 @@ void wire_geometry_and_speed()
   r.s.avoid_narrow_gap = false;
   r.s.avoid_path.pts[0] = CorePoint{2.4f,-.8f,1.f,.3f};
   r.tick();
-  check(near(r.out.ref_points[0].x,.12f) && near(r.out.ref_points[0].y,-.04f) &&
-    near(r.out.ref_points[0].yaw,std::atan2(-.8f,2.4f)) && r.out.ref_points[0].curvature==0,
-    "right-side refreshed target gets main geometry, not stale left-side geometry");
+  check(near(r.out.ref_points[0].x,2.4f) && near(r.out.ref_points[0].y,-.8f) &&
+    near(r.out.ref_points[0].yaw,1.f) && near(r.out.ref_points[0].curvature,.3f),
+    "right-side refreshed target preserves the new provider geometry");
   const auto held = r.out.ref_points[0];
   r.s.avoid_updated = false; r.tick(5);
   check(near(r.out.ref_points[0].x,held.x) && near(r.out.ref_points[0].y,held.y),
@@ -52,7 +52,7 @@ void stop_and_restart()
   r.s.auto_estop = true; r.tick();
   check(r.out.v_ref==0 && r.out.immediate_stop && r.out.selected_reference.valid,
     "LiDAR stop is immediate while valid avoidance geometry remains available");
-  check(near(r.out.ref_points[0].x,.188f), "stop does not straighten or discard avoidance");
+  check(near(r.out.ref_points[0].x,.96f), "stop does not straighten or discard avoidance");
   r.s.auto_estop = false; r.tick();
   check(near(r.out.v_ref,.005f), "restart begins at .005 rather than fixed 1 m/s");
   r.tick(119); check(near(r.out.v_ref,.6f), "restart reaches .6 over main acceleration ramp");

@@ -209,32 +209,33 @@ def test_parking_timer_uses_actual_localization_stamp(environment):
     assert stamp(invalid) == 0
 
 
-def test_avoid_generation_comes_from_scan_not_heartbeat(environment):
+def test_avoid_generation_comes_from_scan_and_pose_not_heartbeat(environment):
     clock, ns, node = environment
-    ns.update(AvoidStatus=AvoidStatus, EPS_SPEED=1e-3, TTC_INF=1e9)
+    ns.update(AvoidStatus=AvoidStatus, EPS_SPEED=1e-3, TTC_INF=1e9,
+              stamp_ns=lambda s:s.sec*1_000_000_000+s.nanosec)
     fn = method('src/stack_avoid/stack_avoid/node.py','on_scan',ns)
     node.front_scan_pub = Pub(); node.pub = Pub()
     node._front_only_scan = lambda scan:scan
     node._scan_surfaces = lambda scan:[]
     node._nearest_front_obstacle = lambda scan:(2.,0.)
-    node._gap_target = lambda scan,gap:RefPoint(x=1.5,y=.3)
+    node._station_reference = lambda scan,gap,detected:((1.,.2,.1,.05),False,99_800_000_000)
+    node._fresh_stamp = lambda stamp,timeout:True
     node._ego_speed = lambda:.6
     node.detect_range=3.; node.detect_hysteresis=.2; node._detected_prev=False
-    node.ttc_stop=1.3; node.target_speed=.6; node._maneuver_armed=False
-    node._done_until=0.; node._clear_since=None; node._prev_center=None
-    node.clear_gap_max=2.; node.vehicle_len=.5; node.clear_margin=.3
-    node._rp=lambda x,y:RefPoint(x=float(x),y=float(y))
+    node.ttc_stop=1.3; node.target_speed=.6
+    node._path_last_scan=0;node.path_pose_timeout=.5;node._completed=False
+    node._rp=lambda x,y,yaw,k:RefPoint(x=float(x),y=float(y),yaw=float(yaw),curvature=float(k))
     scan=LaserScan(angle_min=-1.,angle_increment=.1,range_min=.1,range_max=12.,ranges=[2.]*20)
     scan.header.stamp=Time(seconds=99.9).to_msg()
     fn(node,scan); first=node.pub.messages[-1]
     clock.ros+=.2; clock.mono+=.2
-    fn(node,scan); repeat=node.pub.messages[-1]
-    assert first.header.stamp != repeat.header.stamp and stamp(first)==stamp(repeat)
-    node._nearest_front_obstacle=lambda scan:None
+    fn(node,scan)
+    assert len(node.pub.messages)==1 and stamp(first)==99_800_000_000
     scan.header.stamp=Time(seconds=100.1).to_msg()
-    fn(node,scan); clear=node.pub.messages[-1]
-    assert clear.points and stamp(clear)>stamp(first)  # existing clearance hold point recomputed on new scan
-    node._maneuver_armed=False
+    fn(node,scan); repeat=node.pub.messages[-1]
+    assert repeat.header.stamp != first.header.stamp and stamp(repeat)==stamp(first)
+    node._station_reference=lambda scan,gap,detected:(None,False,0)
+    scan.header.stamp=Time(seconds=100.2).to_msg()
     fn(node,scan)
     assert not node.pub.messages[-1].points and stamp(node.pub.messages[-1])==0
 
