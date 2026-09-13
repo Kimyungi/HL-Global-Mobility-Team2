@@ -71,6 +71,11 @@ struct CorePath
 // 매 10ms 틱의 입력 — "최신 인지 스냅샷" (fma_interfaces 6개 토픽의 코어 필요분)
 struct CoreSnapshot
 {
+  bool route_metadata_fresh;     // route catalog received even while receiver fix is weak
+  bool start_gate_enabled;       // real-vehicle wait_go start policy
+  bool camera_available;         // fresh actual image, independent of lane detection
+  bool gps_fixed_ready;          // current fresh receiver quality=4 and usable GPS path
+
   // stack_lane
   float lane_confidence;        // 0.0~1.0 — lane↔waypoint 히스테리시스 입력
   CorePath lane_path;

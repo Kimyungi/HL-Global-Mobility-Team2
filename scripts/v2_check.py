@@ -25,6 +25,7 @@ def main():
         (ParkingCommand(), 'request_id'), (ParkingStatus(), 'preparation_stamp'),
         (MgmState(), 'mission_failed'), (MgmState(), 'parking_search_zone_only'),
         (MgmState(), 'parking_zone_entry_active'),
+        (MgmState(), 'camera_available'), (MgmState(), 'start_ready'),
         (EstopRequest(), 'rear_corridor_state'), (MgmState(), 'parking_calibration_state'),
     )
     for message, field in contracts:

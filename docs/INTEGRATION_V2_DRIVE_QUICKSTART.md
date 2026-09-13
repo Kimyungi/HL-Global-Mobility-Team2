@@ -1,5 +1,11 @@
 # Integration v2 통합 주행 + RViz 실행
 
+> 2026-09-14 주행 준비 변경: `scripts/v2 prepare`는 전체 스택을 준비하고,
+> GPS/RTCM은 별도 상주 서비스로 유지한다. `go`는 카메라 프레임 **또는**
+> GPS FIXED(4)로 인가하고, `stop → go`는 GPS를 재시작하지 않는다.
+> 일반 CSV 구간은 GPS 상실 시 유효한 카메라 경로로 주행한다. raw dump v26.
+> 상세: [주행 준비](DRIVE_PREPARATION.md). 아래 과거 전체 센서 필수 출발 조건보다 우선한다.
+
 2026-09-14 · `integration/v2_main` · 한라대 코스 · 현재 1/10 무인 RC 시험 구성.
 
 ## 파일 위치

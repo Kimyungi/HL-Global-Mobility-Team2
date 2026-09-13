@@ -44,6 +44,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 
 from fma_interfaces.msg import LanePath, RefPoint
+from std_msgs.msg import Header
 
 from stack_lane.bev import BevGrid, DEFAULT_HOMOGRAPHY_PATH, load_homography
 from stack_lane.debug_draw import build_debug_frame
@@ -167,6 +168,7 @@ class StackLaneNode(Node):
         self._setup_camera(int(self.get_parameter('camera_fps').value))
 
         self.pub = self.create_publisher(LanePath, '/perception/lane_path', 1)
+        self.camera_pub = self.create_publisher(Header, '/perception/lane_camera', 1)
         period = float(self.get_parameter('poll_period_sec').value)
         self.timer = self.create_timer(period, self.tick)
         self.get_logger().info(
@@ -309,6 +311,7 @@ class StackLaneNode(Node):
             pkt = newer
             self._frames_dropped += 1
 
+        self._publish_camera_status(self._capture_monotonic(pkt))
         self._frames_seen += 1
         if self._frames_seen <= self.warmup_frames:
             return  # 노출 적응 대기 중 — 오검출 위험 있는 콜드스타트 프레임 스킵
@@ -429,6 +432,16 @@ class StackLaneNode(Node):
         ref.curvature = float(point.curvature)
         msg.confidence = float(estimate.confidence)
         msg.points = [ref]
+
+    def _publish_camera_status(self, cap_mono):
+        # A fresh frame certifies camera availability even during warmup/no lane.
+        # Repeating a frame or publishing an empty LanePath is not a heartbeat.
+        msg = Header(frame_id='lane_camera')
+        if cap_mono is not None:
+            age = time.monotonic()-cap_mono
+            if math.isfinite(age) and age >= 0.:
+                msg.stamp = (self.get_clock().now()-Duration(seconds=age)).to_msg()
+        self.camera_pub.publish(msg)
 
     def _set_reference_stamp(self, msg, cap_mono, new_estimate):
         # HELD/SEARCH republishes the previous estimate: a new camera frame

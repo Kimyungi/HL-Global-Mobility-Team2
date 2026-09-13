@@ -370,6 +370,7 @@ def build_launch_description(
         DeclareLaunchArgument('waypoint_csv', default_value='',
                               description='코스 웨이포인트 CSV (필수)'),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
+        DeclareLaunchArgument('gps_link_mode', default_value='direct', choices=['direct', 'persistent']),
         DeclareLaunchArgument(
             'parking_enabled', default_value='true',
             description=(
@@ -687,6 +688,7 @@ def build_launch_description(
             parameters=[{
                 'waypoint_csv': LaunchConfiguration('waypoint_csv'),
                 'rtcm_host': LaunchConfiguration('rtcm_host'),
+                'link_mode': LaunchConfiguration('gps_link_mode'),
                 'error_log_csv': LaunchConfiguration('gps_error_log_csv'),
                 'n_points': 1,
                 'parking_zone_ranges': ParameterValue(
@@ -709,18 +711,16 @@ def build_launch_description(
                 'route_end_id': ParameterValue(LaunchConfiguration('route_end_id'), value_type=str),
             }],
             output='screen',
-            # 이 노드가 죽으면 launch 전체를 내린다 (2026-08-15). 예전에는 혼자
-            # 죽어도 나머지가 계속 돌아, gps_path 없이 **카메라만 보고 주행**하는
-            # 상태가 됐다 — 스테이트가 LANE이면 MGM의 gps watchdog도 안 걸린다.
-            # 종료 경로를 타야 can_zero가 dSPACE 목표값 0을 송신한다(§3 주의).
-            on_exit=die_hard('stack_gps_node',
-                             'GPS 없이 주행 불가 — waypoint_csv·RTK·빌드 확인'),
+            # GPS process loss is an input outage: MGM can select camera navigation.
+            # Reconnection restarts the route node, never the persistent physical link.
+            respawn=True, respawn_delay=3.0,
         ),
 
         Node(
             package='stack_lane',
             executable='stack_lane_node',
             name='stack_lane_node',
+            respawn=True, respawn_delay=3.0,
             condition=IfCondition(LaunchConfiguration('lane_enabled')),
             parameters=[{
                 'homography_path': LaunchConfiguration('homography_path'),

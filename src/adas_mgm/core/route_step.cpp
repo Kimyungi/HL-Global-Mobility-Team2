@@ -55,7 +55,7 @@ void route_observe(const CoreSnapshot & s, CoreState & st) {
     return;
   }
   r.enabled = true;
-  if (!gps(s) || r.phase == RoutePhase::FAULT || r.phase == RoutePhase::FINISHED) {return;}
+  if ((!gps(s) && !s.route_metadata_fresh) || r.phase == RoutePhase::FAULT || r.phase == RoutePhase::FINISHED) {return;}
   if (!metadata(f)) {r.phase = RoutePhase::FAULT; return;}
   if (r.phase == RoutePhase::DISABLED) {
     r.sequence_id = f.sequence_id; r.instance_id = f.instance_id; r.count = f.count; r.index = f.index;
@@ -66,6 +66,7 @@ void route_observe(const CoreSnapshot & s, CoreState & st) {
     r.phase = RoutePhase::FAULT; return;
   }
   if (r.phase == RoutePhase::WAIT_ACK) {
+    if (!gps(s)) {return;}  // CSV handoff still requires a localized new generation.
     if (f.index == r.requested_index && f.connecting == r.requested_connecting && f.acknowledged_request == r.request_id) {
       if (s.references[MGM_SRC_GPS].generation <= r.request_generation) {return;}
       r.index = f.index; r.seen_nonterminal = r.end_reached = false;
@@ -128,7 +129,11 @@ bool route_stop(const CoreSnapshot & s, const CoreState & st) {
   if (r.phase == RoutePhase::FAULT) {return true;}
   if (r.phase == RoutePhase::FINISHED) {return false;}
   if (st.managers.mission == MissionState::MISSION_ACTIVE) {return false;}
-  return r.changed || !gps(s) || r.phase != RoutePhase::RUNNING ||
+  // During an ordinary CSV leg, camera navigation may continue without GPS.
+  // Route/mission advancement still requires new GPS evidence in route_step.
+  const bool camera_navigation = !r.connecting &&
+    st.managers.nav == NavState::LINE && provider_reference(s, MGM_SRC_LANE).valid;
+  return r.changed || (!gps(s) && !camera_navigation) || r.phase != RoutePhase::RUNNING ||
     (s.gps_at_end && !r.seen_nonterminal);
 }
 }

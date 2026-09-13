@@ -48,7 +48,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v23: AVOID carries a station+1m reference without the old /20 transformation.
 // v24: GPS station heading/return and request-matched parking wall acquisition (parallel branch).
 // v25: combine station-preview avoidance with the v24 snapshot layout and return policy.
-constexpr uint32_t kDumpVersion = 25;
+// v26: independent camera/GPS start readiness and camera fallback on ordinary route legs.
+constexpr uint32_t kDumpVersion = 26;
 
 struct DumpHeader
 {

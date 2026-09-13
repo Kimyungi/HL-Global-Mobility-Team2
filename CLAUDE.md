@@ -1,5 +1,11 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> 2026-09-14 주행 준비 변경: `scripts/v2 prepare`는 전체 스택을 준비하고,
+> GPS/RTCM은 별도 상주 서비스로 유지한다. `go`는 카메라 프레임 **또는**
+> GPS FIXED(4)로 인가하고, `stop → go`는 GPS를 재시작하지 않는다.
+> 일반 CSV 구간은 GPS 상실 시 유효한 카메라 경로로 주행한다. raw dump v26.
+> 상세: [주행 준비](docs/DRIVE_PREPARATION.md). 아래 과거 전체 센서 필수 출발 조건보다 우선한다.
+
 > **2026-09-14 회피 station 경로:** 회피는 내부 다점 경로를 유지하고 매 새 스캔에서
 > 이전 station ±`(abs(v_ref) * sample_time + 0.5m)` 안으로 투영한다. 출력은 경로
 > 누적거리 station+1m의 점 1개이며 MGM은 xy/yaw/curvature를 축소 없이 전달한다.

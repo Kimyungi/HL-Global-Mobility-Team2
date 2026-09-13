@@ -125,3 +125,10 @@ uint8 last_recovery_reason
 bool traffic_distance_known
 float32 traffic_remaining_m
 bool traffic_stop_in_success_region
+
+# Start authorization is camera-frame availability OR fresh RTK FIXED, independent
+# of lane detection. Driving reference validity is reported separately above.
+bool camera_available
+bool gps_fixed_ready
+bool start_ready
+bool go_authorized

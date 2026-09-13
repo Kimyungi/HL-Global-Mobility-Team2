@@ -71,8 +71,8 @@ void avoidance()
   check(nogps.out.avoid==AvoidState::GPS_RETURN && nogps.out.path_source==MGM_SRC_GPS && nogps.out.v_ref==0,"GPS loss preserves GPS return ownership and stops");
   Run notready; notready.st.managers.nav=NavState::GPS_BACKUP;
   notready.st.return_hold_left=300; notready.s.gps_valid=false;
-  notready.tick(49); check(notready.out.nav==NavState::GPS_BACKUP,"GPS loss must not bypass high 49");
-  notready.tick(); check(notready.out.nav==NavState::LINE,"GPS loss high 50 can return");
+  notready.tick(); check(notready.out.nav==NavState::LINE,"GPS loss immediately selects usable camera despite return hold");
+  notready.tick(49); check(notready.out.nav==NavState::LINE,"camera fallback remains selected without GPS");
   Run invalid; invalid.obstacle(); invalid.s.avoid_obstacle_detected=false; invalid.tick(100);
   invalid.s.lidar_valid=false; invalid.tick(100);
   check(invalid.st.managers.clear_count==0 && invalid.out.safety==SafetyState::NORMAL,"invalid LiDAR cannot confirm clear, navigation continues");
