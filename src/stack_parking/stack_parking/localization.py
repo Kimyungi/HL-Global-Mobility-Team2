@@ -199,6 +199,13 @@ class MotionPrior:
         self._imu_yaw_rad = float(yaw_rad)
         self._imu_stamp_s = float(stamp_s)
 
+    def invalidate_gps(self) -> None:
+        """Re-anchor after a gap; deltas cannot reconstruct missing fixes."""
+        self._gps_pose = None
+        self._last_gps_update = None
+        self._pending_gps_yaw = 0.0
+        self._gps_position_pending = False
+
     def update_gps(
         self,
         update: int,
@@ -210,13 +217,18 @@ class MotionPrior:
     ) -> bool:
         """Consume one new RTK delta; return whether it was accepted."""
         counter = int(update)
-        if self._last_gps_update == counter:
-            return False
         if int(fix_quality) != int(self.config.gps_fix_quality):
+            self.invalidate_gps()
             return False
         if not all(math.isfinite(value) for value in (dx, dy, dyaw)):
+            self.invalidate_gps()
+            return False
+        if self._last_gps_update == counter:
             return False
 
+        if (self._last_gps_update is not None
+                and counter != (self._last_gps_update + 1) % (1 << 64)):
+            self.invalidate_gps()
         self._last_gps_update = counter
         if self._gps_pose is None:
             # The first post-reset sample establishes the same local origin;

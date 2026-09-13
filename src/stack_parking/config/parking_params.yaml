@@ -1,4 +1,4 @@
-# stack_parking front/rear ICP + mapping + localization + parking parameters.
+# stack_parking vehicle/GPS localization + LiDAR mapping + parking parameters.
 #
 # Vehicle constants are copies for ROS parameter injection only. Their single
 # project source is stack_avoid/config/params.yaml; measurement rationale is in
@@ -31,8 +31,8 @@
       # Same rear-axle body box and margin as fusion_params.yaml.
       self_filter_margin_m: 0.02
 
-    # Prediction is an ICP initial guess only. VehicleVector.x/y/yaw are not
-    # consumed. dSPACE RX v+str drive a kinematic-bicycle prior; the measured
+    # VehicleVector.x/y/yaw are not consumed. dSPACE RX v+str drive a
+    # kinematic-bicycle pose corrected by GPS position; the measured
     # str sign is opposite ROS +yaw, as verified in stack_avoid field logs.
     prior:
       velocity_timeout_s: 0.25
@@ -53,8 +53,8 @@
       # GpsPath delta is previous-base_link -> current-base_link. Only exact
       # RTK FIXED quality 4 + HEADING_FUSED is accepted; FLOAT(5), tangent and
       # reverse-ambiguous COG are intentionally rejected.
-      use_position_correction: false
-      use_yaw_fallback: false
+      use_position_correction: true
+      use_yaw_fallback: true
       fix_quality: 4
       position_gain: 0.15
       innovation_gate_m: 1.50
@@ -67,18 +67,22 @@
     # Mapping starts at node startup and normally survives a parking trigger.
     reset_map_on_mission_start: false
 
-    # Endpoint clouds contain no explicit no-return rays. Free-space clearing
-    # therefore requires a farther measured endpoint; empty angular bins are
-    # treated as unknown. Padding lets a thin foreground cone occlude nearby
-    # bins too, preventing aligned cones behind it from being erased.
+    # LiDAR endpoints only build the map; ground returns cannot pull the pose.
+    icp.map_correction_enabled: false
+    # Positive N: delete any cell after N consecutive missing observations.
+    # Zero retains the legacy farther-return clearing policy.
+    icp.unobserved_delete_misses: 5
+
+    # Clearing applies within 4m. With unobserved_delete_misses=5, empty and
+    # occluded bearings count as misses too. The angular settings below only
+    # affect the legacy farther-return policy (unobserved_delete_misses=0).
     icp.freespace_clear_enabled: true
     icp.freespace_clear_radius_m: 4.0
     icp.freespace_bin_width_deg: 1.0
     icp.freespace_margin_m: 0.02
     icp.freespace_occlusion_padding_deg: 1.5
-    # Voxel occupancy state: new cells are tentative, become confirmed after
-    # three observations, and confirmed-free rays remove them after 1/3 misses.
-    # Missing or nearer (occluding) rays do not count as misses.
+    # New cells become confirmed after three observations. Both states expire
+    # after five misses; the separate 1/3 thresholds only apply in legacy mode.
     icp.observation_match_radius_m: 0.02
     icp.tentative_confirm_hits: 3
     icp.tentative_delete_misses: 1
