@@ -10,7 +10,7 @@ lines at both ends. It then runs the full S forward, a single-arc
 line-arc-line (2m outer straight and 2m inner extension) in
 reverse, and its same-radius symmetric arc in forward
 (straight shortened to parallel_opposite_straight_m,
-default 1m). The last reverse and forward phases reuse the original symmetric
+default 0.25m). The last reverse and forward phases reuse the original symmetric
 full S, with only phase 4's final straight shortened by 1m. Every
 preview-at-end transition holds for one second. The logger flushes after the
 final hold.
@@ -98,7 +98,7 @@ def generate_launch_description():
             'parallel_entry_inner_straight_m', default_value='2.0',
             description='Inner arc-extension length of the reverse entry'),
         DeclareLaunchArgument(
-            'parallel_opposite_straight_m', default_value='1.0',
+            'parallel_opposite_straight_m', default_value='0.25',
             description=(
                 'Straight length of the forward nudge that follows the '
                 'entry (OPPOSITE_ARC_FORWARD)')),
