@@ -58,18 +58,26 @@ void generation_and_clear()
   r.redline(); r.s.traffic_stopline_detected = false; r.tick();
   check(r.out.path_source == MGM_SRC_AVOID && r.out.speed_owner == SpeedOwner::TRAFFIC,
     "R21: avoidance ref and stop-line profile remain separate");
+  r.s.avoid_obstacle_detected = true;
   r.s.references[MGM_SRC_AVOID] = clock.observe(10*sec, 10*sec+501'000'000, sec+501'000'000, sec/2);
   r.tick();
   check(!r.out.selected_reference.fresh && r.out.v_ref == 0 && reason(r, SAFE_STOP_REFERENCE_INVALID),
     "R5: unchanged generation exceeds existing 0.5s timeout despite live publications");
+  r.s.avoid_obstacle_detected = false;
   r.s.traffic_red_active = false; r.s.traffic_green_active = true; r.tick();
-  check(r.out.signal == SignalState::SIGNAL_IDLE && r.out.v_ref == 0 && reason(r,SAFE_STOP_REFERENCE_INVALID),
-    "R22: green clears signal only, not invalid-reference reason");
+  check(r.out.signal == SignalState::SIGNAL_IDLE && r.out.path_source == MGM_SRC_GPS &&
+    r.out.avoid == AvoidState::INACTIVE && r.out.v_ref > 0,
+    "R22: signal exit with obstacle gone releases stale avoid reference to valid GPS");
+  r.s.avoid_obstacle_detected = true;
+  r.tick();
+  check(r.out.v_ref == 0 && reason(r,SAFE_STOP_REFERENCE_INVALID),
+    "a new obstacle still rejects the stale avoid generation");
   r.s.references[MGM_SRC_AVOID] = clock.observe(11*sec, 11*sec, 2*sec, sec/2); r.tick();
   check(r.out.selected_reference.valid && r.out.v_ref > 0, "new sensor-backed generation recovers same owner");
+  r.s.avoid_obstacle_detected = false;
   r.s.avoid_path.n = 0; r.tick();
-  check(!r.out.reference_available && r.out.v_ref == 0 && r.out.path_source == MGM_SRC_AVOID,
-    "explicit empty CLEAR_CONFIRM path stops immediately, no invented hold grace");
+  check(r.out.reference_available && r.out.v_ref > 0 && r.out.path_source == MGM_SRC_GPS,
+    "empty avoidance after obstacle clears uses current GPS without stale path grace");
   auto delayed = clock.observe(12*sec, 13*sec, 3*sec, sec/2);
   check(near(delayed.age_s,1.f), "transport delay counts against generation freshness");
   auto backward = clock.observe(11*sec, 13*sec, 3*sec, sec/2);

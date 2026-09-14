@@ -105,6 +105,9 @@ void update_existing_guards(const CoreSnapshot & s, CoreState & st)
 }
 uint32_t base_stop_reasons(const CoreSnapshot & s, const CoreState & st)
 {
+  if (st.params.safe_stop_all_sensors_only) {
+    return (s.sensor_alive_mask & 0x7f) == 0 ? static_cast<uint32_t>(SAFE_STOP_ALL_SENSORS_LOST) : 0u;
+  }
   const auto & m = st.managers;
   const bool mission = mission_reference_authority(st);
   const bool gps = gps_valid(s);
@@ -124,6 +127,7 @@ uint32_t base_stop_reasons(const CoreSnapshot & s, const CoreState & st)
   if (!mission && m.zones.definitions_seen && m.zones.calibration != CalibrationState::CALIBRATED) {
     reasons |= SAFE_STOP_ZONE_CONTEXT_UNAVAILABLE;
   }
+  if (s.start_gate_enabled && !s.lidar_valid) {reasons |= SAFE_STOP_LIDAR_INPUT;}
   if (s.external_stop) {reasons |= SAFE_STOP_EXTERNAL;}
   if (mission && !s.parking_valid) {reasons |= SAFE_STOP_MISSION_FEEDBACK;}
   if (!mission && s.traffic_fail_safe_stop) {reasons |= SAFE_STOP_TRAFFIC_INPUT;}
@@ -184,7 +188,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.recovery.eligible = false; m.recovery.block_reason = RecoveryBlockReason::NOT_DRIVING;
     return;
   }
-  const bool starting_ready = !s.start_gate_enabled || s.camera_available || s.gps_fixed_ready;
+  const bool starting_ready = !s.start_gate_enabled || (s.lidar_valid && (s.camera_available || s.gps_fixed_ready));
   const bool already_driving = m.top == TopState::AUTONOMOUS_DRIVE;
   m.top = s.autonomous_enabled && (already_driving || starting_ready) ?
     TopState::AUTONOMOUS_DRIVE : TopState::AUTONOMOUS_ENABLE;
@@ -230,7 +234,10 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool fallback = !m.gps_only_context && !nav_available(s, st) && !gps;
   const bool avoid_allowed = st.params.avoidance_enabled && !mission && s.lidar_valid &&
     !(m.gps_only_context && !gps) && m.top == TopState::AUTONOMOUS_DRIVE;
-  const bool avoid_entry = (s.avoid_obstacle_detected && s.avoid_avoidable &&
+  // Detection claims obstacle handling even when the planner has no target.
+  // Reference validity gates motion separately; a missing path must not leave
+  // a healthy LINE/GPS provider in control in front of a detected obstacle.
+  const bool avoid_entry = (s.avoid_obstacle_detected &&
     (st.params.avoid_zone_only == 0 || s.gps_avoid_zone)) || fallback;
   const bool was_avoiding = m.avoid != AvoidState::INACTIVE;
   if (!st.params.avoidance_enabled || mission || m.top != TopState::AUTONOMOUS_DRIVE) {
@@ -248,8 +255,8 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   } else if (m.avoid == AvoidState::GPS_RETURN) {
     // Preserve ownership through lost/stale GPS. Its reference gate stops output;
     // a camera confidence increase or elapsed timer cannot finish the return.
-    if (avoid_allowed && s.avoid_obstacle_detected && s.avoid_avoidable &&
-      !s.avoid_maneuver_done && (st.params.avoid_zone_only == 0 || s.gps_avoid_zone)) {
+    if (avoid_allowed && s.avoid_obstacle_detected &&
+      (st.params.avoid_zone_only == 0 || s.gps_avoid_zone)) {
       m.avoid = AvoidState::AVOID_ACTIVE;
       st.avoid_ticks = 0;
     } else if (gps_return_aligned(s) && !s.auto_estop) {
@@ -272,9 +279,20 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.avoid = AvoidState::INACTIVE;
     m.avoid_fallback_only = false;
     nav_reselect(s, st);
+  } else if (!s.avoid_obstacle_detected && gps &&
+    !provider_reference(s, MGM_SRC_AVOID).valid && st.escape_phase == MGM_ESCAPE_NONE)
+  {
+    // A cleared obstacle with no usable avoidance target returns directly to
+    // the live GPS reference, even without a signal-exit or maneuver_done.
+    m.avoid = AvoidState::INACTIVE;
+    m.avoid_fallback_only = false;
+    m.clear_count = st.avoid_ticks = st.return_hold_left = 0;
+    st.lane_high_cnt = st.lane_low_cnt = 0;
+    m.nav = m.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
   } else if (!m.avoid_fallback_only && st.escape_phase == MGM_ESCAPE_NONE &&
-    (s.avoid_maneuver_done ||
-    (st.params.avoid_max_cycles > 0 && st.avoid_ticks >= st.params.avoid_max_cycles)))
+    !s.avoid_obstacle_detected && (s.avoid_maneuver_done ||
+    (provider_reference(s, MGM_SRC_AVOID).valid && st.params.avoid_max_cycles > 0 &&
+     st.avoid_ticks >= st.params.avoid_max_cycles)))
   {
     // Completion/episode limit ends only obstacle steering. Remain in AVOID
     // while the actual GPS station errors converge; no elapsed-time exit.
@@ -302,12 +320,31 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   }
 
   if (st.params.traffic_state_enabled) {
-    const bool release = s.traffic_green_active && !s.traffic_red_active;
+    // (!red) || (!red && green) reduces to !red. Apply the GPS handoff
+    // only on a signal exit, not on every ordinary no-signal driving tick.
+    const bool release = !s.traffic_red_active;
+    const bool signal_exit = release && m.signal != SignalState::SIGNAL_IDLE;
     if (release) {
       m.signal = SignalState::SIGNAL_IDLE;
       st.traffic_distance_latched = false;
       st.traffic_stopline_distance = 0.0f;
       st.traffic_prev_stopline_detected = false;
+      if (signal_exit && !mission && m.top == TopState::AUTONOMOUS_DRIVE) {
+        m.nav = m.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
+        st.lane_high_cnt = st.lane_low_cnt = 0;
+        st.return_hold_left = 0;
+        // A vanished obstacle from signal waiting must not keep an empty
+        // avoidance episode in charge. A current obstacle/reverse maneuver
+        // still owns its reference and all independent stop gates remain.
+        if (s.lidar_valid && !s.avoid_obstacle_detected &&
+          st.escape_phase == MGM_ESCAPE_NONE)
+        {
+          m.avoid = AvoidState::INACTIVE;
+          m.clear_count = st.avoid_ticks = 0;
+          m.avoid_fallback_only = false;
+          m.avoid_episode_reference_seen = false;
+        }
+      }
     } else {
       if (m.signal == SignalState::SIGNAL_IDLE && s.traffic_red_active) {
         m.signal = SignalState::RED_DETECTED;
@@ -320,7 +357,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
       const bool previously_stopped = m.signal == SignalState::STOPPED_WAIT;
       if (m.signal == SignalState::APPROACH_STOP_LINE) {
         // Latch once per stop episode. Detector flicker cannot reseed distance;
-        // losing red without green cannot reset it either.
+        // red release discards the entire signal distance episode above.
         const bool seed_now = !st.traffic_distance_latched &&
           st.traffic_prev_stopline_detected && !s.traffic_stopline_detected;
         if (seed_now) {
@@ -351,16 +388,18 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool signal_stop = m.signal == SignalState::APPROACH_STOP_LINE ||
     m.signal == SignalState::STOPPED_WAIT;
   m.safe_stop_reasons = base_stop_reasons(s, st);
-  if (!maneuver && signal_stop && (!clock_valid || !std::isfinite(s.vehicle_speed))) {
+  if (!st.params.safe_stop_all_sensors_only && !maneuver && signal_stop &&
+    (!clock_valid || !std::isfinite(s.vehicle_speed))) {
     m.safe_stop_reasons |= SAFE_STOP_VEHICLE_SPEED;
   }
-  const bool sensor_stop = !maneuver && (((m.gps_only_context || mission_searches_along_gps(st)) && !gps) ||
+  const bool sensor_stop = !st.params.safe_stop_all_sensors_only && !maneuver && (((m.gps_only_context || mission_searches_along_gps(st)) && !gps) ||
     (!nav_available(s, st) && !gps && (!s.lidar_valid || !st.params.avoidance_enabled)));
   const bool fault_stop = m.safe_stop_reasons != 0;
   // PARKING includes GPS-guided search before readiness. Suppress ordinary
   // LiDAR E-stop throughout that state, just like ordinary avoidance above.
-  const bool auto_stop = !mission && (s.auto_estop ||
-    (m.avoid != AvoidState::INACTIVE && s.lidar_valid && s.avoid_ttc < st.params.ttc_stop));
+  // Only the independent LiDAR request produces an E-stop in v2.
+  // Avoidance feasibility/TTC describe planning; they are not stop requests.
+  const bool lidar_stop = !mission && s.auto_estop;
   const bool was_reversing = st.escape_phase == MGM_ESCAPE_REVERSING;
   CoreSnapshot recovery = s;
   recovery.estop_latch_release = s.auto_estop;
@@ -376,12 +415,12 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     !rear_allowed ? RecoveryBlockReason::REAR_INVALID :
     m.top != TopState::AUTONOMOUS_DRIVE ? RecoveryBlockReason::NOT_DRIVING :
     mission ? RecoveryBlockReason::MISSION_ACTIVE :
-    sensor_stop || fault_stop || st.stop_zone_holding ? RecoveryBlockReason::FORCED_STOP :
+    s.external_stop || sensor_stop || fault_stop || st.stop_zone_holding ? RecoveryBlockReason::FORCED_STOP :
     signal_stop ? RecoveryBlockReason::SIGNAL_STOP :
     !st.escape_armed && st.v <= kStoppedSpeed ? RecoveryBlockReason::NOT_ARMED :
     !s.auto_estop ? RecoveryBlockReason::NO_DANGER : RecoveryBlockReason::NONE;
   const bool enter_recovery = update_escape(recovery, st,
-    !mission && !sensor_stop && !fault_stop && !signal_stop && !st.stop_zone_holding &&
+    !mission && !s.external_stop && !sensor_stop && !fault_stop && !signal_stop && !st.stop_zone_holding &&
     m.top == TopState::AUTONOMOUS_DRIVE &&
     (st.escape_phase != MGM_ESCAPE_REVERSING || rear_allowed));
   diag.eligible = diag.block_reason == RecoveryBlockReason::NONE && (enter_recovery ||
@@ -425,7 +464,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.safety = SafetyState::SAFE_STOP;
   } else if (st.escape_phase == MGM_ESCAPE_REVERSING || m.recovery_waiting_reference) {
     m.safety = SafetyState::REVERSE_RECOVERY;
-  } else if (auto_stop) {
+  } else if (lidar_stop) {
     m.safety = SafetyState::AUTO_ESTOP;
   } else {
     m.safety = SafetyState::NORMAL;
@@ -536,7 +575,9 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
       const bool rear_allowed = recovery_rear_allowed(s, st.params);
       escape.valid = rear_allowed && st.params.escape_after_cycles > 0 &&
         st.params.escape_max_cycles > 0 && std::isfinite(st.params.v_escape) && st.params.v_escape < 0;
-      if (!rear_allowed) {out.safe_stop_reasons |= SAFE_STOP_REAR_UNAVAILABLE;}
+      if (!rear_allowed && !st.params.safe_stop_all_sensors_only) {
+        out.safe_stop_reasons |= SAFE_STOP_REAR_UNAVAILABLE;
+      }
     } else {
       out.v_ref = 0.0f;
       out.immediate_stop = true;  // existing recovery ended, waiting for real ref
@@ -562,7 +603,9 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   }
   out.selected_reference = out.references[out.path_source];
   out.reference_available = out.selected_reference.available;
-  if (!out.selected_reference.valid) {out.safe_stop_reasons |= SAFE_STOP_REFERENCE_INVALID;}
+  if (!out.selected_reference.valid && !st.params.safe_stop_all_sensors_only) {
+    out.safe_stop_reasons |= SAFE_STOP_REFERENCE_INVALID;
+  }
   if (out.safe_stop_reasons != 0) {
     out.safety = SafetyState::SAFE_STOP;
     out.v_ref = 0.0f;

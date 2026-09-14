@@ -107,7 +107,7 @@ void traffic()
   r.st.traffic_stopline_distance=1.f;r.s.vehicle_speed=0;r.tick();
   check(r.out.signal==SignalState::STOPPED_WAIT && r.out.traffic_stop_in_success_region,
     "T4: measured stopped at 1m belongs to success region");
-  r.s.traffic_red_active=false;r.tick();check(r.out.v_ref==0,"F: loss of red alone cannot release signal stop");
+  r.s.traffic_red_active=false;r.tick();check(r.out.signal==SignalState::SIGNAL_IDLE && r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0,"F: loss of red alone releases signal to GPS");
   r.s.external_stop=true;r.s.lane_path.n=0;r.s.gps_path.n=0;r.s.avoid_path.n=0;
   r.s.traffic_green_active=true;r.tick();
   check(r.out.signal==SignalState::SIGNAL_IDLE && r.out.v_ref==0 &&

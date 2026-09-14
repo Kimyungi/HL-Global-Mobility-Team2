@@ -1,4 +1,7 @@
-"""Scan-driven avoidance episode with a persistent path and a certified return."""
+"""Historical persistent planner for regression replay.
+
+Production StationPathIO now uses gps_cubic_path.GpsCubicPlanner.
+"""
 import math
 
 from stack_avoid.station_path import (
@@ -19,6 +22,9 @@ class AvoidPathPlanner:
 
     def reset(self):
         self.path = None
+        self.episode_active = False
+        self.replan_count = 0
+        self.last_replan_distance = 0.
         self.initial_surfaces = []
         self.last_surfaces = []
         self.mode = 'idle'
@@ -50,9 +56,11 @@ class AvoidPathPlanner:
         """Return (vehicle-frame preview or None, maneuver_done).
 
         Pose is latched to a stable localization source by the ROS wrapper.
-        Replanning changes only the suffix; station origin is never reset.
+        Normal replanning preserves the traveled prefix. An off-path vehicle
+        starts a new path at its current pose, retaining episode obstacle memory.
         """
-        if self.path is None and not detected:
+        self.episode_active = self.episode_active or detected
+        if self.path is None and not self.episode_active:
             self.reason = 'no obstacle episode'
             return None, False
         if pose is None:
@@ -68,9 +76,19 @@ class AvoidPathPlanner:
         if self.path is not None:
             self.path.update(pose[:2], v_ref, sample_time, generation)
             start = to_local(self.path.at(self.path.station), pose)
-            if math.hypot(start[0], start[1]) > .75:
-                self.reason = 'vehicle outside bounded station neighborhood'
-                return None, False
+            distance = math.hypot(start[0], start[1])
+            if distance > .75:
+                # A mission interruption or reverse can leave the old path.
+                # Its station is no longer a usable start for a connector.
+                # Keep the localization frame and measured obstacles; certify
+                # a new path from the actual vehicle pose, even on later scans
+                # if the first attempt fails or detection subsequently clears.
+                self.episode_active = True
+                self.path = None
+                self.mode, self.return_station = 'replan', None
+                self.replan_count += 1
+                self.last_replan_distance = distance
+                start = (0., 0., 0., 0.)
         else:
             start = (0., 0., 0., 0.)
 

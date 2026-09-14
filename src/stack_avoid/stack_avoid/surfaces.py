@@ -123,6 +123,76 @@ def blocked_intervals(surfaces, lo_x, hi_x, clearance):
     return merged
 
 
+def surface_intervals(surfaces, x, clearance):
+    """Exact vertical slice of the union of inflated observed segments.
+
+    A segment plus a clearance disk is a capsule: an oriented rectangle and
+    two round ends. Keep the actual face orientation instead of projecting
+    the whole contour's maximum width into every longitudinal section.
+    """
+    intervals = []
+    for surface in surfaces:
+        for a, b in surface.segments():
+            ys = []
+            for px, py in (a, b):
+                d2 = clearance**2-(x-px)**2
+                if d2 >= -1e-12:
+                    dy = math.sqrt(max(0., d2))
+                    ys.extend((py-dy, py+dy))
+            length = math.dist(a, b)
+            if length > 1e-12:
+                nx = -(b[1]-a[1])*clearance/length
+                ny = (b[0]-a[0])*clearance/length
+                corners = [(a[0]+nx, a[1]+ny), (b[0]+nx, b[1]+ny),
+                           (b[0]-nx, b[1]-ny), (a[0]-nx, a[1]-ny)]
+                for p, q in zip(corners, corners[1:]+corners[:1]):
+                    clipped = clip_segment(p, q, 0, x, x)
+                    if clipped:
+                        ys.extend(r[1] for r in clipped)
+            if ys:
+                intervals.append((min(ys), max(ys)))
+    merged = []
+    for lo, hi in sorted(intervals):
+        if merged and lo < merged[-1][1]-1e-9:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+        else:
+            merged.append((lo, hi))
+    return merged
+
+
+def surface_goal_sections(surfaces, lo_x, hi_x, half_width, clearance):
+    """Goal cross sections from whole observed faces, never a nearest return.
+
+    Consider every contour touching the forward planning strip. Its original
+    ends/extrema (including parts beyond the strip) define candidate depths;
+    clipping is used only for relevance, never to invent an obstacle end.
+    Backmost sections are tried first so the return can clear a tilted face.
+    """
+    depths, tails = [], []
+    for surface in surfaces:
+        relevant = False
+        for a, b in surface.segments():
+            clipped = clip_segment(a, b, 0, lo_x, hi_x)
+            if clipped and clip_segment(*clipped, 1, -half_width, half_width):
+                relevant = True
+                break
+        if not relevant:
+            continue
+        points = surface.points
+        xs = [p[0] for p in points]
+        low, high = min(xs), max(xs)
+        # Actual contour ends and lateral extrema retain the face's direction.
+        depths.extend((low, high, (low+high)/2, points[0][0], points[-1][0],
+                       min(points, key=lambda p: (p[1], -p[0]))[0],
+                       max(points, key=lambda p: (p[1], p[0]))[0]))
+        tails.extend((high+clearance/2, high+clearance))
+    sections = []
+    for x in sorted(depths, reverse=True)+sorted(tails):
+        if x >= lo_x and not any(abs(x-y) < 1e-6 for y in sections):
+            sections.append(x)
+    return sections
+
+
 def gap_centers(intervals, offset_max):
     # Ignore wholly unreachable occupied intervals, without shortening contours
     # that cross the window boundary (which would invent an obstacle endpoint).

@@ -1,6 +1,7 @@
 """Halla full-stack + vehicle RTCM relay + unified RViz; explicit go stays separate."""
 import importlib.util
 import os
+import stat
 from datetime import datetime
 from pathlib import Path
 
@@ -30,6 +31,19 @@ def selected_manifest(catalog_path, start, end):
                        for route in chosen]}
 
 
+def check_lidar_devices():
+    """Catch missing USB links before starting CAN; scan readiness is checked in MGM."""
+    missing = []
+    for side in ('front', 'rear', 'left', 'right'):
+        path = Path('/dev/lidar_' + side)
+        if not (path.exists() and stat.S_ISCHR(path.stat().st_mode)
+                and os.access(path, os.R_OK | os.W_OK)):
+            missing.append(str(path))
+    if missing:
+        raise RuntimeError('라이다 장치/접근 권한 확인 실패: ' + ', '.join(missing)
+                           + '. scripts/v2_recover_lidars.py --apply로 식별/링크를 복구하세요.')
+
+
 def start_stack(context):
     value = lambda name: LaunchConfiguration(name).perform(context)
     if value('REAL_VEHICLE_CONFIRM') != 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX':
@@ -45,6 +59,7 @@ def start_stack(context):
                  'waypoint_csv', 'zones_file'):
         if context.launch_configurations.get(name, ''):
             raise RuntimeError(f'Use start_waypoint/end_waypoint instead of {name}')
+    check_lidar_devices()
     # Hardware receiver ownership outlives this route/CAN/RViz launch.
     from stack_gps.persistent_service import configuration, ensure_running
     config = configuration(root / 'src/stack_gps/config/persistent_gps.yaml',
@@ -66,7 +81,9 @@ def start_stack(context):
     stack = module.build_launch_description(
         log_dir=str(run), default_homography=str(root / 'src/stack_lane/config/homography.json'),
         default_lane_weights=str(root / 'src/stack_lane/models/yolopv2.pt'),
-        lidar_estop_enabled=True)
+        lidar_estop_enabled=True,
+        required_lidar_topics=['/lidar/a1/scan', '/lidar/a2/scan',
+                               '/lidar/b1/scan', '/lidar/b2/scan'])
     actions = list(stack.entities)
     if value('rviz') == 'true':
         actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(
@@ -87,7 +104,7 @@ def generate_launch_description():
         traffic_depth_enabled='false', traffic_yolo_image_size='640',
         traffic_yolo_inference_interval='2', traffic_red_phase_yolo_inference_interval='3',
         traffic_stopline_yolo_image_size='320', traffic_require_stop_gate='false',
-        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-2', v_base='1.0', record='false')
+        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-2', v_base='2.0', record='false')
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
         DeclareLaunchArgument('start_waypoint', default_value='01',

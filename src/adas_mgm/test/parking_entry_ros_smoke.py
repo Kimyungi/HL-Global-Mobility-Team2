@@ -12,7 +12,7 @@ if os.environ.get('ROS_LOCALHOST_ONLY') != '1' or os.environ.get('ROS_DOMAIN_ID'
 
 import rclpy
 from std_msgs.msg import Bool
-from fma_interfaces.msg import (EstopRequest, GpsPath, LanePath, MgmState,
+from fma_interfaces.msg import (AvoidStatus, CanHealth, EstopRequest, GpsPath, LanePath, MgmState,
                                ParkingCommand, ParkingStatus, RefPoint, TargetRef,
                                VehicleVector, ZoneContext)
 
@@ -24,6 +24,8 @@ def main():
         '/perception/gps_path': GpsPath(), '/perception/lane_path': LanePath(),
         '/perception/parking': ParkingStatus(), '/perception/estop': EstopRequest(),
         '/vehicle/vector': VehicleVector(),
+        '/perception/avoid': AvoidStatus(scan_valid=True),
+        '/bridge/can_health': CanHealth(link_up=True),
     }
     pubs = {topic: node.create_publisher(type(msg), topic, 10) for topic, msg in msgs.items()}
     gps, lane, parking = (msgs[t] for t in ('/perception/gps_path','/perception/lane_path','/perception/parking'))

@@ -5,7 +5,7 @@ import pytest
 
 from stack_avoid.surfaces import (
     Surface, scan_surfaces, nearest_in_corridor, blocked_intervals, gap_centers,
-    outside_intervals, surface_clearance, occluded,
+    outside_intervals, surface_clearance, occluded, surface_intervals, surface_goal_sections,
 )
 
 
@@ -134,3 +134,49 @@ def test_empty_scene():
     assert build([]) == build([math.inf] * 5) == []
     assert nearest_in_corridor([], .76, .46) is None
     assert surface_clearance((1., 0.), []) == math.inf
+
+
+@pytest.mark.parametrize('angle', [0, 15, 45, 90, 135])
+def test_inflated_face_slices_match_distance_to_segment(angle):
+    yaw = math.radians(angle)
+    face = Surface(((2., -.2), (2.+math.cos(yaw), -.2+math.sin(yaw))))
+    # Independent distance query checks occupancy including the round ends.
+    for i in range(41):
+        x = 1.+i*.075
+        intervals = surface_intervals([face], x, .46)
+        for j in range(41):
+            y = -1.5+j*.075
+            distance = surface_clearance((x, y), [face])
+            if abs(distance-.46) > 1e-8:
+                assert (not outside_intervals(y, intervals)) == (distance < .46)
+
+
+def test_face_end_clearance_is_round_and_two_faces_keep_real_gap():
+    faces = [Surface(((2., -1.), (2.5, -.5))),
+             Surface(((2., 1.), (2.5, .5)))]
+    intervals = surface_intervals(faces, 2.8, .4)
+    edge = .5-math.sqrt(.4**2-.3**2)
+    assert intervals[0][1] == pytest.approx(-edge)
+    assert intervals[1][0] == pytest.approx(edge)
+    assert outside_intervals(0., intervals)
+    assert surface_intervals([Surface(((2., 0.),))], 2., .4) == [(-.4, .4)]
+
+
+def test_sections_use_each_face_extent_even_if_nearest_distance_is_same():
+    near = Surface(((2., -.1), (2., .1)))
+    slanted = Surface(((2.4, .8), (3., .4)))
+    sections = surface_goal_sections([near, slanted], .76, 3.16, 2.96, .46)
+    assert 3. in sections and 2.7 in sections and 2.4 in sections and 2. in sections
+    assert sections[0] == 3.
+    longer = Surface(((2.4, .8), (3.5, .4)))
+    updated = surface_goal_sections([near, longer], .76, 3.16, 2.96, .46)
+    assert nearest_in_corridor([near, slanted], .76, .5) == nearest_in_corridor([near, longer], .76, .5)
+    assert updated[0] == 3.5 and updated != sections
+    # The window edge is not an observed obstacle endpoint.
+    assert 3.16 not in updated
+
+
+def test_sections_exclude_unrelated_faces_and_do_not_join_gaps():
+    faces = [Surface(((.1, 0.), (.3, .1))), Surface(((4., 0.), (5., .1))),
+             Surface(((2., 4.), (3., 4.))), Surface(((2.5, 0.),))]
+    assert surface_goal_sections(faces, .76, 3.16, 2.96, .46) == pytest.approx([2.5, 2.73, 2.96])

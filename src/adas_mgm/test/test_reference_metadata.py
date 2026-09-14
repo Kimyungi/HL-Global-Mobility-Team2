@@ -107,12 +107,18 @@ def test_gps_station_error_survives_serialization_separately_from_preview():
     fn = method('src/stack_gps/stack_gps/node.py', '_fill_station_reference', {'RefPoint': RefPoint})
     msg = GpsPath()
     snap = {'points': [(2.5, .1, .6, .2)],
-            'station_yaw_error_rad': -.2, 'station_error_valid': True}
+            'station_yaw_error_rad': -.2, 'station_error_valid': True,
+            'station_m': 4.0, 'waypoint_stations': [4.0, 5.0],
+            'waypoint_points': [(0., .1, -.2, 0.), (1., -.1, -.2, 0.)]}
     fn(NS(), msg, snap)
     received = deserialize_message(serialize_message(msg), GpsPath)
     assert received.station_error_valid
     assert received.station_yaw_error_rad == pytest.approx(-.2)
     assert len(received.points) == 1 and received.points[0].yaw == pytest.approx(.6)
+    assert received.waypoint_window_valid
+    assert received.waypoint_station_m == pytest.approx(4.0)
+    assert list(received.waypoint_stations) == pytest.approx([4.0, 5.0])
+    assert [p.x for p in received.waypoint_points] == pytest.approx([0., 1.])
     snap['station_error_valid'] = False
     fn(NS(), msg, snap)
     assert not deserialize_message(serialize_message(msg), GpsPath).station_error_valid

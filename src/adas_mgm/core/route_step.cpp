@@ -115,7 +115,6 @@ void route_step(const CoreSnapshot & s, CoreState & st) {
   if (!complete || s.external_stop || s.auto_estop || s.traffic_fail_safe_stop ||
     m.signal == SignalState::APPROACH_STOP_LINE || m.signal == SignalState::STOPPED_WAIT ||
     st.stop_zone_holding || st.wrongway_latched || st.escape_phase != MGM_ESCAPE_NONE ||
-    (m.avoid != AvoidState::INACTIVE && s.avoid_ttc < st.params.ttc_stop) ||
     (m.zones.definitions_seen && m.zones.calibration != CalibrationState::CALIBRATED) ||
     !s.vehicle_speed_valid || !std::isfinite(s.vehicle_speed) || std::fabs(s.vehicle_speed) > 1e-3f) {return;}
   if (r.connecting) {request(s, r, r.index, false);}

@@ -77,6 +77,7 @@ def detect(params, scan):
         cluster_dist=avoid_params['avoid.cluster_dist_m'],
         surface_link_scale=avoid_params['avoid.surface_link_scale'],
         surface_max_link=avoid_params['avoid.surface_max_link_m'],
+        detect_half_width=avoid_params['avoid.detect_half_width_m'],
         corridor_half_width=(avoid_params['vehicle.width_m'] / 2
                              + avoid_params['avoid.lateral_margin_m']))
     avoid._surfaces = StackAvoidNode._scan_surfaces(avoid, scan)

@@ -87,6 +87,8 @@ class TestNodeInitialization(unittest.TestCase):
                 "stopline_detection_enabled:=true",
                 "-p",
                 "stopline_stop_y_ratio:=0.90",
+                "-p",
+                "resume_on_red_absence:=true",
             ]
         )
         node = None
@@ -124,6 +126,7 @@ class TestNodeInitialization(unittest.TestCase):
             # 확정 초록은 TRAFFIC 상태를 즉시 해제한다.
             self.assertTrue(node.resume_on_green)
             self.assertFalse(node.resume_on_red_clear)
+            self.assertTrue(node.resume_on_red_absence)
             self.assertFalse(node.show_debug)
             self.assertEqual(node.red_phase_yolo_inference_interval, 3)
             # 카메라를 열기 전에 두 모델을 한 번씩 준비해 첫 주행 프레임의
@@ -139,6 +142,7 @@ class TestNodeInitialization(unittest.TestCase):
                 (720, 1280, 3),
                 dtype=np.uint8,
             )
+            node.camera_pub = Mock()
             node.debug_image_pub = Mock()
             node.debug_image_pub.get_subscription_count.return_value = 1
             expected_frames = max(
@@ -156,6 +160,9 @@ class TestNodeInitialization(unittest.TestCase):
             self.assertGreater(np.count_nonzero(np.frombuffer(image.data, np.uint8)), 0)
             self.assertEqual(np.count_nonzero(node.oak_camera.frame), 0)
 
+            self.assertEqual(node.camera_pub.publish.call_count, expected_frames)
+            # Initial detection hold did not suppress successful physical frame evidence.
+            self.assertGreater(node.camera_pub.publish.call_args.args[0].stamp.sec, 0)
             self.assertEqual(node.frame_index, expected_frames)
             self.assertEqual(
                 node.model.predict_calls,
@@ -164,6 +171,37 @@ class TestNodeInitialization(unittest.TestCase):
             self.assertTrue(all(published_stops[:-1]))
             self.assertFalse(published_stops[-1])
             self.assertFalse(node.startup_hold_latched)
+
+            # A remembered red/stop clears on a valid blank camera frame in
+            # the v2 policy, without a green vote or resetting the node.
+            node.red_phase_latched = node.stop_required_latched = True
+            node.red_history.clear()
+            node.red_history.extend([1] * node.vote_window)
+            node.green_history.clear()
+            signals = []
+            node._publish = lambda stop, distance, **fields: signals.append((stop, fields))
+            for _ in range(node.vote_window):
+                node.tick()
+            self.assertFalse(node.red_phase_latched)
+            self.assertFalse(node.stop_required_latched)
+            self.assertFalse(signals[-1][0])
+            self.assertFalse(signals[-1][1]['red_active'])
+            self.assertFalse(signals[-1][1]['green_active'])
+            expected_frames += node.vote_window
+
+            with patch.object(node, '_read_camera', return_value=(False, None, None)), \
+                 patch('stack_traffic.node.camera_poll_timed_out', return_value=True):
+                node.tick()
+            self.assertEqual(node.camera_pub.publish.call_count, expected_frames,
+                             'camera read failure must not renew heartbeat')
+
+            # Failure publication must not turn a remembered red into no-red.
+            node.red_phase_latched = True
+            node.publisher = Mock()
+            StackTrafficNode._publish(node, True, -1.0)
+            failed = node.publisher.publish.call_args.args[0]
+            self.assertTrue(failed.red_active)
+            self.assertTrue(failed.fail_safe_stop)
 
             node._tick_impl = Mock(side_effect=RuntimeError("boom"))
             node._publish = Mock()

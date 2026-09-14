@@ -4,6 +4,9 @@ mgm_node:
     # 요구하는 ADAS_MGR2 v1.88 4상태 실험 backend다. v1.88에는 main의 rear escape가
     # 없으므로 generated 선택 시 escape_after_cycles는 반드시 0이어야 한다.
     backend: core
+    # SAFE_STOP only when BOTH cameras, ALL four raw LiDARs and GPS are unavailable.
+    # Operator/CAN stop, AUTO_ESTOP and invalid-command output hold are separate.
+    safe_stop_all_sensors_only: true
     route_sequence_enabled: false  # enabled by launch only with an explicit ordered manifest
     generated_backend_acknowledge_limited_scope: false
 
@@ -48,59 +51,22 @@ mgm_node:
     # 정상 주행은 항상 통과하고, 회피 이탈(0.9m+)만 걸린다.
     lane_entry_max_cross_m: 0.5
 
-    # AVOID 최대 지속 [틱]. 양수로 설정하면 완료와 무관하게 waypoint로 복귀한다.
+    # AVOID 최대 지속 [틱]. 양수이면 장애물 미검출·회피 경로 유효 시 GPS 복귀를 시작한다.
     # 기본 0: 미관측 장애물 뒤로 시간만으로 복귀하지 않고 station 경로 완료를 기다린다.
     avoid_max_cycles: 0       # station 경로: 관측상 비어 있는 GPS 복귀 경로 도달로 완료
 
-    # 스테이트별 속도 [m/s]
-    # 0.5 복원 (2026-08-06): 위빙 원인이 ref 첫 점 기하(lookahead 0)로
-    # 확정·해결됨 — 직선 실측 cross 평균 0.075m/최대 0.24m. 속도를 더
-    # 올릴 땐 stack_gps ref_lookahead_m도 함께 검토 (미리보기 시간
-    # = lookahead/v: 1m@0.5=2s, 1m/s부턴 1.2~1.5m 권장).
-    #
-    # 0.5 → 0.6 (2026-08-15). "조향은 v ≥ 0.5 m/s에서만 제대로 반응"(§3 ①,
-    # 이기돈)이 run_0815_155344에서 정량 재현됐다 — 곡률 실현율:
-    #     0.30~0.45 m/s  9.7%  |  0.45~0.50 m/s 14.0%  |  0.50~0.55 m/s 23.9%
-    # 문제는 v_base를 임계값에 딱 맞춰 두면 추종 오차·마찰로 계속 미달 쪽에
-    # 떨어진다는 것: 같은 run에서 **달성 속도 중앙값 0.494, 주행 시간의 69%가
-    # 0.5 미만**이었다. 목표를 0.6으로 올려 임계 위에서 돌게 한다.
-    # 25초 주기 위빙(±11°)과 AVOID 헤딩 누적 양쪽의 공통 원인이 이 저이득이다.
-    # ⚠ stack_avoid/config/params.yaml 의 target_speed_mps 와 **반드시 같이** 바꿀 것
-    #   (그쪽이 AVOID 스테이트의 v_suggest 소스 — launch 주석에도 명시).
-    # ⚠ lookahead는 그대로 1.8m: 미리보기 3.6s → 3.0s 로 위 권장(2s)보다 여유.
-    # 0.6 → 1.0 (2026-08-18). 차선·GPS 만 올리고 **회피는 v_avoid 로 0.6 유지**한다.
-    # 2026-08-17 의 1.0 시도(run_0817_041219)는 회피가 79초 중 41초(52%)를 먹고
-    # 횡오차 2.08m 로 되돌렸는데, 그 원인은 속도가 아니라 **회피 트리거 빈도**였다
-    # (진입 1회 = 12초 고정 × detect_range 3.0→5.0 상향). 지금은 두 가지가 다르다:
-    #   · detect_range 는 3.0 그대로 (그때의 처방이 틀렸다는 것이 §5-1c 결론)
-    #   · 회피가 **구간 게이트**로 묶여 지정 구간 밖에서는 아예 진입하지 않는다
-    # 차선 구간은 그 run 에서도 1.0 m/s 에서 멀쩡했다 (cross 평균 0.061~0.114m).
-    # ⚠ stack_avoid 의 target_speed_mps 도 **반드시 같이** 1.0 으로 (TTC 자차속도).
-    # v2 일반 Navigation/주차 목표속도 크기. 후진은 -v_base.
-    # AVOID는 main 기준 v_avoid/v_narrow 상한과 a_up/a_down을 적용한다.
-    # 회피 종료 후 Navigation 속도 복귀까지 ramp를 유지한다. 정지는 기존 우선순위다.
-    v_base: 1.0
-    v_accel_zone: 1.0
+    # 스테이트별 속도 [m/s] (2026-09-14: 일반/회피 목표 2.0)
+    # v2 일반 Navigation/주차 목표속도 크기. 주차 후진은 -v_base.
+    # stack_avoid target_speed_mps도 같은 값으로 유지한다 (TTC 속도 폴백).
+    # AVOID는 v_avoid/v_narrow 상한과 a_up/a_down을 적용한다.
+    # 회피 종료 후 Navigation 속도 복귀까지 ramp를 유지한다.
+    v_base: 2.0
+    v_accel_zone: 2.0
     v_narrow: 0.2
 
-    # AVOID 스테이트 전용 속도 상한 [m/s] — **0 = 상한 없음(구동작), 현재 0.6 적용.**
-    #
-    # 기구는 남겨 두되(2026-08-17 신설, core_replay 로 검증 완료) v_base 가 0.6 이라
-    # 지금은 쓸 일이 없어 끈다. v_base 를 1.0 이상으로 올릴 때 **회피 구간만 0.6 으로
-    # 유지하는 용도**로 켜면 된다 — `ros2 param set /adas_mgm_node v_avoid 0.6`.
-    #
-    # ★ 켤 때 stack_avoid 의 target_speed_mps 를 내리는 방식은 쓰지 말 것.
-    #   그 값은 ① v_suggest ② **TTC 자차속도 폴백**(`/vehicle/vector` 미수신 시 —
-    #   실측 0건이라 항상 폴백)을 겸한다. v_base 1.0 으로 달리며 그것만 0.6 으로
-    #   내리면 TTC = gap/0.6 이 되어 1.67배 부풀고 avoidable 판정·TTC 안전 바닥이
-    #   그만큼 늦게 걸린다. target_speed_mps 는 항상 v_base 와 같게 두어 TTC 를
-    #   정직하게 유지한다 (§3 규약).
-    # ⚠ 켜면 §3 ① "감속하면서 조향 금지"와 겹친다: 진입 시 v_base → v_avoid 감속이
-    #   생긴다. 회피 시험의 확인 대상 (RUNBOOK §5-1c).
-    # 회피 구간만 0.6 유지 (2026-08-18) — v_base 를 1.0 으로 올리면서 켰다.
-    # 진입 시 1.0 → 0.6 감속이 생기지만 조향 응답 하한 0.5 위이고 a_down 1.5 로
-    # 0.27s 면 끝난다 (run_0812_234253 의 0.44 무반응과는 다름). 회피 시험 확인 대상.
-    v_avoid: 0.6
+    # AVOID 전용 속도 상한 [m/s]; 0이면 상한 없음.
+    # 3.5m에서 2m/s 접근 시 TTC=1.75s; 접근 중 기존 TTC 정지 기준은 계속 적용.
+    v_avoid: 2.0
 
     # ── 지정 지점 정지 [틱] (2026-08-18) — GpsPath.stop_zone 지점에 도달하면
     # 정지하고 이만큼 머문 뒤 스스로 재출발한다. 300틱 = 3.0s.
@@ -137,9 +103,9 @@ mgm_node:
     # 주차 제외, 외부/operator/CAN/전방 입력 freshness/최종 reference 정지는 유지한다.
     escape_require_rear_clear: false
 
-    # avoid 안전 바닥 — 속도에 비례해 올린다 (2026-08-18, v_base 0.6→1.0).
-    # 1.0 m/s 정지 필요거리 1.09m (§5-1c 실측식) ÷ 1.0 m/s ≈ 1.1s + 여유.
-    ttc_stop: 1.3           # [s]
+    # Legacy replay only. v2 does not create E-stop/route holds from avoid TTC.
+    # v2 E-stop input is the independent stack_estop request.
+    ttc_stop: 1.3           # [s], unused by v2 base manager
 
     # 역방향 정지 (§4 waypoint) — |ref[0].yaw| > 2.1rad(120°)가 50틱(0.5s)
     # 지속되면 차가 경로를 등진 것 → v_ref 0 (유턴 후 트랙 역추종 차단)

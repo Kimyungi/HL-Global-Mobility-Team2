@@ -78,6 +78,26 @@ class StationPath:
         self.generation = generation
         self.window_low, self.window_high = low, high
 
+    def sample(self, station):
+        """Exact arc-length interpolation, without the navigation preview snap."""
+        if not math.isfinite(station) or not 0 <= station <= self.s[-1]:
+            raise ValueError('station outside waypoint route')
+        i = min(len(self.e)-2, max(0, bisect_right(self.s, station)-1))
+        t = (station-self.s[i]) / (self.s[i+1]-self.s[i])
+        return (self.e[i]+t*(self.e[i+1]-self.e[i]),
+                self.n[i]+t*(self.n[i+1]-self.n[i]),
+                _wrap(self.yaw[i]+t*_wrap(self.yaw[i+1]-self.yaw[i])),
+                self.curvature[i]+t*(self.curvature[i+1]-self.curvature[i]))
+
+    def window(self, behind=2., ahead=8.):
+        """Return ordered original vertices plus the exact clipped boundaries."""
+        if self.station is None:
+            raise ValueError('station is not initialized')
+        low, high = max(0., self.station-behind), min(self.s[-1], self.station+ahead)
+        # Avoid duplicate float32 ROS points when a bound is almost a CSV vertex.
+        stations = [low] + [s for s in self.s if low+1e-6 < s < high-1e-6] + [high]
+        return stations, [self.sample(s) for s in stations]
+
     def position(self):
         if self.station is None:
             raise ValueError('station is not initialized')

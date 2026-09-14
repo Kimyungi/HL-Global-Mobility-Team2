@@ -2,8 +2,9 @@
 
 This module deliberately has no ROS imports so its frame and timing contracts
 can be regression-tested without hardware.  ``parking_map`` starts at the
-vehicle pose used by :meth:`MotionPrior.reset`; every incremental translation
-is expressed in the previous ``base_link`` frame and composed in SE(2).
+vehicle pose used by :meth:`MotionPrior.reset`. GPS ENU poses are mapped into
+that frame with a fixed SE(2) alignment; legacy motion deltas use the previous
+``base_link`` frame.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import Optional
 
 import numpy as np
 
-from .geometry import Pose2, compose, wrap_angle
+from .geometry import Pose2, compose, inverse, wrap_angle
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,7 @@ class MotionPriorConfig:
     steering_bias_rad: float = 0.0
     steering_deadband_rad: float = math.radians(0.3)
     max_steering_rad: float = math.radians(30.0)
+    gps_timeout_s: float = 0.5
     gps_fix_quality: int = 4
     gps_position_gain: float = 0.15
     gps_innovation_gate_m: float = 1.50
@@ -147,10 +149,11 @@ class MotionPriorStatus:
 class MotionPrior:
     """Predict a local pose from vehicle RX, optional IMU and gated GNSS.
 
-    IMU yaw may have an arbitrary zero; only differences are used.  GPS deltas
-    are accumulated with :func:`compose` because ``dx``/``dy`` are expressed
-    in the *previous* vehicle frame.  GPS yaw is only a fallback when the
-    direct IMU sample is stale.
+    GPS ENU (east, north, CCW yaw from east) is mapped into parking_map
+    using a fixed SE(2) transform anchored at the first trusted GPS pose.
+    GPS position never uses a waypoint tangent as vehicle heading. Legacy
+    body-delta callers are retained through update_gps. Yaw prediction prefers
+    direct IMU or vehicle steering; GPS heading differences are a fallback.
     """
 
     def __init__(self, config: Optional[MotionPriorConfig] = None):
@@ -171,6 +174,10 @@ class MotionPrior:
         self._last_gps_update: Optional[int] = None
         self._pending_gps_yaw = 0.0
         self._gps_position_pending = False
+        self.gps_map_transform: Optional[Pose2] = None  # parking_map <- GPS ENU
+        self._gps_frame_key = None
+        self._gps_absolute_stamp_s = -math.inf
+        self._gps_absolute_previous: Optional[Pose2] = None
         self.last_status = MotionPriorStatus()
 
     def update_velocity(self, velocity_mps: float, stamp_s: float) -> None:
@@ -200,11 +207,56 @@ class MotionPrior:
         self._imu_stamp_s = float(stamp_s)
 
     def invalidate_gps(self) -> None:
-        """Re-anchor after a gap; deltas cannot reconstruct missing fixes."""
+        """Drop pending data, preserving the absolute ENU alignment across gaps.
+
+        Legacy deltas need a new baseline; absolute positions do not lose their
+        frame just because a fix or heading was temporarily unavailable.
+        """
         self._gps_pose = None
         self._last_gps_update = None
         self._pending_gps_yaw = 0.0
         self._gps_position_pending = False
+        self._gps_absolute_previous = None
+
+    def update_gps_pose(
+        self, update: int, enu_pose: Pose2, stamp_s: float, now_s: float,
+        fix_quality: int, heading_reliable: bool, *, frame_key=None,
+        use_yaw_fallback: bool = True,
+    ) -> bool:
+        """Accept an absolute GPS pose in the waypoint producer's ENU frame.
+
+        p_parking = R(yaw_parking0 - yaw_gps0) p_enu + translation.
+        The transform stays fixed through turns, missing counters and RTK
+        outages. A new GPS coordinate frame or explicit map reset re-anchors.
+        """
+        if (int(fix_quality) != int(self.config.gps_fix_quality)
+                or not heading_reliable
+                or not all(math.isfinite(v) for v in
+                           (enu_pose.x, enu_pose.y, enu_pose.yaw, stamp_s, now_s))
+                or stamp_s <= 0.0
+                or not 0.0 <= now_s - stamp_s <= self.config.gps_timeout_s):
+            self.invalidate_gps()
+            return False
+        if stamp_s <= self._gps_absolute_stamp_s:
+            return False  # duplicate publication or out-of-order fix
+        previous_stamp = self._gps_absolute_stamp_s
+        self._gps_absolute_stamp_s = float(stamp_s)
+        if self.gps_map_transform is None or frame_key != self._gps_frame_key:
+            self.invalidate_gps()
+            self.gps_map_transform = compose(self.pose, inverse(enu_pose))
+            self._gps_frame_key = frame_key
+            self._gps_pose = self.pose
+        else:
+            self._gps_pose = compose(self.gps_map_transform, enu_pose)
+            self._gps_position_pending = True
+        if (use_yaw_fallback and self._gps_absolute_previous is not None
+                and stamp_s - previous_stamp <= self.config.gps_timeout_s):
+            self._pending_gps_yaw = wrap_angle(
+                self._pending_gps_yaw
+                + wrap_angle(enu_pose.yaw - self._gps_absolute_previous.yaw))
+        self._gps_absolute_previous = enu_pose
+        self._last_gps_update = int(update)
+        return True
 
     def update_gps(
         self,
@@ -269,6 +321,9 @@ class MotionPrior:
 
     def predict(self, stamp_s: float) -> Pose2:
         stamp_s = float(stamp_s)
+        if (self.gps_map_transform is not None
+                and stamp_s - self._gps_absolute_stamp_s > self.config.gps_timeout_s):
+            self.invalidate_gps()
         imu_fresh = (
             self.config.use_imu
             and

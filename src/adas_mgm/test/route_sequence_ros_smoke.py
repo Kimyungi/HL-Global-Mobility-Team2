@@ -50,7 +50,7 @@ def main():
     def forbidden_imu(*a, **k): raise AssertionError('Hardware IMU must never start')
     gps_module.ImuLink = forbidden_imu
     rclpy.init(args=['--ros-args', '-p', f'route_sequence_file:={manifest}', '-p', "imu_port:='off'",
-                    '-p', f"route_start_id:='{args.start}'", '-p', f"route_end_id:='{args.end}'", '-p', 'n_points:=20', '-p', 'publish_period:=0.02'])
+                    '-p', f"route_start_id:='{args.start}'", '-p', f"route_end_id:='{args.end}'", '-p', 'n_points:=1', '-p', 'publish_period:=0.02'])
     gps = gps_module.StackGpsNode()
     assert [r.id for r in gps._route_plan.files] == expected_ids
     assert gps._route_plan.connections == [None]*5
@@ -62,11 +62,11 @@ def main():
               ('/perception/parking',ParkingStatus),('/vehicle/vector',VehicleVector),('/bridge/can_health',CanHealth)]
     pubs = {t:node.create_publisher(kind,t,1) for t,kind in topics}
     msgs = {t:kind() for t,kind in topics}
-    msgs['/perception/lane_path'].points = [RefPoint(x=1.),RefPoint(x=2.)]
+    msgs['/perception/lane_path'].points = [RefPoint(x=1.)]
     msgs['/perception/lane_path'].confidence = 0.0
     msgs['/perception/avoid'].scan_valid = msgs['/perception/estop'].scan_valid = True
     msgs['/perception/avoid'].ttc = 100.
-    msgs['/perception/avoid'].points = [RefPoint(x=1.),RefPoint(x=2.)]
+    msgs['/perception/avoid'].points = [RefPoint(x=1.)]
     msgs['/bridge/can_health'].link_up = True
     status, refs, commands = [], [], []
     subs = [node.create_subscription(MgmState,'/adas/mgm_state',status.append,100),
@@ -109,6 +109,13 @@ def main():
             executor.spin_once(timeout_sec=.005)
             if proc.poll() is not None:
                 log.seek(0); raise AssertionError(log.read())
+    def teleport(index):
+        # This test isolates route/mission handoffs using discontinuous fixes.
+        # Reset only the mock GPS station at each scripted teleport; continuous
+        # station tracking is covered by waypoint and parking-search tests.
+        position[0] = index
+        gps.engine.reset_station()
+
     def expect(predicate, description, timeout=4.):
         end=time.monotonic()+timeout
         while time.monotonic()<end:
@@ -128,7 +135,7 @@ def main():
             spin(.05)
             definitions=[z for z in gps.zone_map.definitions if int(z.zone_type)==2]
             for zone in definitions:
-                position[0]=zone.start_index
+                teleport(zone.start_index)
                 expect(lambda s,r:s.mission==2, f'Mission {zone.mission_id} PREPARE')
                 request=status[-1].mission_request_id
                 parking=msgs['/perception/parking']
@@ -137,7 +144,7 @@ def main():
                     parking.search_active=True
                     expect(lambda s,r:s.parking_search_acknowledged, 'Search ack with no numeric limits')
                     assert status[-1].parking_search_zone_only and status[-1].parking_calibration_state==3
-                    position[0]=zone.end_index+1
+                    teleport(zone.end_index+1)
                     expect(lambda s,r:s.mission==0 and s.mission_failed and s.mission_cancel_reason==9,
                            f'{files.id} Zone exit fails search')
                     expect(lambda s,r:s.route.index==index and s.route.phase==1 and r.v_ref>0,
@@ -154,12 +161,12 @@ def main():
                 parking.search_active=parking.search_space_found=parking.preparation_ready=True
                 expect(lambda s,r:s.mission==1, f'Mission {zone.mission_id} ACTIVE')
                 parking.mission_active=True
-                parking.points=[RefPoint(x=-1.,y=.2),RefPoint(x=-2.,y=.2)]
+                parking.points=[RefPoint(x=-1.,y=.2)]
                 parking.v_suggest=-.3
                 expect(lambda s,r:s.mission==1 and r.v_ref<0, 'Parking execution acknowledgement')
                 if files.id == '04':
                     # Test-only Parking movement, not a claim about real tracking.
-                    position[0] = len(files.points)-1
+                    teleport(len(files.points)-2)  # endpoint region with a nonzero GPS preview
                     expect(lambda s,r:s.route.end_reached and s.mission==1,
                            '04 endpoint remembered while Parking retains authority')
                     parking_position[0] = gps._route_plan.files[index+1].points[0]
@@ -170,7 +177,7 @@ def main():
                 completed.append(zone.mission_id)
                 msgs['/perception/parking']=ParkingStatus()
             if files.id != '04' or args.fail_search:
-                position[0]=len(files.points)-1
+                teleport(len(files.points)-2)  # endpoint region with a nonzero GPS preview
             if index+1<len(gps._route_plan.files):
                 expect(lambda s,r:s.route.index==index+1, f'{files.id} endpoint automatically hands off')
             else:

@@ -16,6 +16,7 @@ find_package(rclcpp REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(fma_interfaces REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 # ── MGM 로직 코어 (§5.5) — ROS 의존성 없는 정적 라이브러리.
 # 여기에 rclcpp/fma_interfaces를 링크하는 순간 §5.5 위반 — 절대 추가 금지.
@@ -25,7 +26,7 @@ target_include_directories(mgm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # ── ROS 2 wrapper 노드
 add_executable(mgm_node src/mgm_node.cpp src/decision_backend.cpp src/transition_log.cpp)
 target_link_libraries(mgm_node mgm_core)
-ament_target_dependencies(mgm_node rclcpp rcl_interfaces fma_interfaces std_msgs)
+ament_target_dependencies(mgm_node rclcpp rcl_interfaces fma_interfaces std_msgs sensor_msgs)
 
 # ── back-to-back 하네스 (ROS 무관 — 코어만 링크)
 add_executable(core_replay tools/core_replay.cpp)
@@ -125,6 +126,10 @@ if(BUILD_TESTING OR ADAS_MGM_ENABLE_GENERATED_BACKEND)
 endif()
 
 if(BUILD_TESTING)
+  add_executable(sensor_only_safe_stop_test test/sensor_only_safe_stop_test.cpp)
+  target_link_libraries(sensor_only_safe_stop_test mgm_core)
+  add_test(NAME sensor_only_safe_stop_test COMMAND sensor_only_safe_stop_test)
+
   add_executable(avoid_main_compat_test test/avoid_main_compat_test.cpp)
   target_link_libraries(avoid_main_compat_test mgm_core)
   add_test(NAME avoid_main_compat_test COMMAND avoid_main_compat_test)
@@ -164,6 +169,14 @@ if(BUILD_TESTING)
   add_executable(mission_zone_search_test test/mission_zone_search_test.cpp)
   target_link_libraries(mission_zone_search_test mgm_core)
   add_test(NAME mission_zone_search_test COMMAND mission_zone_search_test)
+
+  add_executable(lidar_only_estop_test test/lidar_only_estop_test.cpp)
+  target_link_libraries(lidar_only_estop_test mgm_core)
+  add_test(NAME lidar_only_estop_test COMMAND lidar_only_estop_test)
+
+  add_executable(traffic_gps_release_test test/traffic_gps_release_test.cpp)
+  target_link_libraries(traffic_gps_release_test mgm_core)
+  add_test(NAME traffic_gps_release_test COMMAND traffic_gps_release_test)
 
   add_executable(manager_state_test test/manager_state_test.cpp)
   target_link_libraries(manager_state_test mgm_core)

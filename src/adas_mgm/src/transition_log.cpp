@@ -93,10 +93,15 @@ TransitionRecord explainTransition(
   } else if (from == MGM_STATE_TRAFFIC &&
     (to == MGM_STATE_LANE || to == MGM_STATE_WAYPOINT))
   {
-    r.rule = to == MGM_STATE_WAYPOINT ?
-      "traffic→waypoint: 확정 초록 + 진입 전 상태 복귀" :
-      "traffic→lane: 확정 초록 + 진입 전 상태 복귀";
-    r.spec_match = s.traffic_green_active;
+    if (p.base_state_machine_enabled) {
+      r.rule = "traffic→waypoint: 적색 해제 + GPS 주행 선택";
+      r.spec_match = !s.traffic_red_active && to == MGM_STATE_WAYPOINT;
+    } else {
+      r.rule = to == MGM_STATE_WAYPOINT ?
+        "traffic→waypoint: 확정 초록 + 진입 전 상태 복귀" :
+        "traffic→lane: 확정 초록 + 진입 전 상태 복귀";
+      r.spec_match = s.traffic_green_active;
+    }
   } else if (to == MGM_STATE_AVOID) {
     r.rule = "→avoid: 장애물 감지 + 회피 가능 (+ 회피 허용 구간)";
     r.spec_match = s.avoid_obstacle_detected && s.avoid_avoidable &&

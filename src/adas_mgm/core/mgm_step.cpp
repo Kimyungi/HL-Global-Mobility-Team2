@@ -515,8 +515,10 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       }
       out.path_source = MGM_SRC_AVOID;
       // 기동 완료 우선 — 신호등 정지 요구는 기동 이탈 후 적용 (여기서 참조하지 않음).
-      // 안전 바닥: TTC < 임계 또는 긴급 정지 → 즉시 정지 (우선권 표 최상위).
-      if (s.estop || s.avoid_ttc < st.params.ttc_stop) {
+      // v2 gets E-stop only from the independent LiDAR via its manager.
+      // Keep the TTC floor only for the historical legacy state machine.
+      if (s.estop || (!st.params.base_state_machine_enabled &&
+        s.avoid_ttc < st.params.ttc_stop)) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
       } else if (!std::isfinite(s.avoid_v_suggest)) {

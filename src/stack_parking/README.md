@@ -99,12 +99,22 @@ ros2 topic echo /parking/diagnostics
 - `/vehicle/vector` — 실제 속도 `v`와 조향 `str`로 bicycle 모델 위치를
   예측한다. `x/y/yaw`는 사용하지 않는다.
 - `/perception/imu` — 선택 입력. 기본 `prior.use_imu: false`.
-- `/perception/gps_path` — quality 4(RTK FIXED) + `HEADING_FUSED`인
-  `dx/dy/dyaw/update`만 사용. 기본 위치 보정 gain은 0.15, 오차 허용 범위는
-  1.5m, 1회 보정 상한은 0.2m다. yaw는 차량 속도·조향을 우선하며,
-  IMU와 차량 bicycle 예측을 사용할 수 없을 때 GPS `dyaw`로 폴백한다.
-  TANGENT와 후진 시 180° 모호한 COG는 거부한다. 품질 저하나 update 누락 후에는
-  현재 위치를 GPS 적분의 새 기준으로 잡는다.
+- `/perception/gps_path` — quality 4(RTK FIXED), `position_valid`,
+  `vehicle_heading_valid`, `HEADING_FUSED`, reference age 0~0.5초인
+  `position_x/y`와 `vehicle_heading_rad`를 사용한다. GPS의 ENU는 x=동쪽,
+  y=북쪽, yaw=동쪽 기준 반시계방향이다. GPS 생산자는 CSV lat/lon으로
+  이 좌표를 계산한다(연속 코스에서는 첫 경로의 원점을 공통으로 사용).
+  CSV east_m/north_m는 기록 원점이 다를 수 있어 직접 더하지 않는다.
+- `parking_map`은 초기 차량 기준 로컬 맵이다. 최초 신뢰 가능한 GPS pose와
+  그때의 로컬 pose로 **고정 변환** `T_parking_enu = T_parking_body · inverse(T_enu_body)`를
+  만들고, 이후 GPS 위치를 이 변환으로 옮겨 보정한다. CSV 01의 약 -135도는
+  경로 진행 방향이며 실제 차량 헤딩으로 강제하지 않는다.
+  GPS 품질 저하/메시지 누락 중에도 변환을 보존하며, 맵 reset 또는 GPS
+  좌표계 identity 변경 시에만 다시 정렬한다. 같은 코스의 CSV 전환은 유지한다.
+- 기본 위치 보정 gain은 0.15, 오차 허용 범위는 1.5m, 1회 상한은 0.2m다.
+  yaw는 IMU 또는 차량 bicycle 예측을 우선하고, 둘 다 불가능하면 연속된
+  신뢰 GPS 헤딩의 차이를 사용한다. TANGENT와 후진 시 모호한 COG는 거부한다.
+  `/parking/diagnostics`의 `gps_map_alignment`로 실제 ENU→로컬 변환을 확인한다.
 
 기본 `icp.map_correction_enabled: false`에서는 차량 피드백 + GPS 위치가
 그대로 `/parking/slam_pose`가 된다. 라이다 점은 이 위치에 배치해 맵을 만들며,

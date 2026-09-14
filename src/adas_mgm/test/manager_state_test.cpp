@@ -93,9 +93,9 @@ void signal()
   r.tick(10); check(near(r.st.traffic_stopline_distance,1.45f),"17: distance uses actual .5 m/s");
   r.s.traffic_stopline_detected=true; r.tick(); r.s.traffic_stopline_detected=false; r.tick();
   check(near(r.st.traffic_stopline_distance,1.44f),"17: flicker cannot reseed");
-  r.s.traffic_red_active=false; r.tick(100); r.s.vehicle_speed=0; r.tick();
-  check(r.out.signal==SignalState::STOPPED_WAIT && r.out.v_ref==0,"18: lost red without green remains stopped");
-  r.s.traffic_red_active=true; r.s.traffic_green_active=true; r.tick();
+  r.tick(100); r.s.vehicle_speed=0; r.tick();
+  check(r.out.signal==SignalState::STOPPED_WAIT && r.out.v_ref==0,"18: red keeps stopped wait");
+  r.s.traffic_green_active=true; r.tick();
   check(r.out.signal==SignalState::STOPPED_WAIT,"green with red cannot release");
   r.s.traffic_red_active=false; r.s.auto_estop=true; r.tick();
   check(r.out.signal==SignalState::SIGNAL_IDLE && r.out.v_ref==0,"19: green releases only signal, auto estop remains");
@@ -191,12 +191,13 @@ void safety()
     recovery_ref.st.managers.recovery_waiting_reference,
     "recovery exit waits for actual reacquired reference");
   recovery_ref.s.gps_valid=true; recovery_ref.tick();
-  check(recovery_ref.out.v_ref==0 && recovery_ref.out.avoid==AvoidState::AVOID_ACTIVE,
-    "GPS recovery alone cannot release unfinished obstacle maneuver");
+  check(recovery_ref.out.v_ref>0 && recovery_ref.out.path_source==MGM_SRC_GPS &&
+    recovery_ref.out.avoid==AvoidState::INACTIVE,
+    "GPS recovery replaces empty avoidance when no obstacle remains");
   recovery_ref.s.avoid_maneuver_done=true; recovery_ref.tick();
   check(recovery_ref.out.safety==SafetyState::NORMAL && recovery_ref.out.path_source==MGM_SRC_GPS &&
-    recovery_ref.out.avoid==AvoidState::GPS_RETURN,
-    "completed maneuver can use recovered GPS within avoidance");
+    recovery_ref.out.avoid==AvoidState::INACTIVE,
+    "late completion keeps recovered GPS navigation");
   Run hard_stop; hard_stop.tick(); hard_stop.st.params.escape_after_cycles=1;
   hard_stop.s.auto_estop=true; hard_stop.s.external_stop=true; hard_stop.tick();
   check(hard_stop.out.v_ref==0 && hard_stop.out.safety==SafetyState::SAFE_STOP,
