@@ -366,11 +366,12 @@ rviz2 -d "$HOME/FMA_ws/src/stack_gps/tools/waypoints/gps_view.rviz"
 `zones_halla_reference_path_XX.yaml`에 저장된다. 경로 2의 YAML은 시작부터 끝까지
 GPS 전용 구간이라 카메라 전이 없이 waypoint로만 주행한다.
 각 CSV의 `state`는 `0=일반`, `1=T자 주차`, `2=평행 주차`,
-`3=신호등 인식 예상 지점`이다. `state=3`은 코스 표식이며 위치만으로
+`3=신호등 인식 예상 지점`, `4=장애물 회피 전환 지점`이다. `state=3`은 코스 표식이며 위치만으로
 TRAFFIC 전이를 강제하지 않는다. 적색과 정지선을 카메라로 인식했을 때만
-MGM이 TRAFFIC으로 전이한다. Path 3의 Zone 3은 현장 편집값인
+MGM이 TRAFFIC으로 전이한다. `state=4`는 Path 4 `idx 55`의 장애물 회피
+스테이트 변경 표식이다. Path 3의 Zone 3은 현장 편집값인
 `idx 28~116`으로 연장되어 있다.
-Path 4는 평행주차 동작을 마친 `(-62.335, -72.648)`에서 끝나고, Path 5는
+Path 4는 마지막 직선을 1 m 줄인 `(-63.042107, -71.940893)`에서 끝나고, Path 5는
 주차 후 복귀 지점 `(-64.335, -70.648)`에서 시작하므로 두 CSV의 끝점은
 의도적으로 일치하지 않는다.
 

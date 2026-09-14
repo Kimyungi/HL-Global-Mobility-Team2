@@ -190,8 +190,9 @@
 
 > 2026-09-12 한라대 데이터: 손상민 PR #86 / `28ba409`의 경로별 Zone·CSV·표식을 v2에 반영한다.
 > CSV state 1=T자, 2=평행은 대응 YAML 주차점과 동기화한다. 3=신호 예상 위치는 메타데이터이며
-> Signal 전이를 위치만으로 강제하지 않는다. Path 3의 GPS-only Zone 3은 업로드된 idx 28~116을 사용한다.
-> 경로 순서는 위 정정 기준을 적용하며 원본 좌표 기하를 변경하지 않는다.
+> Signal 전이를 위치만으로 강제하지 않는다. state 4는 Path 4 idx 55의 장애물 회피 전환 지점이다.
+> Path 3의 GPS-only Zone 3은 업로드된 idx 28~116을 사용한다. Path 4의 마지막 직선은 1 m 줄여
+> 끝점을 `(-63.042107,-71.940893)`으로 둔다. 경로 순서는 위 정정 기준을 적용한다.
 
 > Integration v2 분리 기준: [docs/INTEGRATION_V2.md](docs/INTEGRATION_V2.md). 기존 main은 보존하며 v2 전용 소스/build/install에서만 통합한다.
 

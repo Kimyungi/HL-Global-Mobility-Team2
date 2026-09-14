@@ -38,8 +38,8 @@ zoneHandles(4) = plot(ax, nan, nan, '-', ...
     'DisplayName', 'Zone 4: parking approach');
 
 pathHandles = gobjects(7, 1);
-stateEast = nan(3, 1);
-stateNorth = nan(3, 1);
+stateEast = nan(4, 1);
+stateNorth = nan(4, 1);
 for pathId = 1:7
     pathFile = fullfile(waypointDir, ...
         sprintf('waypoints_halla_reference_path_%02d.csv', pathId));
@@ -66,7 +66,7 @@ for pathId = 1:7
             'FontWeight', 'bold', 'HorizontalAlignment', 'right', ...
             'VerticalAlignment', 'bottom');
     end
-    for stateId = 1:3
+    for stateId = 1:4
         stateRow = find(T.state == stateId, 1);
         if ~isempty(stateRow)
             stateEast(stateId) = T.east_m(stateRow);
@@ -76,11 +76,11 @@ for pathId = 1:7
 end
 
 stateLabels = ["STATE 1: T PARKING", "STATE 2: PARALLEL PARKING", ...
-    "STATE 3: TRAFFIC SIGNAL"];
-stateMarkers = ['p', 's', 'd'];
-stateColors = [0 0 0; 0.55 0 0.75; 0.85 0 0];
-stateHandles = gobjects(3, 1);
-for stateId = 1:3
+    "STATE 3: TRAFFIC SIGNAL", "STATE 4: OBSTACLE AVOIDANCE"];
+stateMarkers = ['p', 's', 'd', '^'];
+stateColors = [0 0 0; 0.55 0 0.75; 0.85 0 0; 0.00 0.45 0.20];
+stateHandles = gobjects(4, 1);
+for stateId = 1:4
     stateHandles(stateId) = plot(ax, stateEast(stateId), stateNorth(stateId), ...
         stateMarkers(stateId), ...
         'MarkerSize', 13, 'MarkerFaceColor', 'w', ...
