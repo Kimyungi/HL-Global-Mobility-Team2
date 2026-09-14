@@ -1,5 +1,26 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> 2026-09-14 최종 v2 정책: MGM 자체 회피 TTC/경로 실패 AUTO_ESTOP은 사용하지 않는다.
+> 독립 LiDAR 요청만 AUTO_ESTOP의 입력이며, CAN/운전자/신호/미션 정지는 별도다.
+> 장애물이 없고 회피 제어점이 비거나 오래됐으면 유효 GPS로 즉시 복귀한다.
+> 신호 해제는 `!red`이며 GPS 주행 상태로 전환한다. 아래 과거 정책보다 우선한다.
+> HTML 실험실 및 관련 도구는 로컬 전용으로 이번 PR에서 제외한다.
+
+> 2026-09-14 검출 거리: 앞범퍼 전방 3.5m 미만, 좌우 ±0.5m. 검출 유지 +0.4m(3.9m).
+> 속도 2m/s, 회피점 station+2.7m 복귀, 기존 TTC 기준 유지. 상세 RUN_BOOK_FINAL.md.
+
+> 2026-09-14 회피 목표점: 최근접 거리는 검출·TTC 전용. 관련 연결 면의 앞뒤 범위와
+> 원래 끝점·극점에서 후보 단면을 잡고, 선분+여유 원의 합집합으로 실제 점유 구간을
+> 계산한다. 면 기준 생성과 GPS station+1 → 회피점 → station+2.7m 연결 계약은
+> [현재 경로 문서](docs/AVOID_STATION_PATH.md)가 아래 과거 설명보다 우선한다.
+
+> 2026-09-14 사용자 지정 SAFE_STOP: v2 `safe_stop_all_sensors_only=true`.
+> 차선/신호 카메라 2대, raw LiDAR 4대, GPS가 전부 무효일 때만 사유 2로 SAFE_STOP.
+> 센서별 freshness를 독립 판정하며, `MgmState.sensor_alive_mask`로 보고한다.
+> 운영자/CAN 정지, AUTO_ESTOP 및 제어점 부재 출력 대기(`reference_motion_blocked`)는 별도.
+> dump v29. 아래 과거 개별 입력 상실 SAFE_STOP 규칙보다 이 설정이 우선한다.
+> 기존 출발 인가 조건은 유지. 상세 `RUN_BOOK_FINAL.md`.
+
 > 2026-09-14 주행 준비 변경: `scripts/v2 prepare`는 전체 스택을 준비하고,
 > GPS/RTCM은 별도 상주 서비스로 유지한다. `go`는 카메라 프레임 **또는**
 > GPS FIXED(4)로 인가하고, `stop → go`는 GPS를 재시작하지 않는다.

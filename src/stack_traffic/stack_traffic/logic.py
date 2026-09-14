@@ -253,10 +253,13 @@ def update_stop_latch(
     resume_on_green: bool,
     red_clear_active: bool = False,
     resume_on_red_clear: bool = False,
+    resume_on_red_absence: bool = False,
 ) -> bool:
     """적색+접근 조건으로 정지하고 설정된 안전 조건에서만 해제한다."""
     if red_active and pixel_approaching:
         return True
+    if resume_on_red_absence and not red_active:
+        return False
     if current and resume_on_green and green_active and not red_active:
         return False
     if current and resume_on_red_clear and red_clear_active and not red_active:
@@ -268,17 +271,18 @@ def update_red_phase_latch(
     current: bool,
     red_active: bool,
     green_active: bool,
+    resume_on_red_absence: bool = False,
 ) -> bool:
-    """확정 적색을 fresh 초록 확정 전까지 기억한다.
+    """기본은 확정 초록까지 기억; red-absence 정책에서는 현재 적색 투표를 따른다.
 
     신호등과 정지선은 같은 영상에서도 서로 다른 프레임에 안정 검출될 수 있다.
-    적색 3/5를 한 번 확정했다면 짧은 bbox 소실로 그 사실을 버리지 않고, fresh
+    기본 정책에서는 적색 3/5 확정 후 짧은 bbox 소실로 그 사실을 버리지 않고, fresh
     초록 3/5만 새로운 신호 페이즈의 근거로 인정한다. 두 색이 동시에 활성화된
     비정상 투표창에서는 안전측인 적색이 이긴다.
     """
     if red_active:
         return True
-    if current and green_active:
+    if resume_on_red_absence or (current and green_active):
         return False
     return current
 

@@ -440,6 +440,11 @@ class StackGpsNode(Node):
         msg.points = [RefPoint(x=x, y=y, yaw=yaw, curvature=curvature)]
         msg.station_yaw_error_rad = float(snap.get('station_yaw_error_rad', 0.0))
         msg.station_error_valid = bool(snap.get('station_error_valid', False))
+        msg.waypoint_station_m = float(snap['station_m'])
+        msg.waypoint_stations = [float(s) for s in snap['waypoint_stations']]
+        msg.waypoint_points = [RefPoint(x=float(x), y=float(y), yaw=float(yaw), curvature=float(k))
+                               for x, y, yaw, k in snap['waypoint_points']]
+        msg.waypoint_window_valid = len(msg.waypoint_points) >= 2
 
     def _on_route_control(self, msg):
         plan = self._route_plan

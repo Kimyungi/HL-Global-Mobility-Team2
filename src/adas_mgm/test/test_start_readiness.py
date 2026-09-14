@@ -1,4 +1,4 @@
-"""Authorization uses camera frames OR GPS, never line confidence or all sensors."""
+"""Authorization requires LiDAR AND (camera frames OR GPS)."""
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -11,9 +11,9 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
-def state(camera=False, gps=False, stamp=100.):
+def state(camera=False, gps=False, stamp=100., lidar=True):
     return NS(header=NS(stamp=NS(sec=int(stamp), nanosec=int((stamp-int(stamp))*1e9))),
-              camera_available=camera, gps_fixed_ready=gps)
+              camera_available=camera, gps_fixed_ready=gps, lidar_ready=lidar)
 
 
 @pytest.mark.parametrize('camera,gps,expected', [(True,False,True),(False,True,True),(True,True,True),(False,False,False)])
@@ -37,3 +37,8 @@ def test_traffic_is_optional_but_explicit_requirement_is_honored():
     assert not module.readiness(inputs, 100_100_000_000, require_traffic=True)[0]
     inputs['traffic'] = state()
     assert module.readiness(inputs, 100_100_000_000, require_traffic=True)[0]
+
+
+@pytest.mark.parametrize('camera,gps', [(True,False),(False,True),(True,True)])
+def test_no_lidar_rejects_even_with_navigation_ready(camera,gps):
+    assert not module.readiness({'state': state(camera,gps,lidar=False)},100_100_000_000)[0]

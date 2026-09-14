@@ -241,6 +241,7 @@ class StackParkingNode(Node):
             'prior.max_steering_deg': 30.0,
             'gps.use_position_correction': True,
             'gps.use_yaw_fallback': True,
+            'gps.timeout_s': 0.5,
             'gps.fix_quality': 4,
             'gps.position_gain': 0.15,
             'gps.innovation_gate_m': 1.50,
@@ -397,6 +398,7 @@ class StackParkingNode(Node):
                 float(self._p('prior.steering_deadband_deg'))),
             max_steering_rad=math.radians(
                 float(self._p('prior.max_steering_deg'))),
+            gps_timeout_s=float(self._p('gps.timeout_s')),
             gps_fix_quality=int(self._p('gps.fix_quality')),
             gps_position_gain=(
                 float(self._p('gps.position_gain'))
@@ -491,22 +493,21 @@ class StackParkingNode(Node):
         self.latest_imu_s = now_s
 
     def _on_gps_path(self, msg: GpsPath) -> None:
-        # dx/dy are expressed in the previous heading frame.  TANGENT is only
-        # a track-alignment assumption and COG reverses by pi while backing,
-        # so neither is a safe parking vehicle frame.  Consume GPS correction
-        # only when the IMU-fused body heading contract is valid.
-        if msg.heading_source == GpsPath.HEADING_FUSED:
-            dx = (
-                float(msg.dx)
-                if bool(self._p('gps.use_position_correction')) else 0.0)
-            dy = (
-                float(msg.dy)
-                if bool(self._p('gps.use_position_correction')) else 0.0)
-            self.prior.update_gps(
-                int(msg.update), dx, dy, float(msg.dyaw),
-                int(msg.fix_quality), bool(self._p('gps.use_yaw_fallback')))
-        else:
-            self.prior.invalidate_gps()
+        # position_x/y are the GPS producer's common ENU frame, independent
+        # of the vehicle-frame points/header and the active CSV's local origin.
+        # Align ENU to the existing parking map once, using measured body yaw.
+        stamp_s = float(msg.reference_stamp.sec) + float(msg.reference_stamp.nanosec) * 1e-9
+        frame_key = (('sequence', int(msg.route.sequence_id)) if msg.route.enabled
+                     else ('single', msg.route.waypoint_csv))
+        self.prior.update_gps_pose(
+            int(msg.update),
+            Pose2(float(msg.position_x), float(msg.position_y),
+                  float(msg.vehicle_heading_rad)),
+            stamp_s, self._clock_s(), int(msg.fix_quality),
+            bool(msg.position_valid and msg.vehicle_heading_valid
+                 and msg.heading_source == GpsPath.HEADING_FUSED),
+            frame_key=frame_key,
+            use_yaw_fallback=bool(self._p('gps.use_yaw_fallback')))
         if not bool(self._p('auto_trigger_gps_zone')):
             return
         if not msg.parking_zone:
@@ -1256,6 +1257,12 @@ class StackParkingNode(Node):
             'imu_topic_age_s': (
                 'inf' if not math.isfinite(now_s - self.latest_imu_s)
                 else '%.3f' % (now_s - self.latest_imu_s)),
+            'gps_input_frame': 'ENU: x=east y=north yaw=CCW_from_east',
+            'gps_map_alignment': (
+                'unanchored' if self.prior.gps_map_transform is None else
+                'x=%.3f y=%.3f yaw_deg=%.3f' % (
+                    self.prior.gps_map_transform.x, self.prior.gps_map_transform.y,
+                    math.degrees(self.prior.gps_map_transform.yaw))),
             'gps_position_corrected': str(prior.gps_corrected),
             'gps_innovation_m': (
                 'inf' if not math.isfinite(prior.gps_innovation_m)

@@ -93,3 +93,13 @@ float64 position_step_m
 float64 vehicle_heading_rad
 bool vehicle_heading_valid
 RouteFeedback route
+
+# Ordered waypoint window for scan-by-scan avoidance. Uses the same vehicle
+# frame, pose and reference_stamp as points; stations are cumulative CSV arc
+# length (metres), not waypoint indices or distance along an avoidance path.
+# Empty/false means unavailable; consumers must not invent a GPS path from
+# the single navigation preview. Window covers station-2m through station+8m.
+bool waypoint_window_valid
+float64 waypoint_station_m
+float64[] waypoint_stations
+RefPoint[] waypoint_points

@@ -19,13 +19,13 @@ def main():
         if not prefix.is_relative_to(root / 'install_v2'):
             raise RuntimeError(f'{package} resolves outside v2: {prefix}')
     contracts = (
-        (GpsPath(), 'reference_stamp'), (GpsPath(), 'zones'),
+        (GpsPath(), 'reference_stamp'), (GpsPath(), 'waypoint_stations'), (GpsPath(), 'zones'),
         (GpsPath(), 'route'), (MgmState(), 'route'),
         (GpsPath().route, 'connecting'), (MgmState().route, 'requested_connecting'),
         (ParkingCommand(), 'request_id'), (ParkingStatus(), 'preparation_stamp'),
         (MgmState(), 'mission_failed'), (MgmState(), 'parking_search_zone_only'),
         (MgmState(), 'parking_zone_entry_active'),
-        (MgmState(), 'camera_available'), (MgmState(), 'start_ready'),
+        (MgmState(), 'sensor_alive_mask'), (MgmState(), 'lidar_ready'), (MgmState(), 'camera_available'), (MgmState(), 'start_ready'),
         (EstopRequest(), 'rear_corridor_state'), (MgmState(), 'parking_calibration_state'),
     )
     for message, field in contracts:

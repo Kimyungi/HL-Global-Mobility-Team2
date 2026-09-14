@@ -173,7 +173,9 @@ def main():
         estop.estop = True
         estop.scan_valid = False
         avoid.scan_valid = False
-        expect(lambda s, r: s.safety == 0 and r.v_ref > 0, 'LiDAR timeout alone permits navigation')
+        expect(lambda s, r: s.safety == 3 and r.v_ref == 0 and
+               bool(s.active_safe_stop_reasons & 2048),
+               'strict sensor policy stops on LiDAR timeout; seven-sensor policy has a separate test')
         estop.scan_valid = avoid.scan_valid = True
         estop.estop = False
         position_index = 15
@@ -187,7 +189,8 @@ def main():
                'traffic stops while avoidance owns reference')
         vehicle.v = 0.
         traffic.red_active = False
-        expect(lambda s, r: s.signal == 3 and r.v_ref == 0, 'lost red does not release stop')
+        expect(lambda s, r: s.signal == 0 and s.avoidance == 1 and s.reference_source == 2,
+               'red absence releases signal; current obstacle retains avoidance authority')
         traffic.green_active = True
         estop.estop = True
         expect(lambda s, r: s.signal == 0 and s.safety == 1 and r.v_ref == 0,

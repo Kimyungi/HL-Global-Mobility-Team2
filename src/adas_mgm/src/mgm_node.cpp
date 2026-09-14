@@ -29,6 +29,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "rcl_interfaces/msg/parameter_descriptor.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/header.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -63,6 +64,7 @@ struct LatestMsgs
 {
   fma_interfaces::msg::LanePath lane;
   std_msgs::msg::Header camera_frame;
+  std_msgs::msg::Header traffic_camera_frame;
   fma_interfaces::msg::GpsPath gps;
   fma_interfaces::msg::AvoidStatus avoid;
   fma_interfaces::msg::ParkingStatus parking;
@@ -299,6 +301,11 @@ public:
     base_managers_ = declare_parameter<bool>(
       "base_state_machine_enabled", backend_name == "core");
     p.base_state_machine_enabled = base_managers_ ? 1 : 0;
+    p.safe_stop_all_sensors_only = declare_parameter<bool>(
+      "safe_stop_all_sensors_only", false, backend_descriptor) ? 1 : 0;
+    if (p.safe_stop_all_sensors_only && (!base_managers_ || backend_name != "core")) {
+      throw std::runtime_error("sensor-only SAFE_STOP requires parallel core backend");
+    }
     rcl_interfaces::msg::ParameterDescriptor zone_descriptor;
     zone_descriptor.read_only = true;
     p.avoidance_enabled = declare_parameter<bool>("avoidance_enabled", true, zone_descriptor) ? 1 : 0;
@@ -424,6 +431,26 @@ public:
     // estop 경로 재사용(코어에 새 정지 로직 없음). 인가는 tools/go 스크립트가
     // RTK FIXED 확인 후 발행한다.
     wait_go_ = declare_parameter<bool>("wait_go", false);
+    required_lidar_topics_ = declare_parameter<std::vector<std::string>>(
+      "required_lidar_topics", std::vector<std::string>{});
+    required_lidar_stamps_.assign(required_lidar_topics_.size(), -1);
+    for (size_t i = 0; i < required_lidar_topics_.size(); ++i) {
+      required_lidar_subs_.push_back(create_subscription<sensor_msgs::msg::LaserScan>(
+        required_lidar_topics_[i], rclcpp::SensorDataQoS(),
+        [this, i](sensor_msgs::msg::LaserScan::ConstSharedPtr scan) {
+          const bool valid = !scan->ranges.empty() && std::isfinite(scan->angle_min) &&
+            std::isfinite(scan->angle_increment) && scan->angle_increment != 0 &&
+            std::isfinite(scan->range_min) && std::isfinite(scan->range_max) &&
+            scan->range_min >= 0 && scan->range_max > scan->range_min &&
+            std::any_of(scan->ranges.begin(), scan->ranges.end(), [scan](float r) {
+              return r == std::numeric_limits<float>::infinity() ||
+                (std::isfinite(r) && r >= scan->range_min && r <= scan->range_max);
+            });
+          std::lock_guard<std::mutex> lk(mtx_);
+          required_lidar_stamps_[i] = valid ?
+            static_cast<int64_t>(scan->header.stamp.sec)*1'000'000'000 + scan->header.stamp.nanosec : -1;
+        }));
+    }
     if (!lidar_estop_enabled_) {
       if (!base_managers_ || backend_name != "core" || !wait_go_ || p.escape_after_cycles != 0) {
         throw std::runtime_error(
@@ -440,7 +467,7 @@ public:
       [this](std_msgs::msg::Bool::ConstSharedPtr m) {
         std::lock_guard<std::mutex> lk(mtx_);
         if (m->data && wait_go_ && base_managers_ && !start_ready_.load()) {
-          RCLCPP_WARN(get_logger(), "출발 인가 대기: 카메라 영상 또는 GPS FIXED(4) 필요");
+          RCLCPP_WARN(get_logger(), "출발 인가 대기: 라이다 정상 수신 AND (카메라 영상 OR GPS FIXED) 필요");
           return;
         }
         if (m->data) {operator_stop_ = false;}
@@ -512,6 +539,12 @@ public:
       [this](std_msgs::msg::Header::ConstSharedPtr m) {
         std::lock_guard<std::mutex> lk(mtx_);
         msgs_.camera_frame = *m;
+      });
+    sub_traffic_camera_ = create_subscription<std_msgs::msg::Header>(
+      "/perception/traffic_camera", qos,
+      [this](std_msgs::msg::Header::ConstSharedPtr m) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        msgs_.traffic_camera_frame = *m;
       });
     sub_gps_ = create_subscription<fma_interfaces::msg::GpsPath>(
       "/perception/gps_path", qos,
@@ -678,6 +711,7 @@ private:
   void tick()
   {
     LatestMsgs m;
+    std::vector<int64_t> lidar_stamps;
     int64_t estop_rx_ns;
     int64_t lane_rx_ns;
     int64_t gps_rx_ns;
@@ -692,6 +726,7 @@ private:
     bool operator_stop;
     {
       std::lock_guard<std::mutex> lk(mtx_);
+      lidar_stamps = required_lidar_stamps_;
       m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
       estop_rx_ns = last_estop_rx_ns_;
       lane_rx_ns = last_lane_rx_ns_;
@@ -928,10 +963,38 @@ private:
     s.camera_available = camera_sample.generation != 0 &&
       std::isfinite(camera_sample.age_s) && camera_sample.age_s >= 0 &&
       camera_sample.timeout_s > 0 && camera_sample.age_s <= camera_sample.timeout_s;
+    const auto & traffic_camera_stamp = m.traffic_camera_frame.stamp;
+    const auto traffic_camera_sample = traffic_camera_clock_.observe(
+      static_cast<int64_t>(traffic_camera_stamp.sec)*1'000'000'000+traffic_camera_stamp.nanosec,
+      s.event_time_ns, s.monotonic_ns, traffic_stale_ns_);
+    const bool traffic_camera_alive = traffic_camera_sample.generation != 0 &&
+      std::isfinite(traffic_camera_sample.age_s) && traffic_camera_sample.age_s >= 0 &&
+      traffic_camera_sample.timeout_s > 0 &&
+      traffic_camera_sample.age_s <= traffic_camera_sample.timeout_s;
+    s.sensor_alive_mask = (s.camera_available ? 1u : 0u) |
+      (traffic_camera_alive ? 2u : 0u) | (s.gps_position_valid ? 64u : 0u);
+    // Health uses the individual raw sensors, not the all-required planning gate.
+    for (size_t i = 0; i < lidar_stamps.size() && i < 4; ++i) {
+      const int64_t age = s.event_time_ns - lidar_stamps[i];
+      if (lidar_stamps[i] > 0 && age >= 0 && age <= 350'000'000) {
+        s.sensor_alive_mask |= static_cast<uint8_t>(1u << (i+2));
+      }
+    }
     s.gps_fixed_ready = m.gps.fix_quality == 4 && provider_reference(s, MGM_SRC_GPS).valid;
     s.start_gate_enabled = wait_go_ && base_managers_;
-    start_ready_ = s.camera_available || s.gps_fixed_ready;
-    s.lidar_valid = !avoid_stale && m.avoid.scan_valid;
+    std::vector<std::string> missing_lidars;
+    for (size_t i = 0; i < lidar_stamps.size(); ++i) {
+      const int64_t age = s.event_time_ns - lidar_stamps[i];
+      if (lidar_stamps[i] <= 0 || age < 0 || age > 350'000'000) {
+        missing_lidars.push_back(required_lidar_topics_[i]);
+      }
+    }
+    if (avoid_stale || !m.avoid.scan_valid) {missing_lidars.push_back("/perception/avoid");}
+    if (lidar_estop_enabled_ && (estop_stale || !m.estop.scan_valid)) {
+      missing_lidars.push_back("/perception/estop");
+    }
+    s.lidar_valid = missing_lidars.empty();
+    start_ready_ = s.lidar_valid && (s.camera_available || s.gps_fixed_ready);
     s.auto_estop = estop_real && m.estop.scan_valid;
     s.parking_valid = !parking_stale;
     s.parking_mission_active = m.parking.mission_active;
@@ -1041,8 +1104,13 @@ private:
       status.route.seen_nonterminal = out.route.seen_nonterminal;
       status.route.end_reached = out.route.end_reached;
       status.camera_available = s.camera_available;
+      status.sensor_alive_mask = s.sensor_alive_mask;
+      status.safe_stop_all_sensors_only = backend_->params().safe_stop_all_sensors_only != 0;
+      status.reference_motion_blocked = out.reference_motion_blocked;
       status.gps_fixed_ready = s.gps_fixed_ready;
-      status.start_ready = s.camera_available || s.gps_fixed_ready;
+      status.lidar_ready = s.lidar_valid;
+      status.lidar_missing_topics = missing_lidars;
+      status.start_ready = s.lidar_valid && (s.camera_available || s.gps_fixed_ready);
       status.go_authorized = go;
       status.top = static_cast<uint8_t>(out.top);
       status.navigation = static_cast<uint8_t>(out.nav);
@@ -1200,8 +1268,8 @@ private:
       }
       if (!out.selected_reference.valid) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-          "MGM source %u reference invalid/stale: SAFE_STOP",
-          static_cast<unsigned>(out.path_source));
+          "MGM source %u reference invalid/stale: motion withheld (safety=%u)",
+          static_cast<unsigned>(out.path_source), static_cast<unsigned>(out.safety));
       }
     }
     TargetRef msg;
@@ -1300,7 +1368,11 @@ private:
   ReferenceClock reference_clocks_[MGM_SRC_ESCAPE];
   ReferenceClock preparation_clock_;
   ReferenceClock camera_clock_;
+  ReferenceClock traffic_camera_clock_;
   std::atomic<bool> start_ready_{false};
+  std::vector<std::string> required_lidar_topics_;
+  std::vector<int64_t> required_lidar_stamps_;
+  std::vector<rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr> required_lidar_subs_;
   bool session_requested_{false};
   bool operator_stop_{false};
   bool mission_cancel_requested_{false};
@@ -1322,6 +1394,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_operator_stop_;
   rclcpp::Subscription<fma_interfaces::msg::LanePath>::SharedPtr sub_lane_;
   rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr sub_camera_;
+  rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr sub_traffic_camera_;
   rclcpp::Subscription<fma_interfaces::msg::GpsPath>::SharedPtr sub_gps_;
   rclcpp::Subscription<fma_interfaces::msg::AvoidStatus>::SharedPtr sub_avoid_;
   rclcpp::Subscription<fma_interfaces::msg::ParkingStatus>::SharedPtr sub_parking_;

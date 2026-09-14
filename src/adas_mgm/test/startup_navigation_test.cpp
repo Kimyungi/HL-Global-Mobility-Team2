@@ -47,6 +47,26 @@ int main() {
   route.s.gps_at_end=true; route.tick(100);
   check(route.out.route.index==0 && !route.out.route.end_reached,
     "camera navigation cannot invent a GPS endpoint or advance a CSV");
+  Run no_lidar;
+  no_lidar.s.start_gate_enabled=true;
+  no_lidar.s.camera_available=no_lidar.s.gps_fixed_ready=true;
+  no_lidar.s.lidar_valid=false; no_lidar.tick();
+  check(no_lidar.out.top==TopState::AUTONOMOUS_ENABLE && no_lidar.out.v_ref==0,
+    "both navigation sensors cannot bypass missing LiDAR at start");
+  no_lidar.s.lidar_valid=true; no_lidar.tick();
+  check(no_lidar.out.v_ref>0, "valid LiDAR releases prepared start");
+  no_lidar.s.lidar_valid=false; no_lidar.tick();
+  check(no_lidar.out.v_ref==0 && no_lidar.out.safety==SafetyState::SAFE_STOP &&
+    (no_lidar.out.safe_stop_reasons & SAFE_STOP_LIDAR_INPUT),
+    "LiDAR loss during driving stops even with valid navigation");
+  Run parking_lidar;
+  parking_lidar.st.params.parking_zone_entry_active=1;
+  parking_lidar.s.start_gate_enabled=true; parking_lidar.s.camera_available=true;
+  parking_lidar.tick(); parking_lidar.zone(1, ZoneType::MISSION_ZONE, MissionType::T_PARKING);
+  parking_lidar.s.lidar_valid=false; parking_lidar.tick();
+  check(parking_lidar.out.mission==MissionState::MISSION_ACTIVE && parking_lidar.out.v_ref==0 &&
+    (parking_lidar.out.safe_stop_reasons & SAFE_STOP_LIDAR_INPUT),
+    "parking cannot mask LiDAR input loss");
   std::printf("startup_navigation_test: %d checks, %d failures\n",checks,failures);
   return failures ? 1 : 0;
 }

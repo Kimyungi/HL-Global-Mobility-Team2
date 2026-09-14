@@ -8,7 +8,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 
 from stack_avoid.node import StackAvoidNode
-from stack_avoid.path_planner import AvoidPathPlanner
+from stack_avoid.gps_cubic_path import GpsCubicPlanner, WaypointWindow
 from stack_avoid.surfaces import Surface, surface_clearance
 
 
@@ -18,7 +18,7 @@ def node():
            roi_angle=180.,
            cluster_dist=.1, surface_link_scale=3., surface_max_link=.3,
            max_range=12., vehicle_width=.62, lateral_margin=.15, depth_band=.6,
-           offset_max=1.6, corridor_half_width=.46, target_rate_mps=3., scan_rate_hz=10.,
+           offset_max=1.6, corridor_half_width=.46, detect_half_width=.46, target_rate_mps=3., scan_rate_hz=10.,
            _surfaces=[], _prev_center=None, _prev_center_t=None,
            _detected_prev=False, detect_range=3., detect_hysteresis=.4,
            ttc_stop=1.5, target_speed=1., _maneuver_armed=False, _done_until=0.,
@@ -29,10 +29,12 @@ def node():
            _recompute_derived=lambda: None)
     n.path_sample_time, n.path_spacing, n.path_preview, n.path_tail = .1, .05, 1., 3.
     n.path_pose_timeout = n.path_command_timeout = n.path_gps_timeout = .5
-    n._planner = AvoidPathPlanner(width=.62, length=.85, front=.76, margin=.15, min_radius=1.15)
-    n._poses = {'vehicle': ((0., 0., 0.), 99_900_000_000)}
+    n._planner = GpsCubicPlanner(width=.62, length=.85, front=.76, margin=.15, min_radius=1.15)
+    n._poses = {'gps': ((0., 0., 0.), 99_900_000_000)}
     n._pose_source = None
-    n._gps_goals, n._gps_stamp = {}, 0
+    n._gps_stamp, n._gps_route_key = 0, None
+    n._gps_waypoints = WaypointWindow(list(map(float, range(13))),
+                                    [(float(i), 0., 0., 0.) for i in range(13)], 0.)
     n._command_stamp, n._command_v, n._path_last_scan = 0, 0., 0
     n._completed = False
     n._publish_path = lambda scan, pose: None
@@ -42,7 +44,7 @@ def node():
     for name in ('on_scan', '_scan_surfaces', '_nearest_front_obstacle',
                  '_target_clear', '_behind_surface', '_front_only_scan',
                  '_fresh_stamp', '_path_pose', '_path_goals', '_station_reference',
-                 '_on_gps_path', '_store_vehicle_pose', '_on_path_command', '_on_path_session',
+                 '_on_gps_path', '_store_vehicle_pose', '_on_path_session',
                  '_on_set_params'):
         setattr(n, name, MethodType(getattr(StackAvoidNode, name), n))
     n._rp = StackAvoidNode._rp
@@ -83,8 +85,8 @@ def test_finite_obstacle_produces_one_target_with_surface_clearance(node):
     assert msg.ttc == pytest.approx(2.)
     assert len(msg.points) == 1
     p = msg.points[0]
-    assert 0.0 < p.x <= 1.0
-    assert n_preview_distance(node) == pytest.approx(1.)
+    assert p.x == pytest.approx(2.76)  # actual side point, not a preview sample
+    assert node._planner.return_station == pytest.approx(5.46)
     assert surface_clearance((p.x, p.y), node._surfaces) >= .46 - 1e-6
     assert msg.reference_stamp == scan.header.stamp
 
@@ -109,7 +111,7 @@ def test_obstacles_on_both_sides_keep_real_opening(node):
     node._surfaces = node._scan_surfaces(scan)
     # Exercise gap selection independently: this opening does not block straight travel.
     assert node._nearest_front_obstacle(scan) is None
-    goals = node._path_goals(scan, 2.)
+    goals = node._path_goals(scan)
     assert goals and goals[0][1] == pytest.approx(0., abs=.03)
 
 
@@ -167,3 +169,112 @@ def test_valid_parameter_update_changes_surface_connection(node):
 @pytest.mark.parametrize('value', [0., -1., math.nan, math.inf])
 def test_surface_parameter_validation(value):
     assert not StackAvoidNode._valid_surface_params(.1, value, .3)
+
+
+@pytest.mark.parametrize('gap,y,detected', [
+    (1.999999, 0., True), (2.000001, 0., False), (2.01, 0., False),
+    (1.8, .99, True), (1.8, -.99, True),
+    (1.8, 1.01, False), (1.8, -1.01, False),
+])
+def test_two_meter_one_meter_detection_area(node, gap, y, detected):
+    result = node._on_set_params([
+        Parameter('avoid.detect_range_m', value=2.),
+        Parameter('avoid.detect_half_width_m', value=1.),
+    ])
+    assert result.successful
+    assert node.vehicle_width == .62 and node.lateral_margin == .15
+    node._scan_surfaces = lambda scan: [Surface(((node.lidar_x+gap, y),))]
+    node.on_scan(scene_scan([]))
+    assert node.messages[-1].obstacle_detected == detected
+
+
+def test_detection_release_retains_existing_point_four_meter_hysteresis(node):
+    node.detect_range, node.detect_half_width = 2., 1.
+    node._detected_prev = True
+    node._scan_surfaces = lambda scan: [Surface(((node.lidar_x+2.3, .8),))]
+    node.on_scan(scene_scan([]))
+    assert node.messages[-1].obstacle_detected
+
+
+@pytest.mark.parametrize('x,width,angle', [(2.3, 0.4, 20), (2.3, 0.6, 15), (2.3, 0.6, 20), (2.5, 0.6, 15), (2.5, 0.6, 20), (2.7, 0.6, 15), (2.7, 0.6, 20), (2.86, 0.6, 15), (2.86, 0.6, 20), (3.05, 0.6, 15), (3.05, 0.6, 20)])
+def test_tilted_box_finds_nearby_feasible_target(node, x, width, angle):
+    # These scenes had a path at 0 degrees, but lost it at a small rotation.
+    node.offset_max, node.detect_range, node.detect_half_width = 2.5, 2., .5
+    yaw = math.radians(angle)
+    corners = [(x+math.cos(yaw)*dx-math.sin(yaw)*dy-node.lidar_x,
+                math.sin(yaw)*dx+math.cos(yaw)*dy)
+               for dx, dy in ((-.3, -width/2), (.3, -width/2),
+                              (.3, width/2), (-.3, width/2))]
+    scan = scene_scan(list(zip(corners, corners[1:]+corners[:1])))
+    node.on_scan(scan)
+    msg = node.messages[-1]
+    assert msg.obstacle_detected and len(msg.points) == 1
+    target = msg.points[0]
+    gap = node._nearest_front_obstacle(scan)[0]
+    assert node.lidar_x+gap-1e-6 <= target.x <= max(p[0] for s in node._surfaces for p in s.points)+.46+1e-6
+    assert abs(target.y) <= node.offset_max
+    assert node._planner.return_station-node._planner.goal_station == pytest.approx(2.7)
+    # The entire published curve still satisfies the original physical checks.
+    assert node._planner._safe(node._planner.path.points, node._surfaces)
+
+
+@pytest.mark.parametrize('angle', [-30., 30.])
+def test_face_based_goal_uses_observed_far_end_instead_of_nearest_band(node, angle):
+    node.offset_max, node.detect_range, node.detect_half_width = 2.5, 2., .5
+    yaw = math.radians(angle)
+    corners = [(3.05+math.cos(yaw)*dx-math.sin(yaw)*dy-node.lidar_x,
+                math.sin(yaw)*dx+math.cos(yaw)*dy)
+               for dx, dy in ((-.3, -.3), (.3, -.3), (.3, .3), (-.3, .3))]
+    scan = scene_scan(list(zip(corners, corners[1:]+corners[:1])))
+    node.on_scan(scan)
+    msg = node.messages[-1]
+    assert msg.obstacle_detected and len(msg.points) == 1
+    target = msg.points[0]
+    nearest = node.lidar_x+node._nearest_front_obstacle(scan)[0]
+    assert target.x > nearest+.3
+    assert target.x == pytest.approx(max(p[0] for s in node._surfaces for p in s.points))
+    assert node._planner._safe(node._planner.path.points, node._surfaces)
+    assert node._planner.return_station-node._planner.goal_station == pytest.approx(2.7)
+
+
+@pytest.mark.parametrize('x,width', [(3.05, .6), (2.4, .7)])
+@pytest.mark.parametrize('return_distance,expected', [(2., False), (2.7, True)])
+def test_45_degree_obstacle_recovers_with_longer_return(node, x, width, return_distance, expected):
+    node.offset_max, node.detect_range, node.detect_half_width = 2.5, 2., .5
+    node._planner.return_distance = return_distance
+    yaw = math.pi/4
+    corners = [(x+math.cos(yaw)*dx-math.sin(yaw)*dy-node.lidar_x,
+                math.sin(yaw)*dx+math.cos(yaw)*dy)
+               for dx, dy in ((-.3, -width/2), (.3, -width/2),
+                              (.3, width/2), (-.3, width/2))]
+    scan = scene_scan(list(zip(corners, corners[1:]+corners[:1])))
+    node.on_scan(scan)
+    assert bool(node.messages[-1].points) is expected
+    if expected:
+        assert node._planner.return_station-node._planner.goal_station == pytest.approx(2.7)
+        assert node._planner._safe(node._planner.path.points, node._surfaces)
+
+
+@pytest.mark.parametrize('gap,y,previous,expected', [
+    (3.499, 0., False, True), (3.501, 0., False, False),
+    (3.8, 0., False, False), (3.8, 0., True, True),
+    (3.899, 0., True, True), (3.901, 0., True, False),
+    (3.4, .499, False, True), (3.4, .501, False, False),
+])
+def test_three_point_five_meter_detection_and_hysteresis(node, gap, y, previous, expected):
+    node.detect_range, node.detect_half_width = 3.5, .5
+    node._detected_prev = previous
+    node._scan_surfaces = lambda scan: [Surface(((node.lidar_x+gap, y),))]
+    node.on_scan(scene_scan([]))
+    assert node.messages[-1].obstacle_detected is expected
+
+
+def test_early_detection_at_two_mps_can_produce_avoidable_reference(node):
+    node.detect_range, node.detect_half_width = 3.5, .5
+    node.offset_max = 2.5
+    node._ego_speed = lambda: 2.
+    node.on_scan(scene_scan([((3.4, -.2), (3.4, .2))]))
+    msg = node.messages[-1]
+    assert msg.obstacle_detected and msg.points and msg.avoidable
+    assert msg.ttc == pytest.approx(1.7)
+    assert node._planner._safe(node._planner.path.points, node._surfaces)

@@ -57,9 +57,9 @@ void stop_and_restart()
   check(near(r.out.v_ref,.005f), "restart begins at .005 rather than fixed 1 m/s");
   r.tick(119); check(near(r.out.v_ref,.6f), "restart reaches .6 over main acceleration ramp");
   r.s.avoid_ttc = .5f; r.tick();
-  check(r.out.v_ref==0 && r.out.safety==SafetyState::AUTO_ESTOP,"TTC immediate stop survives");
+  check(r.out.v_ref>0 && r.out.safety==SafetyState::NORMAL,"TTC alone does not stop v2");
   r.s.avoid_ttc = 100.f; r.tick();
-  check(near(r.out.v_ref,.005f), "TTC release also uses main ramp");
+  check(near(r.out.v_ref,.6f), "TTC changes do not reset avoidance speed");
   r.s.external_stop=true; r.tick(); check(r.out.v_ref==0,"external stop wins");
   r.s.external_stop=false; r.s.references[MGM_SRC_AVOID].age_s=1.f; r.tick();
   check(r.out.v_ref==0 && (r.out.safe_stop_reasons & SAFE_STOP_REFERENCE_INVALID),
@@ -97,7 +97,7 @@ void completion_and_return()
   check(r.out.avoid==AvoidState::INACTIVE && r.out.nav==NavState::LINE,
     "aligned station releases avoidance and reselects navigation without another hold");
   Run limited; configure(limited); limited.st.params.avoid_max_cycles=3;
-  limited.tick(); limited.obstacle(); limited.tick(3);
+  limited.tick(); limited.obstacle(); limited.s.avoid_obstacle_detected=false; limited.tick(3);
   check(limited.out.avoid==AvoidState::AVOID_ACTIVE,"main episode counter excludes entry tick");
   limited.tick(); check(limited.out.avoid==AvoidState::GPS_RETURN && limited.out.state==MGM_STATE_AVOID,
     "maneuver time limit starts GPS return instead of releasing avoidance");
@@ -161,6 +161,50 @@ void gps_return_guards_and_reverse_entry()
     "a new avoidable obstacle restarts maneuver steering during GPS return");
 }
 
+void obstacle_without_reference()
+{
+  Run r; configure(r); r.tick();
+  r.s.avoid_obstacle_detected=true; r.s.avoid_avoidable=false;
+  r.s.avoid_ttc=2.929f; r.s.avoid_path.n=0;
+  r.s.references[MGM_SRC_AVOID].generation=0;
+  r.tick();
+  check(r.out.state==MGM_STATE_AVOID && r.out.avoid==AvoidState::AVOID_ACTIVE &&
+    r.out.path_source==MGM_SRC_AVOID && r.out.v_ref==0 &&
+    (r.out.safe_stop_reasons & SAFE_STOP_REFERENCE_INVALID),
+    "detected obstacle without target claims AVOID and stops instead of following LINE");
+  r.st.params.avoid_max_cycles=3; r.tick(180);
+  check(r.out.path_source==MGM_SRC_AVOID && r.out.v_ref==0,
+    "waiting for a target never expires into LINE or GPS driving");
+  r.s.avoid_obstacle_detected=false; r.tick(10);
+  check(r.out.path_source==MGM_SRC_GPS && r.out.avoid==AvoidState::INACTIVE && r.out.v_ref>0,
+    "cleared obstacle with empty avoidance returns to valid GPS");
+  r.s.avoid_obstacle_detected=true; r.s.avoid_path.n=1;
+  r.s.references[MGM_SRC_AVOID]={2, 1.f, .5f}; r.s.avoid_avoidable=true; r.tick();
+  check(r.out.v_ref==0, "stale replacement target cannot release stop");
+  r.s.references[MGM_SRC_AVOID]={3, 0.f, .5f}; r.tick();
+  check(r.out.path_source==MGM_SRC_AVOID && near(r.out.v_ref,.005f),
+    "fresh replacement releases stop through avoidance acceleration ramp");
+  r.s.avoid_ttc=1.4f; r.s.avoid_avoidable=false; r.tick();
+  check(r.out.v_ref>0 && r.out.safety==SafetyState::NORMAL,
+    "provider avoidable flag does not create v2 E-stop");
+
+  Run returning; configure(returning); returning.obstacle();
+  returning.s.avoid_obstacle_detected=false; returning.s.avoid_maneuver_done=true;
+  returning.tick();
+  returning.s.avoid_obstacle_detected=true; returning.s.avoid_avoidable=false;
+  returning.s.avoid_path.n=0; returning.tick();
+  check(returning.out.avoid==AvoidState::AVOID_ACTIVE &&
+    returning.out.path_source==MGM_SRC_AVOID && returning.out.v_ref==0,
+    "new obstacle interrupts GPS return even with an old done flag and missing target");
+
+  Run idle; configure(idle); idle.s.avoid_path.n=0; idle.s.avoid_avoidable=false; idle.tick();
+  check(idle.out.avoid==AvoidState::INACTIVE && idle.out.v_ref>0,
+    "no obstacle and no active episode needs no avoidance target");
+  idle.st.params.avoid_zone_only=1; idle.s.gps_avoid_zone=false;
+  idle.s.avoid_obstacle_detected=true; idle.tick();
+  check(idle.out.avoid==AvoidState::INACTIVE, "explicit avoidance zone restriction remains effective");
+}
+
 void other_owners()
 {
   Run r; configure(r); r.tick();
@@ -184,7 +228,7 @@ void other_owners()
 }
 int main()
 {
-  wire_geometry_and_speed(); stop_and_restart(); completion_and_return(); gps_return_guards_and_reverse_entry(); other_owners();
+  wire_geometry_and_speed(); stop_and_restart(); completion_and_return(); gps_return_guards_and_reverse_entry(); obstacle_without_reference(); other_owners();
   std::printf("avoid_main_compat_test: %d checks, %d failures\n",checks,failures);
   return failures ? 1 : 0;
 }

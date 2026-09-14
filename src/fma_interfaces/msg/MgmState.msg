@@ -126,9 +126,17 @@ bool traffic_distance_known
 float32 traffic_remaining_m
 bool traffic_stop_in_success_region
 
-# Start authorization is camera-frame availability OR fresh RTK FIXED, independent
+# Start authorization requires live LiDAR AND (camera frame OR fresh RTK FIXED), independent
 # of lane detection. Driving reference validity is reported separately above.
 bool camera_available
 bool gps_fixed_ready
+bool lidar_ready
+string[] lidar_missing_topics
 bool start_ready
 bool go_authorized
+
+# bit 0 lane camera, 1 traffic camera, 2..5 raw LiDAR a1/a2/b1/b2, 6 GPS.
+# Any live bit prevents sensor-only SAFE_STOP. Availability != a usable driving path.
+uint8 sensor_alive_mask
+bool safe_stop_all_sensors_only
+bool reference_motion_blocked

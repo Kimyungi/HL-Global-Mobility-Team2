@@ -39,6 +39,7 @@ from fma_interfaces.msg import TrafficStop
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from std_msgs.msg import Header
 from stack_traffic.depth_utils import (
     StopLineDepthMeasurement,
     measure_stopline_depth,
@@ -517,6 +518,7 @@ class StackTrafficNode(Node):
         self.publisher = self.create_publisher(
             TrafficStop, "/perception/traffic_stop", 1
         )
+        self.camera_pub = self.create_publisher(Header, "/perception/traffic_camera", 1)
         self.debug_image_pub = self.create_publisher(Image, '/perception/traffic_debug_image', 1)
 
         self.red_history: Deque[int] = deque(maxlen=self.vote_window)
@@ -637,7 +639,8 @@ class StackTrafficNode(Node):
             f"startup_hold={int(self.startup_hold_latched)} "
             f"startup_yolo_required={self.vote_window} "
             f"resume_on_green={self.resume_on_green} "
-            f"resume_on_red_clear={self.resume_on_red_clear}"
+            f"resume_on_red_clear={self.resume_on_red_clear} "
+            f"resume_on_red_absence={self.resume_on_red_absence}"
         )
 
     def _open_camera(self) -> None:
@@ -851,6 +854,7 @@ class StackTrafficNode(Node):
         self.declare_parameter("stopline_stop_y_ratio", 0.0)
         self.declare_parameter("resume_on_green", True)
         self.declare_parameter("resume_on_red_clear", False)
+        self.declare_parameter("resume_on_red_absence", False)
         self.declare_parameter("show_debug", False)
         self.declare_parameter("show_auxiliary_debug", False)
         self.declare_parameter("print_every", 10)
@@ -1142,6 +1146,9 @@ class StackTrafficNode(Node):
         )
         self.resume_on_green = bool(
             self.get_parameter("resume_on_green").value
+        )
+        self.resume_on_red_absence = bool(
+            self.get_parameter("resume_on_red_absence").value
         )
         self.resume_on_red_clear = bool(
             self.get_parameter("resume_on_red_clear").value
@@ -1979,6 +1986,8 @@ class StackTrafficNode(Node):
             return
 
         self.last_camera_success_monotonic = time.monotonic()
+        # Only a successfully read frame renews physical camera health.
+        self.camera_pub.publish(Header(stamp=self.get_clock().now().to_msg()))
         if (
             self.camera_backend == "oak"
             and getattr(self.oak_camera, "depth_resized", False)
@@ -2011,7 +2020,7 @@ class StackTrafficNode(Node):
         signal_phase_frozen = should_freeze_signal_phase(
             self.red_phase_latched,
             self.resume_on_green,
-            self.resume_on_red_clear,
+            self.resume_on_red_clear or self.resume_on_red_absence,
         )
         yolo_ran, stopline_ran = choose_yolo_tasks(
             frame_index=self.frame_index,
@@ -2293,10 +2302,13 @@ class StackTrafficNode(Node):
                 ),
             )
         )
-        if vote_observation_valid:
-            self.red_history.append(red_raw)
+        # In the v2 absence policy, every successfully received image advances
+        # the vote window. Unknown/no target is a zero vote, not old red held
+        # forever. Failed camera reads return earlier and do not reach this code.
+        if vote_observation_valid or self.resume_on_red_absence:
+            self.red_history.append(red_raw if vote_observation_valid else 0)
             self.green_history.append(
-                green_raw if green_observation_fresh else 0
+                green_raw if vote_observation_valid and green_observation_fresh else 0
             )
             self.bbox_observed_history.append(
                 int(green_observation_fresh)
@@ -2321,12 +2333,14 @@ class StackTrafficNode(Node):
 
         # 적색과 정지선이 서로 다른 프레임에서 안정 검출되는 실차 패턴을 허용한다.
         # 한 번 확정한 적색은 bbox/YOLO 일시 소실로 해제하지 않고 fresh YOLO 또는
-        # 확정 적색 anchor의 초록 3/5만 전환 근거로 쓴다. 동시 활성에서는 적색 우선.
+        # 확정 적색 anchor의 초록 3/5만 전환 근거로 쓴다. v2의 red-absence 정책은
+        # 정상 영상의 현재 적색 투표 해제로도 풀린다. 동시 활성에서는 적색 우선.
         was_red_phase = self.red_phase_latched
         self.red_phase_latched = update_red_phase_latch(
             current=self.red_phase_latched,
             red_active=bool(red_active),
             green_active=bool(green_active),
+            resume_on_red_absence=self.resume_on_red_absence,
         )
 
         proximity_reached = bool(stopline_runtime.near)
@@ -2354,6 +2368,7 @@ class StackTrafficNode(Node):
             resume_on_green=self.resume_on_green,
             red_clear_active=bool(red_clear_active),
             resume_on_red_clear=self.resume_on_red_clear,
+            resume_on_red_absence=self.resume_on_red_absence,
         )
         if not was_stopped and self.stop_required_latched:
             self.stop_target_bbox = (
@@ -2481,7 +2496,7 @@ class StackTrafficNode(Node):
         self,
         stop_required: bool,
         stop_distance_m: float,
-        red_active: bool = False,
+        red_active: Optional[bool] = None,
         green_active: bool = False,
         stopline_detected: bool = False,
         fail_safe_stop: bool = True,
@@ -2495,7 +2510,8 @@ class StackTrafficNode(Node):
         )
         msg.stop_required = stop_required
         msg.stop_distance = float(stop_distance_m)
-        msg.red_active = red_active
+        # Failure-only publications do not fabricate a new no-red observation.
+        msg.red_active = self.red_phase_latched if red_active is None else red_active
         msg.green_active = green_active
         msg.stopline_detected = stopline_detected
         msg.fail_safe_stop = fail_safe_stop

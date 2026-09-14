@@ -22,8 +22,9 @@ Visualization Manager:
     Value: true
   - Class: rviz_default_plugins/MarkerArray
     Enabled: true
-    Name: Vehicle - GPS - Camera - Stop line - Parking
+    Name: Vehicle - GPS - Camera - Avoid - Stop line - Parking
     Namespaces:
+      AVOID_PATH: true
       light_label: true
       traffic_light_indicator: true
       vehicle: true

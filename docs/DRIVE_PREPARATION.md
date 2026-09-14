@@ -38,6 +38,9 @@ GPS 서비스가 없으면 `prepare`에서 자동으로 시작하므로 `gps-sta
 
 ## 출발 조건
 
+아래 허용 조건은 라이다 4대와 회피·E-stop 입력이 모두 정상일 때 적용된다.
+라이다가 하나라도 미수신/무효이면 카메라와 GPS 상태에 관계없이 대기한다.
+
 | 현재 입력 | 출발 인가 | 일반 구간 경로 선택 |
 |---|---|---|
 | 카메라 없음 + GPS FIXED(4) | 허용 | GPS |
@@ -45,16 +48,20 @@ GPS 서비스가 없으면 `prepare`에서 자동으로 시작하므로 `gps-sta
 | 카메라 영상 있음 + 차선 미검출 | 허용 | 준비된 유효 GPS 경로 |
 | 카메라 없음 + GPS가 FIXED 아님 | 대기 | 재인가 전 현재 입력 확인 |
 
-출발 점검은 카메라 **실제 프레임 수신** 또는 GPS **현재 FIXED(4)** 중 하나다.
-차선 confidence, 라이다/회피/신호등 토픽의 전부 수신을 필수로 요구하지 않는다.
+출발 점검은 **라이다 정상 AND (카메라 실제 프레임 수신 OR GPS 현재 FIXED(4))**다.
+통합 런처에서는 전후좌우 raw scan 4개(0.35초 이내), 회피·E-stop 입력을 확인한다.
+차선 confidence와 신호등 입력은 이 출발 조건과 별개다.
+현재 v2 주행 SAFE_STOP은 카메라 2대·라이다 4대·GPS가 전부 무효일 때만 발생한다.
+출발 인가의 라이다 필수 조건과 제어점 부재 시 속도 0 처리는 별도다.
+센서별 판정 및 진단 필드는 `RUN_BOOK_FINAL.md`를 따른다.
 `--require-traffic`을 직접 지정하면 그 추가 점검은 적용한다. 기존 `--skip-gps`와
 `--skip-lane`은 해당 출발 센서를 선택에서 제외하며, 둘 다 생략해 인가를 우회하지 않는다.
 `--force`도 MGM의 출발 준비 조건과 실제 제어 게이트를 해제하지 않는다.
 
 카메라 기동 신호 `/perception/lane_camera`는 새 영상의 캡처 시각을 담은 Header다.
 차선 검출이나 워밍업 완료와 독립적이며, 같은 영상/stamp를 반복해도 신선해지지 않는다.
-MGM의 `camera_available`, `gps_fixed_ready`, `start_ready`, `go_authorized`로 확인한다.
-RViz 상단의 PREP/CAM/GPS/GO 표시로 준비와 인가 상태를 확인할 수 있다.
+MGM의 `lidar_ready`, `lidar_missing_topics`, `camera_available`, `gps_fixed_ready`, `start_ready`, `go_authorized`로 확인한다.
+RViz 상단의 PREP/LIDAR/CAM/GPS/GO 표시로 준비와 인가 상태를 확인할 수 있다.
 CLI는 송신 완료만으로 성공 처리하지 않고 MGM의 인가 응답을 기다린다.
 
 GPS FIXED는 **출발 조건**이다. 주행 중 FLOAT가 되었다는 이유만으로 인가를 취소하지

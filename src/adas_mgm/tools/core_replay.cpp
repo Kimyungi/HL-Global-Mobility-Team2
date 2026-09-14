@@ -106,7 +106,7 @@ int main(int argc, char ** argv)
   if (h.params.base_state_machine_enabled) {
     out << ",route_phase,route_index,route_count,route_sequence_id,route_instance_id,route_request_id,route_requested_index,route_end_reached,route_completion,route_connecting,route_requested_connecting,mission_failed,mission_cancel_reason,parking_search_zone_only,parking_zone_entry_active";
   }
-  out << "\n";
+  out << ",sensor_alive_mask,reference_motion_blocked\n";
 
   CoreState st;
   mgm_init(st, h.params);  // 기록 당시 파라미터로 동일 조건 재생
@@ -147,7 +147,7 @@ int main(int argc, char ** argv)
           << ',' << o.active_mission_failed << ',' << static_cast<int>(o.mission_request.cancel_reason)
           << ',' << h.params.parking_search_zone_only << ',' << h.params.parking_zone_entry_active;
     }
-    out << '\n';
+    out << ',' << +s.sensor_alive_mask << ',' << o.reference_motion_blocked << '\n';
     ++tick;
   }
 

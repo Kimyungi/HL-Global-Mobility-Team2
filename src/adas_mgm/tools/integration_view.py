@@ -26,6 +26,7 @@ ORANGE = (1., .62, .08)
 CYAN = (.05, .85, 1.)
 PINK = (1., .18, .7)
 GREEN = (.2, 1., .35)
+YELLOW = (1., 1., .05)
 WHITE = (.9, .93, 1.)
 
 
@@ -87,6 +88,7 @@ class IntegrationView(Node):
             ('mgm', MgmState, '/adas/mgm_state'), ('target', TargetRef, '/adas/target_ref'),
             ('traffic', TrafficStop, '/perception/traffic_stop'), ('vehicle', VehicleVector, '/vehicle/vector'),
             ('avoid', AvoidStatus, '/perception/avoid'),
+            ('avoid_path', Path, '/perception/avoid_path'),
             ('parking', ParkingStatus, '/perception/parking'), ('pose', PoseStamped, '/parking/slam_pose'),
             ('map', PointCloud2, '/parking/local_map'), ('plan', Path, '/parking/reference_path'),
             ('active', Path, '/parking/active_path'), ('walls', MarkerArray, '/parking/debug_markers'),
@@ -214,9 +216,13 @@ class IntegrationView(Node):
             self.preview('CAMERA', lane, CYAN, .20)
         if target is not None:
             self.preview('MGM', target, PINK, .30)
+        avoid_path = self.get('avoid_path', .5)
+        if avoid_path is not None and avoid_path.header.frame_id.lstrip('/') == 'base_link':
+            self.line('AVOID_PATH', [(p.pose.position.x, p.pose.position.y)
+                                     for p in avoid_path.poses], YELLOW, .10, .15)
         avoid = self.get('avoid', .5, True)
         if avoid is not None and avoid.scan_valid:
-            self.preview('AVOID_TARGET', avoid, (1., 1., .05), .40)
+            self.preview('AVOID_TARGET', avoid, YELLOW, .40)
         if parking is not None and (not self.request_id or parking.request_id == self.request_id):
             self.preview('PARKING', self.get('parking', .5, True), GREEN, .25)
         dist_x = stop_line_x(state, self.front)
@@ -277,6 +283,7 @@ class IntegrationView(Node):
             cv2.putText(frame, value[:88], (16,y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
         preparation = ('PREP: NO MGM DATA' if state is None else
                        f'PREP: {"READY" if state.start_ready else "WAIT"} | '
+                       f'LIDAR {"OK" if state.lidar_ready else "MISSING"} | '
                        f'CAM {"ON" if state.camera_available else "--"} | '
                        f'GPS {"FIXED" if state.gps_fixed_ready else "--"} | '
                        f'GO {"YES" if state.go_authorized else "NO"}')

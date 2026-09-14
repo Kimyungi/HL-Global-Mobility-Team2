@@ -75,8 +75,17 @@ def main():
             expect(lambda s,r: s.top==1 and r.v_ref>0, 'mock LINE driving')
             assert node.count_publishers('/adas/target_ref') == 1
             assert node.count_subscribers('/adas/target_ref') == 1
+            avoid.obstacle_detected = True; avoid.avoidable = False
+            avoid.points = []; avoid.ttc = 2.93
+            expect(lambda s,r: s.avoidance==1 and s.reference_source==2 and
+                   s.safety==3 and r.v_ref==0,
+                   'detected obstacle with no target stops in AVOID despite healthy LINE')
+            spin(.5)
+            assert latest['ref'].v_ref == 0
+            avoid.points = [RefPoint(x=3., y=.5)]
             avoid.obstacle_detected = avoid.avoidable = True
-            expect(lambda s,r: s.avoidance==1 and s.reference_source==2, 'obstacle maneuver')
+            expect(lambda s,r: s.avoidance==1 and s.reference_source==2 and r.v_ref>0,
+                   'fresh target resumes obstacle maneuver')
             avoid.obstacle_detected = False; avoid.maneuver_done = True
             expect(lambda s,r: s.avoidance==3 and s.reference_source==1 and r.state==2 and
                    s.avoid_return_error_valid and abs(s.avoid_return_cross_track_m-.5)<1e-5,

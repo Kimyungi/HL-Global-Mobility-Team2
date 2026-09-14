@@ -35,10 +35,11 @@ void stops()
 {
   Run r; r.st.params.a_up = .5f; r.st.params.a_down = 1.5f;
   r.obstacle(); r.s.avoid_ttc = .5f; r.tick();
-  check(r.out.safety == SafetyState::AUTO_ESTOP && r.out.v_ref == 0 && r.st.v == 0,
-    "TTC still immediately stops fixed-speed motion");
+  check(r.out.safety == SafetyState::NORMAL && r.out.v_ref > 0 && !r.out.immediate_stop,
+    "short TTC does not stop v2 motion");
+  const float before=r.out.v_ref;
   r.s.avoid_ttc = 100.f; r.tick();
-  check(near(r.out.v_ref, .005f), "TTC release uses avoidance acceleration ramp");
+  check(r.out.v_ref >= before, "TTC changes do not restart the speed ramp");
   r.s.external_stop = true; r.tick();
   check(r.out.v_ref == 0 && r.out.immediate_stop, "operator/CAN external stop preserved");
   r.s.external_stop = false; r.s.auto_estop = true; r.tick();

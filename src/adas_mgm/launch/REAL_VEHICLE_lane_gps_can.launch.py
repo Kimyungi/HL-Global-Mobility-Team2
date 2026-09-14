@@ -313,7 +313,7 @@ def validate(context, log_dir=LOG_DIR, lidar_estop_enabled=True):
 def build_launch_description(
         log_dir=LOG_DIR, default_homography=DEFAULT_HOMOGRAPHY,
         default_lane_weights=os.path.expanduser('~/FMA_ws/src/stack_lane/models/yolopv2.pt'),
-        *, lidar_estop_enabled=True):
+        *, lidar_estop_enabled=True, required_lidar_topics=None):
     mgm_params = os.path.join(
         get_package_share_directory('adas_mgm'), 'config', 'params.yaml')
 
@@ -576,7 +576,7 @@ def build_launch_description(
         DeclareLaunchArgument('dynamic_tracking_max_distance_m', default_value='3.00'),
         DeclareLaunchArgument('estop_corridor_max_x_m', default_value='1.50'),
         DeclareLaunchArgument('dynamic_roi_max_x_m', default_value='1.50'),
-        DeclareLaunchArgument('avoid_target_speed_mps', default_value='1.0'),
+        DeclareLaunchArgument('avoid_target_speed_mps', default_value=LaunchConfiguration('v_base')),
         DeclareLaunchArgument('ttc_stop', default_value=str(_yaml['ttc_stop'])),
         DeclareLaunchArgument('v_accel_zone', default_value=str(_yaml['v_accel_zone'])),
 
@@ -625,8 +625,7 @@ def build_launch_description(
         # 발행하면 어느 쪽이 이길지 RViz 기동 타이밍에 따라 달라진다 (2026-08-09 규명).
 
         # ── stack_avoid (2026-08-12 통합) — 장애물 감지·회피 목표점 → MGM avoid 스테이트.
-        # 파라미터 단일 소스 = stack_avoid/config/params.yaml (target_speed_mps 1.0 =
-        # MGM v_base와 일치 유지할 것 — 2026-08-18에 둘 다 0.6→1.0).
+        # 기하 파라미터는 stack_avoid YAML, 목표속도 기본값은 MGM v_base를 따른다.
         # 현장 튜닝: ros2 param set /stack_avoid_node ...
         Node(
             package='stack_avoid',
@@ -798,6 +797,7 @@ def build_launch_description(
                 # CLAUDE.md §6). 패키지 기본은 자동 해제 없음이라 실차에서 켠다.
                 'resume_on_green': True,
                 'resume_on_red_clear': False,
+                'resume_on_red_absence': True,
             }],
             output='screen',
         ),
@@ -829,6 +829,7 @@ def build_launch_description(
                 # 출발 인가 게이트 — launch 직후 정지 대기, `ros2 run adas_mgm go`
                 # (RTK FIXED 등 점검 통과 시)로 출발 (2026-08-11)
                 'wait_go': True,
+                **({'required_lidar_topics': required_lidar_topics} if required_lidar_topics else {}),
                 'route_sequence_enabled': ParameterValue(
                     LaunchConfiguration('route_sequence_enabled_resolved'), value_type=bool),
                 # 시험별 목표속도. 기본은 params.yaml 값을 그대로 따르며, 실차 시험에서

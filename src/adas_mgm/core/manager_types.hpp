@@ -51,6 +51,7 @@ enum SafeStopReason : uint32_t
   SAFE_STOP_ZONE_CONTEXT_UNAVAILABLE = 1u << 8,
   SAFE_STOP_ROUTE_SEQUENCE = 1u << 9,
   SAFE_STOP_MISSION_ZONE_UNKNOWN = 1u << 10,
+  SAFE_STOP_LIDAR_INPUT = 1u << 11,
 };
 struct ReferenceSample
 {

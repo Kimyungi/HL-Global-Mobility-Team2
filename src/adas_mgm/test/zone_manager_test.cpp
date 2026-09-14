@@ -104,25 +104,19 @@ void authority_and_gaps()
   check(both.out.nav==NavState::GPS_ONLY_NAV && both.out.path_source==MGM_SRC_AVOID &&
     both.out.speed_owner==SpeedOwner::TRAFFIC && both.out.v_ref==0,
     "Z22: GPS-only + avoidance + approach yields one avoid reference and traffic stop");
-  Run clear; clear.obstacle(); const CoreOutput last=clear.out;
-  clear.s.avoid_obstacle_detected=false; clear.s.avoid_path.n=0; clear.s.vehicle_speed=1.f; clear.tick(199);
-  bool held=clear.out.n_points==last.n_points;
-  for(int i=0;i<MGM_NUM_POINTS;++i) {
-    held=held && near(clear.out.ref_points[i].x,last.ref_points[i].x) &&
-      near(clear.out.ref_points[i].y,last.ref_points[i].y) &&
-      near(clear.out.ref_points[i].yaw,last.ref_points[i].yaw) &&
-      near(clear.out.ref_points[i].curvature,last.ref_points[i].curvature);
-  }
-  check(clear.out.avoid==AvoidState::AVOID_ACTIVE && held && !clear.out.reference_available,
-    "Z23: empty avoidance path holds last assembled reference unchanged, no residual-point advance");
-  check(clear.out.v_ref==0 && clear.out.path_source==MGM_SRC_AVOID &&
-    (clear.out.safe_stop_reasons & SAFE_STOP_REFERENCE_INVALID),
-    "Z23 revision 4: held geometry is a stop output; invalid avoidance retains authority");
-  clear.tick(); check(clear.out.avoid==AvoidState::AVOID_ACTIVE && clear.out.v_ref==0,
-    "Z23: disappearance cannot release invalid active avoidance");
-  clear.s.avoid_maneuver_done=true; clear.tick();
-  check(clear.out.avoid==AvoidState::GPS_RETURN && clear.out.path_source==MGM_SRC_GPS,
-    "Z23: producer completion starts GPS return inside avoidance");
+  Run clear; clear.obstacle();
+  clear.s.avoid_obstacle_detected=false; clear.s.avoid_path.n=0;
+  clear.s.camera_line_valid=false; clear.s.vehicle_speed=1.f; clear.tick();
+  check(clear.out.avoid==AvoidState::INACTIVE && clear.out.reference_available &&
+    clear.out.path_source==MGM_SRC_GPS && clear.out.v_ref>0,
+    "Z23: empty avoidance with no obstacle and no LINE uses live GPS");
+  check(near(clear.out.ref_points[0].y,clear.s.gps_path.pts[0].y),
+    "Z23: output uses GPS geometry rather than holding the old avoidance point");
+  clear.tick(199);check(clear.out.path_source==MGM_SRC_GPS && clear.out.v_ref>0,
+    "Z23: GPS remains available without maneuver completion");
+  clear.s.avoid_maneuver_done=true;clear.tick();
+  check(clear.out.avoid==AvoidState::INACTIVE && clear.out.path_source==MGM_SRC_GPS,
+    "Z23: late producer completion does not restart an old avoidance episode");
   Run empty; empty.s.camera_line_valid=empty.s.gps_valid=false; empty.s.avoid_path.n=0; empty.tick();
   check(empty.out.path_source==MGM_SRC_AVOID && empty.out.n_points==1 &&
     empty.out.ref_points[0].x==0 && empty.out.ref_points[0].y==0 && empty.out.v_ref==0 &&

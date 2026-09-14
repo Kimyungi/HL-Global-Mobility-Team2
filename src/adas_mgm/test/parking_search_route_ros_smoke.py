@@ -17,7 +17,7 @@ if os.environ.get('ROS_LOCALHOST_ONLY') != '1' or os.environ.get('ROS_DOMAIN_ID'
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from std_msgs.msg import Bool
-from fma_interfaces.msg import (EstopRequest, GpsPath, LanePath, MgmState,
+from fma_interfaces.msg import (AvoidStatus, CanHealth, EstopRequest, GpsPath, LanePath, MgmState,
                                ParkingCommand, ParkingStatus, RefPoint, TargetRef, VehicleVector)
 sys.path.insert(0, str(Path(__file__).parents[2] / 'stack_gps'))
 import stack_gps.node as gps_module
@@ -53,6 +53,8 @@ def main():
     executor = SingleThreadedExecutor()
     executor.add_node(gps); executor.add_node(node)
     msgs = {'/perception/lane_path': LanePath(points=[RefPoint(x=2.5)], confidence=.9),
+            '/perception/avoid': AvoidStatus(scan_valid=True),
+            '/bridge/can_health': CanHealth(link_up=True),
             '/perception/estop': EstopRequest(scan_valid=True),
             '/perception/parking': ParkingStatus(), '/vehicle/vector': VehicleVector()}
     pubs = {topic: node.create_publisher(type(msg), topic, 10) for topic, msg in msgs.items()}
@@ -112,6 +114,8 @@ def main():
                                  f'state={states[-1:]}, target={refs[-1:]}')
         try:
             wait_for(lambda: states and refs and go.get_subscription_count(), 'mock GPS/MGM connected')
+            wait_for(lambda: states[-1].start_ready, 'GPS and LiDAR inputs ready before go')
+            for _ in range(10): spin()  # deliver healthy CAN samples before clearing its startup latch
             go.publish(Bool(data=True))
             wait_for(lambda: plan.index == 1 and states[-1].route.index == 1 and refs[-1].v_ref > 0,
                      '01 endpoint automatically enters uploaded 03 CSV')

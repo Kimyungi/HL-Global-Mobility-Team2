@@ -11,7 +11,7 @@ def generate_launch_description():
         '/operator/go', '/operator/start_session', '/operator/stop',
         '/operator/cancel_mission', '/parking/mission_command',
         '/adas/mgm_state', '/adas/target_ref', '/perception/lane_path',
-        '/perception/lane_camera', '/perception/gps_path', '/perception/avoid', '/perception/parking',
+        '/perception/lane_camera', '/perception/traffic_camera', '/perception/gps_path', '/perception/avoid', '/perception/parking',
         '/perception/traffic_stop', '/perception/estop', '/bridge/can_health',
         '/vehicle/vector',
     )

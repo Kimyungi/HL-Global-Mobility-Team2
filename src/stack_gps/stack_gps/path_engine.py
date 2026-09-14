@@ -335,7 +335,11 @@ class PathEngine:
         # current station index below.
         gps_only = (self._in_ranges(idx, self.gps_only_ranges) or
                     self._in_ranges(preview_idx, self.gps_only_ranges))
+        waypoint_stations, waypoint_world = track.window()
+        waypoint_points = [(c*(e-ev)+s*(n-nv), -s*(e-ev)+c*(n-nv),
+                            wrap_angle(a-psi), k) for e, n, a, k in waypoint_world]
         return dict(diagnostics, points=[(c*de+s*dn, -s*de+c*dn, wrap_angle(yaw-psi), curvature)],
+                    waypoint_stations=waypoint_stations, waypoint_points=waypoint_points,
                     idx=idx, cross_track_m=math.hypot(foot_e-ev, foot_n-nv),
                     station_yaw_error_rad=wrap_angle(track.heading()-psi),
                     station_error_valid=heading is not None,

@@ -158,7 +158,7 @@ struct CoreSnapshot
   bool external_stop;  // operator/CAN; never masked by parking or recovery
   bool camera_line_valid;
   bool gps_valid;
-  bool lidar_valid;  // fresh, valid scan consumed by existing avoidance module
+  bool lidar_valid;  // avoidance scan + required raw scans + E-stop input fresh/valid
   bool auto_estop;   // fresh LiDAR danger; excludes scan timeout and operator stop
   bool parking_valid;
   bool parking_updated;
@@ -181,6 +181,8 @@ struct CoreSnapshot
   bool rear_sensor_valid;  // includes actual rear generation freshness in wrapper
   RearCorridorState rear_corridor_state;
   RouteFeedback route;
+  // Physical sensor availability: lane camera, traffic camera, a1/a2/b1/b2, GPS.
+  uint8_t sensor_alive_mask;
 };
 
 // 튜닝 파라미터 — params.yaml과 1:1, Simulink에서는 tunable parameter
@@ -304,6 +306,7 @@ struct CoreParams
   int32_t route_sequence_enabled;  // opt-in; single CSV and historical parity remain unchanged
   int32_t parking_zone_entry_active;  // enter Parking/search on Zone, GPS until ready; done/current CSV end releases
   int32_t avoidance_enabled;  // parallel Manager: 0 disables ordinary avoidance and LiDAR fallback
+  int32_t safe_stop_all_sensors_only;  // v2 SAFE_STOP iff all seven sensors unavailable
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -395,6 +398,7 @@ struct CoreOutput
   uint32_t mission_events;
   bool active_mission_completed;
   bool reference_available;
+  bool reference_motion_blocked;  // output contract hold, independent of SAFE_STOP policy
   ZoneState zones;
   uint8_t active_mission_id;
   ReferenceStatus references[MGM_REFERENCE_PROVIDERS];

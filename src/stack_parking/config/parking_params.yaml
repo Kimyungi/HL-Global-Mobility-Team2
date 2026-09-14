@@ -50,9 +50,12 @@
       max_steering_deg: 30.0
 
     gps:
-      # GpsPath delta is previous-base_link -> current-base_link. Only exact
-      # RTK FIXED quality 4 + HEADING_FUSED is accepted; FLOAT(5), tangent and
-      # reverse-ambiguous COG are intentionally rejected.
+      # GpsPath position_x/y use waypoint ENU: east/north metres, yaw CCW
+      # from east. A fixed SE(2) alignment maps them into parking_map using
+      # the first trusted position + fused vehicle heading. CSV yaw is not
+      # assumed to be vehicle heading. Alignment survives RTK/update gaps.
+      # Accept only fresh RTK FIXED + valid position + HEADING_FUSED.
+      timeout_s: 0.5
       use_position_correction: true
       use_yaw_fallback: true
       fix_quality: 4

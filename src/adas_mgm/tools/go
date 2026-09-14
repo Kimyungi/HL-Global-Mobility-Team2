@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""출발 인가: 실제 카메라 영상 OR GPS FIXED(4). 센서 전체 수신을 기다리지 않는다.
+"""출발 인가: 라이다 정상 수신 AND (실제 카메라 영상 OR GPS FIXED(4)).
 
 카메라 기동과 차선 검출은 별개다. MGM 상태가 알리는 영상 수신/GPS 준비 중
-하나면 인가하고, 조향 경로·E-stop·CAN·미션 조건은 MGM이 별도로 적용한다.
+하나와 필수 라이다 입력이 모두 준비되면 인가하고, 조향 경로·E-stop·CAN·미션 조건은 MGM이 별도로 적용한다.
 stop 뒤 go는 중지를 해제하고 재인가한다. GPS 상주 서비스는 건드리지 않는다.
 """
 import argparse
@@ -21,7 +21,7 @@ def main():
     parser.add_argument('--timeout', type=float, default=8.)
     parser.add_argument('--skip-gps', action='store_true', help='카메라만으로 준비 판단')
     parser.add_argument('--skip-lane', action='store_true', help='GPS만으로 준비 판단')
-    parser.add_argument('--skip-avoid', action='store_true', help='호환 옵션: 회피 입력은 출발 필수 조건이 아님')
+    parser.add_argument('--skip-avoid', action='store_true', help='호환 옵션: 라이다 필수 검사는 생략하지 않음')
     parser.add_argument('--require-traffic', action='store_true', help='신호등 heartbeat를 추가로 요구')
     parser.add_argument('--force', action='store_true', help='CLI 점검 생략; MGM의 준비/제어 게이트는 유지')
     argv = sys.argv[1:]
@@ -45,8 +45,10 @@ def main():
             if (result[0] or args.force) and pub.get_subscription_count():
                 break
         print(f'카메라 영상={result[1]} | GPS FIXED={result[2]} | MGM={result[3]}')
+        state = latest.get('state')
+        print(f'라이다 정상={bool(state and state.lidar_ready)} | 미수신/무효={list(state.lidar_missing_topics) if state else ["MGM 미수신"]}')
         if not result[0] and not args.force:
-            print('출발 대기: 카메라 영상 또는 GPS FIXED(4)가 필요합니다.')
+            print('출발 대기: 라이다 정상 수신 AND (카메라 영상 OR GPS FIXED)가 필요합니다.')
             return 1
         # Repetition handles discovery loss; success is the MGM acknowledgment.
         sent_after_ns = node.get_clock().now().nanoseconds
@@ -56,7 +58,7 @@ def main():
             rclpy.spin_once(node, timeout_sec=.1)
             state = latest.get('state')
             if (state is not None and state.header.stamp.sec*1_000_000_000+state.header.stamp.nanosec >= sent_after_ns
-                    and state.go_authorized and readiness(latest, node.get_clock().now().nanoseconds)[3]):
+                    and state.go_authorized and state.start_ready and readiness(latest, node.get_clock().now().nanoseconds)[3]):
                 print('출발 인가 완료 (MGM 확인). 실제 이동은 선택된 경로와 제어 조건에 따릅니다.')
                 return 0
         print('MGM 출발 인가 확인 실패 — scripts/v2 state로 준비 상태를 확인하세요.')

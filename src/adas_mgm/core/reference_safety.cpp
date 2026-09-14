@@ -43,8 +43,17 @@ void final_reference_gate(CoreOutput & out, CoreState & st)
     out.selected_reference.valid = false;
     if (out.path_source < MGM_REFERENCE_PROVIDERS) {out.references[out.path_source].valid = false;}
   }
-  if (!out.selected_reference.valid || !std::isfinite(out.v_ref)) {
-    out.safe_stop_reasons |= SAFE_STOP_REFERENCE_INVALID;
+  out.reference_motion_blocked = !out.selected_reference.valid || !std::isfinite(out.v_ref);
+  if (out.reference_motion_blocked) {
+    if (st.params.safe_stop_all_sensors_only) {
+      // Invalid steering commands never leave the core. This is an output
+      // contract hold, independent of the sensor-only SAFE_STOP state.
+      out.v_ref = st.v = 0.0f;
+      out.immediate_stop = true;
+      out.speed_owner = SpeedOwner::SAFETY;
+    } else {
+      out.safe_stop_reasons |= SAFE_STOP_REFERENCE_INVALID;
+    }
   }
   if (out.safe_stop_reasons != 0) {
     out.v_ref = st.v = 0.0f;  // includes negative parking/recovery speed

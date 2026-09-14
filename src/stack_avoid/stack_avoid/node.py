@@ -81,10 +81,15 @@ class StackAvoidNode(StationPathIO, Node):
         self.roi_angle = self.declare_parameter('avoid.roi_angle_deg', 180.0).value
         self.ttc_stop = self.declare_parameter('avoid.ttc_stop_s', 1.5).value
         self.lateral_margin = self.declare_parameter('avoid.lateral_margin_m', 0.15).value
-        self.detect_range = self.declare_parameter('avoid.detect_range_m', 3.0).value
+        self.detect_range = self.declare_parameter('avoid.detect_range_m', 3.5).value
+        # Detection area is independent of the vehicle collision clearance.
+        self.detect_half_width = self.declare_parameter('avoid.detect_half_width_m', 0.5).value
+        if not all(math.isfinite(v) and v > 0 for v in
+                   (self.detect_range, self.detect_half_width)):
+            raise ValueError('detection range and half width must be finite and positive')
         self.max_range = self.declare_parameter('avoid.max_range_m', 12.0).value
         # 회피 목표점 측방 오프셋 상한
-        self.offset_max = self.declare_parameter('avoid.offset_max_m', 1.0).value
+        self.offset_max = self.declare_parameter('avoid.offset_max_m', 2.5).value
         # 이 깊이 밴드에 걸친 연결 윤곽 전체를 양쪽 고려한다.
         self.depth_band = self.declare_parameter('avoid.depth_band_m', 0.6).value
         self.cluster_dist = float(self.declare_parameter('avoid.cluster_dist_m', 0.10).value)
@@ -132,13 +137,13 @@ class StackAvoidNode(StationPathIO, Node):
         self.get_logger().info(
             f"stack_avoid: '{self.scan_topic}' 구독 | 차폭 {self.vehicle_width}m, "
             f"LiDAR(x={self.lidar_x},y={self.lidar_y},z={self.lidar_z}) | "
-            f"통로반폭 {self.corridor_half_width:.2f}m, 전방FOV {self.roi_angle}deg, "
+            f"검출반폭 {self.detect_half_width:.2f}m, 통로반폭 {self.corridor_half_width:.2f}m, 전방FOV {self.roi_angle}deg, "
             f"forward={math.degrees(self.front_center):.0f}deg, "
             f"detect<{self.detect_range}m, ttc_stop {self.ttc_stop}s, v={self.target_speed}m/s")
 
     def _recompute_derived(self):
         """실측/튜닝값에서 파생되는 내부값 갱신."""
-        # 내 경로 위 장애물로 볼 좌우 반폭 = 차폭/2 + 측방 여유
+        # 차량 충돌 여유 반폭. 장애물 검출 영역은 detect_half_width로 별도 설정한다.
         self.corridor_half_width = self.vehicle_width / 2.0 + self.lateral_margin
         # roi_angle_deg = 전방 FOV 전체 각도 (180 = 앞쪽 180°, ±90°)
         self.front_half_angle = math.radians(self.roi_angle / 2.0)
@@ -170,6 +175,10 @@ class StackAvoidNode(StationPathIO, Node):
     def _on_set_params(self, params):
         """런타임 파라미터 변경 반영. scan_topic·장착값은 재시작 권장."""
         proposed = {p.name: p.value for p in params}
+        if not all(math.isfinite(v) and v > 0 for v in (
+                proposed.get('avoid.detect_range_m', self.detect_range),
+                proposed.get('avoid.detect_half_width_m', self.detect_half_width))):
+            return SetParametersResult(successful=False, reason='invalid detection range or half width')
         width = proposed.get('vehicle.width_m', self.vehicle_width)
         margin = proposed.get('avoid.lateral_margin_m', self.lateral_margin)
         if not (math.isfinite(width) and width > 0 and math.isfinite(margin) and margin >= 0):
@@ -191,6 +200,8 @@ class StackAvoidNode(StationPathIO, Node):
                 self.lateral_margin = p.value
             elif p.name == 'avoid.detect_range_m':
                 self.detect_range = p.value
+            elif p.name == 'avoid.detect_half_width_m':
+                self.detect_half_width = p.value
             elif p.name == 'avoid.max_range_m':
                 self.max_range = p.value
             elif p.name == 'avoid.offset_max_m':
@@ -210,7 +221,7 @@ class StackAvoidNode(StationPathIO, Node):
         self._recompute_derived()
         self._publish_static_tf()   # forward_angle 변경 시 TF도 갱신(스캔 방향 일치)
         self.get_logger().info(
-            f"param 변경 → 통로반폭 {self.corridor_half_width:.2f}m, 전방FOV {self.roi_angle}deg, "
+            f"param 변경 → 검출반폭 {self.detect_half_width:.2f}m, 통로반폭 {self.corridor_half_width:.2f}m, 전방FOV {self.roi_angle}deg, "
             f"forward={math.degrees(self.front_center):.0f}deg, v={self.target_speed}m/s")
         return SetParametersResult(successful=True)
 
@@ -252,6 +263,8 @@ class StackAvoidNode(StationPathIO, Node):
         if not msg.scan_valid:
             # Invalid data cannot certify clearance, advance station or finish.
             msg.obstacle_detected = self._detected_prev
+            self._planner.path = None
+            self._publish_path(scan, None)
             self.pub.publish(msg)
             return
         self._path_last_scan = stamp
@@ -267,15 +280,15 @@ class StackAvoidNode(StationPathIO, Node):
             msg.ttc = float(gap/speed)
         if msg.obstacle_detected and self._completed:
             self._planner.reset()
-            self._pose_source = None
             self._completed = False
-        if not self._completed:
-            point, done, generation = self._station_reference(scan, gap, msg.obstacle_detected)
-            if point is not None:
-                msg.points = [self._rp(*point)]
-                msg.reference_stamp.sec = generation//1_000_000_000
-                msg.reference_stamp.nanosec = generation%1_000_000_000
-            self._completed = done and not msg.obstacle_detected
+        if self._completed:
+            self._planner.reset()
+        point, done, generation = self._station_reference(scan, gap, msg.obstacle_detected)
+        if point is not None:
+            msg.points = [self._rp(*point)]
+            msg.reference_stamp.sec = generation//1_000_000_000
+            msg.reference_stamp.nanosec = generation%1_000_000_000
+        self._completed = (self._completed or done) and not msg.obstacle_detected
         msg.maneuver_done = self._completed
         msg.avoidable = bool(msg.points) and msg.ttc >= self.ttc_stop
         msg.narrow_gap = msg.obstacle_detected and not msg.points
@@ -365,7 +378,7 @@ class StackAvoidNode(StationPathIO, Node):
         `_surfaces` is rebuilt once per on_scan before detection/target selection.
         The LiDAR x is the front bumper; return (bumper distance, vehicle y).
         """
-        return nearest_in_corridor(self._surfaces, self.lidar_x, self.corridor_half_width)
+        return nearest_in_corridor(self._surfaces, self.lidar_x, self.detect_half_width)
 
 
 def main(args=None):

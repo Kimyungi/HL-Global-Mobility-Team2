@@ -12,6 +12,7 @@ def readiness(latest, now_ns, *, skip_gps=False, skip_camera=False, require_traf
     current = state is not None and fresh(state.header.stamp, now_ns)
     camera = current and state.camera_available and not skip_camera
     gps = current and state.gps_fixed_ready and not skip_gps
+    lidar = current and state.lidar_ready
     traffic = latest.get('traffic')
     traffic_ok = not require_traffic or (traffic is not None and fresh(traffic.header.stamp, now_ns))
-    return bool(current and (camera or gps) and traffic_ok), bool(camera), bool(gps), bool(current), bool(traffic_ok)
+    return bool(current and lidar and (camera or gps) and traffic_ok), bool(camera), bool(gps), bool(current), bool(traffic_ok)
