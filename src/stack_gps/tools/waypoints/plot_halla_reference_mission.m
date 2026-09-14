@@ -7,7 +7,11 @@ scriptDir = fileparts(mfilename('fullpath'));
 waypointDir = fullfile(scriptDir, '..', '..', 'waypoints');
 
 pathColors = lines(7);
-zoneColors = [1.00 0.15 0.10; 1.00 0.72 0.00; 0.00 0.80 0.90];
+zoneColors = [ ...
+    1.00 0.15 0.10
+    1.00 0.72 0.00
+    0.00 0.80 0.90
+    0.78 0.05 0.78];
 zoneCorners = readtable(fullfile(waypointDir, ...
     'halla_reference_zone_corners.csv'), 'VariableNamingRule', 'preserve');
 
@@ -15,7 +19,7 @@ fig = figure('Color', 'w', 'Name', 'Halla reference mission');
 ax = axes(fig);
 hold(ax, 'on');
 
-zoneHandles = gobjects(3, 1);
+zoneHandles = gobjects(4, 1);
 for zoneId = 1:3
     rows = zoneCorners.zone_id == zoneId;
     east = zoneCorners.east_m(rows);
@@ -29,10 +33,13 @@ for zoneId = 1:3
         'HorizontalAlignment', 'center', 'FontWeight', 'bold', ...
         'Color', zoneColors(zoneId, :) .* 0.65);
 end
+zoneHandles(4) = plot(ax, nan, nan, '-', ...
+    'Color', zoneColors(4, :), 'LineWidth', 4.0, ...
+    'DisplayName', 'Zone 4: parking approach');
 
 pathHandles = gobjects(7, 1);
-stateEast = nan(3, 1);
-stateNorth = nan(3, 1);
+stateEast = nan(4, 1);
+stateNorth = nan(4, 1);
 for pathId = 1:7
     pathFile = fullfile(waypointDir, ...
         sprintf('waypoints_halla_reference_path_%02d.csv', pathId));
@@ -46,7 +53,20 @@ for pathId = 1:7
             'Color', zoneColors(zoneId, :), 'MarkerSize', 7, ...
             'HandleVisibility', 'off');
     end
-    for stateId = 1:3
+    parkingApproachRows = T.zone_id == 4;
+    if any(parkingApproachRows)
+        plot(ax, T.east_m(parkingApproachRows), ...
+            T.north_m(parkingApproachRows), '-', ...
+            'Color', zoneColors(4, :), 'LineWidth', 4.0, ...
+            'HandleVisibility', 'off');
+        approachStart = find(parkingApproachRows, 1, 'first');
+        text(ax, T.east_m(approachStart), T.north_m(approachStart), ...
+            'ZONE 4: GPS PARKING APPROACH  ', ...
+            'Color', zoneColors(4, :) .* 0.75, ...
+            'FontWeight', 'bold', 'HorizontalAlignment', 'right', ...
+            'VerticalAlignment', 'bottom');
+    end
+    for stateId = 1:4
         stateRow = find(T.state == stateId, 1);
         if ~isempty(stateRow)
             stateEast(stateId) = T.east_m(stateRow);
@@ -56,11 +76,11 @@ for pathId = 1:7
 end
 
 stateLabels = ["STATE 1: T PARKING", "STATE 2: PARALLEL PARKING", ...
-    "STATE 3: TRAFFIC SIGNAL"];
-stateMarkers = ['p', 's', 'd'];
-stateColors = [0 0 0; 0.55 0 0.75; 0.85 0 0];
-stateHandles = gobjects(3, 1);
-for stateId = 1:3
+    "STATE 3: TRAFFIC SIGNAL", "STATE 4: OBSTACLE AVOIDANCE"];
+stateMarkers = ['p', 's', 'd', '^'];
+stateColors = [0 0 0; 0.55 0 0.75; 0.85 0 0; 0.00 0.45 0.20];
+stateHandles = gobjects(4, 1);
+for stateId = 1:4
     stateHandles(stateId) = plot(ax, stateEast(stateId), stateNorth(stateId), ...
         stateMarkers(stateId), ...
         'MarkerSize', 13, 'MarkerFaceColor', 'w', ...
