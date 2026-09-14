@@ -43,6 +43,43 @@ bool gps_return_aligned(const CoreSnapshot & s)
     std::isfinite(s.gps_cross_track) && std::isfinite(s.gps_station_yaw_error) &&
     std::fabs(s.gps_cross_track) <= 0.1f && std::fabs(s.gps_station_yaw_error) <= kYawLimit;
 }
+void update_avoid_zone(const CoreSnapshot & s, CoreState & st)
+{
+  auto & m = st.managers;
+  if (st.params.avoid_zone_only && m.route.changed) {
+    // The new CSV has its own start marker and the producer resets its frame.
+    m.avoid = AvoidState::INACTIVE;
+    m.avoid_fallback_only = false;
+    m.clear_count = st.avoid_ticks = st.return_hold_left = 0;
+  }
+  if (!st.params.avoid_zone_only || m.route.changed) {
+    m.avoid_zone_inside = m.avoid_zone_maneuver_seen = m.avoid_zone_completed = false;
+    m.avoid_zone_enter_count = m.avoid_zone_exit_count = 0;
+    m.avoid_zone_generation = 0;
+  }
+  if (!st.params.avoid_zone_only) {return;}
+  const bool valid = gps_valid(s) && s.zones.zone_valid && s.zones.generation != 0 &&
+    st.params.zone_enter_confirm_samples > 0 && st.params.zone_exit_confirm_samples > 0;
+  if (!valid || s.zones.generation < m.avoid_zone_generation) {
+    // Lost GPS cannot certify exit or cancel a confirmed zone's ownership.
+    m.avoid_zone_enter_count = m.avoid_zone_exit_count = 0;
+    return;
+  }
+  if (s.zones.generation == m.avoid_zone_generation) {return;}
+  m.avoid_zone_generation = s.zones.generation;
+  if (s.gps_avoid_zone) {
+    m.avoid_zone_exit_count = 0;
+    if (!m.avoid_zone_inside && ++m.avoid_zone_enter_count >= st.params.zone_enter_confirm_samples) {
+      m.avoid_zone_inside = true;
+    }
+  } else {
+    m.avoid_zone_enter_count = 0;
+    if (m.avoid_zone_inside && ++m.avoid_zone_exit_count >= st.params.zone_exit_confirm_samples) {
+      m.avoid_zone_inside = false;
+      m.avoid_zone_completed = false;
+    }
+  }
+}
 bool line_return_ready(const CoreSnapshot & s, const CoreState & st)
 {
   return line_valid(s) && st.lane_high_cnt >= st.params.n_cycles &&
@@ -175,6 +212,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool was_zone = m.gps_only_context;
   zone_step(s.zones, gps_valid(s), m.zones,
     st.params.zone_enter_confirm_samples, st.params.zone_exit_confirm_samples);
+  update_avoid_zone(s, st);
   m.gps_only_context = m.zones.in_gps_only_zone;
   if (s.new_session || (m.route.enabled && m.route.session_reset_pending &&
     m.route.phase == RoutePhase::RUNNING)) {
@@ -248,6 +286,33 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
       st.return_hold_left = 0;
       if (was_avoiding) {nav_reselect(s, st);}
     }
+  } else if (st.params.avoid_zone_only) {
+    // Zone entry itself claims AVOID, even before an obstacle is detected.
+    // Empty/stale references stop through the final gate without falling back
+    // to LINE. The CSV marker starts an episode; only a completed waypoint
+    // return ends it. The consumed marker cannot repeatedly start that episode.
+    if (m.avoid_zone_inside && !m.avoid_zone_completed) {
+      if (m.avoid == AvoidState::INACTIVE) {m.avoid_zone_maneuver_seen = false;}
+      m.avoid = AvoidState::AVOID_ACTIVE;
+    }
+    if (m.avoid == AvoidState::AVOID_ACTIVE) {
+      if (s.avoid_obstacle_detected) {m.avoid_zone_maneuver_seen = true;}
+      if (s.lidar_valid && !s.avoid_obstacle_detected &&
+        st.escape_phase == MGM_ESCAPE_NONE &&
+        m.avoid_zone_maneuver_seen && s.avoid_maneuver_done)
+      {
+        m.avoid = AvoidState::GPS_RETURN;
+        m.avoid_zone_completed = true;
+        nav_reselect(s, st);
+      }
+    } else if (m.avoid == AvoidState::GPS_RETURN && gps_return_aligned(s) && !s.auto_estop) {
+      m.avoid = AvoidState::INACTIVE;
+      m.avoid_zone_maneuver_seen = false;
+      st.return_hold_left = 0;
+      nav_reselect(s, st);
+    }
+    m.clear_count = 0;
+    m.avoid_fallback_only = false;
   } else if (st.escape_phase == MGM_ESCAPE_REVERSING) {
     // Reverse and its following maneuver are one avoidance episode.
     m.avoid = AvoidState::AVOID_ACTIVE;
@@ -336,7 +401,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
         // A vanished obstacle from signal waiting must not keep an empty
         // avoidance episode in charge. A current obstacle/reverse maneuver
         // still owns its reference and all independent stop gates remain.
-        if (s.lidar_valid && !s.avoid_obstacle_detected &&
+        if (!st.params.avoid_zone_only && s.lidar_valid && !s.avoid_obstacle_detected &&
           st.escape_phase == MGM_ESCAPE_NONE)
         {
           m.avoid = AvoidState::INACTIVE;
@@ -440,7 +505,8 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     st.escape_phase = MGM_ESCAPE_REVERSING;
     st.escape_ticks = 0;
     m.recovery_waiting_reference = false;
-    if (st.params.avoidance_enabled) {
+    if (st.params.avoidance_enabled && (!st.params.avoid_zone_only ||
+      (m.avoid_zone_inside && !m.avoid_zone_completed) || m.avoid == AvoidState::AVOID_ACTIVE)) {
       m.avoid = AvoidState::AVOID_ACTIVE;
       m.avoid_fallback_only = false;
       m.clear_count = st.avoid_ticks = st.return_hold_left = 0;

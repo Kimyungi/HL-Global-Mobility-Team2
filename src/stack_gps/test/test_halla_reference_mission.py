@@ -66,7 +66,7 @@ def test_path_graph_connects_except_for_the_parking_handoff():
     assert _xy(paths[3][-1]) == _xy(paths[4][0])
     # Path 4 finishes the parallel-parking maneuver. Path 5 deliberately
     # resumes from its separate post-parking start point.
-    assert _xy(paths[4][-1]) == (-62.335, -72.648)
+    assert _xy(paths[4][-1]) == (-63.042107, -71.940893)
     assert _xy(paths[5][0]) == (-64.335, -70.648)
     assert _xy(paths[5][-1]) == _xy(paths[6][0]) == _xy(paths[7][0])
     assert _xy(paths[6][-1]) == _xy(paths[1][0])
@@ -80,7 +80,7 @@ def test_updated_parking_control_points_are_sampled():
         (-35.02, -36.958),
         (-64.335, -67.648),
         (-64.335, -70.648),
-        (-62.335, -72.648),
+        (-63.042107, -71.940893),
     }.issubset(path_4)
     assert {
         (-64.335, -70.648),
@@ -121,17 +121,18 @@ def test_parking_markers_match_requested_positions():
         assert abs(parking_points[0]['lon'] - float(marked[0]['lon'])) < 1e-8
 
 
-def test_mission_state_codes_and_signal_marker():
+def test_mission_state_codes_and_transition_markers():
     expected = {
         1: (3, 145, 'perpendicular'),
         2: (4, 163, 'parallel'),
         3: (5, 300, 'none'),
+        4: (4, 55, 'none'),
     }
     marked = []
     for path_id in range(1, 8):
         for row in _load_path(path_id):
             state = int(row['state'])
-            assert state in (0, 1, 2, 3)
+            assert state in (0, 1, 2, 3, 4)
             if state:
                 marked.append((state, path_id, int(row['idx']), row['parking_mode']))
     assert sorted(marked) == [
@@ -174,13 +175,28 @@ def test_mission_yaml_state_definitions_match_csv():
         1: 'perpendicular_parking',
         2: 'parallel_parking',
         3: 'traffic_signal',
+        4: 'obstacle_avoidance',
     }
     assert [(point['state'], point['path_id'], point['idx'])
             for point in mission['state_points']] == [
                 (1, 3, 145),
                 (2, 4, 163),
                 (3, 5, 300),
+                (4, 4, 55),
             ]
+
+
+def test_path_4_final_straight_is_shortened_by_one_meter():
+    rows = _load_path(4)
+    assert len(rows) == 192
+    straight_start = (-64.335, -70.648)
+    end = _xy(rows[-1])
+    assert end == (-63.042107, -71.940893)
+    assert math.isclose(
+        math.hypot(end[0] - straight_start[0], end[1] - straight_start[1]),
+        math.sqrt(8.0) - 1.0,
+        abs_tol=1e-6,
+    )
 
 
 def test_route_zone_files_reference_the_matching_track():

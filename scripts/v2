@@ -54,6 +54,8 @@ case "$V2_ACTION" in
       "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
     export ROS_DOMAIN_ID=187
     /usr/bin/python3 src/adas_mgm/test/gps_cubic_avoid_ros_smoke.py "$V2_ROOT"
+    export ROS_DOMAIN_ID=193
+    /usr/bin/python3 src/adas_mgm/test/gps_cubic_avoid_ros_smoke.py "$V2_ROOT" --zone-entry
     export ROS_DOMAIN_ID=182
     /usr/bin/python3 src/adas_mgm/test/startup_ros_smoke.py \
       "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"

@@ -188,10 +188,13 @@
 > 이번 선택은 GPS manifest 해석 단계이며 선택과 탐색 정책의 현재 bus/raw dump는 v15다.
 > 현재 사용자가 지정한 실차 run은 `route_start_id=01`, `route_end_id=07`이다.
 
-> 2026-09-12 한라대 데이터: 손상민 PR #86 / `28ba409`의 경로별 Zone·CSV·표식을 v2에 반영한다.
-> CSV state 1=T자, 2=평행은 대응 YAML 주차점과 동기화한다. 3=신호 예상 위치는 메타데이터이며
-> Signal 전이를 위치만으로 강제하지 않는다. Path 3의 GPS-only Zone 3은 업로드된 idx 28~116을 사용한다.
-> 경로 순서는 위 정정 기준을 적용하며 원본 좌표 기하를 변경하지 않는다.
+> 2026-09-14 한라대 데이터: 손상민 PR #98 / `8796cdd`의 Path 4 state=4(idx 55),
+> 1m 단축 종점 `(-63.042107,-71.940893)`과 GPS-only 구간 끝점을 사용한다.
+> CSV state 1/2 주차점과 state 3 신호 예상 위치의 기존 역할은 유지한다.
+> v2 기본 `avoid_zone_only=true`: state=4/GPS 회피 시작 구간 확인으로 AVOID_ACTIVE 진입,
+> 실제 회피 후 waypoint 복귀 완료 및 GPS 0.1m/20° 정렬로 종료한다.
+> 무검출·타이머·신호 해제로 회피를 끝내지 않으며 같은 표식은 재실행하지 않는다.
+> [회피 Zone 상태 전이](docs/AVOID_ZONE_ENTRY.md)가 이전 회피 시작·종료 정책보다 우선한다.
 
 > Integration v2 분리 기준: [docs/INTEGRATION_V2.md](docs/INTEGRATION_V2.md). 기존 main은 보존하며 v2 전용 소스/build/install에서만 통합한다.
 

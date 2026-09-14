@@ -2,8 +2,24 @@
 
 GPS를 먼저 연결하고, 그 연결을 유지한 채 통합 주행을 시작하는 순서다.
 이 노트북의 저장소 위치는 `/home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main`이다.
-아래 명령은 모두 이 폴더에서 실행한다. 변경사항을 처음 받았거나 pull 후
-메시지 형식·빌드 대상이 바뀌었다면 GPS 실행 전에 재빌드한다.
+아래 명령은 모두 이 폴더에서 실행한다. 손상민의 PR #98(`8796cdd`)에 있는
+Path 4 `state=4` 표식과 1m 단축된 경로·GPS-only 종료 좌표를 반영했다.
+
+## 0. 회피 Zone 전이 변경 빌드 — GPS 실행 전
+
+**CSV `state=4`가 회피 시작 지점이다.** 한라 Path 4의 idx 55를 통과한 GPS 관측이
+5회 확인되면 장애물이 없어도 `AVOID_ACTIVE`에 진입한다. 진입 전 일반 구간에서는
+장애물 검출만으로 회피 상태에 들어가지 않는다. 독립 라이다 E-stop은 계속 적용된다.
+
+회피를 시작한 뒤에는 장애물 소실·시간 경과·구간 이탈만으로 종료하지 않는다.
+실제 장애물 회피 후 플래너의 웨이포인트 복귀 완료를 확인하고 `GPS_RETURN`으로
+전환한 뒤, 현재 GPS 횡오차 0.1m 이하·헤딩 오차 20° 이하이면 일반 주행으로 돌아간다.
+완료된 같은 시작 표식은 다시 실행하지 않는다. 장애물을 아직 만나지 않은 동안에는
+회피 상태에서 기존 GPS station+1m 참조를 추종하며 회피를 기다린다.
+
+Path 4 마지막 행은 idx 191, ENU 끝점 `(-63.042107, -71.940893)`이다.
+CSV와 Zone YAML은 이 저장소의 같은 버전을 사용한다. 아래 빌드 후 통합 런처를
+다시 시작해야 변경된 MGM 로직이 적용된다.
 
 ```bash
 cd /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main
@@ -81,13 +97,47 @@ sudo /usr/bin/python3 scripts/v2_recover_lidars.py --apply
 
 ```bash
 cd /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main
-scripts/v2 prepare REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
+scripts/v2 prepare \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  start_waypoint:=01 end_waypoint:=07 \
+  parking_enabled:=true parking_zone_entry_active:=true \
+  avoidance_enabled:=true avoid_zone_only:=true \
+  traffic_enabled:=true rviz:=true
 ```
 
 기존 GPS 연결을 재사용하고 센서·MGM·RViz를 실행한다.
 실제 CAN 송신을 활성화하며, 출발 인가를 기다린다.
-기본 경로는 한라대 `01 → 03 → 04 → 05 → 07`이다.
+위 명령은 `REAL_VEHICLE_integration_v2_drive.launch.py`를 실행하여
+한라대 **`01 → 03 → 04 → 05 → 07`** 순서로 주행한다.
+`src/stack_gps/waypoints/halla_route_sequence.yaml`에서 각 경로의 CSV와 Zone YAML을
+함께 읽으며 PR #98의 수정 경로와 이번 회피 시작 조건을 사용한다.
 이 터미널은 실행 상태로 둔다.
+
+| 경로 | 적용 미션·구간 |
+| --- | --- |
+| 01 | 시작 경로. 종점 및 해당 경로의 미션 완료 후 03으로 전환 |
+| 03 | GPS-only Zone 3(idx 28~116), 주차 접근 Zone 4(idx 133~145), T자 주차 표식(idx 145) |
+| 04 | `state=4`(idx 55)부터 회피 상태 진입 → 웨이포인트 복귀 시 종료, 평행 주차(idx 163), 1m 단축된 최종 직선 |
+| 05 | 주차 후 복귀 경로, 신호 예상 표식 `state=3`(idx 300) |
+| 07 | 선택한 종료 경로 |
+
+주차는 각 Zone YAML의 주차점과 기존 MGM 진입 조건으로 실행한다.
+`state=4`는 실제 회피 진입 신호다. `avoid_zones: []`여도 CSV 표식을 읽어
+시작 조건을 구성하며, GPS의 `avoid_zone`은 표식 이후 현재 CSV 끝까지 true다.
+이는 시작 지점 통과를 놓치지 않기 위한 신호이며 CSV 끝이 회피 종료 조건은 아니다.
+`avoidance_enabled:=true`는 기능 사용, `avoid_zone_only:=true`는 표식/구간에 따른
+진입·복귀 완료 정책을 선택한다. 평행 주차 등 미션의 기존 우선권은 유지한다.
+신호 표식도 위치만으로 정지를 강제하지 않으며 실제 카메라 인식 조건을 적용한다.
+
+04 끝점 `(-63.042107, -71.940893)`과 05 시작점 `(-64.335, -70.648)`은
+주차 후 인계를 위한 별도 위치다. 두 점을 직선 주행 구간으로 추가하지 않는다.
+경로 전환에는 기존 종점·주차 완료 조건이 적용된다.
+
+기동 로그에서 `[v2 drive] route: 01 -> 03 -> 04 -> 05 -> 07`을 확인한다.
+같은 로그에 표시되는 세션 폴더의 `route_selected.yaml`에 실제 사용한 CSV와
+Zone YAML 절대 경로가 기록된다. 시작·종료 경로를 바꾸려면 `start_waypoint`와
+`end_waypoint`를 수정하고 런처를 다시 실행한다. 이 런처에서는 `waypoint_csv`,
+`zones_file`, `route_sequence_file`을 별도 인자로 덮어쓰지 않는다.
 
 **터미널 2**를 열어 출발을 인가한다.
 
@@ -157,9 +207,8 @@ GPS 전용 구역은 `GPS_ONLY_NAV`, 일반 구역은 `GPS_BACKUP`으로 전환�
 해제한다. 따라서 정상 영상에서 신호등이 보이지 않는 경우도 적색 해제가 될 수 있다.
 카메라 읽기 실패는 새로운 무적색 영상으로 투표하지 않고 직전 적색 상태를 보존한다.
 
-신호 해제 시 유효 라이다에서 장애물도 사라졌으면, 대기 중 남은 회피 상태와
-MGM의 회피 카운터/참조 확인 기록을 정리해 빈 회피점이 GPS 재출발을 막지 않게 한다.
-여전히 장애물이 검출되거나 후진 회피 중이면 해당 회피 판단을 유지한다.
+신호 해제 시에도 표식으로 시작한 회피 상태는 유지한다. 장애물이 사라졌다는
+이유로 회피 상태를 초기화하지 않으며, 실제 웨이포인트 복귀 완료 조건을 적용한다.
 GPS 참조가 없으면 속도 0으로 대기한다. CAN/사용자 정지·AUTO_ESTOP·주차 권한은
 각자의 조건을 계속 적용한다. 이번 변경으로 CAN 고장 래치가 자동 해제되지는 않는다.
 기존 런처를 재시작하면 적용되며, 이미 실행 중인 노드에는 소급 적용되지 않는다.
@@ -184,13 +233,13 @@ HTML에서는 탐색 반폭 조절기로 후보 범위를 실험할 수 있으�
 `None`=미선택이며, `side_switched`는 이번 계산에서 선택 방향이 바뀌었는지 나타낸다.
 HTML의 **목표점 안정화 · 45° ±1cm 관측**에서 **다음 관측** 버튼으로 확인한다.
 
-일반 주행에서 회피 기능이 활성화되고 회피 허용 구역 조건을 만족하면,
-장애물 검출 시 차선/GPS 경로보다 회피 대응이 우선한다. 회피 목표점이
+일반 주행 중 CSV state=4 또는 지정 회피 구간의 진입이 확인되면,
+장애물 유무와 관계없이 회피 상태가 차선/GPS 주행 선택보다 우선한다. 회피 목표점이
 없거나 오래됐고 장애물이 여전히 검출되면 `AVOID_ACTIVE`에서 새 참조를 기다린다.
 이때 사용할 제어점이 없으면 `reference_motion_blocked=true`, `v_ref=0`이지만
 AUTO_ESTOP이나 SAFE_STOP 사유 4를 추가하지 않는다.
-장애물이 없고 회피 참조가 비거나 오래됐으면 유효 GPS 참조로 바로 전환한다.
-차선이 없어도 GPS를 따르며, 신호 해제나 maneuver_done을 기다리지 않는다.
+회피 상태에서 참조가 비거나 오래되면 장애물 검출 해제 여부와 관계없이
+새 참조를 기다린다. 복귀 완료를 확인하기 전에 GPS로 우회하지 않는다.
 
 회피 경로는 GPS 웨이포인트의 누적 station+1m 시작점 → 장애물 옆 회피점 →
 회피점의 GPS station+2.7m 복귀점을 3차 곡선으로 연결한다. +1m 시작 곡선이
@@ -206,6 +255,7 @@ CAN 위치나 단일 GPS 기준점으로 대체하지 않는다. 경로가 복�
 current_pose_fallback을 확인한다. RViz `/perception/avoid_path`는 갱신된 경로만
 표시한다. 상세 정의는 [회피 경로 문서](docs/AVOID_STATION_PATH.md)에 있다.
 주차 미션의 기존 우선순위는 별도로 적용된다.
+회피 시작·종료 조건은 [회피 Zone 상태 전이](docs/AVOID_ZONE_ENTRY.md)에 정리했다.
 
 ## 주행 중지와 종료
 

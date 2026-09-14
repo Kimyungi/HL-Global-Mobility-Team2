@@ -1,5 +1,10 @@
 # MGM 병행 Manager / MBD 단일 명세 — 6차
 
+> **2026-09-14 회피 시작·종료 개정:** [회피 Zone 상태 전이](AVOID_ZONE_ENTRY.md)가 아래 이전 회피 조건보다 우선한다.
+> v2 기본 `avoid_zone_only=true`: CSV state=4/GPS 회피 구간 확인 → AVOID_ACTIVE,
+> 실제 회피 후 waypoint 복귀 완료 → GPS_RETURN 정렬 → INACTIVE. 무검출/타이머 종료와
+> 구간 밖 Nav fallback/자동후진에 의한 일반 AVOID 진입은 적용하지 않는다.
+
 > **주차 진입 정지·5프레임 수집:** [현재 동작](PARKING_LEFT_WALL_ACQUISITION.md)이 이전 즉시 GPS 탐색 설명보다 우선한다.
 > 주차 진입 즉시 정지 → fresh CAN |v_act| ≤0.1m/s → 새 LiDAR 5프레임 → GPS 탐색 재개. raw dump v24.
 
