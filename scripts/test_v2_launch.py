@@ -52,6 +52,7 @@ def test_vehicle_defaults_use_v2_and_refuse_before_hardware(monkeypatch):
     assert values['parking_zone_entry_active'] == 'true'
     assert values['parking_search_zone_only'] == 'false'
     assert values['avoidance_enabled'] == 'true'
+    assert values['avoid_zone_only'] == 'true'
     assert values['escape_after_cycles'] == '1000'
     assert values['parking_search_timeout'] == values['max_parking_search_distance'] == '-1.0'
     before = set((ROOT / 'drive_logs').glob('*'))
@@ -82,6 +83,11 @@ def test_avoidance_on_default_and_explicit_override_reach_mgm(monkeypatch, entry
     # Resolve only parameter values; do not execute nodes or validation actions.
     params = evaluate_parameters(context, mgm._Node__parameters)[1]
     assert params['avoidance_enabled'] is (enabled != 'false')
+    assert params['avoid_zone_only'] is True
+    avoid = next(item for item in description.entities
+                 if isinstance(item, Node) and item.node_package == 'stack_avoid')
+    avoid_params = evaluate_parameters(context, avoid._Node__parameters)[1]
+    assert avoid_params['avoid.require_mgm_active'] is True
     assert params['parking_zone_entry_active'] is True
     assert params['lidar_estop_enabled'] is ('no_estop' not in entry)
     assert params['escape_after_cycles'] == (0 if 'no_estop' in entry else 1000)

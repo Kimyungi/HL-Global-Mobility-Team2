@@ -134,6 +134,10 @@ if(BUILD_TESTING)
   target_link_libraries(avoid_main_compat_test mgm_core)
   add_test(NAME avoid_main_compat_test COMMAND avoid_main_compat_test)
 
+  add_executable(avoid_zone_entry_test test/avoid_zone_entry_test.cpp)
+  target_link_libraries(avoid_zone_entry_test mgm_core)
+  add_test(NAME avoid_zone_entry_test COMMAND avoid_zone_entry_test)
+
   add_executable(parking_entry_test test/parking_entry_test.cpp)
   target_link_libraries(parking_entry_test mgm_core)
   add_test(NAME parking_entry_test COMMAND parking_entry_test)

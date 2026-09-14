@@ -268,17 +268,15 @@ def validate(context, log_dir=LOG_DIR, lidar_estop_enabled=True):
               + (f' (+ 인자 지정 {stop_pts})' if stop_pts else ''))
     zone_only = LaunchConfiguration('avoid_zone_only').perform(context) == 'true'
     avoid_zone = LaunchConfiguration('avoid_zone_latlon').perform(context)
-    if zone_only and not (n_avoid or avoid_zone):
-        print('[launch] ══════════════════════════════════════════════════')
-        print('[launch] ⚠⚠ 회피 전면 차단 (avoid_zone_only:=true + 구간 없음) — '
-              '장애물은 회피 없이 stack_estop 정지로만 대응한다')
-        print('[launch]    구간은 `mark_zone avoid_start` / `avoid_end` 로 찍는다. '
-              '인자를 빼면 기본값 false = 어디서나 회피')
-        print('[launch] ══════════════════════════════════════════════════')
+    n_markers = sum(str(row.get('state', '')).strip() == '4' for row in rows)
+    if zone_only and route_file:
+        print('[launch] 회피 시작은 경로별 CSV state=4/YAML 구간, 종료는 waypoint 복귀')
+    elif zone_only and n_avoid == 0 and not avoid_zone and n_markers == 0:
+        print('[launch] 현재 CSV에 회피 시작 표식/구간 없음 — 일반 회피 진입 없음')
     elif zone_only:
-        print(f'[launch] 회피 허용 구간에서만 회피 (구간 {n_avoid}개)')
+        print(f'[launch] 회피 시작 표식 {n_markers}개, YAML 구간 {n_avoid}개 — waypoint 복귀 시 종료')
     else:
-        print('[launch] 회피 구간 제한 없음 (기본) — 어디서나 회피')
+        print('[launch] avoid_zone_only=false — 장애물 검출 기반 일반 회피')
     # 카메라를 안 띄우는 run(lane_enabled:=false)에선 호모그래피 유무가 무의미
     if LaunchConfiguration('lane_enabled').perform(context) == 'true':
         homography = LaunchConfiguration('homography_path').perform(context)
@@ -410,24 +408,13 @@ def build_launch_description(
         DeclareLaunchArgument('parking_zone_span_m', default_value='1.0',
                               description='주차 지점 구간 폭 [m] (진입 판정 여유)'),
 
-        # ── 회피 허용 구간 (2026-08-18). avoid_zone_only:=true 면 이 구간 **안에서만**
-        # AVOID 전이가 일어난다.
-        #
-        # ★ 기본값은 **끔**이다 (2026-08-25 복구). CLAUDE.md §4·params.yaml 이 정한
-        #   기본이 "어디서나 회피"인데, 2026-08-19 에 이 launch 만 true 로 켜 두었다가
-        #   **원주 전용 운용 선택이 전 코스의 기본이 되어 버렸다.** 한라대에서 그대로
-        #   터졌다 — run_mbd_0825_162752: stack_avoid 가 장애물을 잡고 회피 경로까지
-        #   냈는데(avoidable 1.49s) 구간을 안 찍었다는 이유로 AVOID 에 못 들어가고
-        #   그대로 직진하다 estop 정지. 구간 제한이 필요한 코스에서 **명시적으로 켤 것**:
-        #     avoid_zone_only:=true
-        #   (원주 운전면허시험장 절차: RUNBOOK_avoid_field_test.md)
-        #   구간 지정: avoid_zone_latlon:="lat1,lon1,lat2,lon2" (구간의 시작·끝 좌표)
-        # ⚠ 켠 상태에서 구간 밖 장애물을 만나면 회피가 아니라 stack_estop 정지로 대응한다
-        #   (MGM 의 TTC 안전 바닥은 AVOID 스테이트 안에서만 걸리기 때문).
+        # GPS state=4 또는 YAML 회피 구간이 시작 신호다. base manager는
+        # 장애물 유무와 관계없이 진입하고 실제 waypoint 복귀까지 유지한다.
+        # 구간 밖에서는 독립 stack_estop이 장애물 정지를 담당한다.
         DeclareLaunchArgument('avoid_zone_latlon', default_value=''),
         DeclareLaunchArgument('avoidance_enabled', default_value=str(_yaml['avoidance_enabled']).lower(),
-                              description='Enable ordinary avoidance authority and its TTC stop; perception stays on'),
-        DeclareLaunchArgument('avoid_zone_only', default_value='false'),
+                              description='Enable avoidance authority; independent LiDAR E-stop remains separate'),
+        DeclareLaunchArgument('avoid_zone_only', default_value='true'),
 
         # ── GPS 전용 모드: LANE 전이 차단 (히스테리시스 임계를 2.0으로 — confidence는
         # 최대 1.0이라 절대 도달 불가 → 항상 WAYPOINT). 야간 등 차선 오검출이 위험한
@@ -632,6 +619,8 @@ def build_launch_description(
             executable='stack_avoid_node',
             name='stack_avoid_node',
             parameters=[avoid_params, {
+                'avoid.require_mgm_active': ParameterValue(
+                    LaunchConfiguration('avoid_zone_only'), value_type=bool),
                     'target_speed_mps': ParameterValue(
                         LaunchConfiguration('avoid_target_speed_mps'), value_type=float),
                     'scan_topic': PythonExpression([

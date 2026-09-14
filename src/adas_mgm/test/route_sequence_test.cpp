@@ -34,8 +34,13 @@ int main() {
     check(r.out.route.request_id==request && r.out.v_ref==0, "retransmit uses one request");
     ack(r); r.s.gps_at_end=false; r.tick();
     check(r.out.route.phase==RoutePhase::WAIT_ACK, "same generation cannot acknowledge new geometry");
+    r.st.params.avoid_zone_only = 1;
+    r.st.managers.avoid = AvoidState::AVOID_ACTIVE;
+    r.st.managers.avoid_zone_inside = r.st.managers.avoid_zone_maneuver_seen = true;
     fix(r);
     check(r.out.route.index==1 && r.out.route.changed && r.out.v_ref==0, "fresh acknowledgement handoff remains stopped for this tick");
+    check(r.out.avoid==AvoidState::INACTIVE && !r.st.managers.avoid_zone_inside &&
+      !r.st.managers.avoid_zone_maneuver_seen, "CSV handoff discards previous avoidance marker and episode");
     fix(r);
     check(r.out.v_ref>0 && r.out.route.seen_nonterminal, "same go automatically resumes next route");
     fix(r,true);

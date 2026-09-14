@@ -26,6 +26,7 @@ state_definitions:
   1: perpendicular_parking
   2: parallel_parking
   3: traffic_signal
+  4: obstacle_avoidance
 
 state_points:
 - state: 1
@@ -49,6 +50,13 @@ state_points:
   north_m: -17.805034
   lat: 37.30401387
   lon: 127.90735992
+- state: 4
+  path_id: 4
+  idx: 55
+  east_m: -44.504265
+  north_m: -46.887118
+  lat: 37.30375183
+  lon: 127.90703081
 
 # 사각형의 자세한 네 꼭짓점과 위경도는 halla_reference_zone_corners.csv가 정본이다.
 gps_only_rectangles:

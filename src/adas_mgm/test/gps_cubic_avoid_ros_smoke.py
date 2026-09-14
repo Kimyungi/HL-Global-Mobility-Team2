@@ -21,6 +21,7 @@ from fma_interfaces.msg import (GpsPath, AvoidStatus, RefPoint, LanePath,
 
 def main():
     root = Path(sys.argv[1]).resolve()
+    zone_entry = '--zone-entry' in sys.argv[2:]
     rclpy.init()
     node = rclpy.create_node('gps_cubic_synthetic_inputs')
     gps = GpsPath(fix_quality=4, position_valid=True, vehicle_heading_valid=True,
@@ -54,10 +55,13 @@ def main():
         try:
             procs.append(subprocess.Popen([str(root/'install_v2/stack_avoid/lib/stack_avoid/stack_avoid_node')]+
                 common+['--params-file', str(root/'src/stack_avoid/config/params.yaml'),
-                        '-p', 'lidar_mount.forward_angle_deg:=0.0'],stdout=log,stderr=log))
+                        '-p', 'lidar_mount.forward_angle_deg:=0.0',
+                        '-p', f'avoid.require_mgm_active:={str(zone_entry).lower()}'],stdout=log,stderr=log))
             procs.append(subprocess.Popen([str(root/'install_v2/adas_mgm/lib/adas_mgm/mgm_node')]+
                 common+['-p','wait_go:=false','-p','base_state_machine_enabled:=true',
                         '-p','avoidance_enabled:=true','-p','avoid_max_cycles:=0',
+                        '-p',f'avoid_zone_only:={str(zone_entry).lower()}',
+                        '-p','zone_enter_confirm_samples:=5','-p','zone_exit_confirm_samples:=5',
                         '-p','escape_after_cycles:=0','-p','blend_cycles:=0'],stdout=log,stderr=log))
             def expect(condition, text):
                 end = time.monotonic()+8.
@@ -71,9 +75,15 @@ def main():
                     if len(latest)==4 and condition(latest):
                         print('PASS:',text,flush=True);return
                 log.seek(0);print(log.read()[-6000:])
+                print({key: (str(value)[:2500]) for key,value in latest.items() if key != 'path'})
                 raise AssertionError(text)
-            expect(lambda m: m['ref'].v_ref>0 and len(m['avoid'].points)==1,
-                   'clear scene publishes GPS-based point and permits normal navigation')
+            expect(lambda m: m['ref'].v_ref>0 and len(m['avoid'].points)==(0 if zone_entry else 1),
+                   'clear scene permits normal navigation; zone mode waits for MGM activation')
+            if zone_entry:
+                gps.avoid_zone = True
+                expect(lambda m: m['state'].avoidance==1 and m['state'].reference_source==2 and
+                       len(m['avoid'].points)==1 and not m['avoid'].obstacle_detected,
+                       'marker enters AVOID with no obstacle and activates the real planner')
             scan.ranges=[1.9/math.cos(math.radians(i-90))
                          if abs(1.9*math.tan(math.radians(i-90)))<=.2 else math.inf
                          for i in range(181)]
@@ -89,6 +99,18 @@ def main():
             expect(lambda m: m['state'].reference_source==2 and m['ref'].v_ref>0 and
                    len(m['avoid'].points)==1 and len(m['path'].poses)>10,
                    'restored GPS window rebuilds path and resumes avoidance')
+            if zone_entry:
+                scan.ranges = [math.inf]*181
+                cleared = time.monotonic()
+                expect(lambda m: time.monotonic()-cleared>.2 and not m['avoid'].obstacle_detected,
+                       'clear scan reaches planner before advancing synthetic GPS pose')
+                gps.position_x = gps.waypoint_station_m = 5.3
+                gps.waypoint_points = [RefPoint(x=float(i)-5.3) for i in range(13)]
+                expect(lambda m: m['state'].avoidance==0 and m['ref'].v_ref>0 and not m['avoid'].points,
+                       'actual cubic waypoint return releases AVOID and deactivates planner')
+                start = time.monotonic()
+                expect(lambda m: time.monotonic()-start>1. and m['state'].avoidance==0 and not m['avoid'].points,
+                       'consumed marker stays inactive while GPS avoid_zone remains true')
         finally:
             for proc in procs:
                 if proc.poll() is None: proc.send_signal(signal.SIGINT)

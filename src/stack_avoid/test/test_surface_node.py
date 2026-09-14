@@ -37,6 +37,7 @@ def node():
                                     [(float(i), 0., 0., 0.) for i in range(13)], 0.)
     n._command_stamp, n._command_v, n._path_last_scan = 0, 0., 0
     n._completed = False
+    n.require_mgm_active, n._mgm_active, n._mgm_stamp = False, False, 0
     n._publish_path = lambda scan, pose: None
     n.messages = []
     n.pub = NS(publish=n.messages.append)
@@ -44,7 +45,7 @@ def node():
     for name in ('on_scan', '_scan_surfaces', '_nearest_front_obstacle',
                  '_target_clear', '_behind_surface', '_front_only_scan',
                  '_fresh_stamp', '_path_pose', '_path_goals', '_station_reference',
-                 '_on_gps_path', '_store_vehicle_pose', '_on_path_session',
+                 '_on_gps_path', '_on_mgm_state', '_store_vehicle_pose', '_on_path_session',
                  '_on_set_params'):
         setattr(n, name, MethodType(getattr(StackAvoidNode, name), n))
     n._rp = StackAvoidNode._rp

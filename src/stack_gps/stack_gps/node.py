@@ -45,7 +45,7 @@ from stack_gps.route_plan import RoutePlan, copy_geometry
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
 from stack_gps.imu_link import ImuLink
-from stack_gps.path_engine import PathEngine, PoseDeltaTracker, load_waypoints_csv, wrap_angle
+from stack_gps.path_engine import PathEngine, PoseDeltaTracker, load_waypoints_csv, wrap_angle, avoidance_marker_range
 
 
 def _pair_ranges(flat, name, logger):
@@ -269,7 +269,8 @@ class StackGpsNode(Node):
             def factory(files):
                 # Each route gets independent station history; source geometry stays unchanged.
                 self.engine = copy_geometry(initial_engine, files.points)
-                self._setup_zones(lambda key: SimpleNamespace(value=str(files.zones)) if key == 'zones_file' else p(key))
+                route_values = {'zones_file': str(files.zones), 'waypoint_csv': str(files.csv)}
+                self._setup_zones(lambda key: SimpleNamespace(value=route_values[key]) if key in route_values else p(key))
                 return self.engine, self.zone_map
             self._route_plan.bind(factory)
             self.engine = self._route_plan.engines[0]
@@ -806,7 +807,11 @@ class StackGpsNode(Node):
                          "연속으로 두 번 정차하게 된다 (의도한 것인지 확인)")
         self.engine.stop_ranges = stop_ranges
 
-        avoid_ranges = []
+        # A CSV state=4 marker has no geographic exit: retain its indication
+        # through this route and let MGM latch completion after waypoint return.
+        avoid_ranges = avoidance_marker_range(p('waypoint_csv').value)
+        if avoid_ranges:
+            log.info(f"CSV state=4 회피 시작: idx {avoid_ranges[0][0]}; 종료는 MGM waypoint 복귀 판정")
         for lat1, lon1, lat2, lon2 in file_avoid + _parse_latlon_spec(
                 p('avoid_zone_latlon').value, 4, 'avoid_zone_latlon', log):
             i1, d1 = self.engine.index_of(lat1, lon1)

@@ -76,7 +76,7 @@ class PoseDeltaTracker:
         return self.delta, self.update
 
 
-def load_waypoints_csv(path, log=None):
+def load_waypoints_csv(path, log=None, avoid_starts=None):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 
     east_m/north_m 열은 기록 세션의 기준점에 묶여 있어 쓰지 않고,
@@ -95,14 +95,33 @@ def load_waypoints_csv(path, log=None):
                 dropped += 1
                 continue
             lat, lon = float(row["lat"]), float(row["lon"])
-            if pts and pts[-1] == (lat, lon):
-                continue
-            pts.append((lat, lon))
+            if not pts or pts[-1] != (lat, lon):
+                pts.append((lat, lon))
+            # Keep marker indices in the filtered/deduplicated geometry, not
+            # the CSV's optional idx column. Other state codes retain their roles.
+            if avoid_starts is not None and str(row.get('state', '')).strip() == '4':
+                index = len(pts) - 1
+                if index not in avoid_starts:
+                    avoid_starts.append(index)
     if dropped and log is not None:
         log(f"비-FIXED 웨이포인트 {dropped}개 제외 (FLOAT 오염 방지): {path}")
     if len(pts) < 2:
         raise ValueError(f"웨이포인트가 {len(pts)}개뿐 — 유효한 트랙이 아님: {path}")
     return pts
+
+
+def avoidance_marker_range(path):
+    """State 4 starts one avoidance episode per CSV; MGM owns its completion.
+
+    Hold the entry indication beyond the marker so a moving vehicle cannot
+    miss a single sample. The route endpoint is only the indication's extent,
+    never an avoidance completion condition.
+    """
+    starts = []
+    points = load_waypoints_csv(path, avoid_starts=starts)
+    if len(starts) > 1:
+        raise ValueError(f'{path}: multiple state=4 entries require separate route CSVs')
+    return [(starts[0], len(points)-1)] if starts else []
 
 
 class PathEngine:

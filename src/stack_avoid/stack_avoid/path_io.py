@@ -6,7 +6,7 @@ from nav_msgs.msg import Path
 from rcl_interfaces.msg import ParameterDescriptor
 from std_msgs.msg import Bool
 from visualization_msgs.msg import Marker
-from fma_interfaces.msg import GpsPath
+from fma_interfaces.msg import GpsPath, MgmState
 
 from stack_avoid.gps_cubic_path import GpsCubicPlanner, WaypointWindow
 from stack_avoid.station_path import to_world, to_local
@@ -27,6 +27,9 @@ class StationPathIO:
         self.path_return = parameter('avoid.waypoint_return_m', 2.7)
         self.path_pose_timeout = parameter('avoid.path_pose_timeout_s', .5)
         self.path_gps_timeout = parameter('avoid.path_gps_timeout_s', .5)
+        self.require_mgm_active = bool(self.declare_parameter(
+            'avoid.require_mgm_active', False, readonly).value)
+        self._mgm_active, self._mgm_stamp = False, 0
         self.path_min_radius = parameter('vehicle.min_turn_radius_m', 1.15)
         self.path_front = (parameter('vehicle.wheelbase_m', .595)
                            + parameter('vehicle.front_overhang_m', .165))
@@ -53,6 +56,7 @@ class StationPathIO:
         self._path_last_scan = 0
         self._completed = False
         self.gps_sub = self.create_subscription(GpsPath, '/perception/gps_path', self._on_gps_path, 1)
+        self.mgm_sub = self.create_subscription(MgmState, '/adas/mgm_state', self._on_mgm_state, 1)
         self.session_sub = self.create_subscription(Bool, '/operator/start_session', self._on_path_session, 1)
         self.path_pub = self.create_publisher(Path, '/perception/avoid_path', 1)
         self.station_pub = self.create_publisher(Marker, '/perception/avoid_station', 1)
@@ -60,6 +64,17 @@ class StationPathIO:
     def _fresh_stamp(self, stamp, timeout):
         age = (self.get_clock().now().nanoseconds-stamp)*1e-9
         return stamp > 0 and 0 <= age <= timeout
+
+    def _on_mgm_state(self, msg):
+        stamp = stamp_ns(msg.header.stamp)
+        if stamp <= self._mgm_stamp or not self._fresh_stamp(stamp, self.path_pose_timeout):
+            return
+        active = msg.avoidance == 1  # AVOID_ACTIVE; GPS_RETURN is owned by GPS.
+        if self.require_mgm_active and active != self._mgm_active:
+            # A new marker must not inherit a path/done from an earlier encounter.
+            self._planner.reset()
+            self._completed = False
+        self._mgm_active, self._mgm_stamp = active, stamp
 
     def _on_path_session(self, msg):
         if msg.data:
@@ -148,6 +163,12 @@ class StationPathIO:
 
     def _station_reference(self, scan, gap, detected):
         pose, pose_stamp = self._path_pose()
+        if self.require_mgm_active and (not self._mgm_active or
+                not self._fresh_stamp(self._mgm_stamp, self.path_pose_timeout)):
+            self._planner.path = self._planner.control_target = None
+            self._planner.reason = 'waiting for fresh MGM AVOID_ACTIVE'
+            self._publish_path(scan, None)
+            return None, False, 0
         self._planner.width, self._planner.margin = self.vehicle_width, self.lateral_margin
         point, done = self._planner.step(
             pose=pose, waypoints=self._gps_waypoints if pose is not None else None,

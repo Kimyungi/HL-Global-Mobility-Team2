@@ -190,6 +190,12 @@ struct ManagerState
   ZoneState zones;
   int32_t clear_count;
   bool avoid_fallback_only;
+  // Zone-only avoidance uses independent GPS fixes, not manager timer ticks.
+  bool avoid_zone_inside;
+  bool avoid_zone_maneuver_seen;
+  bool avoid_zone_completed;
+  int32_t avoid_zone_enter_count, avoid_zone_exit_count;
+  uint64_t avoid_zone_generation;
   bool mission_completed[MGM_MISSION_CAPACITY];
   bool mission_failed[MGM_MISSION_CAPACITY];  // terminal zone-exit failure, distinct from success
   uint8_t active_mission;
