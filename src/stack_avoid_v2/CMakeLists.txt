@@ -9,6 +9,9 @@ target_include_directories(avoid_v2_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 enable_testing()
+add_executable(avoid_v2_return_tracker_test test/return_tracker_test.cpp)
+target_link_libraries(avoid_v2_return_tracker_test avoid_v2_core)
+add_test(NAME avoid_v2_return_tracker_test COMMAND avoid_v2_return_tracker_test)
 add_executable(avoid_v2_core_test test/core_test.cpp)
 target_link_libraries(avoid_v2_core_test avoid_v2_core)
 add_test(NAME avoid_v2_core_test COMMAND avoid_v2_core_test)

@@ -4,13 +4,13 @@ from pathlib import Path
 
 import yaml
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
-from fma_interfaces.msg import EstopRequest, GpsPath, MgmState, ParkingCommand, ParkingStatus
+from fma_interfaces.msg import AvoidPlan, GpsRoute, EstopRequest, GpsPath, MgmState, ParkingCommand, ParkingStatus
 
 
 def main():
     root = Path(os.environ['FMA_V2_WORKSPACE']).resolve()
     packages = (
-        'adas_mgm', 'fma_interfaces', 'stack_gps', 'stack_lane', 'stack_avoid',
+        'adas_mgm', 'fma_interfaces', 'stack_gps', 'stack_lane', 'stack_avoid', 'stack_avoid_v2',
         'stack_estop', 'stack_parking', 'lidar_fusion_v2', 'stack_traffic',
         'bridge_dspace', 'ydlidar_ros2_driver', 'multi_lidar_fusion',
     )
@@ -19,6 +19,7 @@ def main():
         if not prefix.is_relative_to(root / 'install_v2'):
             raise RuntimeError(f'{package} resolves outside v2: {prefix}')
     contracts = (
+        (AvoidPlan(), 'control_enabled'), (AvoidPlan(), 'valid_until'), (GpsRoute(), 'points'),
         (GpsPath(), 'reference_stamp'), (GpsPath(), 'waypoint_stations'), (GpsPath(), 'zones'),
         (GpsPath(), 'route'), (MgmState(), 'route'),
         (GpsPath().route, 'connecting'), (MgmState().route, 'requested_connecting'),

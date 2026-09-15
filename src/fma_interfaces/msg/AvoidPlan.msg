@@ -1,4 +1,6 @@
-# V2 shadow planner diagnostics. NOT a certified actuator-command contract.
+# Wall planner output. MGM consumes only control_enabled plans with unexpired leases.
+bool control_enabled
+RouteFeedback route
 uint8 READY=0
 uint8 PASS=1
 uint8 REJOIN=2

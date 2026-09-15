@@ -1,5 +1,7 @@
 # 회피 시작 표식과 웨이포인트 복귀 — 2026-09-14
 
+> 2026-09-15: v2 기본 회피 provider는 전방·좌우 3개 LiDAR를 사용하는 `stack_avoid_v2`다. 기존 zone 진입·GPS_RETURN·완료 표식 조건은 유지한다. 운영 연결은 [벽 중앙 회피 MGM 연결](AVOID_V2_MGM_INTEGRATION.md)을 따른다. 아래 기존 `stack_avoid` 경로 생성/그림자 전용 설명보다 이 연결 계약이 우선한다.
+
 한라 최신 PR #98(`8796cdd`)의 `state=4`는 Path 4 idx 55에 있다.
 YAML `avoid_zones`는 비어 있고, Path 3의 Zone 4는 주차 접근 구간이다.
 사용자 지정에 따라 CSV의 `state=4`를 실제 회피 시작 신호로 해석한다.

@@ -1,0 +1,311 @@
+Wall avoidance MGM integration verification — 2026-09-15
+Base integration/v2_main: 592ca2c. No hardware drivers/CAN/go started.
+
+Operational build
+[0.174s] WARNING:colcon.colcon_core.package_selection:Some selected packages are already built in one or more underlay workspaces:
+	'fma_interfaces' is in: /home/xanadu/FMA_ws/install/fma_interfaces
+If a package in a merged underlay workspace is overridden and it installs headers, then all packages in the overlay must sort their include directories by workspace order. Failure to do so may result in build failures or undefined behavior at run time.
+If the overridden package is used by another package in any underlay, then the overriding package in the overlay must be API and ABI compatible or undefined behavior at run time may occur.
+
+If you understand the risks and want to override a package anyways, add the following to the command line:
+	--allow-overriding fma_interfaces
+
+This may be promoted to an error in a future release of colcon-override-check.
+Starting >>> fma_interfaces
+Finished <<< fma_interfaces [0.34s]
+Starting >>> stack_avoid_v2
+Starting >>> stack_gps
+Finished <<< stack_gps [0.72s]
+Finished <<< stack_avoid_v2 [18.1s]
+Starting >>> adas_mgm
+Finished <<< adas_mgm [29.0s]
+
+Summary: 4 packages finished [47.5s]
+
+Final planner build
+Starting >>> stack_avoid_v2
+Finished <<< stack_avoid_v2 [18.4s]
+
+Summary: 1 package finished [18.5s]
+
+Final MGM build
+[  6%] Built target adas_mgr2_generated
+[ 14%] Built target mgm_core
+Consolidate compiler generated dependencies of target mgm_node
+[ 18%] Built target transition_log_test
+[ 19%] Building CXX object CMakeFiles/mgm_node.dir/src/mgm_node.cpp.o
+[ 22%] Built target core_replay
+[ 24%] Built target make_sample_dump
+[ 27%] Built target mgm_generated_adapter
+Consolidate compiler generated dependencies of target wall_plan_input_test
+[ 28%] Building CXX object CMakeFiles/wall_plan_input_test.dir/test/wall_plan_input_test.cpp.o
+[ 29%] Linking CXX executable wall_plan_input_test
+[ 29%] Built target wall_plan_input_test
+[ 32%] Built target sensor_only_safe_stop_test
+[ 34%] Built target avoid_main_compat_test
+[ 37%] Built target avoid_zone_entry_test
+[ 39%] Built target parking_entry_test
+[ 41%] Built target fixed_speed_test
+[ 44%] Built target avoidance_disabled_test
+[ 46%] Built target route_sequence_test
+[ 49%] Built target stabilization_test
+[ 51%] Built target reference_safety_test
+[ 54%] Built target zone_manager_test
+[ 56%] Built target mission_preparation_test
+[ 59%] Built target mission_zone_search_test
+[ 61%] Built target lidar_only_estop_test
+[ 64%] Built target traffic_gps_release_test
+[ 66%] Built target manager_state_test
+[ 70%] Built target decision_backend_unavailable_test
+[ 72%] Built target escape_reverse_test
+[ 75%] Built target reference_hold_test
+[ 77%] Built target traffic_state_test
+[ 80%] Built target parking_return_state_test
+[ 82%] Built target startup_navigation_test
+[ 85%] Built target parity_replay
+[ 87%] Built target generated_lane_waypoint_parity_test
+[ 90%] Built target generated_four_state_parity_test
+[ 92%] Built target generated_adapter_safety_test
+[ 96%] Built target decision_backend_test
+[ 97%] Linking CXX executable mgm_node
+[100%] Built target mgm_node
+
+MGM CTest
+Internal ctest changing into directory: /home/xanadu/FMA_ws/build_v2/adas_mgm
+Test project /home/xanadu/FMA_ws/build_v2/adas_mgm
+      Start  1: generated_lane_waypoint_parity_test
+ 1/27 Test  #1: generated_lane_waypoint_parity_test ...   Passed    0.00 sec
+      Start  2: generated_four_state_parity_test
+ 2/27 Test  #2: generated_four_state_parity_test ......   Passed    0.00 sec
+      Start  3: generated_adapter_safety_test
+ 3/27 Test  #3: generated_adapter_safety_test .........   Passed    0.00 sec
+      Start  4: decision_backend_test
+ 4/27 Test  #4: decision_backend_test .................   Passed    0.00 sec
+      Start  5: wall_plan_input_test
+ 5/27 Test  #5: wall_plan_input_test ..................   Passed    0.00 sec
+      Start  6: sensor_only_safe_stop_test
+ 6/27 Test  #6: sensor_only_safe_stop_test ............   Passed    0.00 sec
+      Start  7: avoid_main_compat_test
+ 7/27 Test  #7: avoid_main_compat_test ................   Passed    0.01 sec
+      Start  8: avoid_zone_entry_test
+ 8/27 Test  #8: avoid_zone_entry_test .................   Passed    0.00 sec
+      Start  9: parking_entry_test
+ 9/27 Test  #9: parking_entry_test ....................   Passed    0.00 sec
+      Start 10: fixed_speed_test
+10/27 Test #10: fixed_speed_test ......................   Passed    0.00 sec
+      Start 11: avoidance_disabled_test
+11/27 Test #11: avoidance_disabled_test ...............   Passed    0.00 sec
+      Start 12: route_sequence_test
+12/27 Test #12: route_sequence_test ...................   Passed    0.00 sec
+      Start 13: stabilization_test
+13/27 Test #13: stabilization_test ....................   Passed    0.01 sec
+      Start 14: reference_safety_test
+14/27 Test #14: reference_safety_test .................   Passed    0.00 sec
+      Start 15: zone_manager_test
+15/27 Test #15: zone_manager_test .....................   Passed    0.00 sec
+      Start 16: mission_preparation_test
+16/27 Test #16: mission_preparation_test ..............   Passed    0.00 sec
+      Start 17: mission_zone_search_test
+17/27 Test #17: mission_zone_search_test ..............   Passed    0.00 sec
+      Start 18: lidar_only_estop_test
+18/27 Test #18: lidar_only_estop_test .................   Passed    0.00 sec
+      Start 19: traffic_gps_release_test
+19/27 Test #19: traffic_gps_release_test ..............   Passed    0.00 sec
+      Start 20: manager_state_test
+20/27 Test #20: manager_state_test ....................   Passed    0.01 sec
+      Start 21: decision_backend_unavailable_test
+21/27 Test #21: decision_backend_unavailable_test .....   Passed    0.00 sec
+      Start 22: escape_reverse_test
+22/27 Test #22: escape_reverse_test ...................   Passed    0.00 sec
+      Start 23: reference_hold_test
+23/27 Test #23: reference_hold_test ...................   Passed    0.00 sec
+      Start 24: traffic_state_test
+24/27 Test #24: traffic_state_test ....................   Passed    0.00 sec
+      Start 25: parking_return_state_test
+25/27 Test #25: parking_return_state_test .............   Passed    0.00 sec
+      Start 26: transition_log_test
+26/27 Test #26: transition_log_test ...................   Passed    0.00 sec
+      Start 27: startup_navigation_test
+27/27 Test #27: startup_navigation_test ...............   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 27
+
+Total Test time (real) =   0.07 sec
+
+Wall core CTest (known same_vehicle failure)
+Internal ctest changing into directory: /home/xanadu/FMA_ws/build_v2/stack_avoid_v2
+Test project /home/xanadu/FMA_ws/build_v2/stack_avoid_v2
+    Start 1: avoid_v2_return_tracker_test
+1/9 Test #1: avoid_v2_return_tracker_test ......   Passed    0.01 sec
+    Start 2: avoid_v2_core_test
+2/9 Test #2: avoid_v2_core_test ................   Passed    0.02 sec
+    Start 3: avoid_v2_scenarios
+3/9 Test #3: avoid_v2_scenarios ................   Passed    0.94 sec
+    Start 4: avoid_v2_zone_scenarios
+4/9 Test #4: avoid_v2_zone_scenarios ...........   Passed    6.10 sec
+    Start 5: avoid_v2_s_lateral_scenarios
+5/9 Test #5: avoid_v2_s_lateral_scenarios ......   Passed   12.19 sec
+    Start 6: avoid_v2_same_vehicle_scenarios
+6/9 Test #6: avoid_v2_same_vehicle_scenarios ...***Failed   34.93 sec
+s_lr_2 trial=1 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=33.5 vehicle_contact=0 curb_contact=0 samples=33170 max_ms=1.821 x=14.9908 y=-0.9438 reason=wall corridor speed profile revalidated
+s_lr_2 trial=2 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=33.5 vehicle_contact=0 curb_contact=0 samples=33170 max_ms=1.855 x=14.9908 y=-0.9438 reason=wall corridor speed profile revalidated
+s_lr_2 trial=3 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=33.5 vehicle_contact=0 curb_contact=0 samples=33170 max_ms=1.738 x=14.9908 y=-0.9438 reason=wall corridor speed profile revalidated
+s_left_2 trial=1 cars=2 cruise=1.00 speed_min=0.270 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=28.3 vehicle_contact=0 curb_contact=0 samples=27946 max_ms=1.586 x=14.9952 y=-0.9452 reason=wall corridor speed profile revalidated
+s_left_2 trial=2 cars=2 cruise=1.00 speed_min=0.270 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=28.3 vehicle_contact=0 curb_contact=0 samples=27946 max_ms=1.548 x=14.9952 y=-0.9452 reason=wall corridor speed profile revalidated
+s_left_2 trial=3 cars=2 cruise=1.00 speed_min=0.270 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=28.3 vehicle_contact=0 curb_contact=0 samples=27946 max_ms=1.592 x=14.9952 y=-0.9452 reason=wall corridor speed profile revalidated
+straight_lr_2 trial=1 cars=2 cruise=1.00 speed_min=0.228 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=31.8 vehicle_contact=0 curb_contact=0 samples=31314 max_ms=17.810 x=12.5459 y=0.0185 reason=wall corridor speed profile revalidated
+straight_lr_2 trial=2 cars=2 cruise=1.00 speed_min=0.228 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=31.8 vehicle_contact=0 curb_contact=0 samples=31314 max_ms=17.562 x=12.5459 y=0.0185 reason=wall corridor speed profile revalidated
+straight_lr_2 trial=3 cars=2 cruise=1.00 speed_min=0.228 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=31.8 vehicle_contact=0 curb_contact=0 samples=31314 max_ms=17.604 x=12.5459 y=0.0185 reason=wall corridor speed profile revalidated
+s_rl_2 trial=1 cars=2 cruise=1.00 speed_min=0.270 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=32.8 vehicle_contact=0 curb_contact=0 samples=32091 max_ms=18.149 x=14.9642 y=-0.9502 reason=wall corridor speed profile revalidated
+s_rl_2 trial=2 cars=2 cruise=1.00 speed_min=0.270 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=33.1 vehicle_contact=0 curb_contact=0 samples=32873 max_ms=17.026 x=14.9819 y=-0.9473 reason=wall corridor speed profile revalidated
+s_rl_2 trial=3 cars=2 cruise=1.00 speed_min=0.270 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=33.1 vehicle_contact=0 curb_contact=0 samples=32873 max_ms=17.704 x=14.9819 y=-0.9473 reason=wall corridor speed profile revalidated
+s_right_2 trial=1 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=34.9 vehicle_contact=0 curb_contact=0 samples=34574 max_ms=1.631 x=14.9545 y=-0.9516 reason=wall corridor speed profile revalidated
+s_right_2 trial=2 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=34.9 vehicle_contact=0 curb_contact=0 samples=34574 max_ms=1.629 x=14.9545 y=-0.9516 reason=wall corridor speed profile revalidated
+s_right_2 trial=3 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=34.9 vehicle_contact=0 curb_contact=0 samples=34574 max_ms=1.577 x=14.9545 y=-0.9516 reason=wall corridor speed profile revalidated
+straight_rl_2 trial=1 cars=2 cruise=1.00 speed_min=0.228 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=31.8 vehicle_contact=0 curb_contact=0 samples=31314 max_ms=17.675 x=12.5459 y=-0.0186 reason=wall corridor speed profile revalidated
+straight_rl_2 trial=2 cars=2 cruise=1.00 speed_min=0.228 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=31.8 vehicle_contact=0 curb_contact=0 samples=31314 max_ms=17.691 x=12.5459 y=-0.0186 reason=wall corridor speed profile revalidated
+straight_rl_2 trial=3 cars=2 cruise=1.00 speed_min=0.228 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=31.8 vehicle_contact=0 curb_contact=0 samples=31314 max_ms=17.713 x=12.5459 y=-0.0186 reason=wall corridor speed profile revalidated
+s_center_gap_2 trial=1 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=27.8 vehicle_contact=0 curb_contact=0 samples=27553 max_ms=11.383 x=14.9572 y=-0.9521 reason=wall corridor speed profile revalidated
+s_center_gap_2 trial=2 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=27.8 vehicle_contact=0 curb_contact=0 samples=27553 max_ms=11.274 x=14.9572 y=-0.9521 reason=wall corridor speed profile revalidated
+s_center_gap_2 trial=3 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=27.8 vehicle_contact=0 curb_contact=0 samples=27553 max_ms=11.257 x=14.9572 y=-0.9521 reason=wall corridor speed profile revalidated
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_2 trial=1 cars=2 cruise=1.00 speed_min=0.733 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=1.5 vehicle_contact=0 curb_contact=0 samples=696 max_ms=12.357 x=2.3930 y=0.1409 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_2 trial=2 cars=2 cruise=1.00 speed_min=0.733 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=1.5 vehicle_contact=0 curb_contact=0 samples=696 max_ms=12.008 x=2.3930 y=0.1409 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_2 trial=3 cars=2 cruise=1.00 speed_min=0.733 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=1.5 vehicle_contact=0 curb_contact=0 samples=696 max_ms=12.491 x=2.3930 y=0.1409 reason=wall midline has no certified forward rollout
+off_path_2 trial=1 cars=2 cruise=1.00 speed_min=0.479 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=18.8 vehicle_contact=0 curb_contact=0 samples=19367 max_ms=1.627 x=15.0079 y=-0.9424 reason=wall corridor speed profile revalidated
+off_path_2 trial=2 cars=2 cruise=1.00 speed_min=0.479 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=18.8 vehicle_contact=0 curb_contact=0 samples=19367 max_ms=1.635 x=15.0079 y=-0.9424 reason=wall corridor speed profile revalidated
+off_path_2 trial=3 cars=2 cruise=1.00 speed_min=0.479 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=18.8 vehicle_contact=0 curb_contact=0 samples=19367 max_ms=1.629 x=15.0079 y=-0.9424 reason=wall corridor speed profile revalidated
+zone_gate_2 trial=1 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=33.0 vehicle_contact=0 curb_contact=0 samples=30891 max_ms=18.047 x=12.5145 y=-0.0069 reason=wall corridor speed profile revalidated
+zone_gate_2 trial=2 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=33.0 vehicle_contact=0 curb_contact=0 samples=30891 max_ms=18.054 x=12.5145 y=-0.0069 reason=wall corridor speed profile revalidated
+zone_gate_2 trial=3 cars=2 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=33.0 vehicle_contact=0 curb_contact=0 samples=30891 max_ms=18.053 x=12.5145 y=-0.0069 reason=wall corridor speed profile revalidated
+unknown_2 trial=1 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=4.492 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+unknown_2 trial=2 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=4.383 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+unknown_2 trial=3 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=4.450 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+expiry_2 trial=1 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=397 max_ms=17.441 x=1.3000 y=0.0013 reason=current braking envelope blocked or unknown
+expiry_2 trial=2 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=397 max_ms=17.505 x=1.3000 y=0.0013 reason=current braking envelope blocked or unknown
+expiry_2 trial=3 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=397 max_ms=17.454 x=1.3000 y=0.0013 reason=current braking envelope blocked or unknown
+close_braking_2 trial=1 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.087 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+close_braking_2 trial=2 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.079 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+close_braking_2 trial=3 cars=2 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.085 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+s_lr_3 trial=1 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=45.1 vehicle_contact=0 curb_contact=0 samples=42646 max_ms=18.097 x=14.9734 y=-0.9564 reason=wall corridor speed profile revalidated
+s_lr_3 trial=2 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=45.1 vehicle_contact=0 curb_contact=0 samples=42646 max_ms=18.094 x=14.9734 y=-0.9564 reason=wall corridor speed profile revalidated
+s_lr_3 trial=3 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=45.1 vehicle_contact=0 curb_contact=0 samples=42646 max_ms=18.089 x=14.9734 y=-0.9564 reason=wall corridor speed profile revalidated
+s_left_3 trial=1 cars=3 cruise=1.00 speed_min=0.257 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=35.4 vehicle_contact=0 curb_contact=0 samples=34560 max_ms=1.922 x=14.9441 y=-0.9713 reason=wall corridor speed profile revalidated
+s_left_3 trial=2 cars=3 cruise=1.00 speed_min=0.257 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=35.4 vehicle_contact=0 curb_contact=0 samples=34560 max_ms=1.913 x=14.9441 y=-0.9713 reason=wall corridor speed profile revalidated
+s_left_3 trial=3 cars=3 cruise=1.00 speed_min=0.257 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=35.4 vehicle_contact=0 curb_contact=0 samples=34560 max_ms=1.827 x=14.9441 y=-0.9713 reason=wall corridor speed profile revalidated
+straight_lr_3 trial=1 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=46.3 vehicle_contact=0 curb_contact=0 samples=44779 max_ms=18.355 x=12.7042 y=-0.0527 reason=wall corridor speed profile revalidated
+straight_lr_3 trial=2 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=46.3 vehicle_contact=0 curb_contact=0 samples=44779 max_ms=18.110 x=12.7042 y=-0.0527 reason=wall corridor speed profile revalidated
+straight_lr_3 trial=3 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=46.3 vehicle_contact=0 curb_contact=0 samples=44779 max_ms=18.315 x=12.7042 y=-0.0527 reason=wall corridor speed profile revalidated
+s_rl_3 trial=1 cars=3 cruise=1.00 speed_min=0.242 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.1 vehicle_contact=0 curb_contact=0 samples=40563 max_ms=17.760 x=14.9636 y=-0.9486 reason=wall corridor speed profile revalidated
+s_rl_3 trial=2 cars=3 cruise=1.00 speed_min=0.242 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.1 vehicle_contact=0 curb_contact=0 samples=40563 max_ms=17.752 x=14.9636 y=-0.9486 reason=wall corridor speed profile revalidated
+s_rl_3 trial=3 cars=3 cruise=1.00 speed_min=0.242 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.1 vehicle_contact=0 curb_contact=0 samples=40563 max_ms=17.200 x=14.9636 y=-0.9486 reason=wall corridor speed profile revalidated
+s_right_3 trial=1 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.5 vehicle_contact=0 curb_contact=0 samples=41045 max_ms=1.873 x=14.9000 y=-0.9500 reason=wall corridor speed profile revalidated
+s_right_3 trial=2 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.5 vehicle_contact=0 curb_contact=0 samples=41045 max_ms=1.771 x=14.9000 y=-0.9500 reason=wall corridor speed profile revalidated
+s_right_3 trial=3 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.5 vehicle_contact=0 curb_contact=0 samples=41045 max_ms=2.771 x=14.9000 y=-0.9500 reason=wall corridor speed profile revalidated
+straight_rl_3 trial=1 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=46.3 vehicle_contact=0 curb_contact=0 samples=44779 max_ms=18.148 x=12.7042 y=0.0527 reason=wall corridor speed profile revalidated
+straight_rl_3 trial=2 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=46.3 vehicle_contact=0 curb_contact=0 samples=44779 max_ms=18.112 x=12.7042 y=0.0527 reason=wall corridor speed profile revalidated
+straight_rl_3 trial=3 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=46.3 vehicle_contact=0 curb_contact=0 samples=44779 max_ms=18.055 x=12.7042 y=0.0527 reason=wall corridor speed profile revalidated
+s_center_gap_3 trial=1 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=29.6 vehicle_contact=0 curb_contact=0 samples=29294 max_ms=11.338 x=15.0373 y=-0.9359 reason=wall corridor speed profile revalidated
+s_center_gap_3 trial=2 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=29.6 vehicle_contact=0 curb_contact=0 samples=29294 max_ms=11.552 x=15.0373 y=-0.9359 reason=wall corridor speed profile revalidated
+s_center_gap_3 trial=3 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=29.6 vehicle_contact=0 curb_contact=0 samples=29294 max_ms=11.040 x=15.0373 y=-0.9359 reason=wall corridor speed profile revalidated
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_3 trial=1 cars=3 cruise=1.00 speed_min=0.733 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=1.5 vehicle_contact=0 curb_contact=0 samples=696 max_ms=12.082 x=2.3930 y=0.1409 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_3 trial=2 cars=3 cruise=1.00 speed_min=0.733 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=1.5 vehicle_contact=0 curb_contact=0 samples=696 max_ms=12.322 x=2.3930 y=0.1409 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_3 trial=3 cars=3 cruise=1.00 speed_min=0.733 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=1.5 vehicle_contact=0 curb_contact=0 samples=696 max_ms=12.251 x=2.3930 y=0.1409 reason=wall midline has no certified forward rollout
+off_path_3 trial=1 cars=3 cruise=1.00 speed_min=0.394 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=21.3 vehicle_contact=0 curb_contact=0 samples=21630 max_ms=1.688 x=14.9538 y=-0.9556 reason=wall corridor speed profile revalidated
+off_path_3 trial=2 cars=3 cruise=1.00 speed_min=0.394 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=21.3 vehicle_contact=0 curb_contact=0 samples=21630 max_ms=1.584 x=14.9538 y=-0.9556 reason=wall corridor speed profile revalidated
+off_path_3 trial=3 cars=3 cruise=1.00 speed_min=0.394 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=21.3 vehicle_contact=0 curb_contact=0 samples=21630 max_ms=1.630 x=14.9538 y=-0.9556 reason=wall corridor speed profile revalidated
+zone_gate_3 trial=1 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.0 vehicle_contact=0 curb_contact=0 samples=38642 max_ms=18.046 x=13.8574 y=0.0796 reason=wall corridor speed profile revalidated
+zone_gate_3 trial=2 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.0 vehicle_contact=0 curb_contact=0 samples=38642 max_ms=18.052 x=13.8574 y=0.0796 reason=wall corridor speed profile revalidated
+zone_gate_3 trial=3 cars=3 cruise=1.00 speed_min=0.200 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=42.0 vehicle_contact=0 curb_contact=0 samples=38642 max_ms=18.048 x=13.8574 y=0.0796 reason=wall corridor speed profile revalidated
+unknown_3 trial=1 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=4.406 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+unknown_3 trial=2 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=4.505 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+unknown_3 trial=3 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=4.519 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+expiry_3 trial=1 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=397 max_ms=17.035 x=1.3000 y=0.0013 reason=current braking envelope blocked or unknown
+expiry_3 trial=2 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=397 max_ms=17.945 x=1.3000 y=0.0013 reason=current braking envelope blocked or unknown
+expiry_3 trial=3 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=397 max_ms=17.368 x=1.3000 y=0.0013 reason=current braking envelope blocked or unknown
+close_braking_3 trial=1 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.087 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+close_braking_3 trial=2 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.084 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+close_braking_3 trial=3 cars=3 cruise=1.00 speed_min=1.000 speed_max=1.000 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.075 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+same vehicle matrix: trials=78 completed=54 expected_stops=18 failed=6 checks=197 failures=6
+
+    Start 7: avoid_v2_wall_corridor_test
+7/9 Test #7: avoid_v2_wall_corridor_test .......   Passed    0.03 sec
+    Start 8: avoid_v2_adaptive_speed_test
+8/9 Test #8: avoid_v2_adaptive_speed_test ......   Passed    1.34 sec
+    Start 9: avoid_v2_execution_safety_test
+9/9 Test #9: avoid_v2_execution_safety_test ....   Passed    3.24 sec
+
+89% tests passed, 1 tests failed out of 9
+
+Total Test time (real) =  58.80 sec
+
+The following tests FAILED:
+	  6 - avoid_v2_same_vehicle_scenarios (Failed)
+Errors while running CTest
+
+Launch/preparation/calibration
+......................................                                   [100%]
+38 passed in 0.82s
+
+GPS tests
+........................................................................ [ 40%]
+........................................................................ [ 80%]
+....................................                                     [100%]
+180 passed in 0.88s
+
+View tests
+......                                                                   [100%]
+6 passed in 0.51s
+
+Production planner/MGM synthetic integration
+PASS: outside zone retains navigation with inactive wall planner
+PASS: five GPS observations activate actual wall planner and MGM
+PASS: identical route repeat preserves the automatic workspace session
+PASS: target geometry and adaptive speed reach MGM without blending
+PASS: frozen planner expires to zero speed while AVOID stays active
+PASS: new valid plan resumes avoidance
+PASS: negative measured velocity cannot request forward avoidance
+PASS: forward motion after recovery needs no session reset
+PASS: geographic zone exit does not truncate the episode
+PASS: missing scans HOLD without switching to healthy navigation
+PASS: three fresh inputs recover without a rear lidar
+[INFO] [1789458815.305870569] [avoid_v2_node]: Wall planner mode: MGM provider
+[INFO] [1789458815.309690538] [mgm_node]: decision backend=core
+[WARN] [1789458815.315799842] [mgm_node]: SCHED_FIFO 설정 실패 (권한 필요: ulimit -r 또는 CAP_SYS_NICE) — 일반 스케줄러로 동작
+[INFO] [1789458815.326048367] [mgm_node]: MGM top=1 nav=0 avoid=0 signal=0 safety=3 mission=0 type=0 ref=0 speed=4 valid=1 age=0.011 reasons=0x2
+[WARN] [1789458816.116042687] [mgm_node]: MGM source 2 reference invalid/stale: motion withheld (safety=0)
+[INFO] [1789458816.426149802] [mgm_node]: MGM top=1 nav=0 avoid=1 signal=0 safety=0 mission=0 type=0 ref=2 speed=1 valid=1 age=0.129 reasons=0x0
+[WARN] [1789458817.125980650] [mgm_node]: MGM source 2 reference invalid/stale: motion withheld (safety=0)
+[INFO] [1789458817.436047910] [mgm_node]: MGM top=1 nav=0 avoid=1 signal=0 safety=0 mission=0 type=0 ref=2 speed=4 valid=0 age=0.210 reasons=0x0
+[INFO] [1789458817.806423660] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [1789458817.806448861] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+
+
+Shadow compatibility
+PASS: missing course stays HOLD
+PASS: boundary alone cannot invent a GPS route
+PASS: outside zone uses GPS ownership with no LiDAR input
+PASS: outside zone watchdog accepts fresh GPS ownership
+PASS: invalid membership is not equivalent to outside zone
+PASS: zone entry waits for new scans
+PASS: raw timestamped scan produces shadow plan
+PASS: one-point vehicle reference and bounded processing
+PASS: identical course republish preserves session and observations
+PASS: changed course resets session
+PASS: changed course reacquires localization and scans
+PASS: zero per-beam timing is rejected
+PASS: fresh scans restore plan
+PASS: wrong sensor frame invalidates plan
+PASS: calibrated frame restores plan
+PASS: tangent heading cannot authorize geometry
+PASS: measured heading restores plan
+PASS: scan silence expires reference and watchdog
+PASS: new scan recovers shadow calculation
+PASS: watchdog observes a fresh valid plan before freeze
+PASS: independent watchdog detects frozen planner
+ROS smoke complete; no MGM/CAN command publisher was started

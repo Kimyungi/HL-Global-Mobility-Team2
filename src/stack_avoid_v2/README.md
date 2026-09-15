@@ -1,9 +1,10 @@
-# stack_avoid_v2 — 새 회피 코어와 그림자 실행
+# stack_avoid_v2 — 벽 중앙 회피와 MGM 연결
 
 2026-09-15. [설계안](../../docs/NEW_AVOID_V2_DESIGN.md)의 첫 구현이다.
 기존 `stack_avoid`의 gap/station/cubic 코드를 호출하지 않는 C++ 코어와 ROS 입력부를 추가했다.
-GPS 노드에는 실제 사용 중인 다점 경로 발행을 추가했다. 기존 LINE/GPS 추종 계산,
-MGM 상태 전이, CAN 송신 및 실차 launch는 변경하지 않았다.
+GPS 노드에는 실제 사용 중인 다점 경로 발행을 추가했다. 기존 LINE/GPS 추종 계산과 zone 상태 전이는 유지한다.
+통합 launch는 이 provider를 기본 실행하고 MGM이 유효한 계획을 소비한다.
+[운영 연결 계약과 검증 범위](../../docs/AVOID_V2_MGM_INTEGRATION.md)를 참조한다.
 
 ## 현재 경로 생성 — 벽 사이 중간점 연결
 
@@ -39,23 +40,25 @@ GPS `/perception/gps_route`, 도로 경계 `/avoid_v2/course`, zone `/perception
 
 ## 현재 실행 경계
 
-**이 패키지는 그림자 실행 단계다.** `/avoid_v2/plan`과 `/avoid_v2/path`만 발행하며
-`/adas/target_ref`, `/perception/avoid`, `/operator/go`, CAN에는 발행하지 않는다.
-watchdog의 `/avoid_v2/watchdog_stop`도 진단 출력이며 차량 E-stop에 연결되어 있지 않다.
+통합 v2 launch는 `control_enabled=true`로 실행한다. MGM의 신선한 AVOID_ACTIVE 피드백에 따라
+계산하며 MGM은 `/avoid_v2/plan`의 유효기간과 입력 계약을 검사해 기존 TargetRef/CAN 경로에 전달한다.
+기존 zone 진입·GPS_RETURN·표식 소모 상태 전환은 유지한다. 계획 만료/HOLD 시 출력 속도는 0이다.
+운영 모드의 완료는 장애물 관측 이후 GPS 정렬과 관측된 안전한 연결 경로를 3회 확인한 결과다.
+코스 파일이 없으면 GPS 주변의 계산용 지도를 만들며, 지도 안을 자유 공간으로 가정하지 않는다.
 
-`AvoidPlan.reference`는 기존 1점 형식과의 기하 비교용이다. 장애물 검출 여부·TTC·MGM 소유권을
-완전히 표현하는 기존 `AvoidStatus` 대체물이 아니므로 이 필드만 떼어 실차 입력으로 연결하지 않는다.
-`episode_active`, `phase`, 유효기간을 소비하는 MGM 연결은 다음 구현 단계다.
+`shadow.launch.py`는 계속 그림자 전용이다. `control_enabled=false` 계획은 MGM이 소비하지 않는다.
+별도 watchdog은 진단용이며 운영 정지는 MGM 자체의 매 틱 계획 만료 검사로 처리한다.
+이 패키지는 `/operator/go`나 CAN에 직접 발행하지 않는다.
 
 아직 구현/검증이 남은 항목:
 
-1. MGM의 세션 소유권·HOLD·안전한 인계·미검증 blend 차단 및 독립 정지 연결.
+1. 실차에서 계획 만료/HOLD에 따른 MGM 속도 0 명령과 물리적 정지 응답의 검증.
 2. dSPACE의 실제 1점 추종 모델 식별, 명령 적용 시점 보정, 실제 제동 조향 동작의 검증.
    현재 제동 검사는 측정 조향을 유지하는 모델이며 액추에이터가 이 정책을 실행한다는 보장은 없다.
 3. 실제 코스 경계 입력과 GPS/차량 odometry 정합. 현재는 최초 GPS 정합을 고정하고
    후속 GPS와 위치 0.15m 또는 yaw 0.08rad 초과 불일치가 생기면 새 세션 전까지 HOLD한다.
    장거리 odometry 보정·지도 재정합은 추가 구현 대상이다.
-4. 실제 제어기에서 제동 구간을 실행하는 처리. 현재 새 계획 실패 시 빈 경로/HOLD를 발행한다.
+4. 실제 제어기의 제동 실행 확인. 새 계획 실패 시 빈 경로/HOLD를 발행하고 MGM은 속도 0을 출력한다.
 5. 벽 단면 연결과 평활화 후에도 HOLD하는 좁은 배치의 실행 가능성 개선. 현재 단면 연결은 전진 station 방향의 통로만 다룬다.
 6. 실차의 센서 사각지대·자기 차체 반사·스캔 왜곡·측정 오차 한계 검증.
    광선이 지나간 격자 셀의 free 표시는 유한 빔 해상도의 근사다. 작은 장애물 검출 보장은 별도다.
@@ -196,8 +199,8 @@ Release 코어 시험 3개 실행 파일 통과. 단위 조건과 경로 표본 
 - 격리 ROS에서 GPS 경로 결손, zone 밖 LiDAR 비활성, zone 정보 결손, 진입 후 새 관측 대기,
   정상 GPS 경로 출력, 센서 오류·관측 중단/복구와 프로세스 정지 시 watchdog 시험 통과.
 
-전체 설계의 실차 적용 완료를 선언하는 단계가 아니다. 다음 작업은 실측 코스/제어 응답을
-입력받고, 새 계획의 유효성과 세션 상태를 MGM에서 직접 소비하는 연결을 구현하는 것이다.
+이 절은 과거 그림자 실행 검증 기록이다. 현재 MGM 연결은 위 운영 계약을 따르며, 실측 제어 응답과
+실차 센서 시야 검증은 남아 있다.
 
 ## 과거 검증 — S자 좌우 배치 (0.6m/s)
 

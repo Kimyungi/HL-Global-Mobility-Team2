@@ -84,8 +84,18 @@ def test_avoidance_on_default_and_explicit_override_reach_mgm(monkeypatch, entry
     params = evaluate_parameters(context, mgm._Node__parameters)[1]
     assert params['avoidance_enabled'] is (enabled != 'false')
     assert params['avoid_zone_only'] is True
+    assert params['avoid_v2_enabled'] is True
+    assert params['required_lidar_topics'] == ['/lidar/a1/scan', '/lidar/b1/scan', '/lidar/b2/scan']
+    wall = next(item for item in description.entities
+                if isinstance(item, Node) and item.node_package == 'stack_avoid_v2')
+    assert wall.condition.evaluate(context)
+    wall_params = evaluate_parameters(context, wall._Node__parameters)[0]
+    assert wall_params['control_enabled'] is True
+    assert list(wall_params['sensor_ids']) == ['a1', 'b1', 'b2']
+    assert not any(key.startswith('sensors.a2.') for key in wall_params)
     avoid = next(item for item in description.entities
                  if isinstance(item, Node) and item.node_package == 'stack_avoid')
+    assert not avoid.condition.evaluate(context)
     avoid_params = evaluate_parameters(context, avoid._Node__parameters)[1]
     assert avoid_params['avoid.require_mgm_active'] is True
     assert params['parking_zone_entry_active'] is True

@@ -250,6 +250,7 @@ struct CoreParams
   // ⚠ TTC 안전 바닥(ttc_stop)은 AVOID 스테이트 안에서만 걸리므로, 이 게이트를
   //   켜면 구간 밖 장애물의 유일한 방어선은 stack_estop 이다.
   int32_t avoid_zone_only;
+  int32_t avoid_unblended;  // Preserve validated wall-planner geometry at ownership changes.
 
   // ── 후진 탈출 (2026-08-24 신설, §4 우선권 표 / AVOID 진입 페이즈).
   //

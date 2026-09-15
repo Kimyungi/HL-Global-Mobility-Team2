@@ -99,7 +99,7 @@ def generate_launch_description():
         parking_enabled='true', t_parking_zone_ranges='[0]', parallel_parking_zone_ranges='[0]',
         zone_enter_confirm_samples='5', zone_exit_confirm_samples='5',
         parking_zone_entry_active='true', escape_after_cycles='1000',
-        avoidance_enabled='true', avoid_zone_only='true', usb_speed='high', camera_fps='10',
+        avoidance_enabled='true', avoid_zone_only='true', avoid_v2_enabled='true', avoid_target_speed_mps='1.0', usb_speed='high', camera_fps='10',
         lane_debug='true', traffic_show_debug='false', traffic_enabled='true',
         traffic_depth_enabled='false', traffic_yolo_image_size='640',
         traffic_yolo_inference_interval='2', traffic_red_phase_yolo_inference_interval='3',

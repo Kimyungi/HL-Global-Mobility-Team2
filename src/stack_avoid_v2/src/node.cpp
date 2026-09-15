@@ -1,11 +1,13 @@
-// Shadow-only ROS adapter. It deliberately publishes no MGM/actuator command.
+// Wall planner ROS input adapter. Control mode is activated only by MGM feedback.
 #include "stack_avoid_v2/core.hpp"
+#include "stack_avoid_v2/return_tracker.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <fma_interfaces/msg/avoid_course.hpp>
 #include <fma_interfaces/msg/avoid_plan.hpp>
 #include <fma_interfaces/msg/gps_path.hpp>
 #include <fma_interfaces/msg/gps_route.hpp>
 #include <fma_interfaces/msg/vehicle_vector.hpp>
+#include <fma_interfaces/msg/mgm_state.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <std_msgs/msg/bool.hpp>
@@ -68,24 +70,47 @@ public:
       !std::isfinite(callback_budget_)||callback_budget_<=0||callback_budget_>35.) {
       throw std::invalid_argument("invalid input/processing limits");
     }
+    control_enabled_=declare_parameter<bool>("control_enabled",false);
     planner_=std::make_unique<Planner>(cfg_);grid_=std::make_unique<Grid>(cfg_);
+    if(control_enabled_){
+      mgm_sub_=create_subscription<fma_interfaces::msg::MgmState>("/adas/mgm_state",1,
+        [this](fma_interfaces::msg::MgmState::ConstSharedPtr m){
+          const double t=seconds(m->header.stamp);
+          if(!fresh(t,.2)||t<=mgm_stamp_){return;}
+          mgm_stamp_=t;mgm_received_=steady();
+          const bool active=m->top==1&&m->avoidance==1&&m->mission!=m->MISSION_ACTIVE;
+          if(active!=mgm_active_){
+            mgm_active_=active;planner_->reset();++episode_;
+            return_tracker_.reset();
+            if(course_ready_){grid_->configure(planner_->course());}
+            zone_enter_stamp_=now().seconds();
+            for(auto & pair:sensors_){pair.second.last_stamp=pair.second.last_success=pair.second.received=0;}
+            publish_blocked(active?"MGM activation requires new observations":"MGM released avoidance");
+          }
+        });
+    }
     plan_pub_=create_publisher<PlanMsg>("/avoid_v2/plan",1);
     path_pub_=create_publisher<nav_msgs::msg::Path>("/avoid_v2/path",1);
     course_sub_=create_subscription<CourseMsg>("/avoid_v2/course",rclcpp::QoS(1).reliable().transient_local(),
       [this](CourseMsg::ConstSharedPtr m) {on_course(*m);});
     route_sub_=create_subscription<fma_interfaces::msg::GpsRoute>("/perception/gps_route",
       rclcpp::QoS(1).reliable().transient_local(),
-      [this](fma_interfaces::msg::GpsRoute::ConstSharedPtr m){gps_route_=m;configure_course();});
+      [this](fma_interfaces::msg::GpsRoute::ConstSharedPtr m){
+        const bool changed=!gps_route_||gps_route_->header.frame_id!=m->header.frame_id||
+          gps_route_->route_id!=m->route_id||gps_route_->route!=m->route||gps_route_->points!=m->points;
+        gps_route_=m;
+        if(control_enabled_&&!boundary_&&changed){course_ready_=false;reset();}
+        configure_course();});
     vv_sub_=create_subscription<fma_interfaces::msg::VehicleVector>("/vehicle/vector",rclcpp::SensorDataQoS().keep_last(1),
       [this](fma_interfaces::msg::VehicleVector::ConstSharedPtr m) {
         const double t=seconds(m->header.stamp);
         State s{m->x,m->y,m->yaw,m->v,m->str};
-        if (!fresh(t,pose_timeout_)||!finite(s)||std::fabs(s.steer)>cfg_.max_steer||s.speed<0||s.speed>3.) {
+        if (!fresh(t,pose_timeout_)||!finite(s)||std::fabs(s.steer)>cfg_.max_steer||s.speed<-3.||s.speed>3.) {
           vehicle_valid_=false;return;
         }
         if(latest_stamp_>0&&t>latest_stamp_){
           const double dt=t-latest_stamp_;
-          if(std::hypot(s.x-latest_.x,s.y-latest_.y)>std::max(s.speed,latest_.speed)*dt+.10||
+          if(std::hypot(s.x-latest_.x,s.y-latest_.y)>std::max(std::fabs(s.speed),std::fabs(latest_.speed))*dt+.10||
             std::fabs(wrap(s.yaw-latest_.yaw))>3.*dt+.08){
             alignment_fault_=true;vehicle_valid_=false;return;
           }
@@ -121,6 +146,9 @@ public:
     }
     if(!sensors_.count(trigger_)){throw std::invalid_argument("trigger sensor missing");}
     timer_=create_wall_timer(std::chrono::milliseconds(20),[this](){
+      if(control_enabled_&&!control_active()){
+        planner_->set_zone(false,false);publish_blocked("MGM avoidance inactive or stale");return;
+      }
       if(!planner_->perception_required()&&gps_valid_&&fresh(gps_stamp_,gps_timeout_)){
         if(!fresh(latest_stamp_,pose_timeout_)){publish_blocked("vehicle pose unavailable");}
         return;
@@ -129,11 +157,13 @@ public:
     });
     parameter_guard_=add_on_set_parameters_callback([](const std::vector<rclcpp::Parameter> &){
       rcl_interfaces::msg::SetParametersResult result;
-      result.successful=false;result.reason="restart shadow node to change geometry/model parameters";return result;
+      result.successful=false;result.reason="restart planner node to change geometry/model parameters";return result;
     });
-    RCLCPP_WARN(get_logger(),"Shadow planner only: /avoid_v2/plan; no MGM or CAN authority. Vehicle model values require field identification.");
+    RCLCPP_INFO(get_logger(),"Wall planner mode: %s",control_enabled_?"MGM provider":"shadow");
   }
 private:
+  bool control_active() const
+  {return mgm_active_&&fresh(mgm_stamp_,.2)&&steady()-mgm_received_<=.2;}
   bool fresh(double t,double max_age) const
   {const double age=now().seconds()-t;return t>0&&age>=0&&age<=max_age;}
   State world(State s) const
@@ -145,6 +175,7 @@ private:
   void reset()
   {
     ++episode_;planner_->reset();aligned_=false;alignment_fault_=false;gps_valid_=false;
+    return_tracker_.reset();pending_trigger_=planned_trigger_=0;
     history_.clear();vehicle_valid_=false;latest_stamp_=0;gps_stamp_=0;
     for(auto & pair:sensors_){pair.second.last_stamp=pair.second.last_success=pair.second.received=0;}
     if(course_ready_){grid_->configure(planner_->course());}
@@ -154,6 +185,9 @@ private:
   {boundary_=std::make_shared<CourseMsg>(m);configure_course();}
   void configure_course()
   {
+    // Auto workspace is refreshed on route changes or near its end, not on
+    // harmless repeats of the latched route message.
+    if(control_enabled_&&!boundary_&&gps_route_){return;}
     // Reliable/transient publishers may repeat unchanged geometry with a fresh
     // header stamp. Only semantic changes invalidate the active observation map.
     if(course_ready_&&boundary_&&gps_route_&&applied_boundary_&&applied_route_&&
@@ -165,7 +199,10 @@ private:
       gps_route_->route_id==applied_route_->route_id&&gps_route_->route==applied_route_->route&&
       gps_route_->points==applied_route_->points){return;}
     course_ready_=false;
-    if(!boundary_||!gps_route_){publish_blocked("GPS route and explicit boundary required");return;}
+    if(!boundary_||!gps_route_){
+      if(control_enabled_&&gps_route_&&!boundary_){return;}
+      publish_blocked("GPS route and explicit boundary required");return;
+    }
     const auto & m=*boundary_;
     try{
       if(m.header.frame_id!=frame_||gps_route_->header.frame_id!=frame_){throw std::invalid_argument("course frame mismatch");}
@@ -184,6 +221,14 @@ private:
   void on_gps(const fma_interfaces::msg::GpsPath & m)
   {
     const double t=seconds(m.reference_stamp);
+    if(control_enabled_&&!boundary_&&gps_route_&&fresh(t,gps_timeout_)&&m.position_valid&&
+      m.fix_quality==4&&std::isfinite(m.position_x)&&std::isfinite(m.position_y)){
+      if(!course_ready_){configure_workspace(m);}
+      else if(aligned_&&control_active()){
+        const auto pr=planner_->course().project({m.position_x,m.position_y},0,planner_->course().length());
+        if(pr.station>planner_->course().length()-cfg_.horizon-2.){configure_workspace(m);}
+      }
+    }
     if(!course_ready_||!fresh(t,gps_timeout_)||m.fix_quality!=4||!m.position_valid||
       !m.vehicle_heading_valid||m.heading_source==m.HEADING_TANGENT||!m.zone_valid||m.points.empty()||
       !std::isfinite(m.position_x)||!std::isfinite(m.position_y)||!std::isfinite(m.vehicle_heading_rad)||
@@ -211,7 +256,8 @@ private:
     }
     gps_stamp_=t;gps_received_=steady();gps_valid_=true;
     const bool was_active=planner_->episode_active();
-    planner_->set_zone(true,m.avoid_zone);
+    // MGM owns the zone latch and completion. A geographic exit cannot cancel its episode.
+    planner_->set_zone(!control_enabled_||control_active(),control_enabled_?control_active():m.avoid_zone);
     if(!was_active&&planner_->perception_required()){
       grid_->configure(planner_->course());zone_enter_stamp_=t;
       for(auto & pair:sensors_){pair.second.last_stamp=pair.second.last_success=pair.second.received=0;}
@@ -224,9 +270,9 @@ private:
   void on_scan(const std::string & id,const Scan & scan)
   {
     // Subscription stays alive, but recognition/occupancy work starts only in the zone.
-    if(!planner_->perception_required()){return;}
+    if((control_enabled_&&!control_active())||!planner_->perception_required()){return;}
     const double start=steady();auto & sensor=sensors_.at(id);const double t=seconds(scan.header.stamp);
-    auto fail=[&](const char * why){sensor.last_success=0;if(id==trigger_){publish_blocked(why);}};
+    auto fail=[&](const char * why){sensor.last_success=0;publish_blocked(why);};
     if(!course_ready_||!aligned_||alignment_fault_||!gps_valid_||!vehicle_valid_||
       !fresh(gps_stamp_,gps_timeout_)||steady()-gps_received_>gps_timeout_||
       !fresh(latest_stamp_,pose_timeout_)||steady()-vehicle_received_>pose_timeout_){fail("course/localization unavailable");return;}
@@ -254,14 +300,20 @@ private:
     }
     if(rays.empty()){fail("scan contains no usable observed rays");return;}
     grid_->observe(rays,++generation_);sensor.last_success=t;sensor.received=steady();
-    if(id!=trigger_){return;}
+    if(id==trigger_){pending_trigger_=t;}
+    // Three independent subscriptions can be dispatched in any order. Finish the
+    // pending front-scan cycle when its required side observations arrive.
+    if(pending_trigger_<=planned_trigger_){return;}
     for(const auto & item:sensors_){
       if(!fresh(item.second.last_success,input_timeout_)||steady()-item.second.received>input_timeout_){
         publish_blocked("required sensor missing/stale");return;
       }
     }
+    planned_trigger_=pending_trigger_;
     const auto current=world(latest_);
+    if(current.speed<0){publish_blocked("reverse recovery owns motion; forward planner waits");return;}
     auto plan=planner_->plan(current,*grid_,now().seconds(),generation_);
+    if(control_enabled_){update_return(plan,current);}
     const double processing=(steady()-start)*1000.;
     if(processing>callback_budget_){
       plan.valid=plan.complete=false;plan.path.clear();plan.phase=Phase::HOLD;plan.deadline_hit=true;plan.reason="callback processing budget exceeded";
@@ -275,18 +327,21 @@ private:
   void emit(const Plan & p,const State & pose,double processing)
   {
     PlanMsg msg;msg.header.stamp=now();msg.header.frame_id=frame_;
+    msg.control_enabled=control_enabled_;
+    if(gps_route_){msg.route=gps_route_->route;}
     msg.route_id=course_ready_?planner_->course().id:"";msg.episode_id=episode_;msg.plan_id=p.id;
     double oldest=now().seconds();
     for(const auto & item:sensors_){oldest=std::min(oldest,item.second.last_success);}
     const bool outside=p.gps_follow&&!p.perception_active&&gps_valid_&&vehicle_valid_;
     const double valid_until=outside?std::min(latest_stamp_+pose_timeout_,gps_stamp_+gps_timeout_):
       std::min({p.valid_until,oldest+input_timeout_,latest_stamp_+pose_timeout_,gps_stamp_+gps_timeout_});
-    const bool valid=p.valid&&now().seconds()<valid_until;
+    const bool valid=p.valid&&now().seconds()<valid_until&&(!control_enabled_||control_active());
+    if(control_enabled_&&!valid){return_tracker_.invalidate();}
     msg.observation_generation=p.generation;msg.phase=uint8_t(valid||outside?p.phase:Phase::HOLD);
     msg.episode_active=planner_->episode_active();msg.perception_active=planner_->perception_required();
     msg.obstacle_detected=p.obstacle_detected;msg.maneuver_active=p.maneuver_active;
     msg.gps_follow=p.gps_follow&&(valid||outside);
-    msg.plan_valid=valid;msg.complete=(valid||outside)&&p.complete;
+    msg.plan_valid=valid;msg.complete=control_enabled_?(valid&&return_tracker_.done()):((valid||outside)&&p.complete);
     msg.deadline_hit=p.deadline_hit;msg.reason=p.reason;msg.processing_ms=processing;
     if(p.valid&&!valid){msg.reason="observation/pose lease expired before publication";}
     msg.planner_ms=p.compute_ms;msg.expanded_nodes=uint32_t(p.expanded);msg.station_m=p.station;
@@ -297,7 +352,7 @@ private:
     auto & ref=msg.reference;ref.header.stamp=stamp(latest_stamp_);ref.header.frame_id="base_link";
     ref.reference_stamp=stamp(valid?std::min(oldest,latest_stamp_):0);
     // Membership/ownership is carried explicitly above, never disguised as obstacle detection.
-    ref.scan_valid=valid;ref.avoidable=valid;ref.maneuver_done=valid&&p.complete;
+    ref.scan_valid=valid;ref.avoidable=valid;ref.maneuver_done=msg.complete;
     ref.obstacle_detected=p.obstacle_detected;
     ref.ttc=1e9f;ref.v_suggest=valid?p.speed_limit:0;
     if(valid){
@@ -317,11 +372,47 @@ private:
     plan_pub_->publish(msg);path_pub_->publish(path);
     if(p.id||outside){last_plan_received_=steady();}
   }
+  // Rectangle bounds computation/storage only; they never mark cells free or invent curbs.
+  void configure_workspace(const fma_interfaces::msg::GpsPath & gps)
+  {
+    try{
+      if(gps_route_->header.frame_id!=frame_||gps_route_->points.size()<2||gps_route_->points.size()>10000){
+        throw std::invalid_argument("GPS route missing for observation workspace");
+      }
+      Course full;full.id=gps_route_->route_id;
+      for(const auto & p:gps_route_->points){full.center.push_back({p.x,p.y});}
+      // Validate all route coordinates and spacing before selecting a local window.
+      double minx=full.center[0].x,maxx=minx,miny=full.center[0].y,maxy=miny;
+      for(auto p:full.center){minx=std::min(minx,p.x);maxx=std::max(maxx,p.x);miny=std::min(miny,p.y);maxy=std::max(maxy,p.y);}
+      full.boundary={{minx-12,miny-12},{maxx+12,miny-12},{maxx+12,maxy+12},{minx-12,maxy+12}};
+      full.entry=0;full.exit=.01;full.validate();
+      const auto at=full.project({gps.position_x,gps.position_y},0,full.length());
+      Course c;c.id=full.id;
+      const double low=std::max(0.,at.station-5),high=std::min(full.length(),at.station+30);
+      c.center.push_back(full.at(low));
+      for(size_t i=0;i<full.center.size();++i){if(full.stations[i]>low+1e-5&&full.stations[i]<high-1e-5){c.center.push_back(full.center[i]);}}
+      c.center.push_back(full.at(high));
+      minx=maxx=c.center[0].x;miny=maxy=c.center[0].y;
+      for(auto p:c.center){minx=std::min(minx,p.x);maxx=std::max(maxx,p.x);miny=std::min(miny,p.y);maxy=std::max(maxy,p.y);}
+      c.boundary={{minx-12,miny-12},{maxx+12,miny-12},{maxx+12,maxy+12},{minx-12,maxy+12}};
+      c.entry=0;c.exit=.01;c.validate();
+      planner_->set_course(c);grid_->configure(c);course_ready_=true;
+      planner_->set_zone(control_active(),control_active());zone_enter_stamp_=now().seconds();
+      for(auto & pair:sensors_){pair.second.last_stamp=pair.second.last_success=pair.second.received=0;}
+      return_tracker_.invalidate();
+    }catch(const std::exception & e){course_ready_=false;publish_blocked(e.what());}
+  }
+  void update_return(const Plan & p,const State & pose)
+  {return_tracker_.update(p,pose,planner_->course(),*grid_,cfg_,planner_->stopping_distance(pose.speed));}
+  bool control_enabled_{},mgm_active_{};
+  ReturnTracker return_tracker_;
+  double mgm_stamp_{},mgm_received_{};
+  rclcpp::Subscription<fma_interfaces::msg::MgmState>::SharedPtr mgm_sub_;
   Config cfg_;std::unique_ptr<Planner> planner_;std::unique_ptr<Grid> grid_;PoseHistory history_;
   std::string frame_,trigger_;std::map<std::string,Sensor> sensors_;
   State alignment_,latest_;double latest_stamp_{},gps_stamp_{},vehicle_received_{},gps_received_{},last_plan_received_{};
   double input_timeout_{},pose_timeout_{},gps_timeout_{},callback_budget_{};
-  double zone_enter_stamp_{};
+  double zone_enter_stamp_{},pending_trigger_{},planned_trigger_{};
   std::shared_ptr<CourseMsg> boundary_;
   fma_interfaces::msg::GpsRoute::ConstSharedPtr gps_route_;
   std::shared_ptr<CourseMsg> applied_boundary_;
