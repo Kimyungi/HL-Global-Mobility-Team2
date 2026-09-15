@@ -1,0 +1,26 @@
+avoid_v2_node:
+  ros__parameters:
+    # Front, left, right only. Rear a2 is not used by avoidance.
+    sensor_ids: [a1, b1, b2]
+    # Initial simulation/model parameters, not certified actuator calibration.
+    cruise_speed: 0.6
+    adaptive_speed: true
+    crawl_speed: 0.20
+    acceleration: 0.35
+    planning_decel: 0.70
+    resolution: 0.10
+    free_ttl: 0.30
+    steer_rate: 0.8
+    steer_tau: 0.33
+    brake_decel: 1.0
+    brake_delay: 0.20
+    margin: 0.15
+    horizon: 6.0
+    preview: 1.0
+    budget_ms: 20.0
+    callback_budget_ms: 35.0
+    input_timeout: 0.20
+    pose_timeout: 0.10
+    gps_timeout: 0.50
+    course_frame: map
+    trigger_sensor: a1

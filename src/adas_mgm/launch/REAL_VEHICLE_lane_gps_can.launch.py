@@ -68,6 +68,7 @@ from launch.substitutions import (LaunchConfiguration, PathJoinSubstitution,
                                   PythonExpression)
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.parameter_descriptions import ParameterValue
+from typing import List
 
 # CAN 브리지 + 종료 시 dSPACE 목표값 0 복귀(can_zero) 공용 조각 — 근거·순서 보장은
 # stack_avoid/launch_parts.py 주석 참조 (dSPACE watchdog 미구현 실측 2026-08-09)
@@ -267,6 +268,9 @@ def validate(context, log_dir=LOG_DIR, lidar_estop_enabled=True):
         print(f'[launch] 지정 정지: 각 지점에서 {hold_s}s 정차 후 자동 재출발'
               + (f' (+ 인자 지정 {stop_pts})' if stop_pts else ''))
     zone_only = LaunchConfiguration('avoid_zone_only').perform(context) == 'true'
+    wall_enabled = LaunchConfiguration('avoid_v2_enabled').perform(context) == 'true'
+    if wall_enabled and (not zone_only or LaunchConfiguration('parking_enabled').perform(context) != 'true'):
+        raise RuntimeError('Wall avoidance requires avoid_zone_only=true and the calibrated multi-LiDAR bringup')
     avoid_zone = LaunchConfiguration('avoid_zone_latlon').perform(context)
     n_markers = sum(str(row.get('state', '')).strip() == '4' for row in rows)
     if zone_only and route_file:
@@ -340,6 +344,16 @@ def build_launch_description(
     with open(avoid_params) as stream:
         legacy_forward = yaml.safe_load(stream)['/**'][
             'ros__parameters']['lidar_mount']['forward_angle_deg']
+
+    wall_share = get_package_share_directory('stack_avoid_v2')
+    with open(os.path.join(wall_share, 'config', 'shadow.yaml')) as stream:
+        wall_params = yaml.safe_load(stream)['avoid_v2_node']['ros__parameters']
+    with open(geometry_file) as stream:
+        mounts = yaml.safe_load(stream)['/**']['ros__parameters']['sensors']
+    for sensor_id in wall_params['sensor_ids']:
+        for key, value in mounts[sensor_id].items():
+            wall_params[f'sensors.{sensor_id}.{key}'] = value
+    wall_params['control_enabled'] = True
 
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
@@ -415,6 +429,8 @@ def build_launch_description(
         DeclareLaunchArgument('avoidance_enabled', default_value=str(_yaml['avoidance_enabled']).lower(),
                               description='Enable avoidance authority; independent LiDAR E-stop remains separate'),
         DeclareLaunchArgument('avoid_zone_only', default_value='true'),
+        DeclareLaunchArgument('avoid_v2_enabled', default_value='true', choices=['true', 'false'],
+                              description='Wall midpoint planner; false selects the historical provider'),
 
         # ── GPS 전용 모드: LANE 전이 차단 (히스테리시스 임계를 2.0으로 — confidence는
         # 최대 1.0이라 절대 도달 불가 → 항상 WAYPOINT). 야간 등 차선 오검출이 위험한
@@ -563,7 +579,7 @@ def build_launch_description(
         DeclareLaunchArgument('dynamic_tracking_max_distance_m', default_value='3.00'),
         DeclareLaunchArgument('estop_corridor_max_x_m', default_value='1.50'),
         DeclareLaunchArgument('dynamic_roi_max_x_m', default_value='1.50'),
-        DeclareLaunchArgument('avoid_target_speed_mps', default_value=LaunchConfiguration('v_base')),
+        DeclareLaunchArgument('avoid_target_speed_mps', default_value='1.0'),
         DeclareLaunchArgument('ttc_stop', default_value=str(_yaml['ttc_stop'])),
         DeclareLaunchArgument('v_accel_zone', default_value=str(_yaml['v_accel_zone'])),
 
@@ -611,6 +627,11 @@ def build_launch_description(
         # 실측값(0.76, 0, 0.065 + forward_angle 반영)으로 발행한다. 같은 TF를 두 곳이
         # 발행하면 어느 쪽이 이길지 RViz 기동 타이밍에 따라 달라진다 (2026-08-09 규명).
 
+        Node(package='stack_avoid_v2', executable='avoid_v2_node', name='avoid_v2_node',
+             condition=IfCondition(LaunchConfiguration('avoid_v2_enabled')),
+             parameters=[wall_params, {'cruise_speed': ParameterValue(
+                 LaunchConfiguration('avoid_target_speed_mps'), value_type=float)}], output='screen'),
+
         # ── stack_avoid (2026-08-12 통합) — 장애물 감지·회피 목표점 → MGM avoid 스테이트.
         # 기하 파라미터는 stack_avoid YAML, 목표속도 기본값은 MGM v_base를 따른다.
         # 현장 튜닝: ros2 param set /stack_avoid_node ...
@@ -618,6 +639,7 @@ def build_launch_description(
             package='stack_avoid',
             executable='stack_avoid_node',
             name='stack_avoid_node',
+            condition=UnlessCondition(LaunchConfiguration('avoid_v2_enabled')),
             parameters=[avoid_params, {
                 'avoid.require_mgm_active': ParameterValue(
                     LaunchConfiguration('avoid_zone_only'), value_type=bool),
@@ -819,6 +841,12 @@ def build_launch_description(
                 # (RTK FIXED 등 점검 통과 시)로 출발 (2026-08-11)
                 'wait_go': True,
                 **({'required_lidar_topics': required_lidar_topics} if required_lidar_topics else {}),
+                'avoid_v2_enabled': ParameterValue(LaunchConfiguration('avoid_v2_enabled'), value_type=bool),
+                # Rear lidar can remain available to parking, but cannot gate wall avoidance.
+                'required_lidar_topics': ParameterValue(PythonExpression([
+                    "['/lidar/a1/scan', '/lidar/b1/scan', '/lidar/b2/scan'] if '",
+                    LaunchConfiguration('avoid_v2_enabled'),
+                    "' == 'true' else ", repr(required_lidar_topics or [])]), value_type=List[str]),
                 'route_sequence_enabled': ParameterValue(
                     LaunchConfiguration('route_sequence_enabled_resolved'), value_type=bool),
                 # 시험별 목표속도. 기본은 params.yaml 값을 그대로 따르며, 실차 시험에서

@@ -31,7 +31,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.duration import Duration
 
-from fma_interfaces.msg import EstopRequest, GpsPath, RefPoint, ZoneContext, MgmState, TargetRef
+from fma_interfaces.msg import EstopRequest, GpsPath, GpsRoute, RefPoint, ZoneContext, MgmState, TargetRef
 from rcl_interfaces.msg import SetParametersResult, ParameterDescriptor
 from std_msgs.msg import Bool
 from geometry_msgs.msg import PoseStamped, TransformStamped
@@ -383,6 +383,7 @@ class StackGpsNode(Node):
         # 기록 트랙 전체 — map(ENU, 트랙 첫 점 원점) 프레임, latched 1회 발행
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.pub_track = self.create_publisher(Path, '/perception/gps_track_viz', latched)
+        self.pub_route_geometry = self.create_publisher(GpsRoute, '/perception/gps_route', latched)
         self._publish_track()
         self.timer = self.create_timer(float(p('publish_period').value), self.tick)
         self.status_timer = self.create_timer(2.0, self.report_status)
@@ -404,6 +405,14 @@ class StackGpsNode(Node):
             ps.pose.orientation.w = math.cos(self.engine.yaw[i] / 2.0)
             track.poses.append(ps)
         self.pub_track.publish(track)
+        route = GpsRoute()
+        route.header = track.header
+        self._fill_route(route)
+        route.route_id = (route.route.route_id if route.route.enabled else
+                          os.path.basename(str(self.get_parameter('waypoint_csv').value)))
+        route.points = [RefPoint(x=p.pose.position.x, y=p.pose.position.y,
+                                yaw=float(self.engine.yaw[i])) for i, p in enumerate(track.poses)]
+        self.pub_route_geometry.publish(route)
 
     def _on_target_ref(self, msg):
         stamp = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec

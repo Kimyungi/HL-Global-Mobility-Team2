@@ -696,7 +696,8 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     // Restore main's blend on avoidance entry/return. Parking and recovery
     // keep their v2 exclusive-ownership handoff.
     const bool exclusive_owner = st.params.base_state_machine_enabled &&
-      (src == MGM_SRC_PARKING || src == MGM_SRC_ESCAPE);
+      (src == MGM_SRC_PARKING || src == MGM_SRC_ESCAPE ||
+       (st.params.avoid_unblended && (src == MGM_SRC_AVOID || st.last_src == MGM_SRC_AVOID)));
     const bool legacy_avoid_entry = !st.params.base_state_machine_enabled && src == MGM_SRC_AVOID;
     st.blend_left = (exclusive_owner || legacy_avoid_entry) ? 0 : st.params.blend_cycles;
     st.last_src = src;

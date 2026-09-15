@@ -1,0 +1,1 @@
+next frame braking already blocked in unchanged current grid: frame=233 time=23.3 plan_valid=1 reused=1 current_braking_clear=1 next_body_clear=1 next_x=5.584503615 next_y=1.023236995 next_speed=0.2 next_steer=-0.05012765105

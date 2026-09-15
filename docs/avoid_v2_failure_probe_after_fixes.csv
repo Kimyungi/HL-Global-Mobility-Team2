@@ -1,0 +1,89 @@
+family,scene,initial_speed,cruise_speed,spacing,cars,result,time,x,y,speed_min,vehicle_contact,curb_contact,max_ms,next_braking_failures,reason
+entry_speed,s_center_gap_2,0.2,1,0,2,complete,28.7,15.03322221,-0.9368212581,0.2,0,0,10.863373,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_2,0.2,0.2,0,2,complete,71.1,14.79976272,-0.977854678,0.2,0,0,7.502847,0,wall corridor speed profile revalidated
+entry_speed,s_center_gap_2,0.4,1,0,2,complete,28.3,15.04313247,-0.9348415412,0.2,0,0,10.853343,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_2,0.4,0.4,0,2,complete,41.7,14.8637292,-0.9666926704,0.2,0,0,8.811438,0,wall corridor speed profile revalidated
+entry_speed,s_center_gap_2,0.6,1,0,2,complete,28,15.03771203,-0.9363817867,0.2,0,0,11.305541,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_2,0.6,0.6,0,2,complete,44.7,14.89074804,-0.9623709242,0.2,0,0,9.473351,0,wall corridor speed profile revalidated
+entry_speed,s_center_gap_2,0.8,1,0,2,complete,27.8,15.02043392,-0.9393783153,0.2,0,0,11.430506,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_2,0.8,0.8,0,2,complete,28.7,14.93468406,-0.9550254695,0.2,0,0,11.361091,0,wall corridor speed profile revalidated
+entry_speed,s_center_gap_2,1,1,0,2,complete,27.8,14.95724426,-0.9520555183,0.2,0,0,11.766568,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_2,1,1,0,2,complete,27.8,14.95724426,-0.9520555183,0.2,0,0,12.190283,0,wall corridor speed profile revalidated
+entry_speed,straight_center_2,0.2,1,0,2,hold,3.3,2.466552641,0.1767007475,0.2,0,0,9.647014,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_2,0.2,0.2,0,2,hold,7,2.388085345,0.1686633326,0.2,0,0,9.525051,0,wall midline has no certified forward rollout
+entry_speed,straight_center_2,0.4,1,0,2,hold,2.6,2.488236856,0.1728889652,0.4,0,0,9.555163,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_2,0.4,0.4,0,2,hold,3.7,2.383370054,0.1611422714,0.2258866371,0,0,9.304764,0,wall midline has no certified forward rollout
+entry_speed,straight_center_2,0.6,1,0,2,hold,2.1,2.467779916,0.1606074471,0.5475,0,0,9.803881,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_2,0.6,0.6,0,2,hold,2.4,2.404902687,0.1516851531,0.46,0,0,10.656821,0,wall midline has no certified forward rollout
+entry_speed,straight_center_2,0.8,1,0,2,hold,1.6,2.377390709,0.1467211885,0.7315420156,0,0,13.107286,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_2,0.8,0.8,0,2,hold,1.9,2.488182728,0.165717976,0.691346875,0,0,10.558113,0,wall midline has no certified forward rollout
+entry_speed,straight_center_2,1,1,0,2,hold,1.5,2.393009394,0.1409435775,0.7327347702,0,0,12.5432,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_2,1,1,0,2,hold,1.5,2.393009394,0.1409435775,0.7327347702,0,0,12.885421,0,wall midline has no certified forward rollout
+entry_speed,s_center_gap_3,0.2,1,0,3,complete,30.3,14.95705893,-0.9517356029,0.2,0,0,10.954435,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_3,0.2,0.2,0,3,complete,71.3,14.79678377,-0.9822295381,0.2,0,0,7.427358,0,wall corridor speed profile revalidated
+entry_speed,s_center_gap_3,0.4,1,0,3,complete,29.9,14.96764075,-0.94965834,0.2,0,0,10.815309,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_3,0.4,0.4,0,3,complete,43.3,14.86530645,-0.9696922052,0.2,0,0,8.650779,0,wall corridor speed profile revalidated
+entry_speed,s_center_gap_3,0.6,1,0,3,complete,29.4,14.96977462,-0.9492399365,0.2,0,0,11.136172,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_3,0.6,0.6,0,3,complete,50.2,14.90925014,-0.9610145138,0.2,0,0,9.541611,0,wall corridor speed profile revalidated
+entry_speed,s_center_gap_3,0.8,1,0,3,complete,29.2,14.95190997,-0.952728499,0.2,0,0,11.752149,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_3,0.8,0.8,0,3,complete,30.3,14.96082781,-0.951558302,0.2,0,0,11.234538,0,wall corridor speed profile revalidated
+entry_speed,s_center_gap_3,1,1,0,3,complete,29.6,15.03733413,-0.9359362878,0.2,0,0,12.206736,0,wall corridor speed profile revalidated
+cruise_speed,s_center_gap_3,1,1,0,3,complete,29.6,15.03733413,-0.9359362878,0.2,0,0,11.738543,0,wall corridor speed profile revalidated
+entry_speed,straight_center_3,0.2,1,0,3,hold,3.3,2.466552641,0.1767007475,0.2,0,0,9.779887,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_3,0.2,0.2,0,3,hold,7,2.388085345,0.1686633326,0.2,0,0,9.543826,0,wall midline has no certified forward rollout
+entry_speed,straight_center_3,0.4,1,0,3,hold,2.6,2.488236856,0.1728889652,0.4,0,0,9.143644,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_3,0.4,0.4,0,3,hold,3.7,2.383370054,0.1611422714,0.2258866371,0,0,9.343846,0,wall midline has no certified forward rollout
+entry_speed,straight_center_3,0.6,1,0,3,hold,2.1,2.467779916,0.1606074471,0.5475,0,0,10.050822,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_3,0.6,0.6,0,3,hold,2.4,2.404902687,0.1516851531,0.46,0,0,10.520822,0,wall midline has no certified forward rollout
+entry_speed,straight_center_3,0.8,1,0,3,hold,1.6,2.377390709,0.1467211885,0.7315420156,0,0,12.60591,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_3,0.8,0.8,0,3,hold,1.9,2.488182728,0.165717976,0.691346875,0,0,10.466697,0,wall midline has no certified forward rollout
+entry_speed,straight_center_3,1,1,0,3,hold,1.5,2.393009394,0.1409435775,0.7327347702,0,0,13.488754,0,wall midline has no certified forward rollout
+cruise_speed,straight_center_3,1,1,0,3,hold,1.5,2.393009394,0.1409435775,0.7327347702,0,0,13.404356,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_2_rl,1,1,1,2,hold,8.5,3.172271395,0.507420477,0.2,0,0,18.019902,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_2_rl,1,1,1.5,2,hold,1.2,2.199892534,0.0126805748,1,0,0,6.290106,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_2_rl,1,1,2,2,hold,7.1,4.081631087,0.2865308572,0.2000064301,0,0,18.058597,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_2_rl,1,1,2.5,2,complete,33.4,12.51914208,-0.01230886408,0.2,0,0,18.063274,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_2_rl,1,1,3.5,2,complete,30.6,12.47210453,-0.0242050195,0.2278638555,0,0,18.063845,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_2_rl,1,1,4.5,2,complete,29.6,12.51770493,-0.04796046311,0.2710677083,0,0,1.308747,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_2_lr,1,1,1,2,hold,8.5,3.18679351,-0.5114145846,0.2,0,0,18.022655,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_2_lr,1,1,1.5,2,hold,1.2,2.199892015,-0.01271488015,1,0,0,6.505316,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_2_lr,1,1,2,2,hold,7.1,4.081627891,-0.2865789951,0.2000064301,0,0,18.072156,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_2_lr,1,1,2.5,2,complete,33.4,12.51913954,0.01226006127,0.2,0,0,18.074461,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_2_lr,1,1,3.5,2,complete,32.7,12.45205906,0.03249738443,0.228388773,0,0,18.087003,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_2_lr,1,1,4.5,2,complete,29.6,12.51769887,0.04791195444,0.2710677083,0,0,1.443981,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_3_rl,1,1,1,3,hold,8.5,3.172271395,0.507420477,0.2,0,0,18.01819,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_3_rl,1,1,1.5,3,hold,1.2,2.199892488,0.01268324575,1,0,0,6.474512,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_3_rl,1,1,2,3,hold,7.1,4.081629793,0.2865397976,0.2000064301,0,0,18.062912,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_3_rl,1,1,2.5,3,complete,46,12.81572538,0.08347732879,0.2,0,0,18.245282,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_3_rl,1,1,3.5,3,complete,40.5,13.79750085,0.06063112672,0.2278638555,0,0,18.07524,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_3_rl,1,1,4.5,3,complete,44.2,15.81209383,0.0914468258,0.2,0,0,18.026823,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_3_lr,1,1,1,3,hold,8.5,3.18679351,-0.5114145846,0.2,0,0,18.019456,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_3_lr,1,1,1.5,3,hold,1.2,2.19989197,-0.01271755109,1,0,0,6.262773,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_3_lr,1,1,2,3,hold,7.1,4.081633324,-0.2866027745,0.2000064301,0,0,18.066131,0,wall midline has no certified forward rollout
+longitudinal_spacing,straight_alternate_3_lr,1,1,2.5,3,complete,46,12.85639442,-0.08354693256,0.2,0,0,18.120354,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_3_lr,1,1,3.5,3,complete,40.5,13.7974969,-0.06068032388,0.2278637709,0,0,18.081038,0,wall corridor speed profile revalidated
+longitudinal_spacing,straight_alternate_3_lr,1,1,4.5,3,complete,44.2,15.81208788,-0.0914962654,0.2,0,0,18.029136,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_2_rl,1,1,1,2,hold,9.6,3.183700011,1.574270729,0.2,0,0,18.024098,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_2_rl,1,1,1.5,2,hold,5.7,3.654689475,1.337151955,0.2026819129,0,0,5.754068,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_2_rl,1,1,2,2,hold,13.7,4.084089401,1.417051208,0.2,0,0,18.057367,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_2_rl,1,1,2.5,2,complete,34.3,14.96203802,-0.9492328604,0.2,0,0,18.099499,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_2_rl,1,1,3.5,2,complete,32.7,14.97736634,-0.9474308185,0.2695920139,0,0,18.093311,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_2_rl,1,1,4.5,2,complete,36.6,14.97300147,-0.9500063636,0.2,0,0,2.078768,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_2_lr,1,1,1,2,hold,5.2,2.961843553,0.5334124785,0.2000598954,0,0,16.825931,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_2_lr,1,1,1.5,2,hold,1.2,2.145400023,0.7325261848,1,0,0,3.080164,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_2_lr,1,1,2,2,hold,7.5,3.852975102,0.6685234072,0.2269924514,0,0,18.055756,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_2_lr,1,1,2.5,2,complete,33.1,15.01582454,-0.9414540581,0.2181848301,0,0,13.635904,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_2_lr,1,1,3.5,2,complete,33.5,14.99081343,-0.9437529487,0.2,0,0,1.885128,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_2_lr,1,1,4.5,2,complete,29.7,14.95451189,-0.9475417519,0.2757552083,0,0,1.676803,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_3_rl,1,1,1,3,hold,9.6,3.190213284,1.548378662,0.2,0,0,18.030732,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_3_rl,1,1,1.5,3,hold,5.7,3.654721064,1.337132061,0.202681917,0,0,5.713639,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_3_rl,1,1,2,3,hold,13.7,4.084180429,1.416935969,0.2,0,0,18.057191,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_3_rl,1,1,2.5,3,complete,41.5,14.97205397,-0.9474142755,0.2,0,0,18.075173,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_3_rl,1,1,3.5,3,complete,40.5,15.03056686,-0.928721489,0.2695920139,0,0,18.087761,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_3_rl,1,1,4.5,3,complete,45.9,15.316801,-0.7847728837,0.2,0,0,2.222741,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_3_lr,1,1,1,3,hold,5.2,2.961843553,0.5334124785,0.2000598954,0,0,17.462765,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_3_lr,1,1,1.5,3,hold,1.2,2.145400562,0.7325242638,1,0,0,3.114869,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_3_lr,1,1,2,3,hold,7.5,3.852975139,0.6685233137,0.2269924776,0,0,18.06421,0,wall midline has no certified forward rollout
+longitudinal_spacing,s_alternate_3_lr,1,1,2.5,3,complete,42.8,14.97328794,-0.9510173644,0.2,0,0,13.891123,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_3_lr,1,1,3.5,3,complete,47.7,15.01937506,-0.9809910753,0.2,0,0,14.473101,0,wall corridor speed profile revalidated
+longitudinal_spacing,s_alternate_3_lr,1,1,4.5,3,complete,41.9,15.25386391,-0.9830391327,0.2,0,0,1.810144,0,wall corridor speed profile revalidated

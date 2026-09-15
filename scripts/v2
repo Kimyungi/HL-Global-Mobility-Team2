@@ -34,6 +34,8 @@ case "$V2_ACTION" in
   check) ;;
   test)
     ctest --test-dir "$V2_ROOT/build_v2/adas_mgm" --output-on-failure
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=192 /usr/bin/python3 \
+      src/stack_avoid_v2/test/mgm_integration.py "$V2_ROOT/install_v2"
     export PYTHONPATH="$V2_ROOT/src/stack_gps:$V2_ROOT/src/stack_lane:$V2_ROOT/src/stack_parking:$V2_ROOT/src/stack_estop:$V2_ROOT/src/stack_avoid:$V2_ROOT/src/lidar_fusion_v2:$V2_ROOT/src/stack_traffic:$PYTHONPATH"
     # GPS and avoidance both contain test_station_path.py; ROS launch_testing
     # imports bare module names, so collect the GPS suite in its own process.

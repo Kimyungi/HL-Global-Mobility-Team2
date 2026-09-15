@@ -1,5 +1,7 @@
 # RUN_BOOK_FINAL
 
+> 2026-09-15: v2 기본 회피 provider는 전방·좌우 3개 LiDAR를 사용하는 `stack_avoid_v2`다. 기존 zone 진입·GPS_RETURN·완료 표식 조건은 유지한다. 운영 연결은 [벽 중앙 회피 MGM 연결](docs/AVOID_V2_MGM_INTEGRATION.md)을 따른다. 아래 기존 `stack_avoid` 경로 생성/그림자 전용 설명보다 이 연결 계약이 우선한다.
+
 ## v2 목표 속도 직접 전달 (2026-09-15)
 
 MGM은 상태별로 결정한 `v_ref`를 후단 가감속 제한 없이 하위 제어기로 전달한다.

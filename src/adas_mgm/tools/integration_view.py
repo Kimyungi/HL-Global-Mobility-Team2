@@ -18,7 +18,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import ColorRGBA, Header
 from tf2_ros import StaticTransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
-from fma_interfaces.msg import GpsPath, LanePath, MgmState, ParkingStatus, ParkingWallStatus, AvoidStatus, TargetRef, TrafficStop, VehicleVector
+from fma_interfaces.msg import GpsPath, LanePath, MgmState, ParkingStatus, ParkingWallStatus, AvoidStatus, AvoidPlan, TargetRef, TrafficStop, VehicleVector
 
 FRAME = 'v2_vehicle_view'
 PREFIX = '/integration_v2/view'
@@ -89,6 +89,7 @@ class IntegrationView(Node):
             ('traffic', TrafficStop, '/perception/traffic_stop'), ('vehicle', VehicleVector, '/vehicle/vector'),
             ('avoid', AvoidStatus, '/perception/avoid'),
             ('avoid_path', Path, '/perception/avoid_path'),
+            ('wall_plan', AvoidPlan, '/avoid_v2/plan'), ('avoid_path', Path, '/avoid_v2/path'),
             ('parking', ParkingStatus, '/perception/parking'), ('pose', PoseStamped, '/parking/slam_pose'),
             ('map', PointCloud2, '/parking/local_map'), ('plan', Path, '/parking/reference_path'),
             ('active', Path, '/parking/active_path'), ('walls', MarkerArray, '/parking/debug_markers'),
@@ -118,6 +119,10 @@ class IntegrationView(Node):
         self.create_timer(.1, self.render)
 
     def receive(self, key, msg):
+        if key == 'wall_plan':
+            if not msg.control_enabled:
+                return
+            key, msg = 'avoid', msg.reference
         if key == 'gps':
             route = (msg.route.sequence_id, msg.route.index, msg.route.connecting)
             previous = self.samples.get('gps')
@@ -220,6 +225,12 @@ class IntegrationView(Node):
         if avoid_path is not None and avoid_path.header.frame_id.lstrip('/') == 'base_link':
             self.line('AVOID_PATH', [(p.pose.position.x, p.pose.position.y)
                                      for p in avoid_path.poses], YELLOW, .10, .15)
+        elif (avoid_path is not None and avoid_path.header.frame_id == 'map' and gps is not None
+              and gps.position_valid and gps.vehicle_heading_valid):
+            pose = (gps.position_x, gps.position_y, gps.vehicle_heading_rad)
+            if all(map(math.isfinite, pose)):
+                self.line('AVOID_PATH', local_xy([(p.pose.position.x, p.pose.position.y)
+                          for p in avoid_path.poses], pose), YELLOW, .10, .15)
         avoid = self.get('avoid', .5, True)
         if avoid is not None and avoid.scan_valid:
             self.preview('AVOID_TARGET', avoid, YELLOW, .40)

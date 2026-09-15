@@ -14,6 +14,7 @@
 #include <time.h>
 
 #include <algorithm>
+#include "avoid_plan_input.hpp"
 #include <atomic>
 #include <cmath>
 #include <exception>
@@ -254,6 +255,10 @@ public:
     // 회피 허용 구간 밖에서는 AVOID 전이 금지 (stack_gps 의 avoid_zone_latlon 과 짝).
     // 기본 false = 구동작(어디서나 회피) — 켜는 것은 launch/params의 명시적 선택.
     p.avoid_zone_only = declare_parameter<bool>("avoid_zone_only", false) ? 1 : 0;
+    rcl_interfaces::msg::ParameterDescriptor wall_descriptor;
+    wall_descriptor.read_only=true;
+    wall_planner_=declare_parameter<bool>("avoid_v2_enabled",false,wall_descriptor);
+    p.avoid_unblended=wall_planner_?1:0;
     // ── 후진 탈출 (§4, 2026-08-24). 기본 끔 — 켜는 것은 params.yaml/launch 의
     // 명시적 선택이어야 한다. 후진은 사람이 뒤를 확인한 상태에서만 시험할 동작이다.
     p.escape_after_cycles =
@@ -301,6 +306,10 @@ public:
     base_managers_ = declare_parameter<bool>(
       "base_state_machine_enabled", backend_name == "core");
     p.base_state_machine_enabled = base_managers_ ? 1 : 0;
+    if(wall_planner_&&(!base_managers_||!p.avoid_zone_only)){
+      throw std::invalid_argument("wall planner requires base managers and zone entry policy");
+    }
+
     p.safe_stop_all_sensors_only = declare_parameter<bool>(
       "safe_stop_all_sensors_only", false, backend_descriptor) ? 1 : 0;
     if (p.safe_stop_all_sensors_only && (!base_managers_ || backend_name != "core")) {
@@ -552,7 +561,15 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         msgs_.gps = *m;
         last_gps_rx_ns_ = monotonicNs();});
-    sub_avoid_ = create_subscription<fma_interfaces::msg::AvoidStatus>(
+    if(wall_planner_){
+      sub_wall_plan_=create_subscription<fma_interfaces::msg::AvoidPlan>("/avoid_v2/plan",qos,
+        [this](fma_interfaces::msg::AvoidPlan::ConstSharedPtr m){
+          std::lock_guard<std::mutex> lk(mtx_);
+          // A repeated or reordered payload cannot renew its wall-clock lease.
+          if(avoid_time_ns(m->header.stamp)<=avoid_time_ns(wall_plan_.header.stamp)){return;}
+          wall_plan_=*m;last_avoid_rx_ns_=monotonicNs();
+        });
+    }else sub_avoid_ = create_subscription<fma_interfaces::msg::AvoidStatus>(
       "/perception/avoid", qos,
       [this](fma_interfaces::msg::AvoidStatus::ConstSharedPtr m) {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -717,6 +734,7 @@ private:
     int64_t gps_rx_ns;
     int64_t traffic_rx_ns;
     int64_t avoid_rx_ns;
+    fma_interfaces::msg::AvoidPlan wall_plan;
     int64_t parking_rx_ns;
     int64_t can_rx_ns;
     int64_t vehicle_rx_ns;
@@ -733,6 +751,7 @@ private:
       gps_rx_ns = last_gps_rx_ns_;
       traffic_rx_ns = last_traffic_rx_ns_;
       avoid_rx_ns = last_avoid_rx_ns_;
+      wall_plan = wall_plan_;
       parking_rx_ns = last_parking_rx_ns_;
       can_rx_ns = last_can_rx_ns_;
       vehicle_rx_ns = last_vehicle_rx_ns_;
@@ -833,6 +852,11 @@ private:
     // 이미 AVOID 스테이트면 lane/gps와 동일하게 estop 보정 — 낡은 회피 경로로
     // 계속 주행하던 구멍 차단. ttc는 미수신 초기값과 같은 1e9로 (즉시정지 바닥 오인 방지).
     const bool avoid_stale = avoid_rx_ns < 0 || monotonicNs() - avoid_rx_ns > avoid_stale_ns_;
+    if(wall_planner_){
+      if(new_session){wall_activation_ns_=now().nanoseconds();}
+      m.avoid=wall_plan_input(wall_plan,m.gps,now().nanoseconds(),
+        avoid_rx_ns<0?-1:monotonicNs()-avoid_rx_ns,wall_activation_ns_);
+    }
     if (avoid_stale) {
       m.avoid.obstacle_detected = false;
       m.avoid.avoidable = false;
@@ -977,7 +1001,10 @@ private:
     for (size_t i = 0; i < lidar_stamps.size() && i < 4; ++i) {
       const int64_t age = s.event_time_ns - lidar_stamps[i];
       if (lidar_stamps[i] > 0 && age >= 0 && age <= 350'000'000) {
-        s.sensor_alive_mask |= static_cast<uint8_t>(1u << (i+2));
+        const auto & topic=required_lidar_topics_[i];
+        const unsigned bit=topic=="/lidar/a1/scan"?2:topic=="/lidar/a2/scan"?3:
+          topic=="/lidar/b1/scan"?4:topic=="/lidar/b2/scan"?5:i+2;
+        s.sensor_alive_mask |= static_cast<uint8_t>(1u << bit);
       }
     }
     s.gps_fixed_ready = m.gps.fix_quality == 4 && provider_reference(s, MGM_SRC_GPS).valid;
@@ -989,7 +1016,7 @@ private:
         missing_lidars.push_back(required_lidar_topics_[i]);
       }
     }
-    if (avoid_stale || !m.avoid.scan_valid) {missing_lidars.push_back("/perception/avoid");}
+    if (!wall_planner_&&(avoid_stale || !m.avoid.scan_valid)) {missing_lidars.push_back("/perception/avoid");}
     if (lidar_estop_enabled_ && (estop_stale || !m.estop.scan_valid)) {
       missing_lidars.push_back("/perception/estop");
     }
@@ -1115,6 +1142,9 @@ private:
       status.top = static_cast<uint8_t>(out.top);
       status.navigation = static_cast<uint8_t>(out.nav);
       status.avoidance = static_cast<uint8_t>(out.avoid);
+      if(wall_planner_&&status.avoidance==1&&previous_manager_status_.avoidance!=1){
+        wall_activation_ns_=now().nanoseconds();
+      }
       status.avoid_return_cross_track_m = s.gps_cross_track;
       status.avoid_return_yaw_error_rad = s.gps_station_yaw_error;
       status.avoid_return_error_valid = out.references[MGM_SRC_GPS].valid &&
@@ -1345,6 +1375,10 @@ private:
   int64_t gps_stale_ns_{500'000'000};
   int64_t last_traffic_rx_ns_{-1};  // 마지막 TrafficStop 수신 시각 (미수신 = -1)
   int64_t traffic_stale_ns_{500'000'000};
+  bool wall_planner_{};
+  int64_t wall_activation_ns_{};
+  fma_interfaces::msg::AvoidPlan wall_plan_;
+  rclcpp::Subscription<fma_interfaces::msg::AvoidPlan>::SharedPtr sub_wall_plan_;
   int64_t last_avoid_rx_ns_{-1};  // 마지막 AvoidStatus 수신 시각 (미수신 = -1)
   int64_t last_parking_rx_ns_{-1};  // 마지막 ParkingStatus 수신 시각 (미수신 = -1)
   // 직전 틱에 사용한 수신 시각 — 비교해서 "이번 틱에 새 메시지" 판정 (§5.8)

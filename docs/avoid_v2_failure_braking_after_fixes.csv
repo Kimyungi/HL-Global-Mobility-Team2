@@ -1,0 +1,2 @@
+family,scene,initial_speed,cruise_speed,spacing,cars,result,time,x,y,speed_min,vehicle_contact,curb_contact,max_ms,next_braking_failures,reason
+cruise_speed,s_center_gap_3,0.2,0.2,0,3,complete,71.3,14.79678377,-0.9822295381,0.2,0,0,7.457809,0,wall corridor speed profile revalidated
