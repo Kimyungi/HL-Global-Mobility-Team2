@@ -24,7 +24,7 @@ void wire_geometry_and_speed()
     "AVOID preserves v2 single wire point");
   check(near(r.out.ref_points[0].x, from.x + (.96f-from.x)/11.f),
     "entry uses main ten-cycle blend, not an immediate endpoint jump");
-  check(near(r.out.v_ref, .985f), "entry decelerates with main a_down");
+  check(near(r.out.v_ref, .6f), "entry publishes avoidance cap without a second speed ramp");
   r.tick(10);
   check(near(r.out.ref_points[0].x, .96f) && near(r.out.ref_points[0].y, .24f),
     "wire point preserves the station preview without scaling");
@@ -54,8 +54,8 @@ void stop_and_restart()
     "LiDAR stop is immediate while valid avoidance geometry remains available");
   check(near(r.out.ref_points[0].x,.96f), "stop does not straighten or discard avoidance");
   r.s.auto_estop = false; r.tick();
-  check(near(r.out.v_ref,.005f), "restart begins at .005 rather than fixed 1 m/s");
-  r.tick(119); check(near(r.out.v_ref,.6f), "restart reaches .6 over main acceleration ramp");
+  check(near(r.out.v_ref,.6f), "restart immediately publishes the avoidance target");
+  r.tick(119); check(near(r.out.v_ref,.6f), "restart retains the avoidance target");
   r.s.avoid_ttc = .5f; r.tick();
   check(r.out.v_ref>0 && r.out.safety==SafetyState::NORMAL,"TTC alone does not stop v2");
   r.s.avoid_ttc = 100.f; r.tick();
@@ -87,7 +87,7 @@ void completion_and_return()
   check(r.out.avoid==AvoidState::GPS_RETURN && r.out.path_source==MGM_SRC_GPS &&
     r.out.state==MGM_STATE_AVOID && r.st.return_hold_left==0,
     "done changes steering to GPS while retaining AVOID state");
-  check(near(r.out.v_ref,.605f), "GPS return ramps out of avoidance speed");
+  check(near(r.out.v_ref,1.f), "GPS return immediately publishes navigation target");
   r.s.avoid_maneuver_done=false; r.s.gps_cross_track=.5f;
   r.s.gps_heading_valid=r.s.gps_station_error_valid=true;
   r.tick(400);
@@ -182,8 +182,8 @@ void obstacle_without_reference()
   r.s.references[MGM_SRC_AVOID]={2, 1.f, .5f}; r.s.avoid_avoidable=true; r.tick();
   check(r.out.v_ref==0, "stale replacement target cannot release stop");
   r.s.references[MGM_SRC_AVOID]={3, 0.f, .5f}; r.tick();
-  check(r.out.path_source==MGM_SRC_AVOID && near(r.out.v_ref,.005f),
-    "fresh replacement releases stop through avoidance acceleration ramp");
+  check(r.out.path_source==MGM_SRC_AVOID && near(r.out.v_ref,.6f),
+    "fresh replacement immediately releases the decided avoidance target");
   r.s.avoid_ttc=1.4f; r.s.avoid_avoidable=false; r.tick();
   check(r.out.v_ref>0 && r.out.safety==SafetyState::NORMAL,
     "provider avoidable flag does not create v2 E-stop");

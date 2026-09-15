@@ -196,8 +196,8 @@ struct CoreParams
   float v_narrow;          // [m/s] avoid 여유 폭 좁을 때 상한
   float ttc_stop;          // [s] TTC 안전 바닥
   int32_t blend_cycles;    // 스테이트 전환 ref 블렌드 구간 (틱)
-  float a_up;              // [m/s^2] 가속 rate limit
-  float a_down;            // [m/s^2] 일반 감속 rate limit (immediate_stop은 우회)
+  float a_up;              // [m/s^2] legacy/generated only; v2 passes speed through
+  float a_down;            // [m/s^2] legacy/generated only; immediate_stop bypasses
   float wrongway_yaw;      // [rad] 역방향 판정 |ref[0].yaw| 임계 (waypoint, §4)
   int32_t wrongway_cycles; // 역방향 N주기 연속 조건
   // avoid→waypoint 복귀 후 이 틱수 동안 waypoint→lane 전이를 보류한다.
@@ -345,9 +345,8 @@ struct CoreState
   bool has_raw_target;
   int32_t raw_n;
   CorePoint last_raw_target[MGM_NUM_POINTS];
-  // 종방향 병합 (rate limit)
+  // Previous published speed command; v2 does not rate-limit it.
   float v;
-  bool avoid_speed_ramp;  // main-compatible ramp during AVOID and back to navigation speed
   // ── 후진 탈출 (2026-08-24)
   int32_t estop_hold_cnt;   // 실제 estop 연속 틱 (watchdog 보정 제외)
   uint8_t escape_phase;     // MGM_ESCAPE_* — AVOID 안의 단계

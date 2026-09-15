@@ -58,8 +58,8 @@ mgm_node:
     # 스테이트별 속도 [m/s] (2026-09-14: 일반/회피 목표 2.0)
     # v2 일반 Navigation/주차 목표속도 크기. 주차 후진은 -v_base.
     # stack_avoid target_speed_mps도 같은 값으로 유지한다 (TTC 속도 폴백).
-    # AVOID는 v_avoid/v_narrow 상한과 a_up/a_down을 적용한다.
-    # 회피 종료 후 Navigation 속도 복귀까지 ramp를 유지한다.
+    # AVOID는 v_avoid/v_narrow 상한을 적용한다.
+    # v2는 상태별 목표를 그대로 출력한다. 가감속은 하위 제어기가 담당한다.
     v_base: 2.0
     v_accel_zone: 2.0
     v_narrow: 0.2
@@ -153,8 +153,8 @@ mgm_node:
 
     # 조립/병합 (실행부 파라미터 — 판단 아님)
     blend_cycles: 10        # 스테이트 전환 시 ref 블렌드 구간 (틱)
-    a_up: 0.5               # [m/s^2] 가속 rate limit
-    a_down: 1.5             # [m/s^2] 일반 감속 rate limit (긴급은 우회)
+    a_up: 0.5               # [m/s^2] legacy/generated 전용; v2에서는 미사용
+    a_down: 1.5             # [m/s^2] legacy/generated 전용; v2에서는 미사용
 
     # 실시간 (§5.2, §5.3)
     cpu_core: -1            # >=0 이면 해당 코어에 루프 스레드 고정

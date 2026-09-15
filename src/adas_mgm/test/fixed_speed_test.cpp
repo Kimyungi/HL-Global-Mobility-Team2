@@ -25,10 +25,10 @@ void motion()
   r.s.avoid_narrow_gap = true; r.tick(40);
   check(near(r.out.v_ref,.2f), "AVOID retains main narrow-gap cap");
   r.s.avoid_v_suggest = 0.f; r.tick();
-  check(near(r.out.v_ref, .185f), "provider zero request retains normal stop deceleration");
+  check(near(r.out.v_ref, 0.f), "provider zero request is published in the same tick");
   r.tick(60); check(r.out.v_ref == 0.f, "provider zero reaches stop");
   r.s.avoid_v_suggest = .01f; r.tick();
-  check(near(r.out.v_ref, .005f), "avoidance resumes through main acceleration ramp");
+  check(near(r.out.v_ref, .01f), "avoidance immediately publishes a fresh nonzero target");
 }
 
 void stops()
@@ -60,11 +60,11 @@ void parking_and_recovery()
   check(r.out.v_ref == 0, "mission handoff still waits for execution ack");
   r.s.parking_updated = true; r.tick();
   check(near(r.out.v_ref, -1.f), "parking reverse uses negative fixed target");
-  r.s.parking_v_suggest = 0.f; r.tick(210);  // existing a_up=.5 takes 2s from -1 to 0
+  r.s.parking_v_suggest = 0.f; r.tick();
   check(r.out.v_ref == 0, "parking phase stop preserved");
   r.s.parking_v_suggest = .05f; r.tick();
   check(near(r.out.v_ref, 1.f), "parking forward uses positive fixed target");
-  r.s.parking_path_blocked = true; r.tick(100);
+  r.s.parking_path_blocked = true; r.tick();
   check(r.out.v_ref == 0, "parking blocked stop preserved");
   r.s.parking_path_blocked = false; r.s.parking_v_suggest = -.1f; r.tick();
   r.s.parking_done = true; r.tick();
@@ -158,10 +158,66 @@ void signal_and_invalid()
   legacy.st.params.a_up = .5f; legacy.tick();
   check(near(legacy.out.v_ref, .005f), "legacy still uses original motion ramp");
 }
+
+void signal_without_output_ramp()
+{
+  // Operating acceleration parameters must not delay the distance-based target.
+  // Check both the existing 1m threshold and a configured 0.5m threshold.
+  for (float offset : {1.f, .5f}) {
+    Run r;
+    r.st.params.v_base = 2.f;
+    r.st.params.a_up = .5f; r.st.params.a_down = 1.5f;
+    r.st.params.traffic_stop_offset = offset;
+    r.s.vehicle_speed = 2.f;
+    r.tick(); r.redline();
+    check(near(r.out.v_ref, 2.f), "unseeded signal retains the decided target");
+    r.s.traffic_stopline_detected = false; r.tick();
+    check(near(r.out.traffic_remaining_m, 1.5f), "first loss seeds distance unchanged");
+    while (r.out.traffic_remaining_m > offset) {
+      r.tick();
+      const float d = r.out.traffic_remaining_m;
+      const float expected = d <= offset ? 0.f : 2.f * d / 1.5f;
+      check(near(r.out.v_ref, expected) && near(r.st.v, expected),
+        "published signal target matches distance profile in the same tick");
+    }
+    check(r.out.v_ref == 0 && r.out.signal == SignalState::APPROACH_STOP_LINE &&
+      !r.out.immediate_stop, "zero target does not claim actual stop or require E-stop");
+    r.s.vehicle_speed = 0; r.tick();
+    check(r.out.signal == SignalState::STOPPED_WAIT, "measured stop completes signal approach");
+    r.s.traffic_red_active = false; r.tick();
+    check(near(r.out.v_ref, 2.f), "signal release passes navigation target immediately");
+  }
+}
+
+void stop_zone_measured_dwell()
+{
+  Run r;
+  r.st.params.stop_zone_hold_cycles = 3;
+  r.s.vehicle_speed = 2.f;
+  r.tick(); r.s.gps_stop_zone = 1; r.tick(5);
+  check(r.out.v_ref == 0 && r.st.stop_hold_left == 3,
+    "zero command cannot start dwell while vehicle is moving");
+  r.s.vehicle_speed = -.2f; r.tick(5);
+  check(r.st.stop_hold_left == 3, "reverse rolling cannot count as a stop");
+  r.s.vehicle_speed = 0; r.s.vehicle_speed_valid = false; r.tick(5);
+  check(r.st.stop_hold_left == 3, "stale speed cannot certify dwell");
+  r.s.vehicle_speed_valid = true;
+  for (float invalid : {std::numeric_limits<float>::quiet_NaN(),
+      std::numeric_limits<float>::infinity()}) {
+    r.s.vehicle_speed = invalid; r.tick(5);
+    check(r.st.stop_hold_left == 3, "nonfinite speed cannot certify dwell");
+  }
+  r.s.vehicle_speed = 0; r.tick(2);
+  check(r.out.v_ref == 0 && r.st.stop_hold_left == 1, "fresh measured stop counts dwell");
+  r.tick();
+  check(!r.st.stop_zone_holding && near(r.out.v_ref, 1.f),
+    "complete measured dwell immediately releases the navigation target");
+}
 }
 int main()
 {
   motion(); stops(); parking_and_recovery(); rc_recovery(); signal_and_invalid();
+  signal_without_output_ramp(); stop_zone_measured_dwell();
   std::printf("fixed_speed_test: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

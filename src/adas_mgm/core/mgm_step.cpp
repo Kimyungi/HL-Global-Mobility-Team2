@@ -3,7 +3,7 @@
 // 구조는 CLAUDE.md 그대로 세 단계:
 //   판단(스테이트 머신, §4 — 시스템에서 유일한 곳)
 //   → 실행 1: ref 조립 (§5.1/§5.6 — 포맷 변환·전환 연속 처리만)
-//   → 실행 2: 종방향 병합 (v2 고정 주행 / 정지 rate limit, immediate_stop 우회)
+//   → 실행 2: 속도 출력 (v2 목표 직접 전달 / legacy rate limit, immediate_stop 우회)
 #include "mgm_step.hpp"
 #include "manager_step.hpp"
 #include "reference_safety.hpp"
@@ -730,24 +730,18 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   }
 }
 
-// ── 실행 2: 회피/복귀·정지 제어·legacy에는 rate limit, 나머지 v2는 고정 주행 목표.
+// v2 publishes the decided speed unchanged; only legacy applies a command ramp.
 float merge(const CoreOutput & d, CoreState & st)
 {
-  if (d.path_source == MGM_SRC_AVOID) {st.avoid_speed_ramp = true;}
-  else if (d.path_source != MGM_SRC_LANE && d.path_source != MGM_SRC_GPS) {
-    st.avoid_speed_ramp = false;
-  }
   if (d.immediate_stop) {
     st.v = 0.0f;  // 긴급 정지·TTC 바닥은 램프 없이 즉시 (스테이트 머신이 결정)
     return st.v;
   }
-  const bool signal_stop_profile = d.speed_owner == SpeedOwner::TRAFFIC &&
-    st.traffic_distance_latched;
-  if (st.params.base_state_machine_enabled && d.v_ref != 0.0f &&
-    !signal_stop_profile && !st.avoid_speed_ramp)
+  if (st.params.base_state_machine_enabled)
   {
-    // Upper layer sends a fixed motion target immediately. Zero requests and
-    // the distance-based Signal stop profile retain the existing stop ramp.
+    // The lower controller owns acceleration/deceleration. Keep zero requests,
+    // Signal profiles and avoidance handoffs intact, including their stop points.
+    // st.v remains the previous command for guards; it is not measured speed.
     st.v = d.v_ref;
     return st.v;
   }
@@ -757,7 +751,6 @@ float merge(const CoreOutput & d, CoreState & st)
   if (v < lo) {v = lo;}
   if (v > hi) {v = hi;}
   st.v = v;
-  if (d.path_source != MGM_SRC_AVOID && v == d.v_ref) {st.avoid_speed_ramp = false;}
   return st.v;
 }
 
@@ -818,7 +811,7 @@ CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
   if (!st.params.base_state_machine_enabled || out.selected_reference.valid) {
     assemble(execution, out.path_source, st);
   }
-  out.v_ref = merge(out, st);         // 실행: 병합 (rate limit)
+  out.v_ref = merge(out, st);         // v2 pass-through / legacy rate limit
 
   out.n_points = st.n_out;
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
