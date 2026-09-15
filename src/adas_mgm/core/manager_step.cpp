@@ -135,7 +135,10 @@ void update_existing_guards(const CoreSnapshot & s, CoreState & st)
       st.stop_zone_done_id = s.gps_stop_zone;
     }
   }
-  if (st.stop_zone_holding && st.v <= kStoppedSpeed && --st.stop_hold_left <= 0) {
+  // A zero command is immediate in v2; dwell starts only once the car stops.
+  const bool stopped = s.vehicle_speed_valid && std::isfinite(s.vehicle_speed) &&
+    std::fabs(s.vehicle_speed) <= kStoppedSpeed;
+  if (st.stop_zone_holding && stopped && --st.stop_hold_left <= 0) {
     st.stop_zone_holding = false;
     st.stop_hold_left = 0;
   }

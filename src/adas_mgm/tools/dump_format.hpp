@@ -52,7 +52,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v27: mandatory live LiDAR for start and runtime, including parking; same layout.
 // v28: obstacle ownership independent of path availability; same snapshot layout.
 // v29: physical seven-sensor availability and sensor-only SAFE_STOP policy.
-constexpr uint32_t kDumpVersion = 29;
+// v30: v2 speed pass-through and measured-speed stop-zone dwell; same snapshot layout.
+constexpr uint32_t kDumpVersion = 30;
 
 struct DumpHeader
 {
