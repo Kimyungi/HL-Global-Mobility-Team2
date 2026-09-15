@@ -1,0 +1,2684 @@
+{
+  "generated": "2026-09-15T06:45:42.817639+00:00",
+  "core_hash": "75c02c6be2c18f454ff960d51018c658fe5468bcd7f2c5e88778fefbe2a2688e",
+  "baseline_core_hash": "8b10651e1641d3e5568803d1b62f12351d453875a97ae0d3ee14c6706c19e54f",
+  "inventory": [
+    {
+      "id": "G01",
+      "group": "통로·차체",
+      "scenario": "벽 사이 폭이 차폭 0.62m보다 넓어도 양쪽 0.15m 여유가 안 들어감",
+      "status": "코드 조건",
+      "effect": "기본 폭 0.92m 미만은 통로 탈락. 0.92m 이상도 통과 보장 없음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 397
+      },
+      "current_status": "개선 · 자유 경계 정밀화, 물리적 폭 제한 유지",
+      "current_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 438
+      }
+    },
+    {
+      "id": "G02",
+      "group": "통로·차체",
+      "scenario": "직선에서는 들어가지만 S자에서 차량이 비스듬해져 앞·뒤 모서리가 벽에 가까워짐",
+      "status": "코드 조건",
+      "effect": "길이 0.85m와 회전 자세를 포함한 사각형 검사에서 HOLD 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 282
+      },
+      "current_status": "개선 · 실제 조향 범위로 이동 여유 계산, 차체 여유 유지",
+      "current_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 375
+      }
+    },
+    {
+      "id": "G03",
+      "group": "통로·차체",
+      "scenario": "좌우 차량이 앞뒤로 촘촘히 교대해 짧은 거리 안에 조향을 반전해야 함",
+      "status": "추가 재현",
+      "effect": "이번 시험의 station 간격 1/1.5/2m는 HOLD, 2.5/3.5/4.5m는 완주. 전역 임계값 아님",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 628
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "G04",
+      "group": "통로·차체",
+      "scenario": "급커브 또는 차량 사이 꺾임이 최대 조향각보다 작은 회전 반경을 요구함",
+      "status": "코드 조건",
+      "effect": "축거 0.595m·최대 조향 0.476rad에서 후륜축 기준 반경 약 1.154m. 감속만으로 해소 불가",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 625
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "G05",
+      "group": "통로·차체",
+      "scenario": "실제 비스듬한 통로는 있지만 GPS 수직 단면들의 자유 구간이 이어지지 않음",
+      "status": "코드 조건",
+      "effect": "단면 간 겹침 검사와 전진 station 표현 때문에 존재하는 다른 경로를 놓칠 수 있음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 425
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "G06",
+      "group": "통로·차체",
+      "scenario": "현재 차체는 비어 있는 곳에 있지만 첫 단면의 가용 중심 구간에서 벗어나 있음",
+      "status": "코드 조건",
+      "effect": "첫 구간의 현재 횡위치 허용 범위 low−0.1~high+0.1 밖이면 초기 통로 선택 실패 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 421
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "G07",
+      "group": "통로·차체",
+      "scenario": "왼쪽·오른쪽 길 중 선택한 저비용 통로만 동역학적으로 불가능함",
+      "status": "미검증 가설",
+      "effect": "단면 DP의 선택 통로와 유한 평활화·선행거리 후보만 검사하므로 대안 경로 존재를 배제할 수 없음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 437
+      },
+      "current_status": "개선 · 반대쪽 통로 후보 추가, 완전 탐색 보장 없음",
+      "current_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 602
+      }
+    },
+    {
+      "id": "G08",
+      "group": "통로·차체",
+      "scenario": "벽 끝이나 차량 모서리에서 중간점이 급변하고 선행 구간의 허용 범위가 서로 충돌함",
+      "status": "코드 조건",
+      "effect": "평활화 전 가용 범위 교집합이 비면 해당 정책 탈락; 평활화 후에도 차체·제동 검사 실패 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 448
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "G09",
+      "group": "통로·차체",
+      "scenario": "짧게 전진해 더 관측하면 되지만 현재 관측으로 충분한 길이의 경로를 만들 수 없음",
+      "status": "코드 조건",
+      "effect": "8개 단면 미만 또는 검증 길이 1.1m 미만이면 HOLD. 짧게 움직여 관측을 늘리는 별도 정책 없음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 436
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "G10",
+      "group": "통로·차체",
+      "scenario": "우회 공간이 GPS 단면 검색 ±4m 밖에 있거나 후진·큰 우회가 필요함",
+      "status": "코드 조건",
+      "effect": "단면 범위 밖은 탐색하지 않으며 station 역행 후보는 버림",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 407
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "G11",
+      "group": "통로·차체",
+      "scenario": "한 경로의 안전한 앞부분을 따라갔지만 더 앞에서 막다른 통로가 드러남",
+      "status": "미검증 가설",
+      "effect": "6m 계획과 부분 경로 허용은 전체 코스 도달 가능성 증명이 아님. 이후 HOLD 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 667
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "V01",
+      "group": "속도·조향·제동",
+      "scenario": "좁은 곳을 늦게 발견해 감속 전에 제동 공간이 부족해짐",
+      "status": "기존 재현",
+      "effect": "현재 조향의 정지 궤적이 막히면 경로 생성 전에 HOLD. 근접 차량 진단 포함",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 514
+      },
+      "current_status": "개선 · 전체 제동 거리만큼 감속 선행, 근접 HOLD 유지",
+      "current_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 633
+      }
+    },
+    {
+      "id": "V02",
+      "group": "속도·조향·제동",
+      "scenario": "현재 통과 경로는 있으나 조향을 유지하며 정지하면 연석·차량을 침범함",
+      "status": "코드 조건",
+      "effect": "현재·중간·말단 제동 검사가 후보를 거부. 다른 제동 조향 정책은 탐색하지 않음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 388
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "V03",
+      "group": "속도·조향·제동",
+      "scenario": "유동 속도를 넣어도 안내선과 실행 경로를 충분히 만들기 전에 HOLD함",
+      "status": "기존 재현",
+      "effect": "기존 중앙 배치 3종의 최저 실행 속도는 1m/s. 초기 속도·순항 상한 변경 결과는 별도 표 참조",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 669
+      },
+      "current_status": "개선 · S자 중앙 통로 완주, 직선 중앙 HOLD 잔존",
+      "current_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 667
+      }
+    },
+    {
+      "id": "V04",
+      "group": "속도·조향·제동",
+      "scenario": "0.2m/s보다 더 느린 진행이나 정지 후 조향이 필요한 틈",
+      "status": "코드 조건",
+      "effect": "현재 속도 목표 하한은 0.2m/s. 정지 조향·후진을 포함한 별도 동작을 계획하지 않음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 592
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "V05",
+      "group": "속도·조향·제동",
+      "scenario": "측정 오차·추종 오차 때문에 안전한 이전 경로와 일치하지 않아 매번 새 계획을 만듦",
+      "status": "미검증 가설",
+      "effect": "재사용 허용 오차는 위치 1.5cm, 속도 0.03m/s, yaw·조향 각각 0.02rad. 반복 재계획 시 50ms 속도 유지와 새 안내선이 감속·추종에 영향을 줄 수 있음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 537
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "V06",
+      "group": "속도·조향·제동",
+      "scenario": "일치 허용 범위 안의 실제 차량 자세에서 이전 경로로 연결했지만 그 연결을 실제 조향기로 못 따라감",
+      "status": "미검증 가설",
+      "effect": "재사용은 차체·제동·가감속·조향 변화 검사를 수행하지만 조향 지연 모델로 전체 연결을 다시 생성하지 않음. 오차를 주입한 폐루프 시험 필요",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 538
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "V07",
+      "group": "속도·조향·제동",
+      "scenario": "실제 조향 속도·지연·최대 조향각 또는 제동 성능이 설정 모델보다 나쁨",
+      "status": "미검증 실차 조건",
+      "effect": "계획이 valid여도 추종 이탈·제동 거리 초과 가능. 0.8rad/s·0.33s·제동 1m/s²는 실측 확인 필요",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 356
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "V08",
+      "group": "속도·조향·제동",
+      "scenario": "미끄러운 노면·경사·급격한 가감속 응답 때문에 bicycle 모델과 실제 운동이 다름",
+      "status": "미검증 실차 조건",
+      "effect": "타이어 슬립·경사·종방향 액추에이터·jerk 모델은 없음. 가감속 수치 검사만으로 실제 추종 보장 불가",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 643
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "V09",
+      "group": "속도·조향·제동",
+      "scenario": "유효한 재사용 경로를 100ms 실행한 상태가 같은 지도에서도 제동 검사를 통과하지 못함",
+      "status": "추가 재현",
+      "effect": "S자 중앙 3대·상한 0.2m/s: 23.3초 plan valid/reused 및 현재 제동 검사 통과, 100ms 뒤 차체 검사 통과지만 제동 검사 실패. 다음 23.4초 HOLD. 표본 검사 사이 실행 상태의 제동 가능성 보장이 빠진 재현 사례",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 549
+      },
+      "current_status": "수정 · 실행 시각 회귀 검사 통과",
+      "current_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 393
+      }
+    },
+    {
+      "id": "L01",
+      "group": "LiDAR·점유",
+      "scenario": "앞차가 두 번째·세 번째 차량 또는 안쪽 연석을 가림",
+      "status": "코드 조건",
+      "effect": "가려진 영역은 unknown이므로 계획·제동 공간 부족으로 HOLD 가능. HTML 완주 시험은 실제 가림 재생이 아님",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 311
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L02",
+      "group": "LiDAR·점유",
+      "scenario": "자유 공간 관측이 0.3초 이상 갱신되지 않음",
+      "status": "기존 재현",
+      "effect": "free TTL 만료로 unknown 전환. 차량이 사라진 것으로 취급하지 않음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 239
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L03",
+      "group": "LiDAR·점유",
+      "scenario": "실제 장애물이 없어졌거나 오검출했지만 해당 셀을 다시 비췄다는 증거가 부족함",
+      "status": "코드 조건",
+      "effect": "점유는 시간만으로 삭제되지 않고 서로 다른 새 clear 관측 2회가 필요. 유령 벽으로 진행 불가 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 213
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L04",
+      "group": "LiDAR·점유",
+      "scenario": "Inf/NaN 또는 범위 밖 반환만 오거나 설정 FOV가 실제 진행 공간을 제외함",
+      "status": "코드 조건",
+      "effect": "빈 도로라도 쓸 수 있는 광선이 없으면 관측 실패 또는 unknown. Inf를 자유 공간으로 쓰지 않음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 235
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L05",
+      "group": "LiDAR·점유",
+      "scenario": "낮은 연석·검은 차체·유리·반사면을 빔이 놓치거나 잘못된 장거리 반환을 줌",
+      "status": "미검증 실차 조건",
+      "effect": "실제 벽 검출 실패 가능. 2D 광선의 관측 가정이 깨지면 HOLD 또는 잘못된 자유 셀로 인한 접촉 위험",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 241
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L06",
+      "group": "LiDAR·점유",
+      "scenario": "빔 사이의 작은 물체 또는 연석 모서리가 10cm 격자에서 사라지거나 통로를 과하게 좁힘",
+      "status": "미검증 실차 조건",
+      "effect": "격자 전체를 통과한 빔의 free로 표현하는 근사. 얇은 물체 누락과 보수적 폭 손실을 별도 측정해야 함",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 204
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L07",
+      "group": "LiDAR·점유",
+      "scenario": "LiDAR 외부 보정·장착 위치·yaw·거리 오프셋 또는 scan 시간 의미가 실제와 다름",
+      "status": "미검증 실차 조건",
+      "effect": "유한값·프레임 문자열이 맞아도 수치 보정의 정확성은 검사하지 않음. 벽 위치 왜곡 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 239
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L08",
+      "group": "LiDAR·점유",
+      "scenario": "자기 차체 반사가 유효 범위 안에 들어와 장애물 벽으로 남음",
+      "status": "미검증 실차 조건",
+      "effect": "이 입력부에는 별도의 자차 형상 마스크가 없음. 관측된 점유가 현재 차체와 겹치면 HOLD 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 233
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L09",
+      "group": "LiDAR·점유",
+      "scenario": "센서 하나가 끊기거나 지연되고 나머지 센서만 정상임",
+      "status": "코드 조건",
+      "effect": "설정된 모든 센서가 0.2초 안에 유효해야 계획. 대체 센서만으로 계속 가는 모드 없음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 249
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L10",
+      "group": "LiDAR·점유",
+      "scenario": "원시 scan 프레임·각도·시간 간격·거리 범위·포인트 수가 계약과 다름",
+      "status": "기존 일부 재현",
+      "effect": "time_increment≤0, 총 scan 시간>0.15s, 포인트 2~10000 밖 등을 거부. 프레임·시간 결손은 ROS smoke에서 확인",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 228
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L11",
+      "group": "LiDAR·점유",
+      "scenario": "빔 시각이 pose 이력의 미래/과거 밖이거나 pose 사이 공백이 0.15초를 넘음",
+      "status": "코드 조건",
+      "effect": "외삽 없이 scan 거부. 마지막 빔 시각의 pose가 아직 안 들어오는 전달 순서도 시험 필요",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 237
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "L12",
+      "group": "LiDAR·점유",
+      "scenario": "고정 차량 가정이 깨져 차량·사람이 스캔 사이에 통로로 움직임",
+      "status": "범위 밖 조건",
+      "effect": "시간에 따른 장애물 이동 예측이 없음. 현재 사용자 조건은 고정 차량이며 동적 장애물 회피 보장은 없음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 197
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "P01",
+      "group": "GPS·위치",
+      "scenario": "RTK FIXED가 아니거나 position/실측 heading/zone/경로 점이 유효하지 않음",
+      "status": "기존 일부 재현",
+      "effect": "fix_quality=4, 실측 heading 필수. 경로 접선 heading은 거부하고 HOLD",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 176
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "P02",
+      "group": "GPS·위치",
+      "scenario": "처음 고정한 GPS–odometry 정합과 후속 GPS가 어긋남",
+      "status": "코드 조건",
+      "effect": "위치>0.15m 또는 yaw>0.08rad면 alignment fault. 새 세션 전까지 재개 불가",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 193
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "P03",
+      "group": "GPS·위치",
+      "scenario": "VehicleVector 위치/yaw가 순간적으로 튀거나 속도·조향이 유효 범위를 벗어남",
+      "status": "코드 조건",
+      "effect": "위치 변화>max(v)×dt+0.10m 또는 yaw 변화>3dt+0.08rad는 정합 fault. 음수 속도/속도>3/조향각 초과/비유한값 거부",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 90
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "P04",
+      "group": "GPS·위치",
+      "scenario": "GPS 0.5초 또는 pose 0.1초 유효 기간을 넘기거나 시계가 역행함",
+      "status": "코드 조건",
+      "effect": "스탬프 age가 음수여도 fresh가 아님. 중복/역순 GPS·pose가 반복되면 갱신이 끊겨 HOLD",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 138
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "P05",
+      "group": "GPS·위치",
+      "scenario": "GPS 경로와 경계의 frame/route ID 또는 활성 경로 instance·ack·connecting 상태가 다름",
+      "status": "코드 조건",
+      "effect": "잘못된 경로를 쓰지 않도록 입력 거부. 경로 전환 시 메시지 도착 순서도 중단 원인 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 181
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "P06",
+      "group": "GPS·위치",
+      "scenario": "S자 인접 구간에 잘못 투영되거나 정상 갱신 간격보다 크게 이동함",
+      "status": "미검증 가설",
+      "effect": "station 제한 창과 최근접 투영이 의도한 가지를 선택한다는 보장은 없음. cross>3m/투영 실패는 직접 거부",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 509
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "P07",
+      "group": "GPS·위치",
+      "scenario": "차량 방향이 GPS 진행 방향과 1.2rad 이상 다르거나 후보가 뒤쪽 station으로 진행함",
+      "status": "코드 조건",
+      "effect": "약 68.8도 이상 방향 차이와 역행 후보 거부. 실제 전진 경로가 있어도 GPS 표현과 어긋나면 HOLD 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 520
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "P08",
+      "group": "GPS·위치",
+      "scenario": "경계/GPS 경로 메시지가 주행 중 같은 내용으로 반복 발행됨",
+      "status": "미검증 가설",
+      "effect": "configure_course는 동일 내용 비교 없이 지도·정합·세션을 reset. 반복 배포 시 새 관측 대기로 진행이 끊길 수 있음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 169
+      },
+      "current_status": "수정 · 동일/변경 경로 ROS 재수신 검사",
+      "current_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 159
+      }
+    },
+    {
+      "id": "Z01",
+      "group": "zone·출구",
+      "scenario": "zone 진입 직후 첫 차량이 이미 제동 거리 안에 있음",
+      "status": "기존 재현",
+      "effect": "zone 밖에서는 인지하지 않으므로 진입 여유가 없으면 근접 HOLD. 진입 후 새 스캔 대기도 필요",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 205
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "Z02",
+      "group": "zone·출구",
+      "scenario": "zone 신호가 없거나 실제 장애물 구간에서 false로 잘못 유지됨",
+      "status": "코드 조건",
+      "effect": "유효성 결손은 HOLD. 아직 한 번도 진입하지 않은 상태에서 유효 false면 GPS 소유권이라 장애물 인지를 시작하지 않음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 499
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "Z03",
+      "group": "zone·출구",
+      "scenario": "출구를 지나도 후단 통과·GPS 횡오차 0.1m·yaw 약 20도·3회 관측·zone 해제가 동시에 충족되지 않음",
+      "status": "코드 조건",
+      "effect": "완료/인계가 안 되고 벽 주행이 계속됨. 연속 관측 끊김이나 zone true 고정도 원인",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 697
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "Z04",
+      "group": "zone·출구",
+      "scenario": "출구 뒤 GPS 경로가 너무 짧거나 코스 끝에서 1m 목표점·제동 공간을 못 만듦",
+      "status": "코드 조건",
+      "effect": "insufficient horizon 또는 preview/말단 제동 HOLD. 코스 끝 정지 전용 경로는 없음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 519
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "T01",
+      "group": "시간·유효기간",
+      "scenario": "복잡한 벽·많은 셀·CPU 경합으로 코어 20ms 또는 callback 35ms를 초과함",
+      "status": "코드 조건",
+      "effect": "유효 출력 무효화/HOLD. 현재 코어 시간 측정은 센서 ingress부터 CAN까지 전체 50ms가 아님",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 256
+      },
+      "current_status": "진단 수정 · callback 기한 초과 플래그, 시간 제약 유지",
+      "current_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 267
+      }
+    },
+    {
+      "id": "T02",
+      "group": "시간·유효기간",
+      "scenario": "trigger 센서 a1 주기가 10Hz보다 느리거나 불규칙함",
+      "status": "코드 조건",
+      "effect": "계획은 고정 10Hz 타이머가 아니라 trigger scan 이벤트에 종속. 0.1초 요청 속도와 실제 갱신 간격 불일치 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 246
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "T03",
+      "group": "시간·유효기간",
+      "scenario": "메시지 또는 관측 generation이 0.15초 동안 갱신되지 않음",
+      "status": "기존 일부 재현",
+      "effect": "독립 watchdog이 정지 진단 발행. 노드의 입력 허용 0.2초보다 먼저 발생할 수 있음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/tools/watchdog.py",
+        "line": 36
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "T04",
+      "group": "시간·유효기간",
+      "scenario": "현재 경로와 무관한 오래된 free 셀이 전체 계획 lease를 짧게 만듦",
+      "status": "코드 조건",
+      "effect": "모든 usable free 셀의 가장 이른 만료를 사용. 발행 직전 lease 만료 또는 짧은 유효기간으로 HOLD 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 242
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "T05",
+      "group": "시간·유효기간",
+      "scenario": "코어 반환 뒤 직렬화·ROS 큐·CAN·액추에이터 지연이 증가함",
+      "status": "미검증 실차 조건",
+      "effect": "전체 50ms 계측·보장이 없음. 유효 경로라도 소비 시점이 늦으면 모델의 반응 거리 가정과 불일치",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 254
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "T06",
+      "group": "시간·유효기간",
+      "scenario": "반복/0 generation, 비유한 현재 상태/시각 등 비정상 코어 입력",
+      "status": "코드 조건",
+      "effect": "invalid or repeated input으로 경로 생성 거부. last valid 경로를 무검사로 출력하지 않음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 505
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "I01",
+      "group": "실행 연결",
+      "scenario": "HOLD가 나왔지만 실제 속도 제어기가 계속 이전 명령으로 달림",
+      "status": "확인된 연결 미구현",
+      "effect": "현재 패키지는 그림자 출력뿐. HOLD·watchdog_stop을 MGM/CAN/E-stop에 연결하지 않아 실제 정지 보장이 없음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 1
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "I02",
+      "group": "실행 연결",
+      "scenario": "1m 앞 한 점만 기존 제어기에 넣고 점별 속도·계획 유효기간·소유권을 소비하지 않음",
+      "status": "미검증 실차 조건",
+      "effect": "HTML은 다점 경로의 이상적 실행. 기존 한 점 추종·MGM 인계·reference.v_suggest 소비와 동일한 결과 보장 불가",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 291
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "I03",
+      "group": "실행 연결",
+      "scenario": "브레이크 검사에서는 통과했지만 실제 제동 중 조향이 풀리거나 반대로 바뀜",
+      "status": "미검증 실차 조건",
+      "effect": "검사는 측정 조향 유지 궤적. 실제 비상정지 조향 동작이 다르면 검증한 정지 공간 밖으로 이동 가능",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 386
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "I04",
+      "group": "실행 연결",
+      "scenario": "현재 속도가 측정치보다 빠르거나 속도 요청을 즉시 도달 속도로 해석함",
+      "status": "미검증 실차 조건",
+      "effect": "경로 속도는 측정값에서 출발하고 요청값은 100ms 뒤 값. 속도 오차·단위/지연 불일치가 제동·추종 가정을 깨뜨릴 수 있음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 698
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "B01",
+      "group": "지도·설정",
+      "scenario": "명시적 경계 또는 GPS 다점 경로가 없거나 frame/ID가 다름",
+      "status": "기존 일부 재현",
+      "effect": "초기 지도 구성이 안 되고 HOLD. LiDAR만으로 지도/GPS 경로를 만드는 SLAM은 없음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/node.cpp",
+        "line": 158
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "B02",
+      "group": "지도·설정",
+      "scenario": "GPS 중복 점·5m 초과 점 간격·자가교차 경계·경계 밖 중심선·부적절한 entry/exit",
+      "status": "코드 조건",
+      "effect": "Course.validate 예외로 코스 거부. 상세 오류 문자열은 아래 자동 추출 목록 참조",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 108
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "B03",
+      "group": "지도·설정",
+      "scenario": "잘못된 차량/시간/격자 파라미터 또는 센서 FOV·보정 설정 결손",
+      "status": "코드 조건",
+      "effect": "Config 검증/노드 생성 예외. 유효한 수치라도 실차와 다른 보정은 이 검증으로 발견 못 함",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 94
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "B04",
+      "group": "지도·설정",
+      "scenario": "500000 셀 이상 지도 또는 점 수 제한을 넘긴 대형 입력",
+      "status": "코드 조건",
+      "effect": "격자 용량/코스 크기 제한으로 초기화 실패. 제한 아래에서도 처리 시간이 커질 수 있음",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 178
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    },
+    {
+      "id": "B05",
+      "group": "지도·설정",
+      "scenario": "실제 도로보다 지도 경계가 좁거나 실제 연석과 GPS 경계가 어긋남",
+      "status": "미검증 실차 조건",
+      "effect": "지도 밖은 강제 금지이므로 false HOLD 가능. 지도가 넓고 LiDAR까지 연석을 놓치면 실제 경계 보호를 보장하지 못함",
+      "baseline_source": {
+        "path": "src/stack_avoid_v2/src/core.cpp",
+        "line": 185
+      },
+      "current_status": "조건 유지 또는 미검증; 수정 완료로 분류하지 않음"
+    }
+  ],
+  "current_recorded_failures": [
+    {
+      "id": "straight_center_2",
+      "title": "직선 · 중심선 차량 2대",
+      "expected_hold": false,
+      "time": 1.5,
+      "state": [
+        2.393009394,
+        0.1409435775,
+        0.1132839768,
+        0.7327347702,
+        -0.2795053219
+      ],
+      "reason": "wall midline has no certified forward rollout",
+      "placements": [
+        [
+          5,
+          0
+        ],
+        [
+          8,
+          0
+        ]
+      ],
+      "boxes": [
+        [
+          5,
+          0,
+          0.85,
+          0.62
+        ],
+        [
+          8,
+          0,
+          0.85,
+          0.62
+        ]
+      ]
+    },
+    {
+      "id": "unknown_2",
+      "title": "앞 공간 미관측 2대",
+      "expected_hold": true,
+      "time": 0,
+      "state": [
+        1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "reason": "wall midline has no certified forward rollout",
+      "placements": [
+        [
+          6,
+          -0.6
+        ],
+        [
+          9,
+          0.6
+        ]
+      ],
+      "boxes": [
+        [
+          6,
+          -0.6,
+          0.85,
+          0.62
+        ],
+        [
+          9,
+          0.6,
+          0.85,
+          0.62
+        ]
+      ]
+    },
+    {
+      "id": "expiry_2",
+      "title": "관측 만료 · 점유 기억 2대",
+      "expected_hold": true,
+      "time": 0.3,
+      "state": [
+        1.299995343,
+        0.001282555659,
+        0.01204101194,
+        1,
+        0.04266228866
+      ],
+      "reason": "current braking envelope blocked or unknown",
+      "placements": [
+        [
+          5,
+          -0.6
+        ],
+        [
+          8,
+          0.6
+        ]
+      ],
+      "boxes": [
+        [
+          5,
+          -0.6,
+          0.85,
+          0.62
+        ],
+        [
+          8,
+          0.6,
+          0.85,
+          0.62
+        ]
+      ]
+    },
+    {
+      "id": "close_braking_2",
+      "title": "진입 직후 근접 차량 2대",
+      "expected_hold": true,
+      "time": 0,
+      "state": [
+        1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "reason": "current braking envelope blocked or unknown",
+      "placements": [
+        [
+          2.2,
+          0
+        ],
+        [
+          4.9,
+          0
+        ]
+      ],
+      "boxes": [
+        [
+          2.2,
+          0,
+          0.85,
+          0.62
+        ],
+        [
+          4.9,
+          0,
+          0.85,
+          0.62
+        ]
+      ]
+    },
+    {
+      "id": "straight_center_3",
+      "title": "직선 · 중심선 차량 3대",
+      "expected_hold": false,
+      "time": 1.5,
+      "state": [
+        2.393009394,
+        0.1409435775,
+        0.1132839768,
+        0.7327347702,
+        -0.2795053219
+      ],
+      "reason": "wall midline has no certified forward rollout",
+      "placements": [
+        [
+          5,
+          0
+        ],
+        [
+          8,
+          0
+        ],
+        [
+          11,
+          0
+        ]
+      ],
+      "boxes": [
+        [
+          5,
+          0,
+          0.85,
+          0.62
+        ],
+        [
+          8,
+          0,
+          0.85,
+          0.62
+        ],
+        [
+          11,
+          0,
+          0.85,
+          0.62
+        ]
+      ]
+    },
+    {
+      "id": "unknown_3",
+      "title": "앞 공간 미관측 3대",
+      "expected_hold": true,
+      "time": 0,
+      "state": [
+        1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "reason": "wall midline has no certified forward rollout",
+      "placements": [
+        [
+          6,
+          -0.6
+        ],
+        [
+          9,
+          0.6
+        ],
+        [
+          12,
+          -0.6
+        ]
+      ],
+      "boxes": [
+        [
+          6,
+          -0.6,
+          0.85,
+          0.62
+        ],
+        [
+          9,
+          0.6,
+          0.85,
+          0.62
+        ],
+        [
+          12,
+          -0.6,
+          0.85,
+          0.62
+        ]
+      ]
+    },
+    {
+      "id": "expiry_3",
+      "title": "관측 만료 · 점유 기억 3대",
+      "expected_hold": true,
+      "time": 0.3,
+      "state": [
+        1.299995343,
+        0.001282555659,
+        0.01204101194,
+        1,
+        0.04266228866
+      ],
+      "reason": "current braking envelope blocked or unknown",
+      "placements": [
+        [
+          5,
+          -0.6
+        ],
+        [
+          8,
+          0.6
+        ],
+        [
+          11,
+          -0.6
+        ]
+      ],
+      "boxes": [
+        [
+          5,
+          -0.6,
+          0.85,
+          0.62
+        ],
+        [
+          8,
+          0.6,
+          0.85,
+          0.62
+        ],
+        [
+          11,
+          -0.6,
+          0.85,
+          0.62
+        ]
+      ]
+    },
+    {
+      "id": "close_braking_3",
+      "title": "진입 직후 근접 차량 3대",
+      "expected_hold": true,
+      "time": 0,
+      "state": [
+        1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "reason": "current braking envelope blocked or unknown",
+      "placements": [
+        [
+          2.2,
+          0
+        ],
+        [
+          4.9,
+          0
+        ],
+        [
+          7.6,
+          0
+        ]
+      ],
+      "boxes": [
+        [
+          2.2,
+          0,
+          0.85,
+          0.62
+        ],
+        [
+          4.9,
+          0,
+          0.85,
+          0.62
+        ],
+        [
+          7.6,
+          0,
+          0.85,
+          0.62
+        ]
+      ]
+    }
+  ],
+  "probe": [
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "0.2",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "28.7",
+      "x": "15.03322221",
+      "y": "-0.9368212581",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.863373",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "0.2",
+      "cruise_speed": "0.2",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "71.1",
+      "x": "14.79976272",
+      "y": "-0.977854678",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "7.502847",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "0.4",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "28.3",
+      "x": "15.04313247",
+      "y": "-0.9348415412",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.853343",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "0.4",
+      "cruise_speed": "0.4",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "41.7",
+      "x": "14.8637292",
+      "y": "-0.9666926704",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "8.811438",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "0.6",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "28",
+      "x": "15.03771203",
+      "y": "-0.9363817867",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "11.305541",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "0.6",
+      "cruise_speed": "0.6",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "44.7",
+      "x": "14.89074804",
+      "y": "-0.9623709242",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.473351",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "0.8",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "27.8",
+      "x": "15.02043392",
+      "y": "-0.9393783153",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "11.430506",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "0.8",
+      "cruise_speed": "0.8",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "28.7",
+      "x": "14.93468406",
+      "y": "-0.9550254695",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "11.361091",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "27.8",
+      "x": "14.95724426",
+      "y": "-0.9520555183",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "11.766568",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_2",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "complete",
+      "time": "27.8",
+      "x": "14.95724426",
+      "y": "-0.9520555183",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "12.190283",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "0.2",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "3.3",
+      "x": "2.466552641",
+      "y": "0.1767007475",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.647014",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "0.2",
+      "cruise_speed": "0.2",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "7",
+      "x": "2.388085345",
+      "y": "0.1686633326",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.525051",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "0.4",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "2.6",
+      "x": "2.488236856",
+      "y": "0.1728889652",
+      "speed_min": "0.4",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.555163",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "0.4",
+      "cruise_speed": "0.4",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "3.7",
+      "x": "2.383370054",
+      "y": "0.1611422714",
+      "speed_min": "0.2258866371",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.304764",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "0.6",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "2.1",
+      "x": "2.467779916",
+      "y": "0.1606074471",
+      "speed_min": "0.5475",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.803881",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "0.6",
+      "cruise_speed": "0.6",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "2.4",
+      "x": "2.404902687",
+      "y": "0.1516851531",
+      "speed_min": "0.46",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.656821",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "0.8",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "1.6",
+      "x": "2.377390709",
+      "y": "0.1467211885",
+      "speed_min": "0.7315420156",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "13.107286",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "0.8",
+      "cruise_speed": "0.8",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "1.9",
+      "x": "2.488182728",
+      "y": "0.165717976",
+      "speed_min": "0.691346875",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.558113",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "1.5",
+      "x": "2.393009394",
+      "y": "0.1409435775",
+      "speed_min": "0.7327347702",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "12.5432",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_2",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "2",
+      "result": "hold",
+      "time": "1.5",
+      "x": "2.393009394",
+      "y": "0.1409435775",
+      "speed_min": "0.7327347702",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "12.885421",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "0.2",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "30.3",
+      "x": "14.95705893",
+      "y": "-0.9517356029",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.954435",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "0.2",
+      "cruise_speed": "0.2",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "71.3",
+      "x": "14.79678377",
+      "y": "-0.9822295381",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "7.427358",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "0.4",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "29.9",
+      "x": "14.96764075",
+      "y": "-0.94965834",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.815309",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "0.4",
+      "cruise_speed": "0.4",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "43.3",
+      "x": "14.86530645",
+      "y": "-0.9696922052",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "8.650779",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "0.6",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "29.4",
+      "x": "14.96977462",
+      "y": "-0.9492399365",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "11.136172",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "0.6",
+      "cruise_speed": "0.6",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "50.2",
+      "x": "14.90925014",
+      "y": "-0.9610145138",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.541611",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "0.8",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "29.2",
+      "x": "14.95190997",
+      "y": "-0.952728499",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "11.752149",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "0.8",
+      "cruise_speed": "0.8",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "30.3",
+      "x": "14.96082781",
+      "y": "-0.951558302",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "11.234538",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "29.6",
+      "x": "15.03733413",
+      "y": "-0.9359362878",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "12.206736",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "s_center_gap_3",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "complete",
+      "time": "29.6",
+      "x": "15.03733413",
+      "y": "-0.9359362878",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "11.738543",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "0.2",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "3.3",
+      "x": "2.466552641",
+      "y": "0.1767007475",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.779887",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "0.2",
+      "cruise_speed": "0.2",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "7",
+      "x": "2.388085345",
+      "y": "0.1686633326",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.543826",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "0.4",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "2.6",
+      "x": "2.488236856",
+      "y": "0.1728889652",
+      "speed_min": "0.4",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.143644",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "0.4",
+      "cruise_speed": "0.4",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "3.7",
+      "x": "2.383370054",
+      "y": "0.1611422714",
+      "speed_min": "0.2258866371",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "9.343846",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "0.6",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "2.1",
+      "x": "2.467779916",
+      "y": "0.1606074471",
+      "speed_min": "0.5475",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.050822",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "0.6",
+      "cruise_speed": "0.6",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "2.4",
+      "x": "2.404902687",
+      "y": "0.1516851531",
+      "speed_min": "0.46",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.520822",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "0.8",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "1.6",
+      "x": "2.377390709",
+      "y": "0.1467211885",
+      "speed_min": "0.7315420156",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "12.60591",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "0.8",
+      "cruise_speed": "0.8",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "1.9",
+      "x": "2.488182728",
+      "y": "0.165717976",
+      "speed_min": "0.691346875",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "10.466697",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "entry_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "1.5",
+      "x": "2.393009394",
+      "y": "0.1409435775",
+      "speed_min": "0.7327347702",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "13.488754",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "cruise_speed",
+      "scene": "straight_center_3",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "0",
+      "cars": "3",
+      "result": "hold",
+      "time": "1.5",
+      "x": "2.393009394",
+      "y": "0.1409435775",
+      "speed_min": "0.7327347702",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "13.404356",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1",
+      "cars": "2",
+      "result": "hold",
+      "time": "8.5",
+      "x": "3.172271395",
+      "y": "0.507420477",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.019902",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1.5",
+      "cars": "2",
+      "result": "hold",
+      "time": "1.2",
+      "x": "2.199892534",
+      "y": "0.0126805748",
+      "speed_min": "1",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "6.290106",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2",
+      "cars": "2",
+      "result": "hold",
+      "time": "7.1",
+      "x": "4.081631087",
+      "y": "0.2865308572",
+      "speed_min": "0.2000064301",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.058597",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "33.4",
+      "x": "12.51914208",
+      "y": "-0.01230886408",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.063274",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "3.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "30.6",
+      "x": "12.47210453",
+      "y": "-0.0242050195",
+      "speed_min": "0.2278638555",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.063845",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "4.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "29.6",
+      "x": "12.51770493",
+      "y": "-0.04796046311",
+      "speed_min": "0.2710677083",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "1.308747",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1",
+      "cars": "2",
+      "result": "hold",
+      "time": "8.5",
+      "x": "3.18679351",
+      "y": "-0.5114145846",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.022655",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1.5",
+      "cars": "2",
+      "result": "hold",
+      "time": "1.2",
+      "x": "2.199892015",
+      "y": "-0.01271488015",
+      "speed_min": "1",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "6.505316",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2",
+      "cars": "2",
+      "result": "hold",
+      "time": "7.1",
+      "x": "4.081627891",
+      "y": "-0.2865789951",
+      "speed_min": "0.2000064301",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.072156",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "33.4",
+      "x": "12.51913954",
+      "y": "0.01226006127",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.074461",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "3.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "32.7",
+      "x": "12.45205906",
+      "y": "0.03249738443",
+      "speed_min": "0.228388773",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.087003",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "4.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "29.6",
+      "x": "12.51769887",
+      "y": "0.04791195444",
+      "speed_min": "0.2710677083",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "1.443981",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1",
+      "cars": "3",
+      "result": "hold",
+      "time": "8.5",
+      "x": "3.172271395",
+      "y": "0.507420477",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.01819",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1.5",
+      "cars": "3",
+      "result": "hold",
+      "time": "1.2",
+      "x": "2.199892488",
+      "y": "0.01268324575",
+      "speed_min": "1",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "6.474512",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2",
+      "cars": "3",
+      "result": "hold",
+      "time": "7.1",
+      "x": "4.081629793",
+      "y": "0.2865397976",
+      "speed_min": "0.2000064301",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.062912",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "46",
+      "x": "12.81572538",
+      "y": "0.08347732879",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.245282",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "3.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "40.5",
+      "x": "13.79750085",
+      "y": "0.06063112672",
+      "speed_min": "0.2278638555",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.07524",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "4.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "44.2",
+      "x": "15.81209383",
+      "y": "0.0914468258",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.026823",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1",
+      "cars": "3",
+      "result": "hold",
+      "time": "8.5",
+      "x": "3.18679351",
+      "y": "-0.5114145846",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.019456",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1.5",
+      "cars": "3",
+      "result": "hold",
+      "time": "1.2",
+      "x": "2.19989197",
+      "y": "-0.01271755109",
+      "speed_min": "1",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "6.262773",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2",
+      "cars": "3",
+      "result": "hold",
+      "time": "7.1",
+      "x": "4.081633324",
+      "y": "-0.2866027745",
+      "speed_min": "0.2000064301",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.066131",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "46",
+      "x": "12.85639442",
+      "y": "-0.08354693256",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.120354",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "3.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "40.5",
+      "x": "13.7974969",
+      "y": "-0.06068032388",
+      "speed_min": "0.2278637709",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.081038",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "straight_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "4.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "44.2",
+      "x": "15.81208788",
+      "y": "-0.0914962654",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.029136",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1",
+      "cars": "2",
+      "result": "hold",
+      "time": "9.6",
+      "x": "3.183700011",
+      "y": "1.574270729",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.024098",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1.5",
+      "cars": "2",
+      "result": "hold",
+      "time": "5.7",
+      "x": "3.654689475",
+      "y": "1.337151955",
+      "speed_min": "0.2026819129",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "5.754068",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2",
+      "cars": "2",
+      "result": "hold",
+      "time": "13.7",
+      "x": "4.084089401",
+      "y": "1.417051208",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.057367",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "34.3",
+      "x": "14.96203802",
+      "y": "-0.9492328604",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.099499",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "3.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "32.7",
+      "x": "14.97736634",
+      "y": "-0.9474308185",
+      "speed_min": "0.2695920139",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.093311",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "4.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "36.6",
+      "x": "14.97300147",
+      "y": "-0.9500063636",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "2.078768",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1",
+      "cars": "2",
+      "result": "hold",
+      "time": "5.2",
+      "x": "2.961843553",
+      "y": "0.5334124785",
+      "speed_min": "0.2000598954",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "16.825931",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1.5",
+      "cars": "2",
+      "result": "hold",
+      "time": "1.2",
+      "x": "2.145400023",
+      "y": "0.7325261848",
+      "speed_min": "1",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "3.080164",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2",
+      "cars": "2",
+      "result": "hold",
+      "time": "7.5",
+      "x": "3.852975102",
+      "y": "0.6685234072",
+      "speed_min": "0.2269924514",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.055756",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "33.1",
+      "x": "15.01582454",
+      "y": "-0.9414540581",
+      "speed_min": "0.2181848301",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "13.635904",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "3.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "33.5",
+      "x": "14.99081343",
+      "y": "-0.9437529487",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "1.885128",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_2_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "4.5",
+      "cars": "2",
+      "result": "complete",
+      "time": "29.7",
+      "x": "14.95451189",
+      "y": "-0.9475417519",
+      "speed_min": "0.2757552083",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "1.676803",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1",
+      "cars": "3",
+      "result": "hold",
+      "time": "9.6",
+      "x": "3.190213284",
+      "y": "1.548378662",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.030732",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1.5",
+      "cars": "3",
+      "result": "hold",
+      "time": "5.7",
+      "x": "3.654721064",
+      "y": "1.337132061",
+      "speed_min": "0.202681917",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "5.713639",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2",
+      "cars": "3",
+      "result": "hold",
+      "time": "13.7",
+      "x": "4.084180429",
+      "y": "1.416935969",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.057191",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "41.5",
+      "x": "14.97205397",
+      "y": "-0.9474142755",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.075173",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "3.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "40.5",
+      "x": "15.03056686",
+      "y": "-0.928721489",
+      "speed_min": "0.2695920139",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.087761",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_rl",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "4.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "45.9",
+      "x": "15.316801",
+      "y": "-0.7847728837",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "2.222741",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1",
+      "cars": "3",
+      "result": "hold",
+      "time": "5.2",
+      "x": "2.961843553",
+      "y": "0.5334124785",
+      "speed_min": "0.2000598954",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "17.462765",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "1.5",
+      "cars": "3",
+      "result": "hold",
+      "time": "1.2",
+      "x": "2.145400562",
+      "y": "0.7325242638",
+      "speed_min": "1",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "3.114869",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2",
+      "cars": "3",
+      "result": "hold",
+      "time": "7.5",
+      "x": "3.852975139",
+      "y": "0.6685233137",
+      "speed_min": "0.2269924776",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "18.06421",
+      "next_braking_failures": "0",
+      "reason": "wall midline has no certified forward rollout"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "2.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "42.8",
+      "x": "14.97328794",
+      "y": "-0.9510173644",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "13.891123",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "3.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "47.7",
+      "x": "15.01937506",
+      "y": "-0.9809910753",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "14.473101",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    },
+    {
+      "family": "longitudinal_spacing",
+      "scene": "s_alternate_3_lr",
+      "initial_speed": "1",
+      "cruise_speed": "1",
+      "spacing": "4.5",
+      "cars": "3",
+      "result": "complete",
+      "time": "41.9",
+      "x": "15.25386391",
+      "y": "-0.9830391327",
+      "speed_min": "0.2",
+      "vehicle_contact": "0",
+      "curb_contact": "0",
+      "max_ms": "1.810144",
+      "next_braking_failures": "0",
+      "reason": "wall corridor speed profile revalidated"
+    }
+  ],
+  "probe_counts": {
+    "complete": 44,
+    "hold": 44
+  },
+  "next_braking_failures": 0
+}

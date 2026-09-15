@@ -1,0 +1,141 @@
+Internal ctest changing into directory: /tmp/fma_avoid_v2_lab_build
+Test project /tmp/fma_avoid_v2_lab_build
+    Start 1: avoid_v2_core_test
+1/6 Test #1: avoid_v2_core_test ................   Passed    0.02 sec
+    Start 2: avoid_v2_scenarios
+2/6 Test #2: avoid_v2_scenarios ................   Passed    0.91 sec
+    Start 3: avoid_v2_zone_scenarios
+3/6 Test #3: avoid_v2_zone_scenarios ...........***Failed    3.70 sec
+FAIL: feasible two/three-car layout completes and rejoins GPS
+FAIL: feasible two/three-car layout completes and rejoins GPS
+zone layout 0 cars=2 complete=1 max_ms=5.231
+zone layout 1 cars=3 complete=1 max_ms=5.282
+zone layout 2 cars=2 complete=1 max_ms=5.280
+layout 3 HOLD x=6.056 y=0.971 wall midline has no certified forward rollout
+zone layout 3 cars=3 complete=0 max_ms=4.218
+zone layout 4 cars=2 complete=1 max_ms=5.125
+zone layout 5 cars=3 complete=1 max_ms=5.131
+layout 6 HOLD x=3.852 y=0.847 wall midline has no certified forward rollout
+zone layout 6 cars=2 complete=0 max_ms=2.715
+zone layout 7 cars=3 complete=1 max_ms=5.062
+zone scenarios: 6/8 complete, 454168 checks, 2 failures
+
+    Start 4: avoid_v2_s_lateral_scenarios
+4/6 Test #4: avoid_v2_s_lateral_scenarios ......   Passed    9.72 sec
+    Start 5: avoid_v2_same_vehicle_scenarios
+5/6 Test #5: avoid_v2_same_vehicle_scenarios ...***Failed   15.90 sec
+s_lr_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.6 vehicle_contact=0 curb_contact=0 samples=19623 max_ms=8.684 x=14.9891 y=-0.9480 reason=wall midpoint corridor certified
+s_lr_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.6 vehicle_contact=0 curb_contact=0 samples=19623 max_ms=8.843 x=14.9891 y=-0.9480 reason=wall midpoint corridor certified
+s_lr_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.6 vehicle_contact=0 curb_contact=0 samples=19623 max_ms=8.675 x=14.9891 y=-0.9480 reason=wall midpoint corridor certified
+s_left_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.3 vehicle_contact=0 curb_contact=0 samples=19221 max_ms=8.602 x=15.0094 y=-0.9454 reason=wall midpoint corridor certified
+s_left_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.3 vehicle_contact=0 curb_contact=0 samples=19221 max_ms=8.480 x=15.0094 y=-0.9454 reason=wall midpoint corridor certified
+s_left_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.3 vehicle_contact=0 curb_contact=0 samples=19221 max_ms=8.584 x=15.0094 y=-0.9454 reason=wall midpoint corridor certified
+straight_lr_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=11.8 vehicle_contact=0 curb_contact=0 samples=15935 max_ms=2.331 x=12.5226 y=-0.0121 reason=wall midpoint corridor certified
+straight_lr_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=11.8 vehicle_contact=0 curb_contact=0 samples=15935 max_ms=2.439 x=12.5226 y=-0.0121 reason=wall midpoint corridor certified
+straight_lr_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=11.8 vehicle_contact=0 curb_contact=0 samples=15935 max_ms=2.466 x=12.5226 y=-0.0121 reason=wall midpoint corridor certified
+s_rl_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.8 vehicle_contact=0 curb_contact=0 samples=19891 max_ms=8.482 x=15.0193 y=-0.9434 reason=wall midpoint corridor certified
+s_rl_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.8 vehicle_contact=0 curb_contact=0 samples=19891 max_ms=11.794 x=15.0193 y=-0.9434 reason=wall midpoint corridor certified
+s_rl_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.8 vehicle_contact=0 curb_contact=0 samples=19891 max_ms=8.672 x=15.0193 y=-0.9434 reason=wall midpoint corridor certified
+s_right_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.9 vehicle_contact=0 curb_contact=0 samples=20017 max_ms=8.729 x=15.0453 y=-0.9371 reason=wall midpoint corridor certified
+s_right_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.9 vehicle_contact=0 curb_contact=0 samples=20017 max_ms=8.784 x=15.0453 y=-0.9371 reason=wall midpoint corridor certified
+s_right_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.9 vehicle_contact=0 curb_contact=0 samples=20017 max_ms=8.779 x=15.0453 y=-0.9371 reason=wall midpoint corridor certified
+straight_rl_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=11.8 vehicle_contact=0 curb_contact=0 samples=15935 max_ms=2.421 x=12.5313 y=-0.0374 reason=wall midpoint corridor certified
+straight_rl_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=11.8 vehicle_contact=0 curb_contact=0 samples=15935 max_ms=2.430 x=12.5313 y=-0.0374 reason=wall midpoint corridor certified
+straight_rl_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=11.8 vehicle_contact=0 curb_contact=0 samples=15935 max_ms=2.437 x=12.5313 y=-0.0374 reason=wall midpoint corridor certified
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+s_center_gap_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=3.2 vehicle_contact=0 curb_contact=0 samples=1955 max_ms=5.581 x=4.1075 y=1.0838 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+s_center_gap_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=3.2 vehicle_contact=0 curb_contact=0 samples=1955 max_ms=5.537 x=4.1075 y=1.0838 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+s_center_gap_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=3.2 vehicle_contact=0 curb_contact=0 samples=1955 max_ms=5.609 x=4.1075 y=1.0838 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=0.5 vehicle_contact=0 curb_contact=0 samples=200 max_ms=1.816 x=1.4999 y=0.0080 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=0.5 vehicle_contact=0 curb_contact=0 samples=200 max_ms=1.765 x=1.4999 y=0.0080 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=0.5 vehicle_contact=0 curb_contact=0 samples=200 max_ms=1.767 x=1.4999 y=0.0080 reason=wall midline has no certified forward rollout
+off_path_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=19481 max_ms=8.973 x=15.0275 y=-0.9413 reason=wall midpoint corridor certified
+off_path_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=19481 max_ms=8.895 x=15.0275 y=-0.9413 reason=wall midpoint corridor certified
+off_path_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=19481 max_ms=8.877 x=15.0275 y=-0.9413 reason=wall midpoint corridor certified
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+zone_gate_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=4.9 vehicle_contact=0 curb_contact=0 samples=1794 max_ms=3.641 x=5.8548 y=0.4616 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+zone_gate_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=4.9 vehicle_contact=0 curb_contact=0 samples=1794 max_ms=3.595 x=5.8548 y=0.4616 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+zone_gate_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=4.9 vehicle_contact=0 curb_contact=0 samples=1794 max_ms=3.583 x=5.8548 y=0.4616 reason=wall midline has no certified forward rollout
+unknown_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.537 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+unknown_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.591 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+unknown_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.509 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+expiry_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=403 max_ms=2.539 x=1.3000 y=0.0006 reason=current braking envelope blocked or unknown
+expiry_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=403 max_ms=2.480 x=1.3000 y=0.0006 reason=current braking envelope blocked or unknown
+expiry_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=403 max_ms=2.492 x=1.3000 y=0.0006 reason=current braking envelope blocked or unknown
+close_braking_2 trial=1 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.079 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+close_braking_2 trial=2 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.079 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+close_braking_2 trial=3 cars=2 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.086 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+s_lr_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.6 vehicle_contact=0 curb_contact=0 samples=7432 max_ms=6.629 x=8.4295 y=0.7887 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+s_lr_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.6 vehicle_contact=0 curb_contact=0 samples=7432 max_ms=6.505 x=8.4295 y=0.7887 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+s_lr_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.6 vehicle_contact=0 curb_contact=0 samples=7432 max_ms=6.417 x=8.4295 y=0.7887 reason=wall midline has no certified forward rollout
+s_left_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.4 vehicle_contact=0 curb_contact=0 samples=19345 max_ms=8.691 x=15.0481 y=-0.9377 reason=wall midpoint corridor certified
+s_left_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.4 vehicle_contact=0 curb_contact=0 samples=19345 max_ms=8.670 x=15.0481 y=-0.9377 reason=wall midpoint corridor certified
+s_left_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.4 vehicle_contact=0 curb_contact=0 samples=19345 max_ms=8.561 x=15.0481 y=-0.9377 reason=wall midpoint corridor certified
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_lr_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.7 vehicle_contact=0 curb_contact=0 samples=6978 max_ms=5.847 x=8.4621 y=0.4774 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_lr_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.7 vehicle_contact=0 curb_contact=0 samples=6978 max_ms=5.806 x=8.4621 y=0.4774 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_lr_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.7 vehicle_contact=0 curb_contact=0 samples=6978 max_ms=5.711 x=8.4621 y=0.4774 reason=wall midline has no certified forward rollout
+s_rl_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.9 vehicle_contact=0 curb_contact=0 samples=20019 max_ms=8.514 x=15.0031 y=-0.9457 reason=wall midpoint corridor certified
+s_rl_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.9 vehicle_contact=0 curb_contact=0 samples=20019 max_ms=8.696 x=15.0031 y=-0.9457 reason=wall midpoint corridor certified
+s_rl_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.9 vehicle_contact=0 curb_contact=0 samples=20019 max_ms=8.741 x=15.0031 y=-0.9457 reason=wall midpoint corridor certified
+s_right_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.8 vehicle_contact=0 curb_contact=0 samples=19883 max_ms=8.790 x=15.0262 y=-0.9394 reason=wall midpoint corridor certified
+s_right_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.8 vehicle_contact=0 curb_contact=0 samples=19883 max_ms=8.636 x=15.0262 y=-0.9394 reason=wall midpoint corridor certified
+s_right_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.8 vehicle_contact=0 curb_contact=0 samples=19883 max_ms=8.977 x=15.0262 y=-0.9394 reason=wall midpoint corridor certified
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_rl_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.7 vehicle_contact=0 curb_contact=0 samples=7811 max_ms=5.500 x=8.5104 y=-0.4890 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_rl_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.7 vehicle_contact=0 curb_contact=0 samples=7811 max_ms=5.371 x=8.5104 y=-0.4890 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_rl_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=7.7 vehicle_contact=0 curb_contact=0 samples=7811 max_ms=5.530 x=8.5104 y=-0.4890 reason=wall midline has no certified forward rollout
+s_center_gap_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=17993 max_ms=8.814 x=15.0267 y=-0.9406 reason=wall midpoint corridor certified
+s_center_gap_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=17993 max_ms=8.754 x=15.0267 y=-0.9406 reason=wall midpoint corridor certified
+s_center_gap_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=17993 max_ms=8.834 x=15.0267 y=-0.9406 reason=wall midpoint corridor certified
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=0.5 vehicle_contact=0 curb_contact=0 samples=200 max_ms=1.844 x=1.4999 y=0.0080 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=0.5 vehicle_contact=0 curb_contact=0 samples=200 max_ms=1.860 x=1.4999 y=0.0080 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+straight_center_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=0.5 vehicle_contact=0 curb_contact=0 samples=200 max_ms=1.779 x=1.4999 y=0.0080 reason=wall midline has no certified forward rollout
+off_path_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=19497 max_ms=8.653 x=14.9633 y=-0.9544 reason=wall midpoint corridor certified
+off_path_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=19497 max_ms=8.626 x=14.9633 y=-0.9544 reason=wall midpoint corridor certified
+off_path_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=1 hold=0 expected_hold=0 time=14.5 vehicle_contact=0 curb_contact=0 samples=19497 max_ms=8.816 x=14.9633 y=-0.9544 reason=wall midpoint corridor certified
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+zone_gate_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=4.9 vehicle_contact=0 curb_contact=0 samples=1794 max_ms=3.648 x=5.8548 y=0.4616 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+zone_gate_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=4.9 vehicle_contact=0 curb_contact=0 samples=1794 max_ms=3.658 x=5.8548 y=0.4616 reason=wall midline has no certified forward rollout
+FAIL: 1m/s two/three-car case must complete or perform its expected diagnostic HOLD without contacts
+zone_gate_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=0 time=4.9 vehicle_contact=0 curb_contact=0 samples=1794 max_ms=3.706 x=5.8548 y=0.4616 reason=wall midline has no certified forward rollout
+unknown_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.608 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+unknown_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.542 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+unknown_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.569 x=1.0000 y=0.0000 reason=wall midline has no certified forward rollout
+expiry_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=403 max_ms=2.480 x=1.3000 y=0.0006 reason=current braking envelope blocked or unknown
+expiry_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=403 max_ms=2.510 x=1.3000 y=0.0006 reason=current braking envelope blocked or unknown
+expiry_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.3 vehicle_contact=0 curb_contact=0 samples=403 max_ms=2.425 x=1.3000 y=0.0006 reason=current braking envelope blocked or unknown
+close_braking_3 trial=1 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.077 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+close_braking_3 trial=2 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.085 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+close_braking_3 trial=3 cars=3 speed=1.00 size=0.85x0.62 lane_width=3.00 complete=0 hold=1 expected_hold=1 time=0.0 vehicle_contact=0 curb_contact=0 samples=1 max_ms=0.087 x=1.0000 y=0.0000 reason=current braking envelope blocked or unknown
+same vehicle matrix: trials=78 completed=36 expected_stops=18 failed=24 checks=197 failures=24
+
+    Start 6: avoid_v2_wall_corridor_test
+6/6 Test #6: avoid_v2_wall_corridor_test .......   Passed    0.01 sec
+
+67% tests passed, 2 tests failed out of 6
+
+Total Test time (real) =  30.26 sec
+
+The following tests FAILED:
+	  3 - avoid_v2_zone_scenarios (Failed)
+	  5 - avoid_v2_same_vehicle_scenarios (Failed)
+Errors while running CTest

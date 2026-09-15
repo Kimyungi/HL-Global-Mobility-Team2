@@ -1,0 +1,19 @@
+FAIL: S left/right layout reaches GPS-aligned exit
+FAIL: S left/right layout reaches GPS-aligned exit
+FAIL: S left/right layout reaches GPS-aligned exit
+s_left_right trial=1 complete=1 frames=245 pass=216 reused=127 collision=0 road_exit=0 cross=0.0434 yaw_error=-0.0142 clearance=0.0592 max_ms=18.123 reason=observed GPS prefix certified
+s_left_right trial=2 complete=1 frames=245 pass=216 reused=127 collision=0 road_exit=0 cross=0.0434 yaw_error=-0.0142 clearance=0.0592 max_ms=18.122 reason=observed GPS prefix certified
+s_left_right trial=3 complete=1 frames=245 pass=216 reused=127 collision=0 road_exit=0 cross=0.0434 yaw_error=-0.0142 clearance=0.0592 max_ms=18.110 reason=observed GPS prefix certified
+s_right_left trial=1 complete=1 frames=260 pass=227 reused=107 collision=0 road_exit=0 cross=-0.0388 yaw_error=0.0251 clearance=0.0592 max_ms=18.127 reason=observed GPS prefix certified
+s_right_left trial=2 complete=1 frames=260 pass=227 reused=107 collision=0 road_exit=0 cross=-0.0388 yaw_error=0.0251 clearance=0.0592 max_ms=18.131 reason=observed GPS prefix certified
+s_right_left trial=3 complete=1 frames=260 pass=227 reused=107 collision=0 road_exit=0 cross=-0.0388 yaw_error=0.0251 clearance=0.0592 max_ms=18.127 reason=observed GPS prefix certified
+s_left_right_left trial=1 complete=1 frames=302 pass=302 reused=223 collision=0 road_exit=0 cross=0.0933 yaw_error=-0.0390 clearance=0.0592 max_ms=18.135 reason=previous overtake path revalidated
+s_left_right_left trial=2 complete=1 frames=302 pass=302 reused=223 collision=0 road_exit=0 cross=0.0933 yaw_error=-0.0390 clearance=0.0592 max_ms=18.103 reason=previous overtake path revalidated
+s_left_right_left trial=3 complete=1 frames=303 pass=302 reused=225 collision=0 road_exit=0 cross=0.0932 yaw_error=-0.0366 clearance=0.0592 max_ms=18.117 reason=observed GPS prefix certified
+s_right_left_right trial=1 complete=1 frames=305 pass=305 reused=220 collision=0 road_exit=0 cross=-0.0920 yaw_error=0.0452 clearance=0.0592 max_ms=18.131 reason=previous overtake path revalidated
+s_right_left_right trial=2 complete=1 frames=304 pass=304 reused=220 collision=0 road_exit=0 cross=-0.0935 yaw_error=0.0460 clearance=0.0592 max_ms=18.135 reason=previous overtake path revalidated
+s_right_left_right trial=3 complete=1 frames=304 pass=304 reused=218 collision=0 road_exit=0 cross=-0.0914 yaw_error=0.0451 clearance=0.0592 max_ms=18.119 reason=previous overtake path revalidated
+s_both_sides trial=1 complete=0 frames=48 pass=0 reused=0 collision=0 road_exit=0 cross=0.0079 yaw_error=-0.0136 clearance=0.4592 max_ms=0.513 reason=GPS continuation blocked or unknown; no overtake trigger
+s_both_sides trial=2 complete=0 frames=48 pass=0 reused=0 collision=0 road_exit=0 cross=0.0079 yaw_error=-0.0136 clearance=0.4592 max_ms=0.526 reason=GPS continuation blocked or unknown; no overtake trigger
+s_both_sides trial=3 complete=0 frames=48 pass=0 reused=0 collision=0 road_exit=0 cross=0.0079 yaw_error=-0.0136 clearance=0.4592 max_ms=0.510 reason=GPS continuation blocked or unknown; no overtake trigger
+S lateral: 12/15 completed, 69 checks, 3 failures
