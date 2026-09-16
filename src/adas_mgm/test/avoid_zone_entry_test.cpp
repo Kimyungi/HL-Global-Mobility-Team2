@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "manager_test_fixture.hpp"
 using namespace manager_test;
 
@@ -82,7 +83,7 @@ int main()
   Run reverse; configure(reverse); reverse.st.params.escape_after_cycles = 1;
   reverse.s.vehicle_speed = 1; reverse.tick(2); reverse.st.escape_armed = true;
   reverse.s.auto_estop = true; reverse.tick(4);
-  check(reverse.out.safety == SafetyState::REVERSE_RECOVERY && reverse.out.avoid == AvoidState::INACTIVE,
+  check(reverse.out.safety == legacy::REVERSE_RECOVERY && reverse.out.avoid == AvoidState::INACTIVE,
     "independent E-stop recovery outside zone does not enable ordinary AVOID");
   Run speeds; configure(speeds);
   speeds.st.params.v_base = 2.f; speeds.st.params.v_avoid = 1.f;

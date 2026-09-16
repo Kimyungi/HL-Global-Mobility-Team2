@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 // Third revision: tests 1..25, alongside (not replacing) the original 30 cases.
 #include "manager_test_fixture.hpp"
 using namespace manager_test;
@@ -130,7 +131,7 @@ void authority_and_gaps()
 void recovery()
 {
   Run off; off.tick(); off.s.auto_estop=true; off.tick(1000);
-  check(off.out.safety==SafetyState::AUTO_ESTOP && off.st.escape_phase==MGM_ESCAPE_NONE,
+  check(off.out.safety==legacy::AUTO_ESTOP && off.st.escape_phase==MGM_ESCAPE_NONE,
     "Z25 A: existing default escape_after_cycles=0 disables recovery");
   off.st.params.escape_after_cycles=1000; off.s.estop_rear_clear=false; off.tick(1000);
   check(off.st.escape_phase==MGM_ESCAPE_NONE,

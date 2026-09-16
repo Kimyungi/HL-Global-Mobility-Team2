@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "manager_test_fixture.hpp"
 using namespace manager_test;
 
@@ -19,7 +20,7 @@ int main()
   r.s.gps_valid = true; r.tick();
   check(r.out.path_source == MGM_SRC_GPS && near(r.out.v_ref, 1.f), "GPS recovery resumes navigation");
   r.s.auto_estop = true; r.tick();
-  check(r.out.safety == SafetyState::AUTO_ESTOP && r.out.v_ref == 0,
+  check(r.out.safety == legacy::AUTO_ESTOP && r.out.v_ref == 0,
     "separate LiDAR E-stop remains effective");
   r.s.auto_estop = false; r.s.external_stop = true; r.tick();
   check(r.out.v_ref == 0 && (r.out.safe_stop_reasons & SAFE_STOP_EXTERNAL),

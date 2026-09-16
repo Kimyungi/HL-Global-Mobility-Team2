@@ -1,3 +1,4 @@
+#include "legacy_state_ids.hpp"
 #include "mission_step.hpp"
 #include "reference_safety.hpp"
 #include <algorithm>
@@ -159,7 +160,7 @@ bool mission_step(const CoreSnapshot & s, CoreState & st)
       s.parking_request_id == r.request_id &&
       s.parking_mission_mode == static_cast<uint8_t>(r.mission_type);
     if (st.params.parking_zone_entry_active) {return active_parking_step(s, st, matching);}
-    if (m.mission == MissionState::MISSION_PREPARE) {
+    if (m.mission == legacy::MISSION_PREPARE) {
       const bool zone_only = st.params.parking_search_zone_only != 0;
       // The latched source Zone, not the display-priority Zone or another overlap.
       // A confirmed exit wins over readiness received on the same control tick.
@@ -252,7 +253,7 @@ bool mission_step(const CoreSnapshot & s, CoreState & st)
     m.mission_events |= MISSION_EVENT_ZONE_ENTRY;
     m.active_mission = zone.mission_id;
     m.mission_type = zone.mission_type;
-    m.mission = MissionState::MISSION_PREPARE;
+    m.mission = st.params.parking_zone_entry_active ? MissionState::MISSION_ACTIVE : legacy::MISSION_PREPARE;
     m.mission_feedback_seen = false;
     m.mission_prepare = true;
     if (st.params.parking_zone_entry_active) {

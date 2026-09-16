@@ -58,7 +58,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v33: unified interview policy + PR106 T parking endpoint/return/speed semantics.
 // v32 was independently used by two incompatible branches; never guess which one.
 // v34: upper ESTOP projects CAN state=5; PR108 measured recovery executor.
-constexpr uint32_t kDumpVersion = 34;
+// v35: State v09.16 removes obsolete public states; active-only Mission entry is fixed.
+constexpr uint32_t kDumpVersion = 35;
 
 struct DumpHeader
 {

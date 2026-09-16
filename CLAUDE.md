@@ -1,5 +1,8 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> 구형·미사용 상태와 별도 MISSION_PREPARE를 현재 정의에서 제외했다. raw dump는 v35다.
+> 현재 확정 상태 머신: **스테이트 v09.16**. [명칭·빈 상태 점검](docs/STATE_V09_16.md)을 현재 명세로 사용한다.
+
 > 2026-09-16 PR #108 후속: 상위 ESTOP에 실제 정차 10초 → 실측 후진 1m → 정차 완료 실행기 연결.
 > 독립 EstopRequest/장애물 소실 조기 해제 제외. CAN state=5, raw dump v34.
 > [현재 ESTOP 계약](docs/V2_PR108_INTEGRATION.md)이 아래 과거 설명보다 우선한다.

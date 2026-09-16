@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "manager_test_fixture.hpp"
 #include <initializer_list>
 #include <limits>
@@ -17,7 +18,7 @@ int main() {
     check(r.out.safety==SafetyState::NORMAL && !r.out.immediate_stop && r.out.v_ref>0,
       "TTC/avoidable never create an additional E-stop or zero-speed request");
     r.s.auto_estop=true;r.tick();
-    check(r.out.safety==SafetyState::AUTO_ESTOP && r.out.immediate_stop && r.out.v_ref==0,
+    check(r.out.safety==legacy::AUTO_ESTOP && r.out.immediate_stop && r.out.v_ref==0,
       "independent LiDAR request stops the same avoidance path");
     r.s.auto_estop=false;r.tick();
     check(r.out.safety==SafetyState::NORMAL && r.out.v_ref>0,
@@ -50,9 +51,9 @@ int main() {
   check(absent.out.v_ref==0 && !absent.out.reference_available,
     "missing GPS cannot fabricate a driving reference");
   Run nav;configure(nav);nav.s.auto_estop=true;nav.tick();
-  check(nav.out.safety==SafetyState::AUTO_ESTOP && nav.out.v_ref==0,"independent stop covers navigation");
+  check(nav.out.safety==legacy::AUTO_ESTOP && nav.out.v_ref==0,"independent stop covers navigation");
   nav.s.traffic_red_active=true;nav.tick();nav.s.traffic_red_active=false;nav.tick();
-  check(nav.out.path_source==MGM_SRC_GPS && nav.out.safety==SafetyState::AUTO_ESTOP && nav.out.v_ref==0,
+  check(nav.out.path_source==MGM_SRC_GPS && nav.out.safety==legacy::AUTO_ESTOP && nav.out.v_ref==0,
     "signal-to-GPS transition cannot clear independent stop");
   nav.s.auto_estop=false;nav.s.external_stop=true;nav.tick();
   check(nav.out.v_ref==0,"operator/CAN stop is preserved");

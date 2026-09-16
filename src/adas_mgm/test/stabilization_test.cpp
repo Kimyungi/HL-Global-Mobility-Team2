@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "manager_test_fixture.hpp"
 #include "core/mission_step.hpp"
 #include "core/manager_step.hpp"
@@ -61,7 +62,7 @@ void zones()
   for (int i=0;i<100;++i) {
     mission.zone(10,ZoneType::MISSION_ZONE,MissionType::T_PARKING,0,i%2==0); mission.tick();
   }
-  check(mission.out.mission==MissionState::MISSION_PREPARE && mission.out.mission_request.request_id==id,
+  check(mission.out.mission==legacy::MISSION_PREPARE && mission.out.mission_request.request_id==id,
     "Z10: PREPARE latch survives raw/stable source-zone changes");
   Run reset;reset.st.params.zone_enter_confirm_samples=reset.st.params.zone_exit_confirm_samples=3;
   reset.zone(10,ZoneType::MISSION_ZONE,MissionType::T_PARKING,0);
@@ -70,7 +71,7 @@ void zones()
     "session reset inside zone suppresses delayed confirmation entry too");
   reset.zone(10,ZoneType::MISSION_ZONE,MissionType::T_PARKING,0,false);reset.tick(3);
   reset.zone(10,ZoneType::MISSION_ZONE,MissionType::T_PARKING,0,true);reset.tick(3);
-  check(reset.out.mission==MissionState::MISSION_PREPARE,"confirmed exit/reentry after reset permits new request");
+  check(reset.out.mission==legacy::MISSION_PREPARE,"confirmed exit/reentry after reset permits new request");
   Run unset; unset.st.params.zone_enter_confirm_samples=unset.st.params.zone_exit_confirm_samples=0;
   unset.gps_zone(true); unset.tick();
   check(unset.out.zones.calibration==CalibrationState::UNCALIBRATED && unset.out.v_ref==0 &&

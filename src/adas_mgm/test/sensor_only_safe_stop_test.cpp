@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "manager_test_fixture.hpp"
 #include "core/reference_safety.hpp"
 #include <limits>
@@ -43,7 +44,7 @@ int main()
   obstacle.s.avoid_path.n=1; obstacle.tick();
   check(!obstacle.out.reference_motion_blocked && obstacle.out.v_ref>0, "fresh target resumes motion");
   obstacle.s.auto_estop=true; obstacle.tick();
-  check(obstacle.out.safety==SafetyState::AUTO_ESTOP && obstacle.out.v_ref==0, "AUTO_ESTOP independent");
+  check(obstacle.out.safety==legacy::AUTO_ESTOP && obstacle.out.v_ref==0, "AUTO_ESTOP independent");
 
   Run nan; nan.st.params.safe_stop_all_sensors_only=1; nan.s.sensor_alive_mask=127; nan.tick();
   nan.out.v_ref=std::numeric_limits<float>::quiet_NaN(); final_reference_gate(nan.out,nan.st);

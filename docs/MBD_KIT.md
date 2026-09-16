@@ -201,3 +201,9 @@ CAN 상태 5와 회복 실행기 계약으로 raw dump v34를 사용한다. 현�
 parity_replay는 v33을 명확히 거부한다. 이전 로그는 해당 버전 실행기로 재생한다.
 이 PC의 v33 실행기는 `build_v2/replay_archive/v33_local`에 보관했다.
 [적용 계약](V2_PR108_INTEGRATION.md) 참고.
+
+## 스테이트 v09.16 상태 제외 — v35
+
+현재 상태 선언에서 CLEAR_CONFIRM, AUTO_ESTOP, REVERSE_RECOVERY, MISSION_PREPARE를 제외했다.
+과거 상태 번호는 재사용하지 않는다. 현재 재생 도구는 v35를 사용하며, v34는
+`build_v2/replay_archive/v34_local` 또는 `f21ef6d` 빌드의 도구로 재생한다.

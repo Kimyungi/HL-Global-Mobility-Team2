@@ -1,3 +1,4 @@
+#include "legacy_state_ids.hpp"
 // ROS-free parallel state machine. Existing perception/control algorithms stay in
 // their modules; existing_source_request/assemble/merge retain output geometry.
 #include "manager_step.hpp"
@@ -168,7 +169,7 @@ uint32_t base_stop_reasons(const CoreSnapshot & s, const CoreState & st)
   // Reasons are recomputed independently; clearing one never clears another.
   uint32_t reasons = 0;
   if (route_stop(s, st)) {reasons |= SAFE_STOP_ROUTE_SEQUENCE;}
-  if (st.params.parking_search_zone_only && m.mission == MissionState::MISSION_PREPARE &&
+  if (st.params.parking_search_zone_only && m.mission == legacy::MISSION_PREPARE &&
     !mission_search_zone_known(st)) {reasons |= SAFE_STOP_MISSION_ZONE_UNKNOWN;}
   if (!mission && m.gps_only_context && !gps) {
     reasons |= SAFE_STOP_GPS_ONLY_GPS_LOSS;
@@ -573,9 +574,9 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   if (sensor_stop || fault_stop) {
     m.safety = SafetyState::SAFE_STOP;
   } else if (st.escape_phase == MGM_ESCAPE_REVERSING || m.recovery_waiting_reference) {
-    m.safety = SafetyState::REVERSE_RECOVERY;
+    m.safety = legacy::REVERSE_RECOVERY;
   } else if (lidar_stop) {
-    m.safety = SafetyState::AUTO_ESTOP;
+    m.safety = legacy::AUTO_ESTOP;
   } else {
     m.safety = SafetyState::NORMAL;
     if (previous_safety == SafetyState::SAFE_STOP && !mission_ended) {nav_reselect(s, st);}
@@ -686,7 +687,7 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
     out.immediate_stop = true;
     out.speed_owner = SpeedOwner::SAFETY;
   }
-  if (m.safety == SafetyState::REVERSE_RECOVERY) {
+  if (m.safety == legacy::REVERSE_RECOVERY) {
     out.speed_owner = SpeedOwner::SAFETY;
     if (st.escape_phase == MGM_ESCAPE_REVERSING) {
       out.path_source = MGM_SRC_ESCAPE;
@@ -708,7 +709,7 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
       out.immediate_stop = true;  // existing recovery ended, waiting for real ref
     }
   }
-  if (m.safety == SafetyState::SAFE_STOP || m.safety == SafetyState::AUTO_ESTOP ||
+  if (m.safety == SafetyState::SAFE_STOP || m.safety == legacy::AUTO_ESTOP ||
     s.external_stop || m.top != TopState::AUTONOMOUS_DRIVE)
   {
     out.v_ref = 0.0f;

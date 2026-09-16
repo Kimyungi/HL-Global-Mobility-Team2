@@ -343,6 +343,9 @@ public:
     p.zone_enter_confirm_samples = declare_parameter<int>("zone_enter_confirm_samples", 0, zone_descriptor);
     p.zone_exit_confirm_samples = declare_parameter<int>("zone_exit_confirm_samples", 0, zone_descriptor);
     p.parking_zone_entry_active = declare_parameter<bool>("parking_zone_entry_active", base_managers_, zone_descriptor) ? 1 : 0;
+    if (p.revised_v2_enabled && !p.parking_zone_entry_active) {
+      throw std::runtime_error("State v09.16 excludes MISSION_PREPARE; parking_zone_entry_active must be true");
+    }
     if (p.parking_zone_entry_active && (!base_managers_ || backend_name != "core")) {
       throw std::runtime_error("immediate Parking entry requires the parallel core backend");
     }

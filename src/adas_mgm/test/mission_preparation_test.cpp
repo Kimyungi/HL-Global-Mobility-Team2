@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "manager_test_fixture.hpp"
 #include <limits>
 #include <initializer_list>
@@ -21,7 +22,7 @@ void latch_and_handoff()
   Run r; r.tick(50); r.s.parking_valid=false; r.s.parking_path.n=0;
   r.s.gps_x=5.; r.s.gps_y=8.; r.s.gps_track_index=30; r.prepare();
   const auto request=r.out.mission_request;
-  check(r.out.mission==MissionState::MISSION_PREPARE && r.out.mission_prepare &&
+  check(r.out.mission==legacy::MISSION_PREPARE && r.out.mission_prepare &&
     r.out.path_source==MGM_SRC_LANE && r.out.v_ref>0,"P1/P20: entry prepares while Navigation owns reference/speed");
   check(request.active && request.mission_id==0 && request.source_zone_id==10 &&
     request.mission_type==MissionType::T_PARKING && request.zone_entry.x==5. &&
@@ -30,23 +31,23 @@ void latch_and_handoff()
     "P6: missing Mission feedback/reference is normal in PREPARE");
   r.zone(10,ZoneType::MISSION_ZONE,MissionType::T_PARKING,0,false); r.tick();
   check(r.out.mission_request.active && r.out.mission_request.request_id==request.request_id &&
-    r.out.mission==MissionState::MISSION_PREPARE,"P2: zone exit preserves request");
+    r.out.mission==legacy::MISSION_PREPARE,"P2: zone exit preserves request");
   r.obstacle();
-  check(r.out.mission==MissionState::MISSION_PREPARE && r.out.path_source==MGM_SRC_AVOID &&
+  check(r.out.mission==legacy::MISSION_PREPARE && r.out.path_source==MGM_SRC_AVOID &&
     r.out.speed_owner==SpeedOwner::AVOIDANCE,"P4: PREPARE allows ordinary avoidance");
   r.s.auto_estop=true; r.tick();
-  check(r.out.safety==SafetyState::AUTO_ESTOP && r.out.v_ref==0 && r.out.mission_request.active,
+  check(r.out.safety==legacy::AUTO_ESTOP && r.out.v_ref==0 && r.out.mission_request.active,
     "P5: PREPARE keeps LiDAR brake");
   r.s.auto_estop=false; r.redline(); r.s.traffic_stopline_detected=false; r.tick();
   r.s.vehicle_speed=1.f; r.tick(60);
-  check(r.out.mission==MissionState::MISSION_PREPARE && r.out.path_source==MGM_SRC_AVOID &&
+  check(r.out.mission==legacy::MISSION_PREPARE && r.out.path_source==MGM_SRC_AVOID &&
     r.out.speed_owner==SpeedOwner::TRAFFIC && r.out.v_ref==0,
     "P19: PREPARE + Avoidance + Traffic keeps lateral and speed arbitration");
   r.s.parking_valid=true; acknowledge_search(r); r.tick();
   check(r.out.mission_request.search_start.recorded && r.out.mission_request.search_acknowledged,
     "search start acknowledgement has separate calibration observation");
   r.s.parking_search_space_found=true; r.tick();
-  check(r.out.mission==MissionState::MISSION_PREPARE && r.out.mission_request.space.recorded,
+  check(r.out.mission==legacy::MISSION_PREPARE && r.out.mission_request.space.recorded,
     "space/plan alone waits for existing localization readiness");
   acknowledge_search(r,true); r.tick();
   check(r.out.mission==MissionState::MISSION_ACTIVE && r.out.path_source==MGM_SRC_PARKING &&
@@ -76,7 +77,7 @@ void lifetime()
     !timeout.st.managers.mission_completed[0] && timeout.out.mission==MissionState::MISSION_IDLE,
     "P9: timeout wins over same-tick ready; cancellation is not completion");
   timeout.zone(20,ZoneType::MISSION_ZONE,MissionType::PARALLEL_PARKING,1); timeout.tick();
-  check(timeout.out.mission==MissionState::MISSION_PREPARE && timeout.out.active_mission_id==1 &&
+  check(timeout.out.mission==legacy::MISSION_PREPARE && timeout.out.active_mission_id==1 &&
     timeout.out.mission_request.request_id>first,"P11/P17: later Mission Zone starts new request after timeout");
   Run distance; distance.st.params.max_parking_search_distance=.05;
   distance.s.vehicle_speed=-.5f; distance.prepare(); distance.tick(9);
@@ -124,16 +125,16 @@ void generations_and_completion()
 {
   Run r; r.prepare(); const auto id=r.out.mission_request.request_id;
   acknowledge_search(r,true); r.s.parking_request_id=id-1; r.tick();
-  check(r.out.mission==MissionState::MISSION_PREPARE && !r.out.mission_request.search_acknowledged,
+  check(r.out.mission==legacy::MISSION_PREPARE && !r.out.mission_request.search_acknowledged,
     "P12: old session true space/ready cannot start new Mission");
   acknowledge_search(r,true); r.s.parking_preparation_reference.generation=1; r.tick();
-  check(r.out.mission==MissionState::MISSION_PREPARE,"pre-request readiness timestamp rejected even with current ID");
+  check(r.out.mission==legacy::MISSION_PREPARE,"pre-request readiness timestamp rejected even with current ID");
   acknowledge_search(r,true); r.s.parking_preparation_reference.age_s=.6f; r.tick();
-  check(r.out.mission==MissionState::MISSION_PREPARE,"delayed/frozen readiness generation rejected despite live heartbeat");
+  check(r.out.mission==legacy::MISSION_PREPARE,"delayed/frozen readiness generation rejected despite live heartbeat");
   acknowledge_search(r,true); r.s.parking_updated=false; r.tick();
-  check(r.out.mission==MissionState::MISSION_PREPARE,"no new status cannot acknowledge readiness");
+  check(r.out.mission==legacy::MISSION_PREPARE,"no new status cannot acknowledge readiness");
   acknowledge_search(r,true); r.s.parking_mission_mode=2; r.tick();
-  check(r.out.mission==MissionState::MISSION_PREPARE,"wrong Mission type cannot acknowledge readiness");
+  check(r.out.mission==legacy::MISSION_PREPARE,"wrong Mission type cannot acknowledge readiness");
   acknowledge_search(r); r.tick();
   const auto start=r.out.mission_request.start_time_ns;
   for(int i=0;i<20;++i) {

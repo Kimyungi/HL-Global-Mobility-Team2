@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "manager_test_fixture.hpp"
 #include <type_traits>
 using namespace manager_test;
@@ -130,7 +131,7 @@ int main() {
       "route reset acknowledgement preserves inside-Zone Mission suppression");
     r.zone(10,ZoneType::MISSION_ZONE,MissionType::T_PARKING,0,false); fix(r);
     r.zone(10,ZoneType::MISSION_ZONE,MissionType::T_PARKING,0,true); fix(r);
-    check(r.out.mission==MissionState::MISSION_PREPARE, "confirmed exit/reentry permits Mission after route reset");
+    check(r.out.mission==legacy::MISSION_PREPARE, "confirmed exit/reentry permits Mission after route reset");
   }
   {
     Run r; enable(r); fix(r); r.s.monotonic_ns-=1'000'000'000; fix(r,true);
