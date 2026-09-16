@@ -1,0 +1,29 @@
+/**:
+  ros__parameters:
+    cloud_topic: /unified_lidar/cloud
+    map_frame: map
+    base_frame: base_link
+    input_stale_s: 0.35
+    target_speed_mps: 1.0
+    waypoint_avoid:
+      wall_offset: 2.0
+      avoid_offset: 1.0
+      approach: 2.5
+      hold: 0.7
+      departure: 2.5
+      preview: 1.0
+      range_limit: 3.0
+      obstacle_offsets: [1.0]   # [0.5, 1.0] enables both placement bands
+      lateral_tolerance: 0.25
+      cluster_distance: 0.18
+      min_points: 3
+      max_cluster_span: 1.0
+      association_distance: 0.6
+      confirmation_frames: 2
+      vehicle_width: 0.62
+      vehicle_front: 0.76
+      vehicle_rear: 0.09
+      margin: 0.10
+      sample_step: 0.025
+      min_turn_radius: 1.15
+      enforce_turn_radius: true

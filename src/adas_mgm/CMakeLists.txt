@@ -152,6 +152,11 @@ if(BUILD_TESTING)
   target_link_libraries(reference_hold_test mgm_core)
   add_test(NAME reference_hold_test COMMAND reference_hold_test)
 
+  add_executable(waypoint_preview_test test/waypoint_preview_test.cpp)
+  target_include_directories(waypoint_preview_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(waypoint_preview_test mgm_core)
+  add_test(NAME waypoint_preview_test COMMAND waypoint_preview_test)
+
   add_executable(traffic_state_test test/traffic_state_test.cpp)
   target_include_directories(traffic_state_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(traffic_state_test mgm_core)

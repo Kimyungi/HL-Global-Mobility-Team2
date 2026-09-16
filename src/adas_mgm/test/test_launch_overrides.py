@@ -96,3 +96,23 @@ def test_parallel_trial_short_straight_reaches_node(monkeypatch, override, expec
     params = node_parameters(context, entities, 'stack_parking',
                              required_parameter='parallel_opposite_straight_m')
     assert params['parallel_opposite_straight_m'] == expected
+
+
+@pytest.mark.parametrize('parking', ['true', 'false'])
+def test_fixed_waypoint_avoidance_switches_producer_and_mgm_together(monkeypatch, parking):
+    context, entities = graph(monkeypatch, MAIN, {
+        'waypoint_avoid': 'true', 'parking_enabled': parking,
+        'waypoint_csv': '/tmp/test_yaw_route.csv', 'escape_after_cycles': '1000',
+    })
+    active = [n for n in entities if isinstance(n, Node) and
+              n.node_package == 'stack_avoid' and
+              (n.condition is None or n.condition.evaluate(context))]
+    assert len(active) == 1
+    params = node_parameters(context, active, 'stack_avoid', 'waypoint_csv')
+    assert params['waypoint_csv'] == '/tmp/test_yaw_route.csv'
+    mgm = node_parameters(context, entities, 'adas_mgm')
+    assert mgm['avoid_fixed_preview'] is True
+    assert mgm['escape_after_cycles'] == 0
+    legacy_drivers = [n for n in entities if isinstance(n, Node) and
+                      n.node_package == 'ydlidar_ros2_driver']
+    assert all(not n.condition.evaluate(context) for n in legacy_drivers)

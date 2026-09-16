@@ -246,7 +246,8 @@ class StackGpsNode(Node):
             p('parallel_parking_zone_ranges').value or [],
             'parallel_parking_zone_ranges', self.get_logger())
 
-        pts = load_waypoints_csv(csv_path, log=self.get_logger().warn)
+        pts, csv_yaws, csv_states = load_waypoints_csv(
+            csv_path, log=self.get_logger().warn, include_yaw=True, include_states=True)
         self.engine = PathEngine(pts, n_points=int(p('n_points').value),
                                  accel_ranges=accel, parking_ranges=parking,
                                  lookahead_m=float(p('ref_lookahead_m').value),
@@ -257,7 +258,9 @@ class StackGpsNode(Node):
                                  e_lpf_s=float(p('rejoin_e_lpf_s').value),
                                  curve_ff=float(p('rejoin_curve_ff').value),
                                  curve_margin=float(p('rejoin_curve_margin').value),
-                                 parallel_parking_ranges=parallel_parking)
+                                 parallel_parking_ranges=parallel_parking,
+                                 waypoint_yaws=csv_yaws)
+        self.engine.avoid_event_indices = [i for i, state in enumerate(csv_states) if state == 4]
         self._setup_zones(p)
         self.add_on_set_parameters_callback(self._on_param)
         self.get_logger().info(
@@ -659,7 +662,7 @@ class StackGpsNode(Node):
 
         if not stop_ranges:
             log.info("지정 정지 지점 없음")
-        if not avoid_ranges:
+        if not avoid_ranges and not self.engine.avoid_event_indices:
             log.warn("회피 허용 구간 없음 — MGM avoid_zone_only 가 켜져 있으면 "
                      "AVOID 전이가 어디서도 일어나지 않는다 (장애물은 estop 정지)")
 

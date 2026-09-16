@@ -15,6 +15,19 @@
 
 ## 1. 프로젝트 개요
 
+### 2026-09-16 waypoint 회피 추가
+
+사용자 지정 waypoint 회피 모드는 CSV yaw의 법선으로 좌우를 정한다. GPS와 같은
+ENU 원점 및 최근접 꼭짓점 인접 선분 투영을 공유하고, 누적 선분 길이를 station으로
+사용한다. 장애물 station s에서 제어점은 (s-2,0), (s,반대편 1.3),
+(s+0.7,같은 편 1.3), (s+2.7,0)이다. 각 점은 그 station의 CSV yaw를 가지며
+3차 Hermite 곡선으로 연결한다. 전역 경로는 통과 전 고정한다. 후속 장애물은
+기존 (3)을 새 (1)로, 변경 가능한 기존 (4)를 새 장애물의 (2)로 연결한다.
+기존 (3) 이전 곡선은 변경하지 않는다. 1 m preview 한 점만 vehicle frame으로
+변환해 전송하며, 이 모드에서는 MGM의 기존 1→20점 보간 및 회피 시간제한 복귀를
+사용하지 않는다. 기존 반응형 모드는 별도로 유지한다. 상세 및 검증은
+`src/stack_avoid/WAYPOINT_AVOID.md` 참조.
+
 WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, GPS(waypoint) 주행, 장애물 회피, 신호등/정지선 정지, 돌발 장애물 긴급 정지, 라이다 주차.
 
 - 상위: 산업용 PC, **Ubuntu 22.04 + ROS 2 Humble** — 인지(Signal processing) + 판단(Decision)
@@ -293,3 +306,12 @@ adas_ws/src/
 - `docs/system_architecture_v3.drawio` — dSPACE 이관 대안
 - `docs/state_machine_detail.drawio` — 스테이트 전이·우선권 표
 - `docs/dynamic_architecture.drawio` — 한 제어 주기(10ms) 시퀀스
+
+### CSV state=4 fixed avoidance update
+`reference_path_1_3_4_5_6_state.csv` selects the user route 1→3→4→5→6.
+CSV state=4 is a crossing/occupancy marker mapped to gps.avoid_zone, not MGM enum 4.
+With avoid_fixed_preview, marker/session entry precedes obstacle detection; the producer
+supplies waypoint preview until detection and after final P4. Actual avoidance followed
+by no retained path, waypoint cross-track ≤0.10 m and wrapped yaw error ≤20° completes
+AVOID to WAYPOINT. Same active marker does not immediately re-enter. Invalid references
+stop within AVOID. CoreState adds avoid_zone_consumed; generated backend remains unsupported.

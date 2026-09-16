@@ -7,6 +7,13 @@
 
 이 헤더가 곧 Simulink 버스 정의다. 필드 그대로 버스를 만들 것 (형·순서·이름 일치 권장).
 
+2026-09-16: `CoreParams` 끝에 `int32 avoid_fixed_preview`를 추가했다(기본 0).
+1이면 AVOID의 고정 전역 곡선에서 선택한 최종 1 m preview를 축소/블렌드 없이
+전달하고 `avoid_max_cycles` 복귀를 비활성화한다. 완료는 `avoid_maneuver_done`이다.
+이 옵션은 현재 C++ core만 지원한다. generated v1.88 선택 시 시작을 거부하며,
+Simulink 모델을 변경·검증했다고 주장하지 않는다. 크기 태그가 있는 구 덤프는
+추가 필드가 0으로 채워지므로 기존 동작을 보존한다.
+
 | 구조체 | Simulink 대응 | 비고 |
 |---|---|---|
 | `CoreSnapshot` | 입력 버스 | 인지 입력 + traffic 적/녹/정지선 거리 + dSPACE 실차속도. bool→boolean, float→single, int32_t→int32 |
@@ -70,3 +77,9 @@ ros2 run adas_mgm core_replay sample.bin golden.csv  # 레퍼런스 정답 출�
 - 스펙 변경은 CLAUDE.md §4 갱신이 선행 — 모델·레퍼런스 어느 쪽도 임의 변경 금지.
 - 덤프 바이너리는 같은 머신·같은 ABI에서만 호환 (`tools/dump_format.hpp` 참조).
 - float 연산 순서 차이로 마지막 자리 수 diff가 나면 허용 오차 비교(예: 1e-5)로 완화하되, 스테이트·immediate_stop·path_source는 **완전 일치**여야 한다.
+
+## CSV state=4 fixed avoidance session
+CoreState adds bool avoid_zone_consumed (core backend only). Fixed-preview mode enters
+on GPS state=4 marker/session activation independently of obstacle detection/avoidable.
+The producer reports completion only after final P4 and waypoint rejoin ≤0.10 m / ≤20°.
+Invalid/missing references stop within AVOID. No Simulink generated model was modified.

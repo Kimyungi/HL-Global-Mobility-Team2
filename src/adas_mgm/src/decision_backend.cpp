@@ -171,6 +171,9 @@ DecisionBackend::DecisionBackend(
     throw std::invalid_argument(
             "backend=generated requires generated_backend_acknowledge_limited_scope=true");
   }
+  if (params_.avoid_fixed_preview != 0) {
+    throw std::invalid_argument("fixed waypoint preview requires backend=core");
+  }
   if (params_.escape_after_cycles != 0) {
     throw std::invalid_argument(
             "backend=generated requires escape_after_cycles=0 because "

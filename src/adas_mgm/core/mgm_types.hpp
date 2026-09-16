@@ -256,6 +256,9 @@ struct CoreParams
   // 정지(v_ref=0). 기본 0.5m — "seed(1.5m)에서 1m 이상 진행한 뒤에만 실제
   // 정지가 성립한다"는 요구사항과 동일한 값이다(사용자 지정, 2026-09-02).
   float traffic_stop_offset;
+  // Fixed ENU avoidance producer already supplies the final 1 m preview.
+  // Append-only for size-tagged dump compatibility; zero preserves legacy.
+  int32_t avoid_fixed_preview;
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -317,6 +320,7 @@ struct CoreState
   // dead-reckoning 감쇠한다 — mgm_step.cpp의 거리 추적 블록 주석 참조.
   float traffic_stopline_distance;
   // edge(true→false) 검출용 — 이번 틱 traffic_stopline_detected의 직전값.
+  bool avoid_zone_consumed;  // fixed preview: suppress re-entry until zone/session clears
   bool traffic_prev_stopline_detected;
 };
 

@@ -103,6 +103,9 @@ RECORD_TOPICS = [
     '/perception/estop', '/perception/avoid', '/perception/parking',
     '/perception/traffic_stop', '/adas/target_ref', '/vehicle/vector',
     '/scan', '/lidar/a1/scan', '/unified_lidar/scan',
+    '/unified_lidar/cloud', '/perception/avoid_path_map',
+    '/perception/avoid_controls_map', '/perception/avoid_preview_map',
+    '/perception/avoid_diagnostic',
     '/parking/local_map', '/parking/slam_pose', '/parking/pipeline_stage',
     '/rosout', '/tf', '/tf_static',
 ]
@@ -272,7 +275,8 @@ def validate(context):
         LaunchConfiguration('parking_enabled').perform(context).lower()
         in ('true', '1', 'yes', 'on'))
     ydlidar_params = LaunchConfiguration('ydlidar_params').perform(context)
-    if not parking_enabled and not os.path.isfile(ydlidar_params):
+    waypoint_avoid = LaunchConfiguration('waypoint_avoid').perform(context) == 'true'
+    if not parking_enabled and not waypoint_avoid and not os.path.isfile(ydlidar_params):
         raise RuntimeError(
             f'라이다 파라미터 파일 없음: {ydlidar_params}\n'
             '  ydlidar_ros2_driver 를 빌드했는지 확인하거나 '
@@ -312,6 +316,10 @@ def generate_launch_description():
         # ── stack_gps (DRIVE_GUIDE.md V2와 동일 인자)
         DeclareLaunchArgument('waypoint_csv', default_value='',
                               description='코스 웨이포인트 CSV (필수)'),
+        DeclareLaunchArgument('waypoint_avoid', default_value='false',
+                              description='Fixed GPS cubic avoidance with 1 m preview; CSV yaw required'),
+        DeclareLaunchArgument('waypoint_avoid_params', default_value=os.path.join(
+            get_package_share_directory('stack_avoid'), 'config', 'waypoint_avoid.yaml')),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
         DeclareLaunchArgument(
             'parking_enabled', default_value='true',
@@ -601,7 +609,9 @@ def generate_launch_description():
             # 재시작으로 자가 회복. 출발 인가는 go 점검 ③(scan 수신)이 계속 막는다.
             respawn=True,
             respawn_delay=2.0,
-            condition=UnlessCondition(LaunchConfiguration('parking_enabled')),
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration('parking_enabled'), "' != 'true' and '",
+                LaunchConfiguration('waypoint_avoid'), "' != 'true'"])),
         ),
 
         # Four-LiDAR mapping + parking producer. It publishes
@@ -612,6 +622,15 @@ def generate_launch_description():
                 'launch', 'parking.launch.py'])),
             launch_arguments={'start_multi_lidar': 'true'}.items(),
             condition=IfCondition(LaunchConfiguration('parking_enabled')),
+        ),
+
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(PathJoinSubstitution([
+                get_package_share_directory('lidar_fusion_v2'), 'launch', 'bringup.launch.py'])),
+            launch_arguments={'rviz': 'false'}.items(),
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration('waypoint_avoid'), "' == 'true' and '",
+                LaunchConfiguration('parking_enabled'), "' != 'true'"])),
         ),
 
         # laser_static_tf(placeholder)는 제거 — base_link→laser_frame 은 stack_avoid_node가
@@ -626,6 +645,7 @@ def generate_launch_description():
             package='stack_avoid',
             executable='stack_avoid_node',
             name='stack_avoid_node',
+            condition=UnlessCondition(LaunchConfiguration('waypoint_avoid')),
             parameters=[os.path.join(
                 get_package_share_directory('stack_avoid'), 'config', 'params.yaml'), {
                     'target_speed_mps': ParameterValue(
@@ -640,12 +660,24 @@ def generate_launch_description():
         ),
 
         Node(
+            package='stack_avoid', executable='waypoint_avoid_node', name='stack_avoid_node',
+            condition=IfCondition(LaunchConfiguration('waypoint_avoid')),
+            parameters=[LaunchConfiguration('waypoint_avoid_params'), {
+                'waypoint_csv': LaunchConfiguration('waypoint_csv'),
+                'target_speed_mps': ParameterValue(
+                    LaunchConfiguration('avoid_target_speed_mps'), value_type=float),
+            }], output='screen',
+            on_exit=die_hard('waypoint_avoid_node', 'fixed avoidance producer exited'),
+        ),
+
+        Node(
             package='stack_estop',
             executable='stack_estop_node',
             name='stack_estop_node',
             remappings=[('/scan', PythonExpression([
                 "'/lidar/a1/scan' if '",
                 LaunchConfiguration('parking_enabled'),
+                "' == 'true' or '", LaunchConfiguration('waypoint_avoid'),
                 "' == 'true' else '/scan'",
             ]))],
             parameters=[{
@@ -824,7 +856,11 @@ def generate_launch_description():
                 # E-stop 자체를 실패로 판정하는 시험에서는 반드시 0으로 두어, 장시간
                 # 정지 후 후진 탈출이 시험 결과를 바꾸지 못하게 한다.
                 'escape_after_cycles': ParameterValue(
-                    LaunchConfiguration('escape_after_cycles'), value_type=int),
+                    PythonExpression(["0 if '", LaunchConfiguration('waypoint_avoid'),
+                                      "' == 'true' else ", LaunchConfiguration('escape_after_cycles')]),
+                    value_type=int),
+                'avoid_fixed_preview': ParameterValue(
+                    LaunchConfiguration('waypoint_avoid'), value_type=bool),
                 # gps_only 시 LANE 전이 불가 임계로 상향 (위 gps_only 인자 참조).
                 # 평상시 값은 params.yaml에서 읽은 것 — 여기 숫자를 박지 말 것.
                 'lane_conf_exit': ParameterValue(PythonExpression(

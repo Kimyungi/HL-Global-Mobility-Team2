@@ -242,9 +242,14 @@ void transition(const CoreSnapshot & s, CoreState & st)
   // 이미 AVOID 중이면 관여하지 않는다 — 기동 중에 구간을 벗어났다고 회피를
   // 중도 포기하면 장애물 옆에서 트랙으로 되꺾는 꼴이 된다. 이탈 상한은
   // avoid_max_cycles 가 따로 지킨다.
-  const bool avoid_entry =
-    s.avoid_obstacle_detected && s.avoid_avoidable &&
-    (st.params.avoid_zone_only == 0 || s.gps_avoid_zone);
+  if (st.params.avoid_fixed_preview && !s.gps_avoid_zone && !s.avoid_obstacle_detected) {
+    st.avoid_zone_consumed = false;
+  }
+  const bool avoid_entry = st.params.avoid_fixed_preview ?
+    (!st.avoid_zone_consumed && !s.avoid_maneuver_done &&
+     (s.gps_avoid_zone || s.avoid_obstacle_detected)) :
+    (s.avoid_obstacle_detected && s.avoid_avoidable &&
+     (st.params.avoid_zone_only == 0 || s.gps_avoid_zone));
 
   // GPS 전용 구간 (2026-08-18) — 이 구간 안에서는 차선으로 넘어가지 않는다.
   // 판정에 gps_path 유효성을 함께 요구한다: 플래그는 fix 가 있어야 계산되고,
@@ -297,6 +302,7 @@ void transition(const CoreSnapshot & s, CoreState & st)
         st.state = MGM_STATE_PARKING;
       } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
+        if (st.params.avoid_fixed_preview) {st.avoid_zone_consumed = true;}
       } else if (gps_only_zone || st.lane_low_cnt >= st.params.n_cycles) {
         // 구간 진입은 **즉시** 내려간다(히스테리시스 없음) — 차선을 못 믿는
         // 구간이라고 사람이 지정한 곳이므로, 신뢰도가 높게 나오는 동안 기다릴
@@ -312,6 +318,7 @@ void transition(const CoreSnapshot & s, CoreState & st)
         st.state = MGM_STATE_PARKING;
       } else if (avoid_entry) {
         st.state = MGM_STATE_AVOID;
+        if (st.params.avoid_fixed_preview) {st.avoid_zone_consumed = true;}
       } else if (!gps_only_zone && st.return_hold_left == 0 &&
         st.lane_high_cnt >= st.params.n_cycles && rejoined)
       {
@@ -336,7 +343,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
       // 따로 지키며, 그 페이즈가 닫힌 뒤 아래 조건이 평소대로 적용된다.
       if (st.escape_phase == MGM_ESCAPE_NONE &&
         (s.avoid_maneuver_done ||
-        (st.params.avoid_max_cycles > 0 && st.avoid_ticks >= st.params.avoid_max_cycles)))
+        (!st.params.avoid_fixed_preview && st.params.avoid_max_cycles > 0 &&
+        st.avoid_ticks >= st.params.avoid_max_cycles)))
       {
         st.state = MGM_STATE_WAYPOINT;
         st.return_hold_left = st.params.avoid_return_hold_cycles;
@@ -501,7 +509,8 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       out.path_source = MGM_SRC_AVOID;
       // 기동 완료 우선 — 신호등 정지 요구는 기동 이탈 후 적용 (여기서 참조하지 않음).
       // 안전 바닥: TTC < 임계 또는 긴급 정지 → 즉시 정지 (우선권 표 최상위).
-      if (s.estop || s.avoid_ttc < st.params.ttc_stop) {
+      if (s.estop || s.avoid_ttc < st.params.ttc_stop ||
+          (st.params.avoid_fixed_preview && (!s.avoid_avoidable || s.avoid_path.n == 0))) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
       } else {
@@ -630,7 +639,8 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   // "1점=str 무반응" 실측의 재확인이며, "원인은 저속"이라는 2026-08-10 재해석을 반증.
   // dSPACE 수정 없이 PC 조립에서 해결 — 와이어에는 항상 다점이 실린다.
   int32_t n_wire = n;
-  if (n == 1) {
+  const bool fixed_preview = src == MGM_SRC_AVOID && st.params.avoid_fixed_preview != 0;
+  if (n == 1 && !fixed_preview) {
     const CorePoint tgt = path->pts[0];
     const float yaw = atan2f(tgt.y, tgt.x);
     // ★ 등간격(첫 점 = 목표/20 ≈ 7.5cm)은 **의도적으로 유지한다.** 첫 점이
@@ -674,6 +684,12 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     }
     st.blend_left = st.params.blend_cycles;
     st.last_src = src;
+  }
+
+  // The producer's fixed cubic already defines the complete transition.
+  // Blending with the previous mode would move this point off that curve.
+  if (fixed_preview) {
+    st.blend_left = 0;
   }
 
   if (st.blend_left > 0) {

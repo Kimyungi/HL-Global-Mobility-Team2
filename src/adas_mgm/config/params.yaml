@@ -35,6 +35,9 @@ mgm_node:
     # 1200틱=12s 근거: 정상 통과 대기 최댓값이 (3.0+0.85+0.3)/0.5 = 8.3s이므로
     # 정상 회피는 절대 안 걸리고, 비정상 고착만 끊는다. 0 이하면 상한 없음.
     avoid_max_cycles: 1200
+    # Enabled together with waypoint_avoid_node by the integrated launch.
+    # Keep its 1 m preview/yaw/curvature; finish by station, never by timeout.
+    avoid_fixed_preview: false
 
     # 스테이트별 속도 [m/s]
     # 0.5 복원 (2026-08-06): 위빙 원인이 ref 첫 점 기하(lookahead 0)로
