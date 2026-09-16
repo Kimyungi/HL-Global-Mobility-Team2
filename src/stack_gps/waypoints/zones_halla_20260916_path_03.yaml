@@ -1,0 +1,28 @@
+# 2026-09-16 user map; existing Zone behavior, state=5 wired to stop_points.
+track: waypoints_halla_20260916_path_03.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones:
+- start:
+    lat: 37.3040878
+    lon: 127.9074278
+    note: rectangle zone 3 entry
+  end:
+    lat: 37.30394414
+    lon: 127.9072588
+    note: user-extended zone 3 exit
+- start:
+    lat: 37.30391639
+    lon: 127.9072261
+    note: parking approach GPS-only entry
+  end:
+    lat: 37.3038968
+    lon: 127.9072031
+    note: parking approach GPS-only exit
+parking_points:
+- mode: perpendicular
+  lat: 37.3038968
+  lon: 127.9072031
+  east_m: -29.231453
+  north_m: -30.797922
+  note: T자 주차

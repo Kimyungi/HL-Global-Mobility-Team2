@@ -1,0 +1,2 @@
+# Preserve the uploaded source bytes (including its original CRLF line endings).
+reference_paths_01_to_07_split_parking_20260916.csv -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

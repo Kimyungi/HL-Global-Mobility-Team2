@@ -1,17 +1,42 @@
-# CSV/Zone data synchronized with sonsm0318 PR #86, 28ba409.
-# User-corrected order: (01 or 02) -> 03 -> 04 -> 05 -> (06 or 07).
-# Both choices must be explicit at startup; there is no default or sensor selection.
-# Current requested run: --start 01 --end 07. Preserve the uploaded geometry.
-# Completion waits for this route endpoint AND every Mission defined in its zones_file.
+# Active map: 2026-09-16 user CSV, 901 points; state=5 is the configured stop.
+# Keep the existing start/via/end choices and completion policy.
 sequence:
-  start: ['01', '02']
-  via: ['03', '04', '05']
-  end: ['06', '07']
+  start:
+  - '01'
+  - '02'
+  via:
+  - '03'
+  - '04'
+  - '05'
+  end:
+  - '06'
+  - '07'
 routes:
-  - {id: '01', file: waypoints_halla_reference_path_01.csv, zones_file: zones_halla_reference_path_01.yaml, completion: endpoint_and_missions}
-  - {id: '02', file: waypoints_halla_reference_path_02.csv, zones_file: zones_halla_reference_path_02.yaml, completion: endpoint_and_missions}
-  - {id: '03', file: waypoints_halla_reference_path_03.csv, zones_file: zones_halla_reference_path_03.yaml, completion: endpoint_and_missions}
-  - {id: '04', file: waypoints_halla_reference_path_04.csv, zones_file: zones_halla_reference_path_04.yaml, completion: endpoint_and_missions}
-  - {id: '05', file: waypoints_halla_reference_path_05.csv, zones_file: zones_halla_reference_path_05.yaml, completion: endpoint_and_missions}
-  - {id: '06', file: waypoints_halla_reference_path_06.csv, zones_file: zones_halla_reference_path_06.yaml, completion: endpoint_and_missions}
-  - {id: '07', file: waypoints_halla_reference_path_07.csv, zones_file: zones_halla_reference_path_07.yaml, completion: endpoint_and_missions}
+- id: '01'
+  file: waypoints_halla_20260916_path_01.csv
+  zones_file: zones_halla_20260916_path_01.yaml
+  completion: endpoint_and_missions
+- id: '02'
+  file: waypoints_halla_20260916_path_02.csv
+  zones_file: zones_halla_20260916_path_02.yaml
+  completion: endpoint_and_missions
+- id: '03'
+  file: waypoints_halla_20260916_path_03.csv
+  zones_file: zones_halla_20260916_path_03.yaml
+  completion: endpoint_and_missions
+- id: '04'
+  file: waypoints_halla_20260916_path_04.csv
+  zones_file: zones_halla_20260916_path_04.yaml
+  completion: endpoint_and_missions
+- id: '05'
+  file: waypoints_halla_20260916_path_05.csv
+  zones_file: zones_halla_20260916_path_05.yaml
+  completion: endpoint_and_missions
+- id: '06'
+  file: waypoints_halla_20260916_path_06.csv
+  zones_file: zones_halla_20260916_path_06.yaml
+  completion: endpoint_and_missions
+- id: '07'
+  file: waypoints_halla_20260916_path_07.csv
+  zones_file: zones_halla_20260916_path_07.yaml
+  completion: endpoint_and_missions
