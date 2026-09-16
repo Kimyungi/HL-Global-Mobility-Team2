@@ -39,6 +39,7 @@ const char * stateName(uint8_t state)
     case MGM_STATE_AVOID: return "AVOID";
     case MGM_STATE_PARKING: return "PARKING";
     case MGM_STATE_TRAFFIC: return "TRAFFIC";
+    case MGM_STATE_ESTOP: return "ESTOP";
     default: return "?";
   }
 }

@@ -17,7 +17,7 @@ BU_: IndustrialPC dSPACE
 
 BO_ 256 TARGET_HEADER: 8 IndustrialPC
  SG_ counter : 0|16@1+ (1,0) [0|65535] "" dSPACE
- SG_ state : 16|8@1+ (1,0) [0|4] "" dSPACE
+ SG_ state : 16|8@1+ (1,0) [0|5] "" dSPACE
  SG_ n_points : 24|8@1+ (1,0) [0|255] "" dSPACE
  SG_ v_ref : 32|16@1- (0.001,0) [-32.767|32.767] "m/s" dSPACE
  SG_ reserved : 48|16@1+ (1,0) [0|65535] "" dSPACE
@@ -73,7 +73,7 @@ BA_ "CANFD_BRS" BO_ 512 1;
 BA_ "GenMsgCycleTime" BO_ 512 10;
 
 
-VAL_ 256 state 0 "lane" 1 "waypoint" 2 "avoid" 3 "parking" 4 "traffic";
+VAL_ 256 state 0 "lane" 1 "waypoint" 2 "avoid" 3 "parking" 4 "traffic" 5 "estop";
 
 
 SIG_VALTYPE_ 257 x : 2;

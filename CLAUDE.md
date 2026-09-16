@@ -74,6 +74,8 @@ WHEELTEC 플랫폼 기반 자율주행 시스템. 시나리오: 차선 주행, G
 
 ## 4. 스테이트 머신 (Decision 핵심 — 상세: `docs/state_machine_detail.drawio`)
 
+**2026-09-16 ESTOP 변경:** 현행 C++ core는 실제 estop 입력 시 `MGM_STATE_ESTOP=5`에 머문다. 10초 뒤에도 장애물이 남고 주행 무장·후방 여유·유효 차속이 있으면 `v_escape<0`으로 최대 1m 후진한다. ref 첫 점은 `(-1,0,0,0)`이며, 실제 차속 적분으로 1m를 확인하면 이전 상태로 복귀한다. 5초 상한에서 1m 미달이면 ESTOP 정지를 유지하고, 같은 장애물에 대해 다시 후진하지 않는다. 4-LiDAR 주행 설정의 stack_estop은 후방 a2와 `base_link` 융합 스캔에서 `rear_clear`를 산출하며 입력이 끊기면 false다. 아래 2026-08-24 **AVOID 안의 후진 탈출** 서술은 이전 설계 기록으로, 현행 동작에는 적용되지 않는다. 생성 v1.88 백엔드는 이 상태를 지원하지 않아 `escape_after_cycles=0`으로 유지한다.
+
 스테이트 5개: **lane · waypoint · avoid · parking · traffic**. 판단 로직은 시스템 전체에서 이 스테이트 머신 한 곳에만 존재한다.
 
 **전이 조건:**

@@ -206,12 +206,12 @@ public:
     // ── 후진 탈출 (§4, 2026-08-24). 기본 끔 — 켜는 것은 params.yaml/launch 의
     // 명시적 선택이어야 한다. 후진은 사람이 뒤를 확인한 상태에서만 시험할 동작이다.
     p.escape_after_cycles =
-      static_cast<int32_t>(declare_parameter<int>("escape_after_cycles", 0));
+      static_cast<int32_t>(declare_parameter<int>("escape_after_cycles", 1000));
     // 음수여야 의미가 있다 — 0 이상이면 코어가 기능을 끈다(안전 불변식).
     p.v_escape = static_cast<float>(declare_parameter<double>("v_escape", -0.3));
     // 200틱 × 10ms × 0.3m/s = 0.6m
     p.escape_max_cycles =
-      static_cast<int32_t>(declare_parameter<int>("escape_max_cycles", 200));
+      static_cast<int32_t>(declare_parameter<int>("escape_max_cycles", 500));
     // 기본 켬 — 후방 센서가 붙기 전에는 rear_clear 가 항상 false 라 기능이 잠긴다.
     p.escape_require_rear_clear =
       declare_parameter<bool>("escape_require_rear_clear", true) ? 1 : 0;
