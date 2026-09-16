@@ -83,11 +83,13 @@ def cubic_connector(start, goal, spacing=.05, scale=1.):
 
 class GpsCubicPlanner:
     def __init__(self, *, width, length, front, margin, min_radius, spacing=.05,
-                 anchor_distance=1., return_distance=2.7):
+                 anchor_distance=1., return_distance=2.7, connector=None, collision_check=None):
         self.width, self.front = width, front
         self.rear, self.margin = max(0., length-front), margin
         self.min_radius, self.spacing = min_radius, spacing
         self.anchor_distance, self.return_distance = anchor_distance, return_distance
+        self._connector = connector or cubic_connector
+        self._collision_check = collision_check or footprint_clear
         self.reset()
 
     def reset(self):
@@ -109,7 +111,7 @@ class GpsCubicPlanner:
             return False
         radius = math.hypot(max(self.front, self.rear), self.width/2)
         pad = self.spacing/2*(1+radius/self.min_radius)
-        return footprint_clear(points, obstacles, self.width, self.front, self.rear, self.margin+pad)
+        return self._collision_check(points, obstacles, self.width, self.front, self.rear, self.margin+pad)
 
     @staticmethod
     def _goal_side(world, station, waypoints):
@@ -134,7 +136,7 @@ class GpsCubicPlanner:
     def _curve(self, start, goal, obstacles):
         feasible = []
         for scale in (1., 1.25, 1.5, 1.75):
-            points = cubic_connector(start, goal, self.spacing, scale)
+            points = self._connector(start, goal, self.spacing, scale)
             if self._safe(points, obstacles):
                 feasible.append(points)
         return min(feasible, key=lambda p: max(abs(q[3]) for q in p)) if feasible else None

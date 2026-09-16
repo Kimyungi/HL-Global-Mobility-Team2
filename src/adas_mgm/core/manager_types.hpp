@@ -10,7 +10,7 @@ enum class TopState : uint8_t {AUTONOMOUS_ENABLE, AUTONOMOUS_DRIVE, FINISH};
 enum class NavState : uint8_t {LINE, GPS_BACKUP, GPS_ONLY_NAV};
 enum class AvoidState : uint8_t {INACTIVE, AVOID_ACTIVE, CLEAR_CONFIRM, GPS_RETURN};
 enum class SignalState : uint8_t {SIGNAL_IDLE, RED_DETECTED, APPROACH_STOP_LINE, STOPPED_WAIT};
-enum class SafetyState : uint8_t {NORMAL, AUTO_ESTOP, REVERSE_RECOVERY, SAFE_STOP};
+enum class SafetyState : uint8_t {NORMAL, AUTO_ESTOP, REVERSE_RECOVERY, SAFE_STOP, ESTOP};
 enum class MissionState : uint8_t {MISSION_IDLE=0, MISSION_ACTIVE=1, MISSION_PREPARE=2};
 enum class MissionType : uint8_t {NONE, T_PARKING, PARALLEL_PARKING};
 enum class SpeedOwner : uint8_t {NAVIGATION, AVOIDANCE, TRAFFIC, MISSION, SAFETY, FINISH};
@@ -213,6 +213,20 @@ struct ManagerState
   int64_t previous_tick_ns;
   bool previous_tick_known, previous_reverse_command;
   RouteControl route;
+  bool lane_recovery_required;
+  bool actual_speed_seen;
+  float last_actual_speed;
+  bool traffic_zone_active;
+  int64_t traffic_zone_enter_ns;
+  bool estop_active;
+  uint64_t estop_request_id;
+  uint64_t estop_generation[3];
+  int32_t estop_count[3];
+  bool estop_rearm_blocked[3];
+  NavState estop_return_nav;
+  AvoidState estop_return_avoid;
+  MissionState estop_return_mission;
+  SignalState estop_return_signal;
 };
 }  // namespace adas_mgm
 #endif

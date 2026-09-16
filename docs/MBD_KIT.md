@@ -157,3 +157,40 @@ traffic_state_enabled=true를 거부하며 위 legacy 합성 예제로 새 병�
 - 스펙 변경은 CLAUDE.md §4 갱신이 선행 — 모델·레퍼런스 어느 쪽도 임의 변경 금지.
 - 덤프 바이너리는 같은 머신·같은 ABI에서만 호환 (`tools/dump_format.hpp` 참조).
 - float 연산 순서 차이로 마지막 자리 수 diff가 나면 허용 오차 비교(예: 1e-5)로 완화하되, 스테이트·immediate_stop·path_source는 **완전 일치**여야 한다.
+
+## 2026-09-16 revised v2 / dump v32
+
+`CoreParams.revised_v2_enabled`를 추가했다. 운영 prepare/drive는 true, 역사적 테스트/생성 백엔드의 기본은 false다.
+`CoreSnapshot` 끝에 FIXED 품질, 출발 raw LiDAR 준비, 신호 상태 freshness, 센서별 ESTOP clearance/reference,
+회복 episode ID·경로·속도·완료·reference를 추가했다. `CoreOutput`에는 ESTOP 활성과 episode ID를 추가했다.
+`SafetyState::ESTOP=4`이며 기존 enum 숫자 및 CAN 5-state projection은 유지한다.
+새 입력은 dump v32로만 재생한다. 구버전 dump는 당시 코드로 재생하며 필드를 추정 보충하지 않는다.
+생성 백엔드로 새 정책을 요청하면 시작 시 거부한다. 현재 요구사항과 제외 내역은
+[V2_STATE_MACHINE_CHANGE_REPORT.md](V2_STATE_MACHINE_CHANGE_REPORT.md)를 따른다.
+
+
+## 2026-09-16 통합 로그 v33 / PR #106
+
+현재 기록기 `mgm_node`, 샘플 생성기 `make_sample_dump`, `core_replay`,
+`parity_replay`는 공통 `dump_format.hpp`의 v33을 사용한다.
+v33은 인터뷰 기반 v2와 PR #106 T 주차 전체 순서·종점 유지·저속 전달을 통합한다.
+두 재생기는 동일한 `dump_reader.hpp`로 버전, snapshot/params 크기와 파일 완전성을 확인한다.
+누락된 파라미터를 0으로 보충하거나 잘린 레코드를 정상 종료로 처리하지 않는다.
+`core_replay` CSV에는 dump_version, revised_v2, estop_active, estop_request_id도 기록한다.
+
+이 PC에서 새 로그를 재생하는 명령(실차/CAN 기동 없음):
+
+```bash
+cd /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main
+install_v2/adas_mgm/lib/adas_mgm/core_replay drive_logs/실제_세션/mgm_snapshots.bin /tmp/replay_v33.csv
+```
+
+v32는 인터뷰 개발본과 PR #106 독립 개발본이 같은 번호를 서로 다르게 사용했다.
+헤더 번호만 33으로 바꾸거나 임의 변환하지 않는다. 이 PC의 기존 인터뷰 v32 재생
+실행 파일은 `build_v2/replay_archive/v32_local/`에 복사해 보존했다(해시는 README.txt).
+그 파일들은 **이 PC의 변경 전 v32 로그**에만 사용하며, PR #106 독립 v32 또는 다른 ABI의
+로그는 해당 기록 당시 빌드가 필요하다. 기존 로그를 새 정책으로 재해석하지 않는다.
+`build_v2`를 삭제하기 전에는 이 보존 디렉터리도 별도로 백업해야 한다.
+
+`parity_replay`는 이전 Simulink 생성 모델과의 비교 도구이며, 모델이 지원하지 않는
+새 v2 동작의 동일성을 보장하지 않는다. 현재 실차 정책의 재생은 `core_replay`를 사용한다.

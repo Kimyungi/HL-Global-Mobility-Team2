@@ -17,7 +17,7 @@ float32 avoid_return_yaw_error_rad
 bool avoid_return_error_valid
 # 0=SIGNAL_IDLE, 1=RED_DETECTED, 2=APPROACH_STOP_LINE, 3=STOPPED_WAIT
 uint8 signal
-# 0=NORMAL, 1=AUTO_ESTOP, 2=REVERSE_RECOVERY, 3=SAFE_STOP
+# 0=NORMAL, 1=AUTO_ESTOP (legacy), 2=REVERSE_RECOVERY (legacy), 3=SAFE_STOP, 4=ESTOP
 uint8 safety
 # 0=MISSION_IDLE, 1=MISSION_ACTIVE, 2=MISSION_PREPARE
 uint8 mission
@@ -140,3 +140,9 @@ bool go_authorized
 uint8 sensor_alive_mask
 bool safe_stop_all_sensors_only
 bool reference_motion_blocked
+
+# Revised v2: transition-only recovery contract and traffic module lifecycle.
+bool revised_v2
+bool estop_active
+uint64 estop_request_id
+bool traffic_zone_active

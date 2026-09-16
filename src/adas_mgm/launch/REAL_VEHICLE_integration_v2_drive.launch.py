@@ -48,12 +48,26 @@ def start_stack(context):
     value = lambda name: LaunchConfiguration(name).perform(context)
     if value('REAL_VEHICLE_CONFIRM') != 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX':
         raise RuntimeError('REAL_VEHICLE_CONFIRM token required before starting hardware')
+    # No legacy fallback: reject retired switches before opening any hardware.
+    if value('waypoint_avoid') != 'true' or value('avoid_v2_enabled') != 'false':
+        raise RuntimeError('Legacy avoidance excluded: waypoint_avoid=true and avoid_v2_enabled=false required')
+    for retired in ('avoid_planner_mode', 'avoid_compute_backend'):
+        if context.launch_configurations.get(retired, ''):
+            raise RuntimeError(f'Legacy avoidance option excluded: {retired}')
+    if value('parking_enabled') != 'true' or value('avoid_zone_only') != 'true':
+        raise RuntimeError('PR103 requires four-LiDAR bringup and the agreed zone entry policy')
+    mode, backend = 'Waypoint_Avoid_PR103', 'stack_avoid.waypoint_planner'
     root = Path(os.environ['FMA_V2_WORKSPACE']).resolve()
     share = Path(get_package_share_directory('adas_mgm'))
     if not share.resolve().is_relative_to(root / 'install_v2'):
         raise RuntimeError('Use this workspace scripts/v2 drive and install_v2')
     manifest = selected_manifest(root / 'src/stack_gps/waypoints/halla_route_sequence.yaml',
                                  value('start_waypoint'), value('end_waypoint'))
+    context.launch_configurations['t_reference_origin_csv'] = manifest['routes'][0]['file']
+    context.launch_configurations['t_reference_route_csv'] = str(
+        root / 'src/stack_gps/waypoints/waypoints_halla_20260916_path_03.csv')
+    context.launch_configurations['avoid_waypoint_csv'] = manifest['routes'][0]['file']
+    context.launch_configurations['avoid_route_origin_csv'] = manifest['routes'][0]['file']
     # This entry owns route selection; avoid ambiguous overrides from the base launch.
     for name in ('route_sequence_file', 'route_start_id', 'route_end_id',
                  'waypoint_csv', 'zones_file'):
@@ -73,6 +87,8 @@ def start_stack(context):
     run.mkdir(parents=True, exist_ok=False)
     route_file = run / 'route_selected.yaml'
     route_file.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    (run / 'avoid_compute_backend.txt').write_text(backend + '\n')
+    (run / 'avoid_planner_mode.txt').write_text(mode + '\n')
     context.launch_configurations['route_sequence_file'] = str(route_file)
     spec = importlib.util.spec_from_file_location(
         'v2_full_drive_stack', share / 'launch/REAL_VEHICLE_lane_gps_can.launch.py')
@@ -81,7 +97,7 @@ def start_stack(context):
     stack = module.build_launch_description(
         log_dir=str(run), default_homography=str(root / 'src/stack_lane/config/homography.json'),
         default_lane_weights=str(root / 'src/stack_lane/models/yolopv2.pt'),
-        lidar_estop_enabled=True,
+        lidar_estop_enabled=False, revised_v2_enabled=True,
         required_lidar_topics=['/lidar/a1/scan', '/lidar/a2/scan',
                                '/lidar/b1/scan', '/lidar/b2/scan'])
     actions = list(stack.entities)
@@ -89,6 +105,7 @@ def start_stack(context):
         actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(
             str(share / 'launch/integration_v2_view.launch.py'))))
     print('[v2 drive] route: ' + ' -> '.join(r['id'] for r in manifest['routes']))
+    print(f'[v2 drive] avoid planner: {mode}; backend={backend}; zone_only={value("avoid_zone_only")}')
     print(f'[v2 drive] logs: {run}; waiting for explicit go')
     return actions
 
@@ -96,15 +113,15 @@ def start_stack(context):
 def generate_launch_description():
     # Match the integrated field session; normal safety/arbitration remains in the core.
     profile = dict(
-        parking_enabled='true', t_parking_zone_ranges='[0]', parallel_parking_zone_ranges='[0]',
+        parking_enabled='true', t_reference_enabled='true', t_parking_zone_ranges='[0]', parallel_parking_zone_ranges='[0]',
         zone_enter_confirm_samples='5', zone_exit_confirm_samples='5',
-        parking_zone_entry_active='true', escape_after_cycles='1000',
-        avoidance_enabled='true', avoid_zone_only='true', avoid_v2_enabled='true', avoid_target_speed_mps='1.0', usb_speed='high', camera_fps='10',
+        parking_zone_entry_active='true', escape_after_cycles='0',
+        avoidance_enabled='true', avoid_zone_only='true', avoid_v2_enabled='false', waypoint_avoid='true', avoid_target_speed_mps='1.0', usb_speed='high', camera_fps='10',
         lane_debug='true', traffic_show_debug='false', traffic_enabled='true',
         traffic_depth_enabled='false', traffic_yolo_image_size='640',
         traffic_yolo_inference_interval='2', traffic_red_phase_yolo_inference_interval='3',
         traffic_stopline_yolo_image_size='320', traffic_require_stop_gate='false',
-        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-2', v_base='2.0', record='false')
+        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-2', v_base='2.0', v_avoid='1.0', record='false')
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
         DeclareLaunchArgument('start_waypoint', default_value='01',

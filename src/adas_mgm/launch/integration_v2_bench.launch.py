@@ -13,7 +13,7 @@ def generate_launch_description():
         '/adas/mgm_state', '/adas/target_ref', '/perception/lane_path',
         '/perception/lane_camera', '/perception/traffic_camera', '/perception/gps_path', '/perception/avoid', '/perception/parking',
         '/perception/traffic_stop', '/perception/estop', '/bridge/can_health',
-        '/vehicle/vector', '/avoid_v2/plan',
+        '/vehicle/vector', '/avoid_v2/plan', '/adas/traffic_zone_enabled', '/planning/estop_recovery',
     )
     params = Path(get_package_share_directory('adas_mgm')) / 'config/params.yaml'
     return LaunchDescription([Node(

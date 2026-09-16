@@ -116,7 +116,7 @@ class ZoneMap:
         return cls(definitions, len(engine.e))
 
 
-def load_zone_definitions(path, engine, snap_max_m):
+def load_zone_definitions(path, engine, snap_max_m, *, key="zones", turn_only=False):
     """Load optional 'zones' entries from the existing zones_file.
 
     Boundary forms: existing latitude/longitude start/end, or index_range.
@@ -128,9 +128,9 @@ def load_zone_definitions(path, engine, snap_max_m):
     with open(path, encoding='utf-8') as stream:
         data = yaml.safe_load(stream) or {}
     definitions = []
-    for entry in data.get('zones') or []:
+    for entry in data.get(key) or []:
         try:
-            zone_type = ZoneType[entry['zone_type']]
+            zone_type = ZoneType.GPS_ONLY_ZONE if turn_only else ZoneType[entry['zone_type']]
             mission_type = MissionType[entry.get('mission_type', 'NONE')]
             if 'index_range' in entry:
                 if 'start' in entry or 'end' in entry:
@@ -155,3 +155,16 @@ def load_zone_definitions(path, engine, snap_max_m):
             raise ValueError(f'invalid ZoneDefinition {entry!r}: {error}') from error
     # Validate explicit entries together before reserving IDs for legacy ranges.
     return ZoneMap(definitions, len(engine.e)).definitions
+
+
+def turn_zone_map(path, engine, snap_max_m, existing):
+    """Revised v2: exclude old GPS-only zones, retain mission IDs and bounds.
+
+    Only explicit turn_zones drive BOTH GPS-only navigation and traffic lifecycle.
+    Empty/missing turn_zones means no configured turns; coordinates are never guessed.
+    """
+    turns = load_zone_definitions(path, engine, snap_max_m, key='turn_zones', turn_only=True)
+    retained = [z for z in existing.definitions if z.zone_type != ZoneType.GPS_ONLY_ZONE]
+    result = ZoneMap([*retained, *turns], len(engine.e))
+    engine.gps_only_ranges = [(z.start_index, z.end_index) for z in turns]
+    return result

@@ -84,6 +84,22 @@ int main()
   reverse.s.auto_estop = true; reverse.tick(4);
   check(reverse.out.safety == SafetyState::REVERSE_RECOVERY && reverse.out.avoid == AvoidState::INACTIVE,
     "independent E-stop recovery outside zone does not enable ordinary AVOID");
+  Run speeds; configure(speeds);
+  speeds.st.params.v_base = 2.f; speeds.st.params.v_avoid = 1.f;
+  speeds.s.avoid_v_suggest = 2.f;
+  speeds.tick(3);
+  check(near(speeds.out.v_ref, 2.f), "ordinary navigation uses 2m/s");
+  speeds.s.gps_avoid_zone = true; speeds.tick(3);
+  check(speeds.out.avoid == AvoidState::AVOID_ACTIVE && near(speeds.out.v_ref, 1.f),
+    "zone entry before detection uses 1m/s");
+  speeds.obstacle(); speeds.s.avoid_obstacle_detected = false;
+  speeds.s.avoid_maneuver_done = true; speeds.s.gps_cross_track = .5f;
+  speeds.tick(3);
+  check(speeds.out.avoid == AvoidState::GPS_RETURN && speeds.out.path_source == MGM_SRC_GPS &&
+    near(speeds.out.v_ref, 1.f), "GPS return keeps zone speed until alignment");
+  speeds.s.gps_cross_track = 0.f; speeds.tick(3);
+  check(speeds.out.avoid == AvoidState::INACTIVE && near(speeds.out.v_ref, 2.f),
+    "completed zone returns to normal 2m/s");
   std::printf("avoid_zone_entry_test: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

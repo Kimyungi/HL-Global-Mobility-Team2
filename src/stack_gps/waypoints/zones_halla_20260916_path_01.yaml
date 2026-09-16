@@ -1,0 +1,8 @@
+# PR #105 map; physical Zone 3 = shared Traffic/GPS-only zone.
+# Other legacy GPS-only zones are excluded; parking and stop points are retained.
+track: waypoints_halla_20260916_path_01.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points: []
+turn_zones: []

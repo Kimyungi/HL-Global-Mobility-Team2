@@ -4,8 +4,4 @@ from pathlib import Path
 
 
 def generate_launch_description():
-    path = Path(__file__).with_name('REAL_VEHICLE_integration_v2.launch.py')
-    spec = importlib.util.spec_from_file_location('integration_v2_vehicle_entry', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.build_launch_description(lidar_estop_enabled=False)
+    raise RuntimeError('Retired v2 launcher excluded; use scripts/v2 prepare and RUN_BOOK_FINAL.md')

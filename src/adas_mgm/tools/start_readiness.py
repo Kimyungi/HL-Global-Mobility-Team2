@@ -14,5 +14,8 @@ def readiness(latest, now_ns, *, skip_gps=False, skip_camera=False, require_traf
     gps = current and state.gps_fixed_ready and not skip_gps
     lidar = current and state.lidar_ready
     traffic = latest.get('traffic')
+    # Revised v2 starts the detector only inside the shared turn/traffic zone.
+    if current and getattr(state, 'revised_v2', False) and not getattr(state, 'traffic_zone_active', False):
+        require_traffic = False
     traffic_ok = not require_traffic or (traffic is not None and fresh(traffic.header.stamp, now_ns))
     return bool(current and lidar and (camera or gps) and traffic_ok), bool(camera), bool(gps), bool(current), bool(traffic_ok)

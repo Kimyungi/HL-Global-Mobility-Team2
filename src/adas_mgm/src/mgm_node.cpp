@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include "avoid_plan_input.hpp"
+#include "estop_scan.hpp"
 #include <atomic>
 #include <cmath>
 #include <exception>
@@ -42,6 +43,7 @@
 #include "fma_interfaces/msg/parking_command.hpp"
 #include "fma_interfaces/msg/traffic_stop.hpp"
 #include "fma_interfaces/msg/estop_request.hpp"
+#include "fma_interfaces/msg/estop_recovery.hpp"
 #include "fma_interfaces/msg/can_health.hpp"
 #include "fma_interfaces/msg/target_ref.hpp"
 #include "fma_interfaces/msg/vehicle_vector.hpp"
@@ -71,6 +73,7 @@ struct LatestMsgs
   fma_interfaces::msg::ParkingStatus parking;
   fma_interfaces::msg::TrafficStop traffic;
   fma_interfaces::msg::EstopRequest estop;
+  fma_interfaces::msg::EstopRecovery recovery;
   fma_interfaces::msg::CanHealth can;   // 브리지 CAN 링크 건전성 (§5.7 ⑥)
   fma_interfaces::msg::VehicleVector vehicle;  // dSPACE 실차속도 피드백
 };
@@ -224,6 +227,10 @@ public:
   : Node("mgm_node")
   {
     CoreParams p{};
+    rcl_interfaces::msg::ParameterDescriptor revised_descriptor;
+    revised_descriptor.read_only = true;
+    revised_v2_ = declare_parameter<bool>("revised_v2_enabled", false, revised_descriptor);
+    p.revised_v2_enabled = revised_v2_ ? 1 : 0;
     p.lane_conf_exit = static_cast<float>(declare_parameter<double>("lane_conf_exit", 0.35));
     p.lane_conf_return = static_cast<float>(declare_parameter<double>("lane_conf_return", 0.7));
     p.n_cycles = static_cast<int32_t>(declare_parameter<int>("n_cycles", 50));
@@ -258,7 +265,7 @@ public:
     rcl_interfaces::msg::ParameterDescriptor wall_descriptor;
     wall_descriptor.read_only=true;
     wall_planner_=declare_parameter<bool>("avoid_v2_enabled",false,wall_descriptor);
-    p.avoid_unblended=wall_planner_?1:0;
+    p.avoid_unblended=declare_parameter<bool>("avoid_unblended",wall_planner_)?1:0;
     // ── 후진 탈출 (§4, 2026-08-24). 기본 끔 — 켜는 것은 params.yaml/launch 의
     // 명시적 선택이어야 한다. 후진은 사람이 뒤를 확인한 상태에서만 시험할 동작이다.
     p.escape_after_cycles =
@@ -286,7 +293,7 @@ public:
     // 차(0.5m)가 곧 ramp 구간이라 제동 여유가 빡빡하다 — 2m/s로 달리면 더
     // 그렇다(사용자 확인). seed(traffic_ramp_distance_m)를 같이 올릴지는 별도 검토.
     p.traffic_stop_offset = static_cast<float>(
-      declare_parameter<double>("traffic_stop_offset_m", 1.0));
+      declare_parameter<double>("traffic_stop_offset_m", revised_v2_ ? 1.1 : 1.0));
     if (!std::isfinite(p.traffic_ramp_distance_m) || !std::isfinite(p.traffic_stop_offset) ||
       p.traffic_stop_offset <= 0 || p.traffic_ramp_distance_m <= p.traffic_stop_offset)
     {
@@ -312,6 +319,13 @@ public:
 
     p.safe_stop_all_sensors_only = declare_parameter<bool>(
       "safe_stop_all_sensors_only", false, backend_descriptor) ? 1 : 0;
+    if (revised_v2_) {
+      if (!base_managers_ || backend_name != "core" || p.escape_after_cycles != 0) {
+        throw std::runtime_error("revised v2 requires parallel core and excludes legacy timed reverse");
+      }
+      p.safe_stop_all_sensors_only = 1;
+      p.traffic_stop_offset = 1.1f;
+    }
     if (p.safe_stop_all_sensors_only && (!base_managers_ || backend_name != "core")) {
       throw std::runtime_error("sensor-only SAFE_STOP requires parallel core backend");
     }
@@ -384,7 +398,10 @@ public:
     lidar_estop_descriptor.description =
       "startup-only LiDAR E-stop input enable; false is an explicit test configuration";
     lidar_estop_enabled_ = declare_parameter<bool>(
-      "lidar_estop_enabled", true, lidar_estop_descriptor);
+      "lidar_estop_enabled", !revised_v2_, lidar_estop_descriptor);
+    if (revised_v2_ && lidar_estop_enabled_) {
+      throw std::runtime_error("revised v2 excludes independent EstopRequest input");
+    }
     // estop 입력 신선도 watchdog 한도 — stack_estop 하트비트 50ms의 5주기
     estop_stale_ns_ = static_cast<int64_t>(
       declare_parameter<double>("estop_stale_timeout_sec", 0.25) * 1e9);
@@ -442,6 +459,23 @@ public:
     wait_go_ = declare_parameter<bool>("wait_go", false);
     required_lidar_topics_ = declare_parameter<std::vector<std::string>>(
       "required_lidar_topics", std::vector<std::string>{});
+    if (revised_v2_) {
+      const std::vector<std::string> expected{"/lidar/a1/scan", "/lidar/a2/scan", "/lidar/b1/scan", "/lidar/b2/scan"};
+      if (required_lidar_topics_ != expected) {
+        throw std::runtime_error("revised v2 departure requires all four raw LiDAR topics in a1,a2,b1,b2 order");
+      }
+      const char * names[] = {"front", "left", "right"};
+      for (int i = 0; i < 3; ++i) {
+        estop_mounts_[i] = declare_parameter<std::vector<double>>(std::string("estop_mount.") + names[i], std::vector<double>{});
+        if (estop_mounts_[i].size() != 8 || !std::all_of(estop_mounts_[i].begin(), estop_mounts_[i].end(),
+          [](double v) {return std::isfinite(v);})) {throw std::runtime_error("ESTOP requires calibrated LiDAR mounts");}
+      }
+      body_front_ = declare_parameter<double>("estop_body.front_m", .760);
+      body_rear_ = declare_parameter<double>("estop_body.rear_m", .090);
+      body_half_width_ = declare_parameter<double>("estop_body.half_width_m", .310);
+      if (!(body_front_ > 0 && body_rear_ > 0 && body_half_width_ > 0) ||
+        !std::isfinite(body_front_ + body_rear_ + body_half_width_)) {throw std::runtime_error("invalid ESTOP body box");}
+    }
     required_lidar_stamps_.assign(required_lidar_topics_.size(), -1);
     for (size_t i = 0; i < required_lidar_topics_.size(); ++i) {
       required_lidar_subs_.push_back(create_subscription<sensor_msgs::msg::LaserScan>(
@@ -455,7 +489,17 @@ public:
               return r == std::numeric_limits<float>::infinity() ||
                 (std::isfinite(r) && r >= scan->range_min && r <= scan->range_max);
             });
+          const int direction = i == 0 ? 0 : i == 2 ? 1 : i == 3 ? 2 : -1;
+          const float clearance = revised_v2_ && direction >= 0 && valid ?
+            body_clearance(scan->ranges, scan->angle_min, scan->angle_increment,
+              scan->range_min, scan->range_max, estop_mounts_[direction],
+              body_front_, body_rear_, body_half_width_) : std::numeric_limits<float>::quiet_NaN();
           std::lock_guard<std::mutex> lk(mtx_);
+          if (revised_v2_ && direction >= 0) {
+            raw_estop_stamp_[direction] = valid && !std::isnan(clearance) ?
+              static_cast<int64_t>(scan->header.stamp.sec)*1'000'000'000 + scan->header.stamp.nanosec : 0;
+            raw_estop_clearance_[direction] = clearance;
+          }
           required_lidar_stamps_[i] = valid ?
             static_cast<int64_t>(scan->header.stamp.sec)*1'000'000'000 + scan->header.stamp.nanosec : -1;
         }));
@@ -465,9 +509,10 @@ public:
         throw std::runtime_error(
           "lidar_estop_enabled=false requires parallel core, wait_go=true and escape_after_cycles=0");
       }
-      RCLCPP_WARN(get_logger(),
+      if (!revised_v2_) {RCLCPP_WARN(get_logger(),
         "LiDAR E-stop input DISABLED: static/dynamic stop and input watchdog excluded. "
-        "Operator/CAN/reference/traffic/avoidance TTC stops remain active.");
+        "Operator/CAN/reference/traffic/avoidance TTC stops remain active.");}
+      else {RCLCPP_INFO(get_logger(), "ESTOP owned by MGM; legacy E-stop and timed recovery excluded");}
     }
     // 구독은 wait_go 와 무관하게 **항상** 만든다 — CAN 고장 래치(§5.7 ⑥)의 해제도
     // 같은 인가를 쓰기 때문이다. wait_go 는 "출발 전에도 인가가 필요한가"만 정한다.
@@ -530,7 +575,7 @@ public:
         static_cast<uint32_t>(sizeof(CoreSnapshot)),
         static_cast<uint32_t>(sizeof(CoreParams)), p};
       dump_.write(reinterpret_cast<const char *>(&h), sizeof(h));
-      RCLCPP_INFO(get_logger(), "snapshot dump → %s", dump_path.c_str());
+      RCLCPP_INFO(get_logger(), "snapshot dump v%u → %s", kDumpVersion, dump_path.c_str());
     }
 
     pub_ = create_publisher<TargetRef>("/adas/target_ref", rclcpp::QoS(1));
@@ -586,12 +631,21 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         msgs_.traffic = *m;
         last_traffic_rx_ns_ = monotonicNs();});
-    sub_estop_ = create_subscription<fma_interfaces::msg::EstopRequest>(
+    if (!revised_v2_) {sub_estop_ = create_subscription<fma_interfaces::msg::EstopRequest>(
       "/perception/estop", qos,
       [this](fma_interfaces::msg::EstopRequest::ConstSharedPtr m) {
         std::lock_guard<std::mutex> lk(mtx_);
         msgs_.estop = *m;
-        last_estop_rx_ns_ = monotonicNs();});
+        last_estop_rx_ns_ = monotonicNs();});}
+    if (revised_v2_) {
+      sub_recovery_ = create_subscription<fma_interfaces::msg::EstopRecovery>(
+        "/planning/estop_recovery", qos,
+        [this](fma_interfaces::msg::EstopRecovery::ConstSharedPtr msg) {
+          std::lock_guard<std::mutex> lk(mtx_); msgs_.recovery = *msg;
+        });
+      traffic_zone_pub_ = create_publisher<std_msgs::msg::Bool>(
+        "/adas/traffic_zone_enabled", rclcpp::QoS(1).reliable().transient_local());
+    }
     // CAN 링크 건전성 (§5.7 ⑥, 2026-08-26) — bridge_dspace 가 발행. 정지 명령이
     // 실제로 버스에 나가고 있는지를 MGM 이 알 수 있는 유일한 경로다.
     sub_can_ = create_subscription<fma_interfaces::msg::CanHealth>(
@@ -729,6 +783,8 @@ private:
   {
     LatestMsgs m;
     std::vector<int64_t> lidar_stamps;
+    int64_t raw_estop_stamp[3]{};
+    float raw_estop_clearance[3]{};
     int64_t estop_rx_ns;
     int64_t lane_rx_ns;
     int64_t gps_rx_ns;
@@ -745,6 +801,8 @@ private:
     {
       std::lock_guard<std::mutex> lk(mtx_);
       lidar_stamps = required_lidar_stamps_;
+      std::copy(raw_estop_stamp_, raw_estop_stamp_ + 3, raw_estop_stamp);
+      std::copy(raw_estop_clearance_, raw_estop_clearance_ + 3, raw_estop_clearance);
       m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
       estop_rx_ns = last_estop_rx_ns_;
       lane_rx_ns = last_lane_rx_ns_;
@@ -840,7 +898,7 @@ private:
     // true가 남아 어차피 정지 유지 — 위험 케이스는 false 상태로 죽은 뒤 적색이
     // 켜지는 경우이며 이 보정이 그걸 막는다. estop이 아닌 traffic 요구로 태워
     // 일반 감속 정지(rate limit)로 선다. (2026-08-08, PR #21 검토에서 도출)
-    if (traffic_rx_ns >= 0 && monotonicNs() - traffic_rx_ns > traffic_stale_ns_) {
+    if (!revised_v2_ && traffic_rx_ns >= 0 && monotonicNs() - traffic_rx_ns > traffic_stale_ns_) {
       m.traffic.stop_required = true;
       m.traffic.fail_safe_stop = true;
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
@@ -947,6 +1005,30 @@ private:
     s.new_session = new_session;
     s.monotonic_ns = monotonicNs();
     s.event_time_ns = now().nanoseconds();
+    s.revised_v2 = revised_v2_;
+    s.gps_fix_quality = m.gps.fix_quality;
+    if (revised_v2_) {
+      for (int i = 0; i < 3; ++i) {
+        s.estop_scans[i] = raw_estop_clocks_[i].observe(raw_estop_stamp[i], s.event_time_ns, s.monotonic_ns, 350'000'000);
+        s.estop_clearance_m[i] = raw_estop_clearance[i];
+      }
+      const auto & stamp = m.recovery.reference_stamp;
+      s.recovery_reference = recovery_clock_.observe(
+        static_cast<int64_t>(stamp.sec)*1'000'000'000 + stamp.nanosec,
+        s.event_time_ns, s.monotonic_ns, 350'000'000);
+      s.recovery_request_id = m.recovery.request_id;
+      s.recovery_done = m.recovery.done;
+      s.recovery_speed = m.recovery.v_suggest;
+      s.recovery_path.n = static_cast<int32_t>(m.recovery.points.size());
+      for (int i = 0; i < std::min(s.recovery_path.n, MGM_NUM_POINTS); ++i) {
+        const auto & point = m.recovery.points[i];
+        s.recovery_path.pts[i] = CorePoint{point.x, point.y, point.yaw, point.curvature};
+      }
+    }
+    s.traffic_status_stamp_ns = static_cast<int64_t>(m.traffic.header.stamp.sec)*1'000'000'000 + m.traffic.header.stamp.nanosec;
+    const int64_t traffic_age = s.event_time_ns - s.traffic_status_stamp_ns;
+    s.traffic_status_fresh = traffic_rx_ns >= 0 && s.monotonic_ns - traffic_rx_ns <= traffic_stale_ns_ &&
+      s.traffic_status_stamp_ns > 0 && traffic_age >= 0 && traffic_age <= traffic_stale_ns_;
     s.mission_cancel_requested = mission_cancel;
     s.parking_request_id = m.parking.request_id;
     s.parking_search_active = m.parking.search_active;
@@ -1016,13 +1098,14 @@ private:
         missing_lidars.push_back(required_lidar_topics_[i]);
       }
     }
-    if (!wall_planner_&&(avoid_stale || !m.avoid.scan_valid)) {missing_lidars.push_back("/perception/avoid");}
+    if (!revised_v2_ && !wall_planner_&&(avoid_stale || !m.avoid.scan_valid)) {missing_lidars.push_back("/perception/avoid");}
     if (lidar_estop_enabled_ && (estop_stale || !m.estop.scan_valid)) {
       missing_lidars.push_back("/perception/estop");
     }
     s.lidar_valid = missing_lidars.empty();
-    start_ready_ = s.lidar_valid && (s.camera_available || s.gps_fixed_ready);
-    s.auto_estop = estop_real && m.estop.scan_valid;
+    s.start_lidar_ready = s.lidar_valid;
+    start_ready_ = s.start_lidar_ready && (s.camera_available || s.gps_fixed_ready);
+    s.auto_estop = !revised_v2_ && estop_real && m.estop.scan_valid;
     s.parking_valid = !parking_stale;
     s.parking_mission_active = m.parking.mission_active;
     s.parking_mission_mode = m.parking.mission_mode;
@@ -1030,7 +1113,15 @@ private:
     last_parking_rx_used_ = parking_rx_ns;
     if (!s.camera_line_valid) {s.lane_path.n = 0;}
     if (!s.gps_valid) {s.gps_path.n = 0;}
-    if (!s.lidar_valid) {s.avoid_path.n = 0;}
+    bool avoid_lidars_valid = true;
+    if (revised_v2_) {
+      for (size_t i : {size_t(0), size_t(2), size_t(3)}) {
+        const int64_t age = s.event_time_ns - lidar_stamps[i];
+        avoid_lidars_valid &= lidar_stamps[i] > 0 && age >= 0 && age <= 350'000'000;
+      }
+    } else {avoid_lidars_valid = s.lidar_valid;}
+    if (revised_v2_) {s.lidar_valid = avoid_lidars_valid;}
+    if (!avoid_lidars_valid) {s.avoid_path.n = 0;}
     if (!s.parking_valid) {s.parking_path.n = 0;}
     const bool vehicle_stale = vehicle_rx_ns < 0 ||
       monotonicNs() - vehicle_rx_ns > vehicle_stale_ns_;
@@ -1134,10 +1225,19 @@ private:
       status.sensor_alive_mask = s.sensor_alive_mask;
       status.safe_stop_all_sensors_only = backend_->params().safe_stop_all_sensors_only != 0;
       status.reference_motion_blocked = out.reference_motion_blocked;
+      status.revised_v2 = revised_v2_;
+      status.estop_active = out.estop_active;
+      status.estop_request_id = out.estop_request_id;
+      status.traffic_zone_active = revised_v2_ && out.zones.in_gps_only_zone;
+      if (traffic_zone_pub_) {
+        std_msgs::msg::Bool enabled;
+        enabled.data = status.traffic_zone_active;
+        traffic_zone_pub_->publish(enabled);
+      }
       status.gps_fixed_ready = s.gps_fixed_ready;
-      status.lidar_ready = s.lidar_valid;
+      status.lidar_ready = s.start_lidar_ready;
       status.lidar_missing_topics = missing_lidars;
-      status.start_ready = s.lidar_valid && (s.camera_available || s.gps_fixed_ready);
+      status.start_ready = s.start_lidar_ready && (s.camera_available || s.gps_fixed_ready);
       status.go_authorized = go;
       status.top = static_cast<uint8_t>(out.top);
       status.navigation = static_cast<uint8_t>(out.nav);
@@ -1397,6 +1497,14 @@ private:
   std::atomic<bool> can_latched_{false};   // CAN 고장 래치 — /operator/go 재인가로만 해제
   bool stop_holding_prev_{false};   // 지정 지점 정차 로그용 (코어 상태의 직전 값)
   bool wait_go_{false};             // 출발 인가 게이트 활성 (실차 launch 전용)
+  bool revised_v2_{false};
+  std::vector<double> estop_mounts_[3];
+  double body_front_{.760}, body_rear_{.090}, body_half_width_{.310};
+  int64_t raw_estop_stamp_[3]{};
+  float raw_estop_clearance_[3]{};
+  ReferenceClock raw_estop_clocks_[3], recovery_clock_;
+  rclcpp::Subscription<fma_interfaces::msg::EstopRecovery>::SharedPtr sub_recovery_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr traffic_zone_pub_;
   bool lidar_estop_enabled_{true};   // startup-only, separate test launcher
   bool base_managers_{false};
   ReferenceClock reference_clocks_[MGM_SRC_ESCAPE];

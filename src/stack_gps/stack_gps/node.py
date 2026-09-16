@@ -164,6 +164,7 @@ class StackGpsNode(Node):
 
     def __init__(self):
         super().__init__('stack_gps_node')
+        self.turn_zone_policy = self.declare_parameter('turn_zone_policy', False, ParameterDescriptor(read_only=True)).value
         self.declare_parameter('waypoint_csv', '')
         self.declare_parameter('route_sequence_file', '')
         self.declare_parameter('route_start_id', '')
@@ -361,8 +362,8 @@ class StackGpsNode(Node):
         # 자율/수동 구분 로그용 — GO(estop 해제) 발행 중인지. 판단 아님, 기록만.
         # (2026-08-03: 종점 정지 후 조이스틱 이동이 자율 유턴으로 오독된 사례)
         self._go_t = None
-        self.sub_estop = self.create_subscription(
-            EstopRequest, '/perception/estop', self._on_estop, 1)
+        self.sub_estop = (None if self.turn_zone_policy else self.create_subscription(
+            EstopRequest, '/perception/estop', self._on_estop, 1))
         self._station_v_ref = 0.0
         self._station_target_stamp = 0
         self._station_target_received = None
@@ -370,7 +371,7 @@ class StackGpsNode(Node):
         self.sub_target = self.create_subscription(TargetRef, '/adas/target_ref', self._on_target_ref, 1)
         self.sub_session = self.create_subscription(Bool, '/operator/start_session', self._on_start_session, 1)
         self.pub = self.create_publisher(GpsPath, '/perception/gps_path', 1)
-        self.sub_route = self.create_subscription(MgmState, '/adas/mgm_state', self._on_route_control, 1) if self._route_plan else None
+        self.sub_route = self.create_subscription(MgmState, '/adas/mgm_state', self._on_route_control, 1) if self._route_plan or self.turn_zone_policy else None
         # Raw gyro-integrated yaw has an arbitrary zero.  Consumers must use
         # orientation differences, not treat it as an absolute ENU heading.
         self.pub_imu = self.create_publisher(
@@ -423,6 +424,11 @@ class StackGpsNode(Node):
             return
         if stamp <= self._station_target_stamp:
             return
+        if self.fusion is not None:
+            # PARKING=3: preserve the established IMU-to-ENU alignment through
+            # reverse, wall dwell and forward exit. Only a fresh non-Parking
+            # TargetRef releases this latch; stale input cannot re-enable COG.
+            self.fusion.cog_hold = int(msg.state) == 3
         self._station_v_ref = float(msg.v_ref)
         self._station_target_stamp = stamp
         self._station_target_received = time.monotonic()
@@ -457,6 +463,10 @@ class StackGpsNode(Node):
         msg.waypoint_window_valid = len(msg.waypoint_points) >= 2
 
     def _on_route_control(self, msg):
+        if getattr(self, 'turn_zone_policy', False):
+            # Revised profile has no independent EstopRequest heartbeat.
+            # This is authorization telemetry only, never path/heading control.
+            self._go_t = time.monotonic() if msg.go_authorized else None
         plan = self._route_plan
         if plan is None or not msg.route.enabled or msg.route.phase != msg.route.WAIT_ACK:
             return
@@ -559,7 +569,7 @@ class StackGpsNode(Node):
             self._cog_ok = cog[0] >= 0.7 * self.cog_min_speed
         else:
             self._cog_ok = cog[0] >= self.cog_min_speed
-        cog_valid = self._cog_ok
+        cog_valid = self._cog_ok and not (self.fusion is not None and self.fusion.cog_hold)
         if self.fusion is not None and self.imu is not None:
             gen = self.imu.generation()
             if gen != self._imu_gen:
@@ -854,6 +864,11 @@ class StackGpsNode(Node):
         self.engine.gps_only_ranges = gps_only_ranges
         explicit_zones = load_zone_definitions(p('zones_file').value, self.engine, snap_max)
         self.zone_map = ZoneMap.from_engine(self.engine, explicit_zones)
+        if getattr(self, 'turn_zone_policy', False):
+            from .zones import turn_zone_map
+            self.zone_map = turn_zone_map(p('zones_file').value, self.engine, snap_max, self.zone_map)
+            log.info('Revised v2: legacy GPS-only zones excluded; shared turn/traffic zones: '
+                     + str(len(self.engine.gps_only_ranges)))
         for zone in self.zone_map.definitions:
             log.info(f"Zone {zone.zone_id}: {zone.zone_type.name} "
                      f"idx {zone.start_index}~{zone.end_index}, "
