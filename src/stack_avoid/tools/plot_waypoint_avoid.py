@@ -2,8 +2,8 @@
 
 This is a geometry/perception simulation, not a vehicle/dSPACE dynamics test.
 Four ideal horizontal LiDAR views are ray-cast against static circular objects.
-The plot explicitly preloads obstacle 1 to isolate path geometry. A separate
-3 m perception audit reports whether live detection can start this maneuver.
+Both obstacles are detected from the synthetic 3 m LiDAR cloud. A separate
+first-detection audit records entry timing on the waypoint centerline.
 """
 import argparse
 import csv
@@ -106,14 +106,6 @@ def simulate(curved, same_side=False, half_offset=False):
                                 'accepted': accepted, 'reason': live_planner.last_reason}
             break
     assert perception_audit is not None, 'first obstacle was never detected'
-    # Geometry illustration only: obstacle 1 is known before entering the path.
-    assert planner.accept(objects[0], 4.0)
-    snapshots.append((4.0, planner.samples, tuple(planner.maneuvers)))
-    seen.append({'ego_station': 4.0, 'obstacle_station': objects[0].station,
-                 'obstacle_lateral': objects[0].lateral, 'revision': planner.revision,
-                 'source': 'preloaded geometry fixture, not LiDAR detection'})
-    first_prefix = planner.segments[:2]
-    final_report, last_path = planner.geometry_report(), planner.samples
     for station in np.arange(4.0, second_s+cfg.hold+cfg.departure+.5, .04):
         pose = path_pose(planner, float(station))
         local_cloud = synthetic_fused_cloud(pose, objects, cfg, rng)
@@ -207,7 +199,7 @@ def main():
     for name, curved, same, half in cases:
         r = simulate(curved, same, half)
         results[name] = r
-        summaries[name] = {'mode': 'geometry with first obstacle preloaded; no dynamics',
+        summaries[name] = {'mode': 'synthetic 3 m LiDAR and ideal path poses; no dynamics',
                            'live_first_detection': r['perception_audit'],
                            'events': r['events'], 'final_passed': r['finished'],
                            'preview_max_error_m': r['preview_error'], **r['report']}
@@ -222,7 +214,7 @@ def main():
         draw_scene(ax, results[name], title)
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='outside lower center', ncol=5, frameon=False, fontsize=9)
-    fig.suptitle('Offset 1 m | entry/exit 3 m | first obstacle preloaded (geometry only)', fontsize=16, weight='bold')
+    fig.suptitle('Offset 1 m | entry/exit 2.5 m | synthetic 3 m LiDAR (no dynamics)', fontsize=16, weight='bold')
     fig.savefig(args.output/'straight_curve_paths.png', dpi=180)
     plt.close(fig)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)

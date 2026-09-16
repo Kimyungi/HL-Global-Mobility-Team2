@@ -8,9 +8,9 @@
     waypoint_avoid:
       wall_offset: 2.0
       avoid_offset: 1.0
-      approach: 3.0
+      approach: 2.5
       hold: 0.7
-      departure: 3.0
+      departure: 2.5
       preview: 1.0
       range_limit: 3.0
       obstacle_offsets: [1.0]   # [0.5, 1.0] enables both placement bands

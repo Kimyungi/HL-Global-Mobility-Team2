@@ -70,7 +70,7 @@ class WaypointTests(unittest.TestCase):
                 with self.subTest(curved=curved, side=side):
                     p = FixedPlanner(route(curved, heading=math.pi/2))
                     m = p.make_maneuver(obstacle(p, 8, side))
-                    for cp, station, d in zip(m.points, (5, 8, 8.7, 11.7),
+                    for cp, station, d in zip(m.points, (5.5, 8, 8.7, 11.2),
                                               (0, -side*1.0, -side*1.0, 0)):
                         x, y, yaw, _ = p.route.at_station(station)
                         self.assertAlmostEqual(cp.station, station)
@@ -115,9 +115,9 @@ class WaypointTests(unittest.TestCase):
                     self.assertFalse(p.advance((xy.x, xy.y, xy.yaw)))
                     self.assertEqual(p.active_index, 1)
                     # Passing the original return station must not clear the chain.
-                    xy = p.point(11.8)
+                    xy = p.point(11.3)
                     self.assertFalse(p.advance((xy.x, xy.y, xy.yaw)))
-                    xy = p.point(14.8)
+                    xy = p.point(14.3)
                     self.assertTrue(p.advance((xy.x, xy.y, xy.yaw)))
                     self.assertFalse(p.samples)
 
@@ -156,12 +156,12 @@ class WaypointTests(unittest.TestCase):
         self.assertEqual(d.observe([]), [])
         self.assertEqual(d.observe(cloud), [])
 
-    def test_three_metre_entry_meets_steering_limit_but_close_chain_does_not(self):
+    def test_two_point_five_metre_entry_and_close_chain_steering_limit(self):
         p = FixedPlanner(route())
         p.accept(obstacle(p, 8, 1), 5)
         report = p.geometry_report()
-        self.assertTrue(report['valid'])
-        self.assertAlmostEqual(report['min_radius'], 3**2/(6*1.0), places=6)
+        self.assertFalse(report['valid'])
+        self.assertAlmostEqual(report['min_radius'], 2.5**2/(6*1.0), places=6)
         self.assertTrue(p.accept(obstacle(p, 11, -1), 8.2))
         chained = p.geometry_report()
         self.assertFalse(chained['valid'])
@@ -191,7 +191,7 @@ class WaypointTests(unittest.TestCase):
         self.assertFalse(p.accept(obstacle(p, 8.5, -1), 8.1))
         self.assertEqual(p.samples, frozen)
 
-    def test_three_metre_lidar_detection_after_entry_is_rejected(self):
+    def test_three_metre_lidar_detection_before_entry_is_accepted(self):
         p = FixedPlanner(route())
         d = Detector(p.route, p.config)
         o = obstacle(p, 8, 1)
@@ -201,9 +201,11 @@ class WaypointTests(unittest.TestCase):
         d.observe(cloud)
         detected = d.observe(cloud)
         self.assertEqual(len(detected), 1)
-        self.assertFalse(p.accept(detected[0], pose[0]))
-        self.assertIn('after the required approach start', p.last_reason)
-        self.assertFalse(p.samples)
+        self.assertTrue(p.accept(detected[0], pose[0]))
+        self.assertTrue(p.samples)
+        late = FixedPlanner(route())
+        self.assertFalse(late.accept(detected[0], 6.0))
+        self.assertIn('after the required approach start', late.last_reason)
 
     def test_route_end_does_not_silently_clip_control_points(self):
         p = FixedPlanner(route())
