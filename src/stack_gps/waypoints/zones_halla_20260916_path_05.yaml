@@ -1,0 +1,35 @@
+# 2026-09-16 user map; existing Zone behavior, state=5 wired to stop_points.
+track: waypoints_halla_20260916_path_05.csv
+stop_points:
+- lat: 37.30363327
+  lon: 127.9069472
+  east_m: -51.91973
+  north_m: -60.044973
+  note: state=5 정지점 (path 05, idx 70); 기존 stop_hold_sec 적용
+avoid_zones: []
+gps_only_zones:
+- start:
+    lat: 37.30353774
+    lon: 127.9068071
+    note: rectangle zone 1 entry
+  end:
+    lat: 37.30357293
+    lon: 127.9068801
+    note: rectangle zone 1 exit
+- start:
+    lat: 37.30372211
+    lon: 127.9070459
+    note: rectangle zone 2 entry
+  end:
+    lat: 37.30381062
+    lon: 127.907101
+    note: rectangle zone 2 exit
+- start:
+    lat: 37.30398931
+    lon: 127.9073089
+    note: rectangle zone 3 entry
+  end:
+    lat: 37.30404006
+    lon: 127.9073902
+    note: rectangle zone 3 exit
+parking_points: []

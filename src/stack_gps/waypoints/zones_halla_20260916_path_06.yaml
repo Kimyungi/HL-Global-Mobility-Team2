@@ -1,0 +1,14 @@
+# 2026-09-16 user map; existing Zone behavior, state=5 wired to stop_points.
+track: waypoints_halla_20260916_path_06.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones:
+- start:
+    lat: 37.30404006
+    lon: 127.9073902
+    note: rectangle zone 3 entry
+  end:
+    lat: 37.30408736
+    lon: 127.907424
+    note: rectangle zone 3 exit
+parking_points: []

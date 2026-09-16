@@ -1,0 +1,6 @@
+# 2026-09-16 user map; existing Zone behavior, state=5 wired to stop_points.
+track: waypoints_halla_20260916_path_01.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points: []
