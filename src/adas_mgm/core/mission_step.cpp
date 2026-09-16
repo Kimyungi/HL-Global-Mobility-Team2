@@ -98,7 +98,10 @@ bool active_parking_step(const CoreSnapshot & s, CoreState & st, bool matching)
     m.mission_events |= MISSION_EVENT_DONE;
     return true;
   }
-  if (current_route_ended(s, st)) {
+  // T parking uses this endpoint as its reverse-entry/forward-return junction.
+  // Retain the request even with lost module feedback: only acknowledged done
+  // AFTER forward exit or an explicit cancellation may release route 04.
+  if (current_route_ended(s, st) && r.mission_type != MissionType::T_PARKING) {
     m.mission_failed[r.mission_id] = true;
     cancel_mission(st, MissionCancelReason::ROUTE_END);
     return true;

@@ -423,6 +423,11 @@ class StackGpsNode(Node):
             return
         if stamp <= self._station_target_stamp:
             return
+        if self.fusion is not None:
+            # PARKING=3: preserve the established IMU-to-ENU alignment through
+            # reverse, wall dwell and forward exit. Only a fresh non-Parking
+            # TargetRef releases this latch; stale input cannot re-enable COG.
+            self.fusion.cog_hold = int(msg.state) == 3
         self._station_v_ref = float(msg.v_ref)
         self._station_target_stamp = stamp
         self._station_target_received = time.monotonic()
@@ -559,7 +564,7 @@ class StackGpsNode(Node):
             self._cog_ok = cog[0] >= 0.7 * self.cog_min_speed
         else:
             self._cog_ok = cog[0] >= self.cog_min_speed
-        cog_valid = self._cog_ok
+        cog_valid = self._cog_ok and not (self.fusion is not None and self.fusion.cog_hold)
         if self.fusion is not None and self.imu is not None:
             gen = self.imu.generation()
             if gen != self._imu_gen:

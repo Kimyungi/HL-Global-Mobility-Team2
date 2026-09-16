@@ -100,7 +100,8 @@ int main() {
     check(r.out.mission==MissionState::MISSION_IDLE,"completed mission cannot restart on reentry");
   }
   for (bool executing : {false,true}) {
-    Run r;configure(r);start(r);if(executing)execute(r);
+    // Parallel parking retains the historical endpoint-cancel policy.
+    Run r;configure(r);start(r,MissionType::PARALLEL_PARKING);if(executing)execute(r);
     r.s.gps_at_end=true;r.tick();
     check(r.out.mission==MissionState::MISSION_ACTIVE,"repeated GPS generation cannot create endpoint");
     r.s.references[MGM_SRC_GPS].age_s=1;endpoint(r);
@@ -161,7 +162,7 @@ int main() {
     check(r.out.v_ref>0 && r.out.mission_request.active,"green automatically resumes the same GPS search request");
   }
   {
-    Run r;configure(r);start(r);status(r);
+    Run r;configure(r);start(r,MissionType::PARALLEL_PARKING);status(r);
     r.s.parking_preparation_ready=true;
     r.s.parking_preparation_reference=ReferenceSample{static_cast<uint64_t>(r.s.event_time_ns),0,.5f};
     r.s.vehicle_speed=0;endpoint(r);
@@ -193,7 +194,7 @@ int main() {
       "explicit operator cancellation remains available");
   }
   {
-    Run r;configure(r,false);start(r);endpoint(r);
+    Run r;configure(r,false);start(r,MissionType::PARALLEL_PARKING);endpoint(r);
     check(r.out.top==TopState::FINISH && r.out.active_mission_failed && r.out.mission_cancel &&
       r.out.mission_request.cancel_reason==MissionCancelReason::ROUTE_END,"single CSV endpoint ends Parking then finishes");
   }
@@ -230,6 +231,39 @@ int main() {
     r.s.auto_estop=false;r.tick(2);
     check(r.out.avoid==AvoidState::AVOID_ACTIVE && r.out.path_source==MGM_SRC_AVOID && r.out.v_ref>0,
       "leaving Parking restores ordinary avoidance without another enable command");
+  }
+  {
+    Run r;configure(r);start(r);r.s.parking_wall_acquisition_complete=false;
+    endpoint(r);
+    check(r.out.mission_request.active && !r.out.mission_cancel && r.out.v_ref==0,
+      "T endpoint while unresolved holds the request; cannot skip parking to route 04");
+    r.s.parking_wall_acquisition_complete=true;r.tick();
+    check(r.out.v_ref==0 && r.out.mission_request.active,
+      "T no-space search also stops at endpoint even if old wall collection was complete");
+    execute(r);
+    r.st.params.v_base=2.f;r.s.parking_v_suggest=.55f;r.tick();
+    check(near(r.out.v_ref,.55f) && r.out.path_source==MGM_SRC_PARKING,
+      "T adapter owns forward route-3 remainder with bounded provider speed");
+    r.s.parking_v_suggest=-.15f;r.tick();
+    check(near(r.out.v_ref,-.15f) && r.out.mission_request.active &&
+      r.out.route.phase!=RoutePhase::WAIT_ACK,"docking remains 0.15m/s, not 2m/s; route stays 03");
+    r.s.parking_v_suggest=0;r.s.vehicle_speed=0;r.tick(1100);
+    check(r.out.mission_request.active && !r.out.active_mission_completed &&
+      r.out.route.index==0 && r.out.route.phase!=RoutePhase::WAIT_ACK,
+      "ten seconds stationary at wall is NOT done and must not select route 04");
+    r.s.parking_v_suggest=.55f;r.tick();
+    check(r.out.v_ref>0 && r.out.mission_request.active,"forward exit keeps Parking authority");
+    r.s.parking_valid=false;r.tick();
+    check(r.out.v_ref==0 && !r.out.mission_cancel && r.out.mission_request.active,
+      "status loss at endpoint stops without releasing the request");
+    status(r);r.s.parking_v_suggest=0;r.s.parking_done=true;r.tick();
+    check(r.out.active_mission_completed && r.out.route.phase==RoutePhase::WAIT_ACK &&
+      r.out.route.requested_index==1,"only acknowledged exit done and measured stop request route 04");
+    r.s.route.index=1;r.s.route.acknowledged_request=r.out.route.request_id;
+    r.s.route.required_count=0;r.s.gps_at_end=false;
+    ++r.s.references[MGM_SRC_GPS].generation;r.tick();r.tick();
+    check(r.out.route.index==1 && r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0,
+      "fresh route-04 acknowledgement resumes normal waypoint following");
   }
   std::printf("parking_entry_test: %d checks, %d failures\n",checks,failures);
   return failures?1:0;

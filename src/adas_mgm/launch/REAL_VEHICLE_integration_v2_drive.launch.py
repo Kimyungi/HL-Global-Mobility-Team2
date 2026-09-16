@@ -54,6 +54,10 @@ def start_stack(context):
         raise RuntimeError('Use this workspace scripts/v2 drive and install_v2')
     manifest = selected_manifest(root / 'src/stack_gps/waypoints/halla_route_sequence.yaml',
                                  value('start_waypoint'), value('end_waypoint'))
+    # The parking references MUST share RoutePlan's first selected CSV datum.
+    context.launch_configurations['t_reference_origin_csv'] = manifest['routes'][0]['file']
+    context.launch_configurations['t_reference_route_csv'] = str(
+        root / 'src/stack_gps/waypoints/waypoints_halla_20260916_path_03.csv')
     # This entry owns route selection; avoid ambiguous overrides from the base launch.
     for name in ('route_sequence_file', 'route_start_id', 'route_end_id',
                  'waypoint_csv', 'zones_file'):
@@ -96,7 +100,8 @@ def start_stack(context):
 def generate_launch_description():
     # Match the integrated field session; normal safety/arbitration remains in the core.
     profile = dict(
-        parking_enabled='true', t_parking_zone_ranges='[0]', parallel_parking_zone_ranges='[0]',
+        parking_enabled='true', t_reference_enabled='true',
+        t_parking_zone_ranges='[0]', parallel_parking_zone_ranges='[0]',
         zone_enter_confirm_samples='5', zone_exit_confirm_samples='5',
         parking_zone_entry_active='true', escape_after_cycles='1000',
         avoidance_enabled='true', avoid_zone_only='true', avoid_v2_enabled='true', avoid_target_speed_mps='1.0', usb_speed='high', camera_fps='10',
