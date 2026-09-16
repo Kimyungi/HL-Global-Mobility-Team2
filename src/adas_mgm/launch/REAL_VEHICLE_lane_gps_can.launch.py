@@ -105,6 +105,8 @@ RECORD_TOPICS = [
     '/perception/lane_path', '/perception/gps_path', '/perception/gps_fix',
     '/perception/estop', '/perception/avoid', '/perception/avoid_main_goal', '/perception/parking',
     '/perception/traffic_stop', '/adas/target_ref', '/vehicle/vector',
+    '/planning/estop_recovery', '/planning/estop_recovery_status',
+    '/lidar/a2/scan', '/lidar/b1/scan', '/lidar/b2/scan', '/bridge/can_health',
     '/adas/mgm_state', '/parking/mission_command', '/operator/cancel_mission',
     '/scan', '/lidar/a1/scan', '/unified_lidar/scan',
     '/parking/local_map', '/parking/slam_pose', '/parking/pipeline_stage',
@@ -954,6 +956,9 @@ def build_launch_description(
             on_exit=die_hard('mgm_node',
                              '목표값 송신 중단 — can_zero로 0 복귀 후 전체 종료'),
         ),
+
+        Node(package='adas_mgm', executable='estop_recovery_node.py', name='estop_recovery',
+             condition=IfCondition(str(revised_v2_enabled).lower()), output='screen'),
 
         # ── rosbag — 버그 사후 분석·재생용. 토픽 명시 목록(RECORD_TOPICS)만 기록
         # 평상시 — 명시 토픽 목록만

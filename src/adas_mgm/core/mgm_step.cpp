@@ -825,7 +825,7 @@ CoreOutput mgm_step(const CoreSnapshot & input, CoreState & st)
   }
   CoreSnapshot execution = in;
   if (in.revised_v2 && st.managers.estop_active && out.path_source == MGM_SRC_ESCAPE) {
-    // Pending recovery provider supplies geometry; do not run the old straight reverse generator.
+    // PR108 recovery provider supplies geometry; do not run the old straight reverse generator.
     execution.parking_path = in.recovery_path;
   }
   if (out.route.changed) {

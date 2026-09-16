@@ -57,7 +57,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v32: interview policy, body-clearance ESTOP observations and recovery contract.
 // v33: unified interview policy + PR106 T parking endpoint/return/speed semantics.
 // v32 was independently used by two incompatible branches; never guess which one.
-constexpr uint32_t kDumpVersion = 33;
+// v34: upper ESTOP projects CAN state=5; PR108 measured recovery executor.
+constexpr uint32_t kDumpVersion = 34;
 
 struct DumpHeader
 {

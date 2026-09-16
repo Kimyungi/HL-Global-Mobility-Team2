@@ -7,7 +7,7 @@
 // 사용법: core_replay <dump.bin> <out.csv> [key=value ...]
 //   파라미터 오버라이드로 같은 run을 다른 임계에 재생해 튜닝을 비교할 수 있다:
 //     core_replay run/mgm_snapshots.bin new.csv lane_conf_return=0.7 n_cycles=50
-//   기록기와 동일한 v33/ABI/파라미터 크기만 재생한다. 과거 로그는 당시 도구를 사용한다.
+//   기록기와 동일한 v34/ABI/파라미터 크기만 재생한다. 과거 로그는 당시 도구를 사용한다.
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

@@ -156,7 +156,7 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 | offset | 형식 | 필드 | 설명 |
 |---|---|---|---|
 | 0 | u16 | counter | 송신마다 +1 (wrap). **watchdog 판정 입력** — 30ms(3주기) 미갱신 시 v_ref=0, 조향 유지 |
-| 2 | u8 | state | 0=lane, 1=waypoint, 2=avoid, 3=parking, 4=traffic |
+| 2 | u8 | state | 0=lane, 1=waypoint, 2=avoid, 3=parking, 4=traffic, 5=estop |
 | 3 | u8 | n_points | 유효 포인트 수 (1~20) — 이번 주기에 송신된 REF_POINT 프레임 수 |
 | 4 | i16 | v_ref | 1 mm/s LSB. [±32.767 m/s] 최종 목표 속도. 정지 = 0. **음수 = 후진** (2026-08-24: MGM §4 후진 탈출이 처음으로 음수를 낸다 — 그전까지 PC는 0 이상만 보냈다. dSPACE MPC·하위 PI 가 음수 목표속도를 그대로 후진으로 처리한다는 팀 확인을 받았으나 **실차 재확인 권장**) |
 | 6 | u16 | reserved | 0 |

@@ -194,3 +194,10 @@ v32는 인터뷰 개발본과 PR #106 독립 개발본이 같은 번호를 서�
 
 `parity_replay`는 이전 Simulink 생성 모델과의 비교 도구이며, 모델이 지원하지 않는
 새 v2 동작의 동일성을 보장하지 않는다. 현재 실차 정책의 재생은 `core_replay`를 사용한다.
+
+## 2026-09-16 ESTOP v34
+
+CAN 상태 5와 회복 실행기 계약으로 raw dump v34를 사용한다. 현재 core_replay와
+parity_replay는 v33을 명확히 거부한다. 이전 로그는 해당 버전 실행기로 재생한다.
+이 PC의 v33 실행기는 `build_v2/replay_archive/v33_local`에 보관했다.
+[적용 계약](V2_PR108_INTEGRATION.md) 참고.

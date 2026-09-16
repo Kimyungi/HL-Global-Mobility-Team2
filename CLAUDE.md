@@ -1,5 +1,9 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> 2026-09-16 PR #108 후속: 상위 ESTOP에 실제 정차 10초 → 실측 후진 1m → 정차 완료 실행기 연결.
+> 독립 EstopRequest/장애물 소실 조기 해제 제외. CAN state=5, raw dump v34.
+> [현재 ESTOP 계약](docs/V2_PR108_INTEGRATION.md)이 아래 과거 설명보다 우선한다.
+
 > 2026-09-16 후속 회피 교체: `prepare/drive`는 PR #103의 `waypoint_avoid_node`를 사용한다.
 > `waypoint_avoid=true`, `avoid_v2_enabled=false`만 허용한다. 구형 선택 분기·v2 런처·회피 시험 진입점은 제외했다.
 > 이전 New_Avoid_v2/legacy 소스는 기록 비교용이며 현재 v2 실행 그래프에는 포함하지 않는다.

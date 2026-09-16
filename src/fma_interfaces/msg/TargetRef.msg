@@ -5,6 +5,7 @@ uint8 STATE_WAYPOINT=1
 uint8 STATE_AVOID=2
 uint8 STATE_PARKING=3
 uint8 STATE_TRAFFIC=4
+uint8 STATE_ESTOP=5
 
 std_msgs/Header header
 RefPoint[] ref_points   # vehicle frame, 모든 모드 동일 포맷 (dSPACE는 소스 구분 불필요)

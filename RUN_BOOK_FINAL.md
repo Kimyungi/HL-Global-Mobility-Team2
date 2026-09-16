@@ -132,6 +132,9 @@ CSV 파일은 `waypoints_halla_20260916_path_XX.csv`입니다.
 경로 CSV와 Zone은 이 PC의 `src/stack_gps/waypoints/halla_route_sequence.yaml`을 기준으로 읽습니다.
 세션별 경로 목록 `route_selected.yaml`과 로그는 위 작업 폴더의 `drive_logs/v2_날짜_시간/` 아래에 생성됩니다.
 
+ESTOP은 상위 제어에서 진입하고 실제 정차 10초 후 후방이 확인되면 1m 후진합니다.
+후진 후 실제 정차를 확인해야 복귀하며, 회복 입력 이상 시 정지를 유지합니다.
+
 ## 4. 주행 인가 코드
 
 센서 준비를 확인한 뒤 **터미널 2**에서 상태 표시를 Ctrl-C로 종료하고 실행합니다.
