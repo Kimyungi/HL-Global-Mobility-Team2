@@ -14,10 +14,10 @@ from stack_gps.path_engine import wrap_angle
 @dataclass(frozen=True)
 class Config:
     wall_offset: float = 2.0
-    avoid_offset: float = 1.3
-    approach: float = 2.0
+    avoid_offset: float = 1.0
+    approach: float = 3.0
     hold: float = 0.7
-    departure: float = 2.0
+    departure: float = 3.0
     preview: float = 1.0
     range_limit: float = 3.0
     obstacle_offsets: tuple = (1.0,)

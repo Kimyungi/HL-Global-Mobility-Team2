@@ -2,6 +2,8 @@
 
 This is a geometry/perception simulation, not a vehicle/dSPACE dynamics test.
 Four ideal horizontal LiDAR views are ray-cast against static circular objects.
+The plot explicitly preloads obstacle 1 to isolate path geometry. A separate
+3 m perception audit reports whether live detection can start this maneuver.
 """
 import argparse
 import csv
@@ -88,7 +90,31 @@ def simulate(curved, same_side=False, half_offset=False):
     final_report = None
     last_path = None
     finished = False
-    for station in np.arange(4.9, second_s+3.1, .04):
+    # Audit real first detection on the waypoint centerline, without preloading.
+    live_planner, live_detector = FixedPlanner(route, cfg), Detector(route, cfg)
+    audit_rng = np.random.default_rng(16)
+    perception_audit = None
+    for ego_s in np.arange(4.0, 8.0, .04):
+        pose = route.at_station(float(ego_s))[:3]
+        cloud = to_global(synthetic_fused_cloud(pose, objects[:1], cfg, audit_rng), pose)
+        detections = live_detector.observe(cloud)
+        if detections:
+            o = detections[0]
+            accepted = live_planner.accept(o, route.project_station(*pose[:2])[0])
+            perception_audit = {'ego_station': float(ego_s),
+                                'required_entry_station': o.station-cfg.approach,
+                                'accepted': accepted, 'reason': live_planner.last_reason}
+            break
+    assert perception_audit is not None, 'first obstacle was never detected'
+    # Geometry illustration only: obstacle 1 is known before entering the path.
+    assert planner.accept(objects[0], 4.0)
+    snapshots.append((4.0, planner.samples, tuple(planner.maneuvers)))
+    seen.append({'ego_station': 4.0, 'obstacle_station': objects[0].station,
+                 'obstacle_lateral': objects[0].lateral, 'revision': planner.revision,
+                 'source': 'preloaded geometry fixture, not LiDAR detection'})
+    first_prefix = planner.segments[:2]
+    final_report, last_path = planner.geometry_report(), planner.samples
+    for station in np.arange(4.0, second_s+cfg.hold+cfg.departure+.5, .04):
         pose = path_pose(planner, float(station))
         local_cloud = synthetic_fused_cloud(pose, objects, cfg, rng)
         map_cloud = to_global(local_cloud, pose)
@@ -119,7 +145,8 @@ def simulate(curved, same_side=False, half_offset=False):
     assert finished, 'final P4 was not passed'
     return {'route': route, 'cfg': cfg, 'objects': objects, 'snapshots': snapshots,
             'history': np.array(history), 'report': final_report, 'last_path': last_path,
-            'events': seen, 'preview_error': max(preview_errors), 'finished': finished}
+            'events': seen, 'preview_error': max(preview_errors), 'finished': finished,
+            'perception_audit': perception_audit}
 
 
 def draw_scene(ax, result, title):
@@ -180,7 +207,9 @@ def main():
     for name, curved, same, half in cases:
         r = simulate(curved, same, half)
         results[name] = r
-        summaries[name] = {'events': r['events'], 'final_passed': r['finished'],
+        summaries[name] = {'mode': 'geometry with first obstacle preloaded; no dynamics',
+                           'live_first_detection': r['perception_audit'],
+                           'events': r['events'], 'final_passed': r['finished'],
                            'preview_max_error_m': r['preview_error'], **r['report']}
         with (args.output/(name+'.csv')).open('w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -193,7 +222,7 @@ def main():
         draw_scene(ax, results[name], title)
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='outside lower center', ncol=5, frameon=False, fontsize=9)
-    fig.suptitle('Waypoint-based fixed avoidance | 4 control points per obstacle', fontsize=16, weight='bold')
+    fig.suptitle('Offset 1 m | entry/exit 3 m | first obstacle preloaded (geometry only)', fontsize=16, weight='bold')
     fig.savefig(args.output/'straight_curve_paths.png', dpi=180)
     plt.close(fig)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)

@@ -70,8 +70,8 @@ class WaypointTests(unittest.TestCase):
                 with self.subTest(curved=curved, side=side):
                     p = FixedPlanner(route(curved, heading=math.pi/2))
                     m = p.make_maneuver(obstacle(p, 8, side))
-                    for cp, station, d in zip(m.points, (6, 8, 8.7, 10.7),
-                                              (0, -side*1.3, -side*1.3, 0)):
+                    for cp, station, d in zip(m.points, (5, 8, 8.7, 11.7),
+                                              (0, -side*1.0, -side*1.0, 0)):
                         x, y, yaw, _ = p.route.at_station(station)
                         self.assertAlmostEqual(cp.station, station)
                         self.assertAlmostEqual(cp.x-x, -d*math.sin(yaw))
@@ -111,13 +111,13 @@ class WaypointTests(unittest.TestCase):
                     self.assertEqual(p.maneuvers[0].points[:3], first)
                     self.assertEqual(p.maneuvers[0].points[3], p.maneuvers[1].points[1])
                     self.assertEqual(p.maneuvers[1].points[0], first[2])
-                    xy = p.point(8.8, -1.3)
+                    xy = p.point(8.8, -1.0)
                     self.assertFalse(p.advance((xy.x, xy.y, xy.yaw)))
                     self.assertEqual(p.active_index, 1)
                     # Passing the original return station must not clear the chain.
-                    xy = p.point(10.8)
+                    xy = p.point(11.8)
                     self.assertFalse(p.advance((xy.x, xy.y, xy.yaw)))
-                    xy = p.point(13.8)
+                    xy = p.point(14.8)
                     self.assertTrue(p.advance((xy.x, xy.y, xy.yaw)))
                     self.assertFalse(p.samples)
 
@@ -156,12 +156,16 @@ class WaypointTests(unittest.TestCase):
         self.assertEqual(d.observe([]), [])
         self.assertEqual(d.observe(cloud), [])
 
-    def test_fixed_curve_reports_actual_steering_limit_violation(self):
+    def test_three_metre_entry_meets_steering_limit_but_close_chain_does_not(self):
         p = FixedPlanner(route())
         p.accept(obstacle(p, 8, 1), 5)
         report = p.geometry_report()
-        self.assertFalse(report['valid'])
-        self.assertAlmostEqual(report['min_radius'], 2**2/(6*1.3), places=6)
+        self.assertTrue(report['valid'])
+        self.assertAlmostEqual(report['min_radius'], 3**2/(6*1.0), places=6)
+        self.assertTrue(p.accept(obstacle(p, 11, -1), 8.2))
+        chained = p.geometry_report()
+        self.assertFalse(chained['valid'])
+        self.assertAlmostEqual(chained['peak_curvature'], 12/2.3**2, places=6)
         self.assertGreater(report['wall_clearance'], 0)
 
     def test_collision_checks_obstacle_extent_and_preserves_path(self):
@@ -169,7 +173,7 @@ class WaypointTests(unittest.TestCase):
         p.accept(obstacle(p, 8, 1), 5)
         frozen = p.samples
         self.assertFalse(p.path_blocked(cloud_for(obstacle(p, 8, 1)), 5))
-        self.assertTrue(p.path_blocked(cloud_for(obstacle(p, 8, -1.3)), 5))
+        self.assertTrue(p.path_blocked(cloud_for(obstacle(p, 8, -1.0)), 5))
         self.assertEqual(p.samples, frozen)
 
     def test_late_chaining_changes_only_permitted_fourth_point_suffix(self):
@@ -186,6 +190,20 @@ class WaypointTests(unittest.TestCase):
         frozen = p.samples
         self.assertFalse(p.accept(obstacle(p, 8.5, -1), 8.1))
         self.assertEqual(p.samples, frozen)
+
+    def test_three_metre_lidar_detection_after_entry_is_rejected(self):
+        p = FixedPlanner(route())
+        d = Detector(p.route, p.config)
+        o = obstacle(p, 8, 1)
+        pose = (5.25, 0, 0)
+        local = [to_vehicle((x, y, 0, 0), pose)[:2] for x, y in cloud_for(o)]
+        cloud = to_global(filter_cloud(local, p.config), pose)
+        d.observe(cloud)
+        detected = d.observe(cloud)
+        self.assertEqual(len(detected), 1)
+        self.assertFalse(p.accept(detected[0], pose[0]))
+        self.assertIn('after the required approach start', p.last_reason)
+        self.assertFalse(p.samples)
 
     def test_route_end_does_not_silently_clip_control_points(self):
         p = FixedPlanner(route())

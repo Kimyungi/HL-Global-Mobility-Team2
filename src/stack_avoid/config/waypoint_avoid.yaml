@@ -7,10 +7,10 @@
     target_speed_mps: 1.0
     waypoint_avoid:
       wall_offset: 2.0
-      avoid_offset: 1.3
-      approach: 2.0
+      avoid_offset: 1.0
+      approach: 3.0
       hold: 0.7
-      departure: 2.0
+      departure: 3.0
       preview: 1.0
       range_limit: 3.0
       obstacle_offsets: [1.0]   # [0.5, 1.0] enables both placement bands
