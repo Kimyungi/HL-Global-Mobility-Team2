@@ -4,6 +4,11 @@
 
 ## 역할
 
+2026-09-16 추가: `waypoint_avoid_node`는 사용자 지정 GPS station 기반 고정 경로
+모드다. 아래 반응형 계약의 대안이며, 제어점/곡선을 map ENU에 저장하고 최종
+1 m preview만 vehicle frame으로 출력한다. CSV yaw, 후속 장애물 연결과 완료
+규칙은 [WAYPOINT_AVOID.md](WAYPOINT_AVOID.md)를 따른다.
+
 장애물 인지, 회피 가능 판정 재료(TTC·측방), 회피 경로
 
 **시나리오:** 주행 중 전방에 장애물 → 회피 경로로 피해서 지나간 뒤 원래 경로로 복귀.

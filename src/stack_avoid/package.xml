@@ -10,6 +10,10 @@
   <depend>rclpy</depend>
   <depend>fma_interfaces</depend>
   <depend>sensor_msgs</depend>
+  <depend>sensor_msgs_py</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <exec_depend>stack_gps</exec_depend>
   <depend>geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>rcl_interfaces</depend>

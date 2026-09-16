@@ -336,7 +336,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
       // 따로 지키며, 그 페이즈가 닫힌 뒤 아래 조건이 평소대로 적용된다.
       if (st.escape_phase == MGM_ESCAPE_NONE &&
         (s.avoid_maneuver_done ||
-        (st.params.avoid_max_cycles > 0 && st.avoid_ticks >= st.params.avoid_max_cycles)))
+        (!st.params.avoid_fixed_preview && st.params.avoid_max_cycles > 0 &&
+        st.avoid_ticks >= st.params.avoid_max_cycles)))
       {
         st.state = MGM_STATE_WAYPOINT;
         st.return_hold_left = st.params.avoid_return_hold_cycles;
@@ -630,7 +631,8 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   // "1점=str 무반응" 실측의 재확인이며, "원인은 저속"이라는 2026-08-10 재해석을 반증.
   // dSPACE 수정 없이 PC 조립에서 해결 — 와이어에는 항상 다점이 실린다.
   int32_t n_wire = n;
-  if (n == 1) {
+  const bool fixed_preview = src == MGM_SRC_AVOID && st.params.avoid_fixed_preview != 0;
+  if (n == 1 && !fixed_preview) {
     const CorePoint tgt = path->pts[0];
     const float yaw = atan2f(tgt.y, tgt.x);
     // ★ 등간격(첫 점 = 목표/20 ≈ 7.5cm)은 **의도적으로 유지한다.** 첫 점이
@@ -674,6 +676,12 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     }
     st.blend_left = st.params.blend_cycles;
     st.last_src = src;
+  }
+
+  // The producer's fixed cubic already defines the complete transition.
+  // Blending with the previous mode would move this point off that curve.
+  if (fixed_preview) {
+    st.blend_left = 0;
   }
 
   if (st.blend_left > 0) {

@@ -56,5 +56,14 @@ int main()
   }
 
   std::printf("unavailable generated backend test: pass\n");
+  CoreParams fixed = params;
+  fixed.avoid_fixed_preview = 1;
+  try {
+    DecisionBackend unsupported("generated", true, fixed);
+    return 2;
+  } catch (const std::invalid_argument & error) {
+    if (std::string(error.what()).find("fixed waypoint preview requires backend=core") ==
+      std::string::npos) {return 3;}
+  }
   return 0;
 }

@@ -180,6 +180,7 @@ public:
     p.v_narrow = static_cast<float>(declare_parameter<double>("v_narrow", 0.2));
     p.ttc_stop = static_cast<float>(declare_parameter<double>("ttc_stop", 0.8));
     p.blend_cycles = static_cast<int32_t>(declare_parameter<int>("blend_cycles", 10));
+    p.avoid_fixed_preview = declare_parameter<bool>("avoid_fixed_preview", false) ? 1 : 0;
     p.a_up = static_cast<float>(declare_parameter<double>("a_up", 0.5));      // [m/s^2]
     p.a_down = static_cast<float>(declare_parameter<double>("a_down", 1.5));  // [m/s^2]
     p.wrongway_yaw = static_cast<float>(declare_parameter<double>("wrongway_yaw_rad", 2.1));

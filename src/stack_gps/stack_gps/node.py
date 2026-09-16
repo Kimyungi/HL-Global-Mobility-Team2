@@ -246,7 +246,8 @@ class StackGpsNode(Node):
             p('parallel_parking_zone_ranges').value or [],
             'parallel_parking_zone_ranges', self.get_logger())
 
-        pts = load_waypoints_csv(csv_path, log=self.get_logger().warn)
+        pts, csv_yaws = load_waypoints_csv(
+            csv_path, log=self.get_logger().warn, include_yaw=True)
         self.engine = PathEngine(pts, n_points=int(p('n_points').value),
                                  accel_ranges=accel, parking_ranges=parking,
                                  lookahead_m=float(p('ref_lookahead_m').value),
@@ -257,7 +258,8 @@ class StackGpsNode(Node):
                                  e_lpf_s=float(p('rejoin_e_lpf_s').value),
                                  curve_ff=float(p('rejoin_curve_ff').value),
                                  curve_margin=float(p('rejoin_curve_margin').value),
-                                 parallel_parking_ranges=parallel_parking)
+                                 parallel_parking_ranges=parallel_parking,
+                                 waypoint_yaws=csv_yaws)
         self._setup_zones(p)
         self.add_on_set_parameters_callback(self._on_param)
         self.get_logger().info(

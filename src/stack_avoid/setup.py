@@ -27,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
             'stack_avoid_node = stack_avoid.node:main',
+            'waypoint_avoid_node = stack_avoid.waypoint_node:main',
             'fake_scan = stack_avoid.fake_scan:main',        # 테스트: 합성 스캔
             'avoid_viz = stack_avoid.avoid_viz:main',        # 테스트: 회피 출력 RViz 마커
             'angle_labels = stack_avoid.angle_labels:main',  # 테스트: 각도 눈금(방향 확인)

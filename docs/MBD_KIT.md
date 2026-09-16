@@ -7,6 +7,13 @@
 
 이 헤더가 곧 Simulink 버스 정의다. 필드 그대로 버스를 만들 것 (형·순서·이름 일치 권장).
 
+2026-09-16: `CoreParams` 끝에 `int32 avoid_fixed_preview`를 추가했다(기본 0).
+1이면 AVOID의 고정 전역 곡선에서 선택한 최종 1 m preview를 축소/블렌드 없이
+전달하고 `avoid_max_cycles` 복귀를 비활성화한다. 완료는 `avoid_maneuver_done`이다.
+이 옵션은 현재 C++ core만 지원한다. generated v1.88 선택 시 시작을 거부하며,
+Simulink 모델을 변경·검증했다고 주장하지 않는다. 크기 태그가 있는 구 덤프는
+추가 필드가 0으로 채워지므로 기존 동작을 보존한다.
+
 | 구조체 | Simulink 대응 | 비고 |
 |---|---|---|
 | `CoreSnapshot` | 입력 버스 | 인지 입력 + traffic 적/녹/정지선 거리 + dSPACE 실차속도. bool→boolean, float→single, int32_t→int32 |

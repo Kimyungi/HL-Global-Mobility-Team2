@@ -1,0 +1,122 @@
+# Waypoint 고정 경로 회피
+
+사용자 지정 네 제어점을 GPS ENU 좌표계에서 고정하고, 제어기에 **1 m preview
+한 점**을 제공한다. 기존 follow-the-gap은 legacy 모드로 남아 있으며 통합 launch의
+`waypoint_avoid:=true`가 새 producer와 MGM 설정을 함께 선택한다.
+
+## 좌표 및 station
+
+`stack_gps.path_engine.PathEngine`을 공유한다. 원점은 CSV에서 보존된 첫 lat/lon,
+거리 단위는 m, x=east, y=north, yaw=ENU 반시계 라디안이다. 기존 GPS와 같이
+최근접 꼭짓점을 찾고 인접 두 선분에 투영하여 수선의 발을 고른다. 그 선분의
+누적 길이와 투영 비율로 station을 얻는다. CSV의 세션별 `east_m/north_m` 또는
+별도 원점으로 다시 좌표계를 만들지 않는다. `s_m`은 직접 신뢰하지 않고 GPS
+주행이 실제 사용하는 ENU polyline의 길이를 사용한다.
+
+CSV의 `yaw_rad`(없으면 `yaw_deg`)는 각 행에서 읽고, 두 station 사이에서는
+각도를 wrap하여 보간한다. GPS 주행도 CSV yaw가 있으면 같은 값을 사용한다.
+yaw가 없는 구 CSV는 GPS의 기존 접선 추정이 유지되지만 **새 회피 모드는 시작을
+거부한다**. yaw와 GPS 경로 방향이 일치하는 CSV가 필요하다.
+
+경로 위치 `r(s)=(E,N)`, yaw `ψ(s)`일 때 횡방향은 `n(s)=(-sinψ,cosψ)`이다.
+장애물 station을 `s₀`, 반대편 오프셋을 `d=−sign(d_obs)×1.3`으로 두면:
+
+| 점 | station | 전역 위치 | yaw |
+|---|---|---|---|
+| (1) | s₀−2.0 | r(s₀−2.0) | ψ(s₀−2.0) |
+| (2) | s₀ | r(s₀)+d n(s₀) | ψ(s₀) |
+| (3) | s₀+0.7 | r(s₀+0.7)+d n(s₀+0.7) | ψ(s₀+0.7) |
+| (4) | s₀+2.7 | r(s₀+2.7) | ψ(s₀+2.7) |
+
+(3)은 (2)를 차량 전방이나 전역 x로 0.7 m 옮긴 점이 아니다. 해당 station의
+웨이포인트와 yaw에서 다시 계산한다. 각 구간은 `x(s),y(s)` 3차 Hermite이고,
+각 끝점의 station 미분을 `(cosψ,sinψ)`로 둬 위치와 yaw를 보장한다.
+곡률 연속성은 보장하지 않는다. 경로 끝을 넘어가는 제어점을 임의로 잘라내지 않는다.
+
+## 라이다 인지
+
+- 기본 입력 `/unified_lidar/cloud` (`PointCloud2`, `base_link`)는 기존
+  `lidar_fusion_v2`의 네 라이다 통합 출력이다. 다른 통합 cloud는 `cloud_topic`으로 지정한다.
+- 통합 뒤 base_link 원점 기준 반경 3 m 필터 및 차체 반사 제거를 적용한다.
+  센서별 외부 보정은 fusion에서 이미 수행되므로 mount offset을 중복 적용하지 않는다.
+- GPS 노드의 `map→base_link` TF를 **cloud timestamp에서** 보간 조회하고 전역으로 변환한다.
+  TF를 기다리는 cloud 큐를 유지하며, 시간 불일치 때 최신 TF로 억지 변환하지 않는다.
+- 무순서 점군에 유클리드 연결 군집화를 적용한다. 기본 3점 이상, 연결거리 0.18 m,
+  최대 군집 크기 1 m, 두 프레임 확인이다. station과 횡위치는 관측 표면 점들의
+  중심에서 계산한다. 물체의 가려진 뒷면까지 추정하는 알고리즘은 아니다.
+- 기본 감지 대역은 `abs(abs(d)−1.0)≤0.25 m`. `obstacle_offsets: [0.5, 1.0]`이면
+  ±0.5 m도 포함된다. 같은 편/반대편 모두 실제 검출 부호로 결정한다.
+- GPS RTK FIXED, 측정된 헤딩(COG 또는 융합), 신선한 TF/cloud가 필요하다.
+  차량 헤딩을 경로 yaw로 대체해 점군을 회전시키지 않는다.
+
+## 고정, 연결 및 preview
+
+한번 검출 확정한 장애물과 경로는 후속 점군의 흔들림·소실로 재생성하지 않는다.
+두 번째 장애물이 나타나면 첫 경로 (1)→(2)→(3)은 그대로 보존하고, 첫 (4)를
+두 번째 장애물의 (2)로 바꾼다. 두 번째 (1)은 첫 (3)과 **같은 객체/좌표/yaw**다.
+두 번째 (3)/(4)는 두 번째 장애물 station 기준으로 만든다. 첫 (3)을 통과하면
+두 번째 기동이 active가 된다. 이미 첫 (3)을 지난 뒤 발견해도 허용된 (4)와
+이후 연결 구간만 교체한다. 새 곡선에서 1 m 전방 참조점을 얻지 못하면 진행 불가다.
+두 번째 station이 첫 (3)보다 앞이면 이 네 점 규칙으로 연결할 수 없어 거부한다.
+
+최종 (4)의 station과 yaw에 수직인 통과선을 모두 지나고, 복귀 중심선 횡오차가
+0.5 m 미만일 때만 완료한다. 라이다 무감지, 시간 경과, 일시 정지로 지우지 않는다.
+장애물 두 개 사이에 기존 (4)를 먼저 지나면 첫 기동을 완료한 뒤 별도 기동을 시작한다.
+
+GPS preview 선택 방식에 맞춰 **차량에서 유클리드 거리 1 m이고 전방인 곡선 위 점**을
+선택한다. 곡선 샘플의 선분과 반경 1 m 원의 교점을 보간한다. 따라서 station+1 m와
+동일한 뜻은 아니다. preview 이전/이후가 회피 곡선 범위를 벗어나면 원래 웨이포인트를
+연결한다. 고정 전역 경로는 변하지 않고, 선택한 한 점만 현재 차량 좌표로 변환된다.
+
+MGM `avoid_fixed_preview=true`에서는 기존 1→20점 축소, 진입 블렌드 및 시간초과
+복귀를 적용하지 않는다. preview의 x/y/yaw/curvature를 그대로 전달한다. 이 모드는
+`backend=core`를 사용하며 generated v1.88은 미지원이다. 후진 탈출도 통합 launch에서
+끄며, 긴급 정지/TTC 바닥은 유지된다.
+
+## 실제 형상 제약 결과
+
+요청된 점 위치를 변경하지 않고 검사한다. 직선에서 2 m에 걸쳐 1.3 m를 이동하는
+이 Hermite의 끝점 곡률은 `6×1.3/2²=1.95 /m`로 최소 회전반경은 **0.513 m**다.
+설정된 차량 최소 회전반경 **1.15 m**를 만족하지 않는다. 장애물 station 간격 3 m의
+반대편 연결은 약 **0.34 m**까지 작아진다. 시험 예에서는 차체와 0.10 m 여유를
+포함한 영역이 가상 벽을 수 cm 침범하는 구간도 있다.
+
+이 경우에도 전역 경로와 플롯은 생성·보존하지만, `avoidable=false`, `v_suggest=0`,
+`ttc=0`을 내며 이미 AVOID 상태라면 MGM이 정지시킨다. 아직 AVOID에 진입하지 않았다면
+이 값 자체가 waypoint 모드를 중지시키는 것은 아니며 기존 estop이 별도로 동작한다.
+실차 사용 전에는 진입/전환 거리 또는 횡오프셋을 다시 합의해야 한다.
+`enforce_turn_radius=false`는 기하 시험용이며 벽/점군 충돌 검사는 계속 적용된다.
+조향 제한 수치를 맞추려고 곡률 출력만 잘라내거나 제어점 위치를 바꾸지 않는다.
+
+## 실행 및 검증
+
+이 환경에서는 ROS 2 Humble/실차를 실행하지 않았다. Python 기하 테스트와
+ROS에 의존하지 않는 C++ MGM 테스트를 수행했다. 합성 LiDAR 시험은 경로 위에
+이상적으로 놓인 차량 자세를 사용하므로 추종 성능이나 제동 성능의 증명이 아니다.
+
+```bash
+# GPS와 동일 CSV 및 기존 map→base_link가 실행 중일 때 인지/경로만 확인
+ros2 launch stack_avoid waypoint_avoid.launch.py waypoint_csv:=/absolute/route.csv
+
+# 기존 통합 launch에서 새 모드 선택; 실제 운용의 기존 출발 인가 절차 유지
+ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  waypoint_csv:=/absolute/route.csv waypoint_avoid:=true
+
+# 네 라이다 모드의 출발 점검은 실제 전방 스캔 토픽으로 remap
+ros2 run adas_mgm go --ros-args -r /scan:=/lidar/a1/scan
+
+# ±0.5 m 추가 등은 waypoint_avoid.yaml 사본에서 변경 후 전달
+# waypoint_avoid_params:=/absolute/custom_waypoint_avoid.yaml
+
+python3 -m unittest discover -s src/stack_avoid/test -p test_waypoint_planner.py -v
+python3 -m pytest src/stack_gps/test/test_path_engine.py src/stack_avoid/test/test_waypoint_planner.py
+python3 src/stack_avoid/tools/plot_waypoint_avoid.py --output /tmp/waypoint_avoid_plots
+colcon build --packages-select stack_gps stack_avoid adas_mgm
+colcon test --packages-select stack_gps stack_avoid adas_mgm
+```
+
+RViz의 Fixed Frame은 `map`. `/perception/avoid_path_map`은 고정 곡선,
+`/perception/avoid_controls_map`은 네 점들의 위치/yaw,
+`/perception/avoid_preview_map`은 움직이는 1 m 참조점이다.
+`/perception/avoid_diagnostic`에서 조향 한계, 경계 침범, TF/cloud 신선도 문제를 확인한다.
