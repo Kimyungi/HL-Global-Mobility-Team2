@@ -77,3 +77,9 @@ ros2 run adas_mgm core_replay sample.bin golden.csv  # 레퍼런스 정답 출�
 - 스펙 변경은 CLAUDE.md §4 갱신이 선행 — 모델·레퍼런스 어느 쪽도 임의 변경 금지.
 - 덤프 바이너리는 같은 머신·같은 ABI에서만 호환 (`tools/dump_format.hpp` 참조).
 - float 연산 순서 차이로 마지막 자리 수 diff가 나면 허용 오차 비교(예: 1e-5)로 완화하되, 스테이트·immediate_stop·path_source는 **완전 일치**여야 한다.
+
+## CSV state=4 fixed avoidance session
+CoreState adds bool avoid_zone_consumed (core backend only). Fixed-preview mode enters
+on GPS state=4 marker/session activation independently of obstacle detection/avoidable.
+The producer reports completion only after final P4 and waypoint rejoin ≤0.10 m / ≤20°.
+Invalid/missing references stop within AVOID. No Simulink generated model was modified.

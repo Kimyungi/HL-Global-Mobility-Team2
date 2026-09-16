@@ -12,7 +12,7 @@ import numpy as np
 SRC = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(SRC / 'stack_gps'), str(SRC / 'stack_avoid')]
 from stack_gps.path_engine import PathEngine, M_PER_DEG_LAT, load_waypoints_csv, wrap_angle
-from stack_avoid.waypoint_planner import (Config, Detector, FixedPlanner, Obstacle,
+from stack_avoid.waypoint_planner import (Config, Detector, FixedPlanner, Obstacle, AvoidSession,
                                           filter_cloud, to_global, to_vehicle)
 
 
@@ -206,6 +206,79 @@ class WaypointTests(unittest.TestCase):
         late = FixedPlanner(route())
         self.assertFalse(late.accept(detected[0], 6.0))
         self.assertIn('after the required approach start', late.last_reason)
+
+    def test_return_requires_ten_cm_and_twenty_degrees(self):
+        for curved in (False, True):
+            p = FixedPlanner(route(curved, heading=3.0))
+            for lateral, angle, expected in ((.09, 19, True), (.11, 0, False),
+                                              (0, 21, False), (0, -21, False)):
+                cp = p.point(12, lateral)
+                pose = (cp.x, cp.y, wrap_angle(cp.yaw+math.radians(angle)))
+                self.assertEqual(p.rejoined(pose), expected)
+            p.accept(obstacle(p, 8, 1), 5)
+            cp = p.point(11.5, .3)
+            pose = (cp.x, cp.y, cp.yaw)
+            self.assertTrue(p.advance(pose))
+            self.assertFalse(p.samples)
+            self.assertFalse(p.rejoined(pose))
+            preview = p.preview(pose)
+            self.assertIsNotNone(preview)
+            self.assertAlmostEqual(math.hypot(preview[0]-pose[0], preview[1]-pose[1]), 1)
+            self.assertLess(abs(p.route.project_station(*preview[:2])[1]), 1e-4)
+
+    def test_zone_session_waits_for_obstacle_then_rejoin_and_does_not_reenter(self):
+        p = FixedPlanner(route())
+        session = AvoidSession()
+        session.observe_zone(False)
+        self.assertFalse(session.active)
+        session.observe_zone(True)
+        self.assertTrue(session.active)
+        self.assertFalse(session.finish(p, (5, 0, 0)))  # no avoidance yet
+        self.assertIsNotNone(p.preview((5, 0, 0)))
+        p.accept(obstacle(p, 8, 1), 5)
+        session.accepted()
+        session.observe_zone(False)  # marker pulse has ended
+        self.assertTrue(session.active)
+        self.assertFalse(session.finish(p, (8, 0, 0)))  # still on fixed path
+        self.assertTrue(p.advance((11.5, .3, 0)))
+        session.passed_path()
+        self.assertFalse(session.finish(p, (11.5, .3, 0)))
+        self.assertFalse(session.finish(p, (11.5, .09, math.radians(21))))
+        session.observe_zone(True)
+        self.assertTrue(session.finish(p, (11.5, .10, math.radians(20))))
+        self.assertTrue(session.done)
+        session.observe_zone(True)
+        self.assertFalse(session.active)
+        session.observe_zone(False)
+        session.observe_zone(True)
+        self.assertTrue(session.active)
+        self.assertFalse(session.done)
+
+    def test_csv_state_marker_survives_filter_duplicate_and_index_jump(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'states.csv'
+            path.write_text('lat,lon,quality,yaw_rad,state\n'
+                            '37,127,4,0,0\n37,127.001,5,0,4\n'
+                            '37,127.002,4,0,0\n37,127.002,4,0,4\n'
+                            '37,127.003,4,0,0\n', encoding='utf-8')
+            points, yaws, states = load_waypoints_csv(path, include_states=True)
+            self.assertEqual(states, [0, 4, 0])
+            r = PathEngine(points, waypoint_yaws=yaws)
+            r.avoid_event_indices = [1]
+            self.assertFalse(r.avoid_event(0))
+            self.assertTrue(r.avoid_event(2))  # GPS update skipped the marked row
+            self.assertFalse(r.avoid_event(2))
+
+    def test_selected_user_route_contains_state_four_marker(self):
+        path = SRC/'stack_gps/waypoints/reference_path_1_3_4_5_6_state.csv'
+        with path.open(encoding='utf-8') as f:
+            rows = list(csv.DictReader(f))
+        self.assertEqual(list(dict.fromkeys(r['path_id'] for r in rows)), ['1','3','4','5','6'])
+        markers = [r for r in rows if r['state'] == '4']
+        self.assertEqual([(r['path_id'],r['idx']) for r in markers], [('4','77')])
+        points, yaws, states = load_waypoints_csv(path, include_states=True)
+        self.assertEqual(states.count(4), 1)
+        self.assertEqual(len(points), len(yaws))
 
     def test_route_end_does_not_silently_clip_control_points(self):
         p = FixedPlanner(route())

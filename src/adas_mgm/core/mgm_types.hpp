@@ -320,6 +320,7 @@ struct CoreState
   // dead-reckoning 감쇠한다 — mgm_step.cpp의 거리 추적 블록 주석 참조.
   float traffic_stopline_distance;
   // edge(true→false) 검출용 — 이번 틱 traffic_stopline_detected의 직전값.
+  bool avoid_zone_consumed;  // fixed preview: suppress re-entry until zone/session clears
   bool traffic_prev_stopline_detected;
 };
 

@@ -19,7 +19,7 @@ from tf2_ros import Buffer, TransformListener, TransformException
 from fma_interfaces.msg import AvoidStatus, GpsPath, RefPoint
 
 from stack_gps.path_engine import PathEngine, load_waypoints_csv
-from .waypoint_planner import Config, Detector, FixedPlanner, filter_cloud, to_global, to_vehicle
+from .waypoint_planner import Config, Detector, FixedPlanner, AvoidSession, filter_cloud, to_global, to_vehicle
 
 
 def pose_from_transform(tf):
@@ -71,7 +71,7 @@ class WaypointAvoidNode(Node):
         self.map_points = np.empty((0, 2))
         self.report = {'valid': False, 'reason': 'no path'}
         self.published_revision = -1
-        self.done_until = 0.0
+        self.session = AvoidSession()
         self.last_diagnostic = None
         self.create_timer(.05, self.tick)
 
@@ -158,6 +158,8 @@ class WaypointAvoidNode(Node):
         gps_ok = (self.gps is not None and now-self.gps_received <= self.stale_s and
                   self.fresh_stamp(self.gps.header.stamp) and self.gps.fix_quality == 4 and
                   self.gps.heading_source != GpsPath.HEADING_TANGENT)
+        if gps_ok:
+            self.session.observe_zone(self.gps.avoid_zone)
         if not gps_ok:
             reason = 'waiting for fresh RTK FIXED and measured heading'
         else:
@@ -173,16 +175,18 @@ class WaypointAvoidNode(Node):
                 new_cloud = self.consume_cloud()
                 if self.cloud_stamp is None or now-self.cloud_received > self.stale_s or not self.fresh_stamp(self.cloud_stamp):
                     reason = 'waiting for cloud and timestamp-matched GPS TF'
-        if pose is not None and not reason:
+        if pose is not None and not reason and self.session.active:
             ego_s = self.route.project_station(*pose[:2])[0]
             if self.planner.advance(pose):
-                self.done_until = now+.5
+                self.session.passed_path()
             if new_cloud:
                 for obstacle in self.detector.observe(self.map_points):
-                    self.planner.accept(obstacle, ego_s)
+                    if self.planner.accept(obstacle, ego_s):
+                        self.session.accepted()
             self.publish_geometry()
-            if self.planner.samples:
-                if not self.report['valid']:
+            self.session.finish(self.planner, pose)
+            if self.session.active:
+                if self.planner.samples and not self.report['valid']:
                     reason = self.report['reason']
                 elif self.planner.path_blocked(self.map_points, ego_s):
                     reason = 'observed obstacle intersects the fixed vehicle corridor'
@@ -197,10 +201,10 @@ class WaypointAvoidNode(Node):
                     header = Path().header
                     header.frame_id, header.stamp = self.map_frame, msg.header.stamp
                     self.preview_pub.publish(self.pose_message(preview, header))
-        msg.obstacle_detected = bool(self.planner.samples)
+        msg.obstacle_detected = self.session.active
         msg.avoidable = msg.obstacle_detected and not reason and bool(msg.points)
         msg.narrow_gap = msg.obstacle_detected and bool(reason)
-        msg.maneuver_done = not self.planner.samples and now < self.done_until
+        msg.maneuver_done = self.session.done and gps_ok and pose is not None and not reason
         msg.v_suggest = self.target_speed if msg.avoidable else 0.0
         if msg.obstacle_detected and reason:
             # MGM owns stop decisions; an invalid active corridor supplies its
@@ -208,7 +212,10 @@ class WaypointAvoidNode(Node):
             msg.ttc = 0.0
         self.pub.publish(msg)
         self.diagnostic(reason or self.planner.last_reason or
-                        ('fixed path active' if self.planner.samples else 'monitoring waypoint corridor'))
+                        ('fixed path active' if self.planner.samples else
+                         'returning to waypoint' if self.session.returning else
+                         'zone armed, following waypoint' if self.session.active else
+                         'waiting for state=4 marker'))
 
 
 def main(args=None):

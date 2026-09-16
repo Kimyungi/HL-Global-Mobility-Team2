@@ -76,7 +76,7 @@ class PoseDeltaTracker:
         return self.delta, self.update
 
 
-def load_waypoints_csv(path, log=None, include_yaw=False):
+def load_waypoints_csv(path, log=None, include_yaw=False, include_states=False):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 
     east_m/north_m 열은 기록 세션의 기준점에 묶여 있어 쓰지 않고,
@@ -87,7 +87,7 @@ def load_waypoints_csv(path, log=None, include_yaw=False):
     이웃 대비 2.5~2.7m 튀어 시작 횡오차 4m대의 한 원인이었음).
     버린 수는 log 콜백으로 보고.
     """
-    pts, yaws, dropped = [], [], 0
+    pts, yaws, states, dropped = [], [], [], 0
     with open(path, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             q = row.get("quality")
@@ -95,9 +95,13 @@ def load_waypoints_csv(path, log=None, include_yaw=False):
                 dropped += 1
                 continue
             lat, lon = float(row["lat"]), float(row["lon"])
+            state = int(row.get("state") or 0)
             if pts and pts[-1] == (lat, lon):
+                if state == 4:
+                    states[-1] = 4
                 continue
             pts.append((lat, lon))
+            states.append(state)
             raw = row.get("yaw_rad", "")
             yaw = float(raw) if raw not in (None, "") else None
             if yaw is None and row.get("yaw_deg") not in (None, ""):
@@ -109,10 +113,11 @@ def load_waypoints_csv(path, log=None, include_yaw=False):
         log(f"비-FIXED 웨이포인트 {dropped}개 제외 (FLOAT 오염 방지): {path}")
     if len(pts) < 2:
         raise ValueError(f"웨이포인트가 {len(pts)}개뿐 — 유효한 트랙이 아님: {path}")
-    if include_yaw:
+    if include_yaw or include_states:
         if any(y is not None for y in yaws) and any(y is None for y in yaws):
             raise ValueError("CSV yaw must be present on every retained waypoint")
-        return pts, yaws if all(y is not None for y in yaws) else None
+        yaw_values = yaws if all(y is not None for y in yaws) else None
+        return (pts, yaw_values, states) if include_states else (pts, yaw_values)
     return pts
 
 
@@ -255,6 +260,8 @@ class PathEngine:
         # "이미 정지함"을 기억해야 하기 때문 (GpsPath.msg stop_zone 주석).
         self.stop_ranges = list(stop_ranges)
         self.avoid_ranges = list(avoid_ranges)
+        self.avoid_event_indices = []
+        self._avoid_last_idx = None
         self.gps_only_ranges = list(gps_only_ranges)
         self.lookahead_m = float(lookahead_m)
         self.rate_damp_s = (self.REJOIN_RATE_DAMP_S if rate_damp_s is None
@@ -498,6 +505,13 @@ class PathEngine:
             return fallback
         return min(idx + self._la_pts, last)
 
+    def avoid_event(self, idx):
+        """state=4 is a marker; detect a sampled index crossing as well as occupancy."""
+        previous = self._avoid_last_idx
+        self._avoid_last_idx = idx
+        return any(idx == marker or (previous is not None and previous < marker <= idx)
+                   for marker in self.avoid_event_indices)
+
     def snapshot(self, lat, lon, heading=None, now=None):
         """현재 fix → dict(points, accel_zone, parking_zone, stop_zone, avoid_zone,
         gps_only_zone, idx, cross_track_m).
@@ -605,6 +619,7 @@ class PathEngine:
                     min(self.MAX_TARGET_BEARING_RAD, b))
             points[0] = (d * math.cos(b), d * math.sin(b), pyaw, pcurv)
 
+        csv_avoid_event = self.avoid_event(idx)
         perpendicular_parking = self._in_ranges(idx, self.parking_ranges)
         parallel_parking = self._in_ranges(
             idx, self.parallel_parking_ranges)
@@ -616,7 +631,7 @@ class PathEngine:
                 "perpendicular" if perpendicular_parking
                 else "parallel" if parallel_parking else None),
             "stop_zone": self._zone_id(idx, self.stop_ranges),
-            "avoid_zone": self._in_ranges(idx, self.avoid_ranges),
+            "avoid_zone": csv_avoid_event or self._in_ranges(idx, self.avoid_ranges),
             "gps_only_zone": self._in_ranges(idx, self.gps_only_ranges),
             "idx": idx,
             "cross_track_m": dist,

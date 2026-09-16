@@ -538,6 +538,7 @@ private:
     // 주행 명령을 내던 구멍. "신선하지만 무효인 입력"을 stale과 같은 경로로
     // 태운다 — 새 판단이 아니라 입력 컨디셔닝(§5.7 ②의 확장).
     const bool gps_stale = gps_rx_ns < 0 || monotonicNs() - gps_rx_ns > gps_stale_ns_;
+    if (gps_stale || m.gps.fix_quality == 0) {m.gps.avoid_zone = false;}
     const bool gps_no_fix = m.gps.fix_quality == 0 || m.gps.points.empty();
     if ((active_state == MGM_STATE_WAYPOINT || traffic_uses_gps) &&
       (gps_stale || gps_no_fix) && !estop_stale)
@@ -569,6 +570,7 @@ private:
     // 계속 주행하던 구멍 차단. ttc는 미수신 초기값과 같은 1e9로 (즉시정지 바닥 오인 방지).
     const bool avoid_stale = avoid_rx_ns < 0 || monotonicNs() - avoid_rx_ns > avoid_stale_ns_;
     if (avoid_stale) {
+      m.avoid.maneuver_done = false;
       m.avoid.obstacle_detected = false;
       m.avoid.avoidable = false;
       m.avoid.ttc = 1e9f;

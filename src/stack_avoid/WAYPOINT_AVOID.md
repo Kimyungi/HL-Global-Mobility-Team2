@@ -59,8 +59,11 @@ yaw가 없는 구 CSV는 GPS의 기존 접선 추정이 유지되지만 **새 �
 이후 연결 구간만 교체한다. 새 곡선에서 1 m 전방 참조점을 얻지 못하면 진행 불가다.
 두 번째 station이 첫 (3)보다 앞이면 이 네 점 규칙으로 연결할 수 없어 거부한다.
 
-최종 (4)의 station과 yaw에 수직인 통과선을 모두 지나고, 복귀 중심선 횡오차가
-0.5 m 미만일 때만 완료한다. 라이다 무감지, 시간 경과, 일시 정지로 지우지 않는다.
+최종 (4)의 station과 yaw에 수직인 통과선을 모두 지나면 고정 회피 경로를 해제하고,
+웨이포인트 위의 1 m preview로 복귀한다. 상태 종료는 별도이며, 회피를 실제 수행한 후
+고정 회피 경로가 없고 waypoint 투영점까지 거리 ≤0.10 m, 해당 station CSV yaw와
+차량의 wrap한 yaw 오차 ≤20°를 모두 만족할 때만 `maneuver_done`을 낸다.
+라이다 무감지, 시간 경과, 일시 정지로 회피 경로를 지우거나 상태를 종료하지 않는다.
 장애물 두 개 사이에 기존 (4)를 먼저 지나면 첫 기동을 완료한 뒤 별도 기동을 시작한다.
 
 GPS preview 선택 방식에 맞춰 **차량에서 유클리드 거리 1 m이고 전방인 곡선 위 점**을
@@ -72,6 +75,37 @@ MGM `avoid_fixed_preview=true`에서는 기존 1→20점 축소, 진입 블렌�
 복귀를 적용하지 않는다. preview의 x/y/yaw/curvature를 그대로 전달한다. 이 모드는
 `backend=core`를 사용하며 generated v1.88은 미지원이다. 후진 탈출도 통합 launch에서
 끄며, 긴급 정지/TTC 바닥은 유지된다.
+
+## CSV state=4 진입과 회피 상태 유지
+
+사용자 제공 CSV의 `state=4`는 MGM 숫자 상태가 아니라 **AVOID 진입 마커**이다.
+MGM의 AVOID 상태 번호는 기존 2를 유지한다. `behavior=PARALLEL_PARK`와 충돌하는
+행도 사용자가 지정한 state=4를 우선하여 회피 마커로 읽으며, 다른 state 값의 의미는
+이번 변경에서 자동 매핑하지 않는다.
+
+선택된 경로 `1→3→4→5→6`은
+`src/stack_gps/waypoints/reference_path_1_3_4_5_6_state.csv`에 저장했다.
+원본은 reference_paths_01_to_07_split_parking.csv이며 state=4 행은 path_id=4,
+idx=77이다. lat/lon과 yaw를 보존하며 연결 경계의 중복 좌표는 기존 loader가 제거한다.
+marker도 같은 필터 결과에 정렬하며 중복점 state=4를 보존한다.
+
+GPS는 마커의 최근접 인덱스 도달 또는 전진 통과 때 `GpsPath.avoid_zone`을 발행한다.
+샘플 사이에 해당 행을 건너뛰어도 인지한다. fixed-preview MGM은 이 신호 또는
+이를 래치한 새 회피 producer의 활성 신호로 LANE/WAYPOINT에서 AVOID로 진입한다.
+신호등/주차의 기존 우선순위는 유지한다. 마커가 꺼져도 회피 세션은 유지한다.
+
+- 장애물 감지 전: AVOID 상태에서 원래 waypoint의 1 m preview를 제공한다.
+- 장애물 감지 후: 고정 회피 경로를 제공한다.
+- 마지막 P4 통과 후: waypoint preview로 복귀하면서 10 cm/20° 조건을 기다린다.
+- 완료: WAYPOINT로 전이한다. 같은 마커가 계속 켜져 있어도 즉시 재진입하지 않는다.
+- 장애물이 한 번도 나타나지 않으면 자동 완료하지 않는다.
+- 입력/preview 무효 또는 기하 검사 실패는 상태 탈출이 아니라 AVOID 안에서 정지한다.
+
+`AvoidStatus.obstacle_detected`는 이 producer에서는 마커로 활성화된 회피 세션을
+뜻한다. `avoidable`은 현재 참조점으로 주행 가능한지, `maneuver_done`은 위 복귀
+조건을 실제 충족했는지를 뜻한다. legacy producer의 의미와 진입 조건은 유지된다.
+완료 신호는 다음 마커까지 유지하고, GPS/TF/cloud 무효 시 또는 MGM stale watchdog에서
+완료를 무효화한다.
 
 ## 실제 형상 제약 결과
 
@@ -108,7 +142,7 @@ ros2 launch stack_avoid waypoint_avoid.launch.py waypoint_csv:=/absolute/route.c
 # 기존 통합 launch에서 새 모드 선택; 실제 운용의 기존 출발 인가 절차 유지
 ros2 launch adas_mgm REAL_VEHICLE_lane_gps_can.launch.py \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-  waypoint_csv:=/absolute/route.csv waypoint_avoid:=true
+  waypoint_csv:=/absolute/reference_path_1_3_4_5_6_state.csv waypoint_avoid:=true
 
 # 네 라이다 모드의 출발 점검은 실제 전방 스캔 토픽으로 remap
 ros2 run adas_mgm go --ros-args -r /scan:=/lidar/a1/scan

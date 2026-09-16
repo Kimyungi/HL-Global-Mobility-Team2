@@ -306,3 +306,12 @@ adas_ws/src/
 - `docs/system_architecture_v3.drawio` — dSPACE 이관 대안
 - `docs/state_machine_detail.drawio` — 스테이트 전이·우선권 표
 - `docs/dynamic_architecture.drawio` — 한 제어 주기(10ms) 시퀀스
+
+### CSV state=4 fixed avoidance update
+`reference_path_1_3_4_5_6_state.csv` selects the user route 1→3→4→5→6.
+CSV state=4 is a crossing/occupancy marker mapped to gps.avoid_zone, not MGM enum 4.
+With avoid_fixed_preview, marker/session entry precedes obstacle detection; the producer
+supplies waypoint preview until detection and after final P4. Actual avoidance followed
+by no retained path, waypoint cross-track ≤0.10 m and wrapped yaw error ≤20° completes
+AVOID to WAYPOINT. Same active marker does not immediately re-enter. Invalid references
+stop within AVOID. CoreState adds avoid_zone_consumed; generated backend remains unsupported.

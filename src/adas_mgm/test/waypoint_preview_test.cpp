@@ -18,6 +18,10 @@ int main()
   st.state = MGM_STATE_WAYPOINT;
   CoreSnapshot s{};
   s.gps_heading_valid = true;
+  // Zone entry precedes obstacle detection; unavailable reference must stop.
+  s.gps_avoid_zone = true;
+  auto waiting = mgm_step(s, st);
+  if (waiting.state != MGM_STATE_AVOID || !waiting.immediate_stop) {return 4;}
   s.avoid_obstacle_detected = s.avoid_avoidable = true;
   s.avoid_ttc = 1.0e9F;
   s.avoid_v_suggest = .6F;
@@ -42,5 +46,12 @@ int main()
   s.avoid_ttc = 1.0e9F;
   s.avoid_maneuver_done = true;
   if (mgm_step(s, st).state != MGM_STATE_WAYPOINT) {return 3;}
+  s.avoid_obstacle_detected = false;
+  s.avoid_maneuver_done = false;
+  if (mgm_step(s, st).state != MGM_STATE_WAYPOINT) {return 5;}
+  s.gps_avoid_zone = false;
+  mgm_step(s, st);
+  s.gps_avoid_zone = true;
+  if (mgm_step(s, st).state != MGM_STATE_AVOID) {return 6;}
   return 0;
 }

@@ -287,14 +287,20 @@ class FixedPlanner:
             self.active_index += 1
         last = self.maneuvers[-1].points[3]
         along = (pose[0]-last.x)*math.cos(last.yaw) + (pose[1]-last.y)*math.sin(last.yaw)
-        cross = -(pose[0]-last.x)*math.sin(last.yaw) + (pose[1]-last.y)*math.cos(last.yaw)
-        if station > last.station and along > 0 and abs(cross) < .5:
+        if station > last.station and along > 0:
             self.completed.extend(m.obstacle for m in self.maneuvers)
             self.maneuvers, self.segments, self.samples = [], (), ()
             self.active_index, self.progress = 0, 0
             self.revision += 1
             return True
         return False
+
+    def rejoined(self, pose):
+        """Measured pose aligned with the waypoint at the projected station."""
+        station, _, _, distance = self.route.project_station(*pose[:2])
+        yaw = self.route.at_station(station)[2]
+        return (distance <= .10 + 1e-9 and
+                abs(wrap_angle(pose[2]-yaw)) <= math.radians(20) + 1e-9)
 
     def preview(self, pose):
         """GPS-style forward Euclidean lookahead, exactly 1 m where intersectable.
@@ -303,19 +309,23 @@ class FixedPlanner:
         unchanged waypoint centerline supplies the approach/exit continuation.
         An unreachable circle is reported rather than moving the global path.
         """
-        if not self.samples:
-            return None
         cfg = self.config
         ego_station = self.route.project_station(*pose[:2])[0]
         rows = []
-        start, end = self.samples[0][4], self.samples[-1][4]
-        if ego_station < start:
-            for s in np.arange(max(0, ego_station-.2), start, cfg.sample_step):
-                rows.append((*self.route.at_station(float(s)), float(s)))
-        rows.extend(self.samples)
-        for s in np.arange(end+cfg.sample_step,
-                           min(end+2*cfg.preview, self.route.station[-1]), cfg.sample_step):
-            rows.append((*self.route.at_station(float(s)), float(s)))
+        if self.samples:
+            start, end = self.samples[0][4], self.samples[-1][4]
+            if ego_station < start:
+                for station in np.arange(max(0, ego_station-.2), start, cfg.sample_step):
+                    rows.append((*self.route.at_station(float(station)), float(station)))
+            rows.extend(self.samples)
+        else:
+            # After P4 (and while armed before detection), follow the waypoint.
+            end = max(0, ego_station-.2)
+            rows.append((*self.route.at_station(end), end))
+        for station in np.arange(end+cfg.sample_step,
+                                 min(max(end, ego_station)+2*cfg.preview,
+                                     self.route.station[-1]), cfg.sample_step):
+            rows.append((*self.route.at_station(float(station)), float(station)))
         array = np.asarray(rows)
         candidates = np.where(array[:, 4] >= ego_station-.5)[0]
         if not len(candidates):
@@ -383,4 +393,36 @@ class FixedPlanner:
                    (np.abs(lateral) <= cfg.vehicle_width/2+cfg.margin))
             if np.any(hit):
                 return True
+        return False
+
+
+class AvoidSession:
+    """Latch zone entry until an actual avoidance and waypoint rejoin finish."""
+    def __init__(self):
+        self.active = False
+        self.returning = False
+        self.zone_consumed = False
+        self.done = False
+
+    def observe_zone(self, zone):
+        if not zone:
+            self.zone_consumed = False
+        elif not self.zone_consumed and not self.active:
+            self.active = True
+            self.done = False
+            self.zone_consumed = True
+        elif zone:
+            self.zone_consumed = True
+
+    def accepted(self):
+        self.returning = False
+
+    def passed_path(self):
+        self.returning = True
+
+    def finish(self, planner, pose):
+        if self.active and self.returning and not planner.samples and planner.rejoined(pose):
+            self.active = self.returning = False
+            self.done = True
+            return True
         return False

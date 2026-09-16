@@ -22,7 +22,7 @@ import numpy as np
 SRC = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(SRC/'stack_gps'), str(SRC/'stack_avoid')]
 from stack_gps.path_engine import M_PER_DEG_LAT, PathEngine
-from stack_avoid.waypoint_planner import (Config, Detector, FixedPlanner, Obstacle,
+from stack_avoid.waypoint_planner import (Config, Detector, FixedPlanner, Obstacle, AvoidSession,
                                           filter_cloud, to_global, to_vehicle)
 
 
@@ -80,6 +80,8 @@ def simulate(curved, same_side=False, half_offset=False):
     route = make_route(curved)
     cfg = replace(Config(), obstacle_offsets=(.5, 1.0) if half_offset else (1.0,))
     planner, detector = FixedPlanner(route, cfg), Detector(route, cfg)
+    session = AvoidSession()
+    session.observe_zone(True)
     lateral = .5 if half_offset else 1.0
     second_s = 11.0
     objects = [object_at(planner, 8, lateral),
@@ -114,6 +116,7 @@ def simulate(curved, same_side=False, half_offset=False):
             before = planner.revision
             planner.accept(o, route.project_station(*pose[:2])[0])
             if before != planner.revision:
+                session.accepted()
                 snapshots.append((float(station), planner.samples, tuple(planner.maneuvers)))
                 seen.append({'ego_station': float(station), 'obstacle_station': o.station,
                              'obstacle_lateral': o.lateral, 'revision': planner.revision})
@@ -131,6 +134,8 @@ def simulate(curved, same_side=False, half_offset=False):
             assert planner.samples == before, 'preview altered fixed path'
         history.append((*pose, float(station), planner.revision))
         if planner.advance(pose):
+            session.passed_path()
+        if session.finish(planner, pose):
             finished = True
             break
     assert len(snapshots) == 2, f'expected two latched objects; got {len(snapshots)}: {planner.last_reason}'
