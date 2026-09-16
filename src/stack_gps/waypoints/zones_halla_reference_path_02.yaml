@@ -6,3 +6,7 @@ gps_only_zones:
 - start: {lat: 37.30414727, lon: 127.90756213, note: path 2 start}
   end: {lat: 37.30413351, lon: 127.90748153, note: path 2 end}
 parking_points: []
+
+# Revised v2: shared left/right-turn GPS-only + traffic activation zones.
+# Legacy gps_only_zones above are excluded by turn_zone_policy. Configure later.
+turn_zones: []

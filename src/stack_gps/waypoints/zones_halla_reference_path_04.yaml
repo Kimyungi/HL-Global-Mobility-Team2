@@ -13,3 +13,7 @@ parking_points:
   east_m: -63.127912
   north_m: -66.384294
   note: 평행 주차
+
+# Revised v2: shared left/right-turn GPS-only + traffic activation zones.
+# Legacy gps_only_zones above are excluded by turn_zone_policy. Configure later.
+turn_zones: []

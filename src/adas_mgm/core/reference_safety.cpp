@@ -23,7 +23,7 @@ ReferenceStatus provider_reference(const CoreSnapshot & s, uint8_t source)
   const bool usable[] = {
     s.camera_line_valid && std::isfinite(s.lane_confidence) &&
     s.lane_confidence >= 0.0f && s.lane_confidence <= 1.0f,
-    s.gps_valid, s.lidar_valid, s.parking_valid};
+    s.gps_valid && (!s.revised_v2 || s.gps_fix_quality == 4), s.lidar_valid, s.parking_valid};
   const auto & sample = s.references[source];
   r.generation = sample.generation; r.age_s = sample.age_s;
   r.available = paths[source]->n > 0;

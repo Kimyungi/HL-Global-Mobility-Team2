@@ -79,3 +79,67 @@ def test_missing_lidar_aborts_before_hardware(monkeypatch,tmp_path):
     with pytest.raises(RuntimeError,match='라이다 장치'):
         mod.start_stack(ctx)
     assert not (tmp_path/'run').exists()
+
+
+
+
+
+
+def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkeypatch, tmp_path):
+    from launch_ros.actions import Node
+    from launch_ros.utilities import evaluate_parameters
+    from stack_avoid import compute_backend
+    mod = module()
+    ctx = context(mod, tmp_path)
+    ctx.launch_configurations.update(
+        REAL_VEHICLE_CONFIRM='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX',
+        start_waypoint='04', end_waypoint='07', parking_enabled='true',
+        parking_zone_entry_active='true', avoidance_enabled='true', avoid_zone_only='true',
+        zone_enter_confirm_samples='5',
+        zone_exit_confirm_samples='5', traffic_enabled='true', v_base='2.0')
+    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
+    monkeypatch.setattr(mod, 'check_lidar_devices', lambda: None)
+    monkeypatch.setattr(persistent_service, 'ensure_running', lambda *a: None)
+    monkeypatch.setattr(compute_backend, 'compute_functions',
+                        lambda *a: pytest.fail('waypoint provider loaded legacy cubic backend'))
+    actions = mod.start_stack(ctx)
+    for action in actions:
+        if isinstance(action, DeclareLaunchArgument):
+            action.execute(ctx)
+    ctx.launch_configurations['route_sequence_enabled_resolved'] = 'true'
+    nodes = {}
+    for action in actions:
+        if isinstance(action, Node):
+            nodes.setdefault(action.node_package, action)  # stack_avoid also owns can_zero.
+    assert 'stack_avoid_v2' not in nodes
+    assert nodes['stack_avoid'].condition.evaluate(ctx)
+    waypoint = evaluate_parameters(ctx, nodes['stack_avoid']._Node__parameters)[1]
+    assert waypoint['waypoint_csv'].endswith('waypoints_halla_20260916_path_04.csv')
+    assert waypoint['route_origin_csv'] == waypoint['waypoint_csv']
+    assert waypoint['target_speed_mps'] == 1.0
+    mgm = evaluate_parameters(ctx, nodes['adas_mgm']._Node__parameters)[1]
+    assert mgm['avoid_v2_enabled'] is False and mgm['wait_go'] is True
+    assert mgm['avoid_zone_only'] is True and mgm['avoidance_enabled'] is True
+    assert mgm['zone_enter_confirm_samples'] == 5
+    assert mgm['v_base'] == 2.0 and mgm['v_avoid'] == 1.0
+    assert (tmp_path / 'run' / 'avoid_planner_mode.txt').read_text().strip() == 'Waypoint_Avoid_PR103'
+    assert (tmp_path / 'run' / 'avoid_compute_backend.txt').read_text().strip() == 'stack_avoid.waypoint_planner'
+
+
+
+
+
+
+@pytest.mark.parametrize('retired,value', [
+    ('waypoint_avoid','false'), ('avoid_v2_enabled','true'),
+    ('avoid_planner_mode','fixed_goals'), ('avoid_planner_mode','main_gap'),
+    ('avoid_planner_mode','main_gap_path'), ('avoid_compute_backend','native'),
+    ('avoid_compute_backend','python')])
+def test_retired_selection_fails_before_hardware(monkeypatch,tmp_path,retired,value):
+    mod=module();ctx=context(mod,tmp_path)
+    ctx.launch_configurations['REAL_VEHICLE_CONFIRM']='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX'
+    ctx.launch_configurations[retired]=value
+    monkeypatch.setattr(mod,'check_lidar_devices',lambda:pytest.fail('hardware touched'))
+    monkeypatch.setattr(persistent_service,'ensure_running',lambda *a:pytest.fail('GPS touched'))
+    with pytest.raises(RuntimeError,match='Legacy avoidance'):
+        mod.start_stack(ctx)

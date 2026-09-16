@@ -66,7 +66,12 @@ void route_observe(const CoreSnapshot & s, CoreState & st) {
     r.phase = RoutePhase::FAULT; return;
   }
   if (r.phase == RoutePhase::WAIT_ACK) {
-    if (!gps(s)) {return;}  // CSV handoff still requires a localized new generation.
+    if (s.revised_v2) {
+      const bool old_route = f.index == r.index && f.connecting == r.connecting && f.acknowledged_request < r.request_id;
+      const bool requested = f.index == r.requested_index && f.connecting == r.requested_connecting && f.acknowledged_request == r.request_id;
+      if (!old_route && !requested) {r.phase = RoutePhase::FAULT; return;}
+    }
+    if (!gps(s) || s.gps_handoff_cached) {return;}  // CSV handoff still requires a localized new generation.
     if (f.index == r.requested_index && f.connecting == r.requested_connecting && f.acknowledged_request == r.request_id) {
       if (s.references[MGM_SRC_GPS].generation <= r.request_generation) {return;}
       r.index = f.index; r.seen_nonterminal = r.end_reached = false;
@@ -76,8 +81,10 @@ void route_observe(const CoreSnapshot & s, CoreState & st) {
       // the navigation reference handoff are renewed; completion memory survives.
       st.managers.zones = ZoneState{};
       st.managers.gps_only_context = false;
-      st.managers.nav = NavState::GPS_BACKUP;
-      st.lane_high_cnt = st.lane_low_cnt = 0;
+      if (!s.revised_v2) {
+        st.managers.nav = NavState::GPS_BACKUP;
+        st.lane_high_cnt = st.lane_low_cnt = 0;
+      }
     } else if (f.index != r.index || f.connecting != r.connecting || f.acknowledged_request >= r.request_id) {
       r.phase = RoutePhase::FAULT;
     }
@@ -102,21 +109,22 @@ void route_step(const CoreSnapshot & s, CoreState & st) {
     if (!s.gps_at_end) {r.seen_nonterminal = true;}
     else if (r.seen_nonterminal) {r.end_reached = true;}
   }
-  // Immediate-entry Parking is ended by mission_step on a valid current endpoint.
-  // Historical PREPARE policy retains its ACTIVE maneuver across the boundary.
+  // T Parking retains authority across this junction until forward exit done.
+  // Parallel parking keeps its existing mission_step endpoint cancellation.
   if (m.mission == MissionState::MISSION_ACTIVE) {return;}
   bool complete = !m.request.active;
   if (!r.connecting) {
     for (int i=0; i<256; ++i) {complete &= !r.required_missions[i] || m.mission_completed[i] || m.mission_failed[i];}
   }
-  const bool boundary = !r.connecting && r.completion == RouteCompletion::MISSIONS_COMPLETE ? complete : r.end_reached;
+  const bool boundary = !s.revised_v2 && !r.connecting && r.completion == RouteCompletion::MISSIONS_COMPLETE ? complete : r.end_reached;
   if (!boundary) {return;}
   r.phase = complete ? RoutePhase::WAIT_STOP : RoutePhase::WAIT_MISSION;
-  if (!complete || s.external_stop || s.auto_estop || s.traffic_fail_safe_stop ||
+  if (!complete || s.external_stop || (!s.revised_v2 && (s.auto_estop || s.traffic_fail_safe_stop)) ||
     m.signal == SignalState::APPROACH_STOP_LINE || m.signal == SignalState::STOPPED_WAIT ||
     st.stop_zone_holding || st.wrongway_latched || st.escape_phase != MGM_ESCAPE_NONE ||
     (m.zones.definitions_seen && m.zones.calibration != CalibrationState::CALIBRATED) ||
-    !s.vehicle_speed_valid || !std::isfinite(s.vehicle_speed) || std::fabs(s.vehicle_speed) > 1e-3f) {return;}
+    ((!s.revised_v2 || (!r.connecting && r.index + 1 == r.count)) &&
+     (!s.vehicle_speed_valid || !std::isfinite(s.vehicle_speed) || std::fabs(s.vehicle_speed) > 1e-3f))) {return;}
   if (r.connecting) {request(s, r, r.index, false);}
   else if (r.index + 1 == r.count) {
     r.phase = RoutePhase::FINISHED; m.top = TopState::FINISH; st.at_end_latched = true;

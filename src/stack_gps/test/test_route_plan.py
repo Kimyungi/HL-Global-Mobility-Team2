@@ -14,7 +14,7 @@ def test_selected_five_routes_meet_at_uploaded_endpoints(start, end):
     plan = RoutePlan(WAYPOINTS / 'halla_route_sequence.yaml', start, end)
     assert [r.id for r in plan.files] == [start, '03', '04', '05', end]
     gaps = [(a.id,b.id) for a,b in zip(plan.files,plan.files[1:]) if a.points[-1] != b.points[0]]
-    assert gaps == [('04','05')]  # uploaded post-parking handoff; no direct connector
+    assert gaps == []  # 2026-09-16 map: route 4 is trimmed at the route-5 junction
     assert all(r.completion == 0 and not r.entry_connection for r in plan.files)
     plan.bind(lambda files: (PathEngine(files.points), ZoneMap([], len(files.points))))
     assert plan.connections == [None]*5

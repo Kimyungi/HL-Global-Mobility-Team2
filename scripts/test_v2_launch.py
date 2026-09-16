@@ -36,113 +36,15 @@ def test_bench_has_only_mgm_and_remaps_every_driving_topic():
     assert all(remaps[topic] == '/integration_v2' + topic for topic in topics)
 
 
-def test_vehicle_defaults_use_v2_and_refuse_before_hardware(monkeypatch):
-    module = load('REAL_VEHICLE_integration_v2.launch.py')
-    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
-    description = module.generate_launch_description()
-    context = LaunchContext()
-    for item in description.entities:
-        if isinstance(item, DeclareLaunchArgument):
-            item.execute(context)
-    values = context.launch_configurations
-    assert Path(values['lane_weights']).is_relative_to(ROOT)
-    assert Path(values['homography_path']).is_relative_to(ROOT)
-    assert Path(values['gps_error_log_csv']).is_relative_to(ROOT / 'drive_logs')
-    assert values['zone_enter_confirm_samples'] == values['zone_exit_confirm_samples'] == '5'
-    assert values['parking_zone_entry_active'] == 'true'
-    assert values['parking_search_zone_only'] == 'false'
-    assert values['avoidance_enabled'] == 'true'
-    assert values['avoid_zone_only'] == 'true'
-    assert values['escape_after_cycles'] == '1000'
-    assert values['parking_search_timeout'] == values['max_parking_search_distance'] == '-1.0'
-    before = set((ROOT / 'drive_logs').glob('*'))
-    validation = next(item for item in description.entities if isinstance(item, OpaqueFunction))
-    with pytest.raises(RuntimeError, match='REAL VEHICLE launch refused'):
-        validation.execute(context)
-    assert set((ROOT / 'drive_logs').glob('*')) == before
-
-
-@pytest.mark.parametrize('entry', [
-    'REAL_VEHICLE_integration_v2.launch.py',
-    'REAL_VEHICLE_integration_v2_no_estop.launch.py',
-])
-@pytest.mark.parametrize('enabled', [None, 'true', 'false'])
-def test_avoidance_on_default_and_explicit_override_reach_mgm(monkeypatch, entry, enabled):
-    from launch_ros.utilities import evaluate_parameters
-    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
-    description = load(entry).generate_launch_description()
-    context = LaunchContext()
-    if enabled is not None:
-        context.launch_configurations['avoidance_enabled'] = enabled
-    for item in description.entities:
-        if isinstance(item, DeclareLaunchArgument):
-            item.execute(context)
-    context.launch_configurations['route_sequence_enabled_resolved'] = 'false'
-    mgm = next(item for item in description.entities
-               if isinstance(item, Node) and item.node_package == 'adas_mgm')
-    # Resolve only parameter values; do not execute nodes or validation actions.
-    params = evaluate_parameters(context, mgm._Node__parameters)[1]
-    assert params['avoidance_enabled'] is (enabled != 'false')
-    assert params['avoid_zone_only'] is True
-    assert params['avoid_v2_enabled'] is True
-    assert params['required_lidar_topics'] == ['/lidar/a1/scan', '/lidar/b1/scan', '/lidar/b2/scan']
-    wall = next(item for item in description.entities
-                if isinstance(item, Node) and item.node_package == 'stack_avoid_v2')
-    assert wall.condition.evaluate(context)
-    wall_params = evaluate_parameters(context, wall._Node__parameters)[0]
-    assert wall_params['control_enabled'] is True
-    assert list(wall_params['sensor_ids']) == ['a1', 'b1', 'b2']
-    assert not any(key.startswith('sensors.a2.') for key in wall_params)
-    avoid = next(item for item in description.entities
-                 if isinstance(item, Node) and item.node_package == 'stack_avoid')
-    assert not avoid.condition.evaluate(context)
-    avoid_params = evaluate_parameters(context, avoid._Node__parameters)[1]
-    assert avoid_params['avoid.require_mgm_active'] is True
-    assert params['parking_zone_entry_active'] is True
-    assert params['lidar_estop_enabled'] is ('no_estop' not in entry)
-    assert params['escape_after_cycles'] == (0 if 'no_estop' in entry else 1000)
-    gps = next(item for item in description.entities
-               if isinstance(item, Node) and item.node_package == 'stack_gps')
-    context.launch_configurations['zones_file_resolved'] = ''
-    gps_params = evaluate_parameters(context, gps._Node__parameters)[0]
-    assert gps_params['n_points'] == 1
-    assert not any(key.startswith('rejoin_') or key == 'ref_lookahead_m' for key in gps_params)
 
 
 
-@pytest.mark.parametrize('exposure,expected', [(None, -2), ('0', 0), ('-3', -3)])
-def test_traffic_exposure_reaches_only_traffic(monkeypatch, exposure, expected):
-    from launch_ros.utilities import evaluate_parameters
-    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
-    description = load('REAL_VEHICLE_integration_v2.launch.py').generate_launch_description()
-    context = LaunchContext()
-    if exposure is not None:
-        context.launch_configurations['traffic_exposure_compensation'] = exposure
-    for item in description.entities:
-        if isinstance(item, DeclareLaunchArgument):
-            item.execute(context)
-    traffic = next(item for item in description.entities
-                   if isinstance(item, Node) and item.node_package == 'stack_traffic')
-    params = evaluate_parameters(context, traffic._Node__parameters)[0]
-    assert params['oak_exposure_compensation'] == expected
-    lane = next(item for item in description.entities
-                if isinstance(item, Node) and item.node_package == 'stack_lane')
-    lane_params = evaluate_parameters(context, lane._Node__parameters)[0]
-    assert 'oak_exposure_compensation' not in lane_params
 
 
-def test_vehicle_rejects_foreign_install(monkeypatch, tmp_path):
-    module = load('REAL_VEHICLE_integration_v2.launch.py')
-    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
-    monkeypatch.setattr(module, 'get_package_share_directory', lambda _: str(tmp_path))
-    with pytest.raises(RuntimeError, match='must come from this workspace'):
-        module.generate_launch_description()
 
 
-def test_vehicle_requires_workspace_entry(monkeypatch):
-    monkeypatch.delenv('FMA_V2_WORKSPACE', raising=False)
-    with pytest.raises(RuntimeError, match='scripts/v2 vehicle'):
-        load('REAL_VEHICLE_integration_v2.launch.py').generate_launch_description()
+
+
 
 
 def test_integrated_parking_uses_v2_stream_profiles_for_all_four_lidars():
@@ -228,3 +130,9 @@ def test_sequence_rejects_missing_or_invalid_selection_before_nodes(tmp_path, ke
     with pytest.raises((RuntimeError,ValueError)):
         module.validate(context, str(tmp_path / 'run'))
     assert not (tmp_path / 'run').exists()
+
+
+@pytest.mark.parametrize('entry',['REAL_VEHICLE_integration_v2.launch.py','REAL_VEHICLE_integration_v2_no_estop.launch.py'])
+def test_retired_vehicle_entry_is_blocked(entry):
+    with pytest.raises(RuntimeError,match='Retired v2 launcher excluded'):
+        load(entry).generate_launch_description()

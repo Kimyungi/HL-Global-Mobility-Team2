@@ -1,5 +1,6 @@
 """ROS inputs and diagnostic outputs for the persistent avoidance planner."""
 import math
+import time
 
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
@@ -8,9 +9,11 @@ from std_msgs.msg import Bool
 from visualization_msgs.msg import Marker
 from fma_interfaces.msg import GpsPath, MgmState
 
-from stack_avoid.gps_cubic_path import GpsCubicPlanner, WaypointWindow
+from stack_avoid.gps_cubic_path import WaypointWindow
 from stack_avoid.station_path import to_world, to_local
 from stack_avoid.surfaces import gap_centers, surface_goal_sections, surface_intervals
+from stack_avoid.compute_backend import compute_functions
+from stack_avoid.fixed_obstacle_path import FixedObstaclePlanner, GoalGroup, obstacle_bands
 
 
 def stamp_ns(stamp):
@@ -29,6 +32,9 @@ class StationPathIO:
         self.path_gps_timeout = parameter('avoid.path_gps_timeout_s', .5)
         self.require_mgm_active = bool(self.declare_parameter(
             'avoid.require_mgm_active', False, readonly).value)
+        self.compute_backend = self.declare_parameter('avoid.compute_backend', 'python', readonly).value
+        connector, collision_check = compute_functions(self.compute_backend)
+        self.get_logger().info(f'avoid compute backend: {self.compute_backend}')
         self._mgm_active, self._mgm_stamp = False, 0
         self.path_min_radius = parameter('vehicle.min_turn_radius_m', 1.15)
         self.path_front = (parameter('vehicle.wheelbase_m', .595)
@@ -44,10 +50,11 @@ class StationPathIO:
         if (self.path_spacing > .1 or not math.isfinite(self.path_front)
                 or not 0 < self.path_front <= self.vehicle_len):
             raise ValueError('path spacing must be <=0.1m and front offset <= vehicle length')
-        self._planner = GpsCubicPlanner(
+        self._planner = FixedObstaclePlanner(
             width=self.vehicle_width, length=self.vehicle_len, front=self.path_front,
             margin=self.lateral_margin, min_radius=self.path_min_radius,
-            spacing=self.path_spacing, anchor_distance=self.path_anchor, return_distance=self.path_return)
+            spacing=self.path_spacing, anchor_distance=self.path_anchor, return_distance=self.path_return,
+            connector=connector, collision_check=collision_check)
         self._poses = {}
         self._pose_source = None
         self._gps_waypoints = None
@@ -138,11 +145,12 @@ class StationPathIO:
             return observation
         return None, 0
 
-    def _path_goals(self, scan):
+    def _path_goals(self, scan, source_surfaces=None):
         clear = self.vehicle_width/2+self.lateral_margin
         sections = surface_goal_sections(
-            self._surfaces, self.lidar_x,
-            self.lidar_x+self.detect_range+self.detect_hysteresis,
+            self._surfaces if source_surfaces is None else source_surfaces, self.lidar_x,
+            (self.lidar_x+self.detect_range+self.detect_hysteresis
+             if source_surfaces is None else self.lidar_x+self.max_range),
             self.offset_max+clear, clear)
         goals = []
         for x in sections:
@@ -161,6 +169,19 @@ class StationPathIO:
             goals.extend(sorted(stage, key=lambda p: abs(p[1])))
         return goals
 
+    def _path_goal_groups(self, scan, pose):
+        if pose is None or self._gps_waypoints is None or len(self._planner.fixed_goals) >= 2:
+            return []
+        groups = []
+        for low, high, contours in obstacle_bands(
+                self._surfaces, pose, self._gps_waypoints, self.detect_half_width):
+            if not self._planner.wants_group(low, high):
+                continue
+            groups.append(GoalGroup(low, high, tuple(self._path_goals(scan, contours))))
+            if len(groups) >= 2-len(self._planner.fixed_goals):
+                break
+        return groups
+
     def _station_reference(self, scan, gap, detected):
         pose, pose_stamp = self._path_pose()
         if self.require_mgm_active and (not self._mgm_active or
@@ -170,10 +191,23 @@ class StationPathIO:
             self._publish_path(scan, None)
             return None, False, 0
         self._planner.width, self._planner.margin = self.vehicle_width, self.lateral_margin
+        started = time.perf_counter()
+        fixed = isinstance(self._planner, FixedObstaclePlanner)
+        groups = self._path_goal_groups(scan, pose) if fixed and (detected or self._planner.episode_active) else []
         point, done = self._planner.step(
             pose=pose, waypoints=self._gps_waypoints if pose is not None else None,
             surfaces=self._surfaces,
-            goals=self._path_goals(scan) if detected else [], detected=detected)
+            goals=self._path_goals(scan) if detected and not fixed else [], detected=detected,
+            **({'goal_groups': groups} if fixed else {}))
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if started - getattr(self, '_compute_log_time', -math.inf) >= 5.0:
+            self.get_logger().info(
+                f'avoid compute: backend={getattr(self, "compute_backend", "python")}; '
+                f'planning_ms={elapsed_ms:.3f}; target={point is not None}; '
+                f'updates={self._planner.replan_count}; '
+                f'fixed_goals={len(getattr(self._planner, "fixed_goals", ()))}; '
+                f'passed_goals={getattr(self._planner, "passed_goals", 0)}')
+            self._compute_log_time = started
         generation = min(stamp_ns(scan.header.stamp), pose_stamp)
         diagnostic = (self._planner.reason, point is not None, self._planner.anchor_fallback,
                       self._planner.goal_side, self._planner.side_switched)
@@ -216,5 +250,9 @@ class StationPathIO:
             marker.text = (f'{self._planner.mode} | GPS s={self._planner.gps_station:.2f}m\n'
                            f'anchor={self._planner.anchor_station:.2f} | '
                            f'side={self._planner.goal_station} | return={self._planner.return_station}')
+            if isinstance(self._planner, FixedObstaclePlanner):
+                marker.text += '\nfixed stations=' + ','.join(
+                    f'{g.station:.2f}' for g in self._planner.fixed_goals)
+                marker.text += f' | passed={self._planner.passed_goals}'
         self.path_pub.publish(path)
         self.station_pub.publish(marker)

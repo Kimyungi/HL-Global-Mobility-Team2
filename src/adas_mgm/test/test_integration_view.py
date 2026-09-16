@@ -70,14 +70,15 @@ def test_one_view_transforms_track_and_slam_and_displays_each_preview(display):
     node.receive('map',node.cloud([(5.,6.)]))
     node.render()
     markers={m.ns:m for m in out['markers'].markers}
-    assert markers['gps_route'].points[0].x == pytest.approx(2.)
-    assert markers['gps_route'].points[0].y == pytest.approx(0.,abs=1e-12)
+    assert markers['gps_route'].points[0].x == pytest.approx(100.)
+    assert markers['gps_route'].points[0].y == pytest.approx(202.)
     assert markers['GPS'].pose.position.x == 2.5
     assert markers['CAMERA'].pose.position.y == pytest.approx(-.4)
     points=view.point_cloud2.read_points_numpy(out['map'],field_names=('x','y'))
     np.testing.assert_allclose(points,[(2.,0.)],atol=1e-6)
     assert out['hud'].height==1160 and out['hud'].width==720
-    assert all(m.header.frame_id==view.FRAME for m in out['markers'].markers)
+    assert all(m.header.frame_id==('map' if m.ns=='gps_route' else view.FRAME)
+               for m in out['markers'].markers)
 
 
 def test_stale_inputs_are_removed_and_optical_z_is_not_a_bumper_distance(display):
@@ -105,3 +106,21 @@ def test_new_request_cannot_display_old_parking_map(display):
     assert node.parking_since>0 and node.get('pose',age=2.) is None
     node.render()
     assert out['map'].width==0
+
+
+def test_absolute_avoid_path_marker_does_not_move_with_vehicle(display):
+    node,out=display
+    stamp=node.get_clock().now().to_msg()
+    path=Path(); path.header.stamp=stamp; path.header.frame_id='map'
+    for x,y in [(100.,200.),(99.,203.),(100.,206.)]:
+        p=PoseStamped(); p.pose.position.x=x; p.pose.position.y=y
+        p.pose.orientation.w=1.; path.poses.append(p)
+    node.receive('avoid_path',path)
+    for east,north,yaw in [(100.,200.,1.57),(101.,201.,.7)]:
+        gps=GpsPath(position_valid=True,position_x=east,position_y=north,
+                    vehicle_heading_rad=yaw,reference_stamp=stamp)
+        gps.header.stamp=stamp;node.receive('gps',gps)
+        node.render()
+        marker=next(m for m in out['markers'].markers if m.ns=='AVOID_PATH')
+        assert marker.header.frame_id=='map'
+        assert [(p.x,p.y) for p in marker.points]==[(100.,200.),(99.,203.),(100.,206.)]

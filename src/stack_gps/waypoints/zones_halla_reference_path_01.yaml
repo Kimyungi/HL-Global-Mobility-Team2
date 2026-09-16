@@ -3,3 +3,7 @@ stop_points: []
 avoid_zones: []
 gps_only_zones: []
 parking_points: []
+
+# Revised v2: shared left/right-turn GPS-only + traffic activation zones.
+# Legacy gps_only_zones above are excluded by turn_zone_policy. Configure later.
+turn_zones: []

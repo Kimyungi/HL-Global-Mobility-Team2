@@ -164,11 +164,13 @@ class IntegrationView(Node):
         self.markers.append(msg)
         return msg
 
-    def line(self, name, xy, color, width=.07, z=.04):
+    def line(self, name, xy, color, width=.07, z=.04, frame=None):
         xy = np.asarray(xy, dtype=float).reshape((-1, 2))
         if not len(xy) or not np.isfinite(xy).all():
             return
         msg = self.marker(name, Marker.LINE_STRIP, color, width)
+        if frame is not None:
+            msg.header = Header(stamp=self.header.stamp, frame_id=frame)
         msg.points = [Point(x=float(x), y=float(y), z=z) for x, y in xy]
 
     def text(self, name, text, x, y, color=WHITE, size=.24):
@@ -216,21 +218,16 @@ class IntegrationView(Node):
             pose = (gps.position_x, gps.position_y, gps.vehicle_heading_rad)
             if track is not None and track.header.frame_id == 'map' and seconds(track.header.stamp) >= self.track_since and all(map(math.isfinite, pose)):
                 xy = [(p.pose.position.x, p.pose.position.y) for p in track.poses]
-                self.line('gps_route', local_xy(xy, pose), ORANGE, .07)
+                self.line('gps_route', xy, ORANGE, .07, frame='map')
         if lane is not None:
             self.preview('CAMERA', lane, CYAN, .20)
         if target is not None:
             self.preview('MGM', target, PINK, .30)
         avoid_path = self.get('avoid_path', .5)
-        if avoid_path is not None and avoid_path.header.frame_id.lstrip('/') == 'base_link':
+        if avoid_path is not None and avoid_path.header.frame_id.lstrip('/') in ('base_link', 'map'):
             self.line('AVOID_PATH', [(p.pose.position.x, p.pose.position.y)
-                                     for p in avoid_path.poses], YELLOW, .10, .15)
-        elif (avoid_path is not None and avoid_path.header.frame_id == 'map' and gps is not None
-              and gps.position_valid and gps.vehicle_heading_valid):
-            pose = (gps.position_x, gps.position_y, gps.vehicle_heading_rad)
-            if all(map(math.isfinite, pose)):
-                self.line('AVOID_PATH', local_xy([(p.pose.position.x, p.pose.position.y)
-                          for p in avoid_path.poses], pose), YELLOW, .10, .15)
+                                     for p in avoid_path.poses], YELLOW, .10, .15,
+                      frame=avoid_path.header.frame_id.lstrip('/'))
         avoid = self.get('avoid', .5, True)
         if avoid is not None and avoid.scan_valid:
             self.preview('AVOID_TARGET', avoid, YELLOW, .40)
@@ -301,6 +298,10 @@ class IntegrationView(Node):
         text(preparation, 30, (130,245,130) if state is not None and state.start_ready
              else (255,230,120), .62)
         light = 'NO DATA / STALE' if traffic is None else 'RED + GREEN' if traffic.red_active and traffic.green_active else 'RED' if traffic.red_active else 'GREEN' if traffic.green_active else 'UNKNOWN'
+        if state is not None and getattr(state, 'revised_v2', False) and not state.traffic_zone_active:
+            light = 'OFF (outside turn zone)'
+        if state is not None and getattr(state, 'estop_active', False):
+            light += ' | ESTOP'
         text('LIGHT: '+light, 61, (90,90,255) if traffic is not None and traffic.red_active else
              (130,245,130) if traffic is not None and traffic.green_active else (160,160,160))
         text('GPS: NO FRESH FIX' if gps is None else f'GPS: fix={gps.fix_quality} route={gps.route.route_id or "single"} idx={gps.track_index} heading={"measured" if gps.vehicle_heading_valid else "TANGENT estimate"}', 89)

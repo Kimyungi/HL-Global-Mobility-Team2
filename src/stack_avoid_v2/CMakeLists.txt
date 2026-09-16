@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(stack_avoid_v2 LANGUAGES CXX)
+# The planner has a 20ms execution budget; default colcon builds need optimization.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -Wpedantic)

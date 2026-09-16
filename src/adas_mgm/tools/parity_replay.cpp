@@ -26,7 +26,7 @@
 
 #include "core/mgm_step.hpp"
 #include "src/generated_adapter.hpp"
-#include "tools/dump_format.hpp"
+#include "tools/dump_reader.hpp"
 
 using namespace adas_mgm;
 
@@ -88,27 +88,15 @@ int main(int argc, char ** argv)
     return 2;
   }
 
-  // 헤더는 core_replay 와 같은 규약 — 고정부 4개 + CoreParams(옛 덤프 호환).
-  uint32_t fixed[4]{};
-  in.read(reinterpret_cast<char *>(fixed), sizeof(fixed));
   DumpHeader h{};
-  h.magic = fixed[0]; h.version = fixed[1];
-  h.snapshot_size = fixed[2]; h.params_size = fixed[3];
-  if (!in || h.magic != kDumpMagic || h.version != kDumpVersion ||
-    h.snapshot_size != sizeof(CoreSnapshot))
-  {
-    std::fprintf(
-      stderr,
-      "덤프 헤더 불일치 — 기록한 빌드와 같은 ABI 로 재생할 것\n");
+  if (!read_dump_header(in, h)) {return 2;}
+
+  if (h.params.base_state_machine_enabled || h.params.traffic_state_enabled) {
+    std::fprintf(stderr,
+      "Generated model v1.88 does not implement this manager/traffic policy. "
+      "Use core_replay for v33 production logs; this is not a parity verdict.\n");
     return 2;
   }
-  if (h.params_size > sizeof(CoreParams)) {
-    std::fprintf(
-      stderr, "덤프 params(%u B)가 현재 CoreParams(%zu B)보다 큼 — 재생 불가\n",
-      h.params_size, sizeof(CoreParams));
-    return 2;
-  }
-  in.read(reinterpret_cast<char *>(&h.params), h.params_size);
 
   std::ofstream diff;
   const bool want_csv = argc >= 3;

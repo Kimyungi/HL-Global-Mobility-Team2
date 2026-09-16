@@ -24,6 +24,8 @@
   <!-- tools/lidar_fov.py · tools/lidar_overlap.py 가 쓰는 것 -->
   <depend>sensor_msgs</depend>
   <depend>python3-numpy</depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
 
   <!-- ydlidar_ros2_driver 는 의도적으로 선언하지 않는다. main 에 없는 패키지라
        선언하면 rosdep/빌드가 깨진다. launch/dual_lidar_test.launch.py 는 실행

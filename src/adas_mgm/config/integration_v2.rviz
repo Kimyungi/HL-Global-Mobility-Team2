@@ -223,7 +223,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 23; 25; 28
-    Fixed Frame: v2_vehicle_view
+    Fixed Frame: map
     Frame Rate: 15
   Name: root
   Tools:

@@ -6,6 +6,7 @@
 #include "zone_step.hpp"
 #include "reference_safety.hpp"
 #include "mission_step.hpp"
+#include "estop_state.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -36,6 +37,9 @@ bool line_valid(const CoreSnapshot & s)
   return provider_reference(s, MGM_SRC_LANE).valid;
 }
 bool gps_valid(const CoreSnapshot & s) {return provider_reference(s, MGM_SRC_GPS).valid;}
+bool zone_gps_valid(const CoreSnapshot & s) {
+  return s.revised_v2 ? s.gps_position_valid : gps_valid(s);
+}
 bool gps_return_aligned(const CoreSnapshot & s)
 {
   constexpr float kYawLimit = 20.0f * 3.14159265358979323846f / 180.0f;
@@ -58,7 +62,7 @@ void update_avoid_zone(const CoreSnapshot & s, CoreState & st)
     m.avoid_zone_generation = 0;
   }
   if (!st.params.avoid_zone_only) {return;}
-  const bool valid = gps_valid(s) && s.zones.zone_valid && s.zones.generation != 0 &&
+  const bool valid = zone_gps_valid(s) && s.zones.zone_valid && s.zones.generation != 0 &&
     st.params.zone_enter_confirm_samples > 0 && st.params.zone_exit_confirm_samples > 0;
   if (!valid || s.zones.generation < m.avoid_zone_generation) {
     // Lost GPS cannot certify exit or cancel a confirmed zone's ownership.
@@ -83,17 +87,17 @@ void update_avoid_zone(const CoreSnapshot & s, CoreState & st)
 bool line_return_ready(const CoreSnapshot & s, const CoreState & st)
 {
   return line_valid(s) && st.lane_high_cnt >= st.params.n_cycles &&
-         !st.managers.gps_only_context && !st.managers.route.connecting && (st.return_hold_left == 0 || !gps_valid(s));
+         !st.managers.gps_only_context && (s.revised_v2 || !st.managers.route.connecting) && (st.return_hold_left == 0 || !gps_valid(s));
 }
 void nav_reselect(const CoreSnapshot & s, CoreState & st)
 {
   if (mission_searches_along_gps(st) || st.managers.avoid == AvoidState::GPS_RETURN) {
     st.managers.nav = st.managers.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
-  } else if (st.managers.route.enabled && st.managers.route.connecting) {
+  } else if (!s.revised_v2 && st.managers.route.enabled && st.managers.route.connecting) {
     st.managers.nav = NavState::GPS_BACKUP;
   } else if (st.managers.gps_only_context) {
     st.managers.nav = NavState::GPS_ONLY_NAV;
-  } else if (line_return_ready(s, st) || (!gps_valid(s) && line_valid(s))) {
+  } else if (line_return_ready(s, st) || (!gps_valid(s) && line_valid(s) && (!s.revised_v2 || !st.managers.lane_recovery_required))) {
     st.managers.nav = NavState::LINE;
   } else if (gps_valid(s)) {
     st.managers.nav = NavState::GPS_BACKUP;
@@ -145,6 +149,14 @@ void update_existing_guards(const CoreSnapshot & s, CoreState & st)
 }
 uint32_t base_stop_reasons(const CoreSnapshot & s, const CoreState & st)
 {
+  if (s.revised_v2) {
+    // Route FAULT is an independent hard stop, even in sensor-only policy.
+    uint32_t reasons = st.managers.route.phase == RoutePhase::FAULT ? SAFE_STOP_ROUTE_SEQUENCE : 0u;
+    if (!st.managers.estop_active && (s.sensor_alive_mask & 0x77) == 0) {
+      reasons |= SAFE_STOP_ALL_SENSORS_LOST;  // rear (bit 3) excluded
+    }
+    return reasons;
+  }
   if (st.params.safe_stop_all_sensors_only) {
     return (s.sensor_alive_mask & 0x7f) == 0 ? static_cast<uint32_t>(SAFE_STOP_ALL_SENSORS_LOST) : 0u;
   }
@@ -189,7 +201,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     st.managers.last_request_id = last_request_id;
     route_reset(previous_route, s, st);
   }
-  route_observe(s, st);
+  if (!s.revised_v2 || !st.managers.estop_active) {route_observe(s, st);}
   auto & m = st.managers;
   const bool clock_valid = !m.previous_tick_known || s.monotonic_ns >= m.previous_tick_ns;
   if (!clock_valid && m.route.enabled) {m.route.phase = RoutePhase::FAULT;}
@@ -213,9 +225,11 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     cancel_mission(st, MissionCancelReason::SESSION_RESET);
   }
   const bool was_zone = m.gps_only_context;
-  zone_step(s.zones, gps_valid(s), m.zones,
+  const bool zone_source_confirmed = !s.revised_v2 || m.route.phase != RoutePhase::WAIT_ACK ||
+    (s.route.index == m.route.index && s.route.connecting == m.route.connecting);
+  zone_step(s.zones, zone_source_confirmed && zone_gps_valid(s), m.zones,
     st.params.zone_enter_confirm_samples, st.params.zone_exit_confirm_samples);
-  update_avoid_zone(s, st);
+  if (zone_source_confirmed) {update_avoid_zone(s, st);}
   m.gps_only_context = m.zones.in_gps_only_zone;
   if (s.new_session || (m.route.enabled && m.route.session_reset_pending &&
     m.route.phase == RoutePhase::RUNNING)) {
@@ -229,30 +243,37 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.recovery.eligible = false; m.recovery.block_reason = RecoveryBlockReason::NOT_DRIVING;
     return;
   }
-  const bool starting_ready = !s.start_gate_enabled || (s.lidar_valid && (s.camera_available || s.gps_fixed_ready));
+  const bool starting_ready = !s.start_gate_enabled || ((s.revised_v2 ? s.start_lidar_ready : s.lidar_valid) && (s.camera_available || s.gps_fixed_ready));
   const bool already_driving = m.top == TopState::AUTONOMOUS_DRIVE;
   m.top = s.autonomous_enabled && (already_driving || starting_ready) ?
     TopState::AUTONOMOUS_DRIVE : TopState::AUTONOMOUS_ENABLE;
 
+  if (s.revised_v2 && estop_transition(s, st)) {return;}
   const bool line = line_valid(s);
   const bool gps = gps_valid(s);
   st.lane_low_cnt = line && s.lane_confidence < st.params.lane_conf_exit ?
     std::min(st.lane_low_cnt + 1, st.params.n_cycles) : 0;
   st.lane_high_cnt = line && s.lane_confidence >= st.params.lane_conf_return ?
     std::min(st.lane_high_cnt + 1, st.params.n_cycles) : 0;
+  if (s.revised_v2) {
+    if (st.lane_low_cnt >= st.params.n_cycles && !gps) {
+      m.lane_recovery_required = true;
+    }
+    if (gps || st.lane_high_cnt >= st.params.n_cycles) {m.lane_recovery_required = false;}
+  }
   if (st.return_hold_left > 0) {--st.return_hold_left;}
 
-  if (m.route.enabled && m.route.connecting) {
+  if (!s.revised_v2 && m.route.enabled && m.route.connecting) {
     m.nav = NavState::GPS_BACKUP;
   } else if (m.gps_only_context) {
     m.nav = NavState::GPS_ONLY_NAV;
   } else if (was_zone) {
     nav_reselect(s, st);
   } else if (m.nav == NavState::LINE) {
-    if ((!line || st.lane_low_cnt >= st.params.n_cycles) && gps) {
+    if ((!line || st.lane_low_cnt >= st.params.n_cycles) && (gps || s.revised_v2)) {
       m.nav = NavState::GPS_BACKUP;
     }
-  } else if (line_return_ready(s, st) || (!gps && line)) {
+  } else if (line_return_ready(s, st) || (!gps && line && (!s.revised_v2 || !m.lane_recovery_required))) {
     m.nav = NavState::LINE;
   }
 
@@ -387,10 +408,24 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.avoid_episode_reference_seen = true;
   }
 
-  if (st.params.traffic_state_enabled) {
+  if (s.revised_v2 && s.vehicle_speed_valid && std::isfinite(s.vehicle_speed)) {
+    m.actual_speed_seen = true;
+    m.last_actual_speed = s.vehicle_speed;
+  }
+  const bool traffic_zone = !s.revised_v2 || m.gps_only_context;
+  if (s.revised_v2 && traffic_zone != m.traffic_zone_active) {
+    m.traffic_zone_active = traffic_zone;
+    m.traffic_zone_enter_ns = s.event_time_ns;
+    m.signal = SignalState::SIGNAL_IDLE;
+    st.traffic_distance_latched = st.traffic_prev_stopline_detected = false;
+    st.traffic_stopline_distance = 0;
+  }
+  const bool traffic_fresh = !s.revised_v2 || (s.traffic_status_fresh &&
+    s.traffic_status_stamp_ns >= m.traffic_zone_enter_ns);
+  if (st.params.traffic_state_enabled && traffic_zone) {
     // (!red) || (!red && green) reduces to !red. Apply the GPS handoff
     // only on a signal exit, not on every ordinary no-signal driving tick.
-    const bool release = !s.traffic_red_active;
+    const bool release = traffic_fresh && !s.traffic_red_active;
     const bool signal_exit = release && m.signal != SignalState::SIGNAL_IDLE;
     if (release) {
       m.signal = SignalState::SIGNAL_IDLE;
@@ -414,25 +449,27 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
         }
       }
     } else {
-      if (m.signal == SignalState::SIGNAL_IDLE && s.traffic_red_active) {
+      if (traffic_fresh && m.signal == SignalState::SIGNAL_IDLE && s.traffic_red_active) {
         m.signal = SignalState::RED_DETECTED;
       }
-      if (m.signal == SignalState::RED_DETECTED && s.traffic_red_active &&
+      if (traffic_fresh && m.signal == SignalState::RED_DETECTED && s.traffic_red_active &&
         s.traffic_stopline_detected)
       {
         m.signal = SignalState::APPROACH_STOP_LINE;
       }
       const bool previously_stopped = m.signal == SignalState::STOPPED_WAIT;
       if (m.signal == SignalState::APPROACH_STOP_LINE) {
-        // Latch once per stop episode. Detector flicker cannot reseed distance;
-        // red release discards the entire signal distance episode above.
-        const bool seed_now = !st.traffic_distance_latched &&
+        // Revised v2 reseeds on every fresh detected->lost edge while approaching.
+        // Historical profiles retain their once-per-episode latch.
+        const bool seed_now = traffic_fresh && (s.revised_v2 || !st.traffic_distance_latched) &&
           st.traffic_prev_stopline_detected && !s.traffic_stopline_detected;
         if (seed_now) {
           st.traffic_stopline_distance = st.params.traffic_ramp_distance_m;
           st.traffic_distance_latched = true;
-        } else if (st.traffic_distance_latched && s.vehicle_speed_valid && std::isfinite(s.vehicle_speed)) {
-          st.traffic_stopline_distance -= static_cast<float>(std::fabs(s.vehicle_speed) * dt);
+        } else if (st.traffic_distance_latched) {
+          const float speed = s.vehicle_speed_valid && std::isfinite(s.vehicle_speed) ? s.vehicle_speed :
+            s.revised_v2 ? (m.actual_speed_seen ? m.last_actual_speed : st.v) : 0.0f;
+          st.traffic_stopline_distance -= static_cast<float>(std::fabs(speed) * dt);
         }
         if (st.traffic_distance_latched && s.vehicle_speed_valid &&
           st.traffic_stopline_distance <= st.params.traffic_stop_offset &&
@@ -447,7 +484,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
         // The transition tick above has zero speed, so no double integration occurs.
         st.traffic_stopline_distance -= static_cast<float>(std::fabs(s.vehicle_speed) * dt);
       }
-      st.traffic_prev_stopline_detected = s.traffic_stopline_detected;
+      if (traffic_fresh) {st.traffic_prev_stopline_detected = s.traffic_stopline_detected;}
     }
   }
 
@@ -463,10 +500,14 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool sensor_stop = !st.params.safe_stop_all_sensors_only && !maneuver && (((m.gps_only_context || mission_searches_along_gps(st)) && !gps) ||
     (!nav_available(s, st) && !gps && (!s.lidar_valid || !st.params.avoidance_enabled)));
   const bool fault_stop = m.safe_stop_reasons != 0;
-  // PARKING includes GPS-guided search before readiness. Suppress ordinary
-  // LiDAR E-stop throughout that state, just like ordinary avoidance above.
-  // Only the independent LiDAR request produces an E-stop in v2.
-  // Avoidance feasibility/TTC describe planning; they are not stop requests.
+  // Revised v2 has already evaluated the upper ESTOP state, including PARKING.
+  // Independent E-stop / timed reverse below are historical-profile behavior only.
+  if (s.revised_v2) {
+    st.escape_phase = MGM_ESCAPE_NONE;
+    m.recovery_waiting_reference = false;
+    m.safety = fault_stop ? SafetyState::SAFE_STOP : SafetyState::NORMAL;
+    return;
+  }
   const bool lidar_stop = !mission && s.auto_estop;
   const bool was_reversing = st.escape_phase == MGM_ESCAPE_REVERSING;
   CoreSnapshot recovery = s;
@@ -564,19 +605,34 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   CoreSnapshot request = s;
   request.estop = false;  // independent safety arbitration below
   request.traffic_stop_required = false;
+  if (s.revised_v2) {
+    request.traffic_fail_safe_stop = false;
+    request.vehicle_speed_valid = true;  // distance uses fallback; actual stopped proof remains separate
+  }
   CoreOutput out = existing_source_request(request, st, source_state);
-  if (source_state != MGM_STATE_AVOID) {
+  if (source_state == MGM_STATE_PARKING && m.mission_type == MissionType::T_PARKING) {
+    if (std::isfinite(out.v_ref)) {
+      out.v_ref = std::copysign(std::min(std::fabs(out.v_ref), std::fabs(st.params.v_base)), out.v_ref);
+    }
+  } else if (source_state != MGM_STATE_AVOID) {
     out.v_ref = fixed_motion_speed(out.v_ref, st.params.v_base);
+  }
+  if (gps_return && !mission && st.params.avoid_zone_only && st.params.v_avoid > 0.0f) {
+    // The zone episode owns its reduced speed until GPS alignment releases it.
+    // Reference source changes to GPS before that episode is complete.
+    out.v_ref = std::min(out.v_ref, st.params.v_avoid);
   }
   out.top = m.top; out.nav = m.nav; out.avoid = m.avoid; out.signal = m.signal;
   out.parking_calibration = parking_calibration(st.params);
   out.recovery = m.recovery;
   out.route = m.route;
+  out.estop_active = m.estop_active;
+  out.estop_request_id = m.estop_request_id;
   out.traffic_distance_known = st.traffic_distance_latched;
   out.traffic_remaining_m = st.traffic_stopline_distance;
   out.traffic_stop_in_success_region = st.traffic_distance_latched && s.vehicle_speed_valid &&
     std::isfinite(s.vehicle_speed) && std::fabs(s.vehicle_speed) <= kStoppedSpeed &&
-    st.traffic_stopline_distance > 0 && st.traffic_stopline_distance <= 1.0f;
+    st.traffic_stopline_distance > 0 && st.traffic_stopline_distance <= (s.revised_v2 ? st.params.traffic_stop_offset : 1.0f);
   out.safety = m.safety; out.mission = m.mission; out.mission_type = m.mission_type;
   out.mission_start = m.mission_start;
   out.mission_cancel = m.mission_cancel;
@@ -596,7 +652,7 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   // Preserve the existing 50-cycle low-confidence hysteresis; after it expires
   // sensor availability does not make the LINE path drivable.
   out.references[MGM_SRC_LANE].valid = out.references[MGM_SRC_LANE].valid &&
-    st.lane_low_cnt < st.params.n_cycles;
+    st.lane_low_cnt < st.params.n_cycles && (!s.revised_v2 || !m.lane_recovery_required);
   out.references[MGM_SRC_PARKING].valid = out.references[MGM_SRC_PARKING].valid &&
     mission && m.mission_feedback_seen && s.parking_mission_active &&
     (!st.params.parking_zone_entry_active || m.request.preparation_ready) &&
@@ -661,18 +717,26 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   }
   // Entry braking precedes the CAN-speed-gated five-frame wall acquisition.
   // Only fresh completion for this request releases normal GPS search speed.
-  if (mission_searches_along_gps(st) && !(s.parking_valid &&
+  const bool t_search_endpoint = m.mission_type == MissionType::T_PARKING &&
+    (m.route.enabled ? m.route.end_reached : s.gps_at_end);
+  if (mission_searches_along_gps(st) && (t_search_endpoint || !(s.parking_valid &&
     s.parking_request_id == m.request.request_id &&
     s.parking_mission_mode == static_cast<uint8_t>(m.mission_type) &&
-    s.parking_wall_acquisition_complete))
+    s.parking_wall_acquisition_complete)))
   {
     out.v_ref = 0.0f;
     out.immediate_stop = true;
     out.speed_owner = SpeedOwner::MISSION;
   }
+  if (s.revised_v2 && m.estop_active) {estop_decision(s, st, out);}
+  // A final route waits for real stationary feedback; middle transitions do not.
+  if (s.revised_v2 && !m.estop_active && (m.route.phase == RoutePhase::WAIT_STOP ||
+    m.route.phase == RoutePhase::WAIT_MISSION)) {
+    out.v_ref = 0; out.immediate_stop = true;
+  }
   out.selected_reference = out.references[out.path_source];
   out.reference_available = out.selected_reference.available;
-  if (!out.selected_reference.valid && !st.params.safe_stop_all_sensors_only) {
+  if (!out.selected_reference.valid && !st.params.safe_stop_all_sensors_only && !s.revised_v2) {
     out.safe_stop_reasons |= SAFE_STOP_REFERENCE_INVALID;
   }
   if (out.safe_stop_reasons != 0) {

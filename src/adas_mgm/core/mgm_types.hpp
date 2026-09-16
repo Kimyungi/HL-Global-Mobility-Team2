@@ -183,6 +183,21 @@ struct CoreSnapshot
   RouteFeedback route;
   // Physical sensor availability: lane camera, traffic camera, a1/a2/b1/b2, GPS.
   uint8_t sensor_alive_mask;
+  // Interview policy (2026-09-16); appended raw-dump contract, version 32.
+  bool revised_v2;
+  bool start_lidar_ready;
+  bool gps_handoff_cached;
+  uint8_t gps_fix_quality;
+  bool traffic_status_fresh;
+  int64_t traffic_status_stamp_ns;
+  ReferenceSample estop_scans[3];  // front, left, right: independent scan stamps
+  float estop_clearance_m[3];      // measured from body exterior; +inf = clear
+  uint64_t recovery_request_id;
+  bool recovery_done;
+  CorePath recovery_path;
+  float recovery_speed;
+  ReferenceSample recovery_reference;
+
 };
 
 // 튜닝 파라미터 — params.yaml과 1:1, Simulink에서는 tunable parameter
@@ -307,7 +322,9 @@ struct CoreParams
   int32_t route_sequence_enabled;  // opt-in; single CSV and historical parity remain unchanged
   int32_t parking_zone_entry_active;  // enter Parking/search on Zone, GPS until ready; done/current CSV end releases
   int32_t avoidance_enabled;  // parallel Manager: 0 disables ordinary avoidance and LiDAR fallback
-  int32_t safe_stop_all_sensors_only;  // v2 SAFE_STOP iff all seven sensors unavailable
+  int32_t safe_stop_all_sensors_only;  // legacy policy; revised v2 excludes rear from health
+  int32_t revised_v2_enabled;  // runbook v2 policy; legacy fixtures/backends retain their own semantics
+
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -371,6 +388,11 @@ struct CoreState
   // edge(true→false) 검출용 — 이번 틱 traffic_stopline_detected의 직전값.
   bool traffic_prev_stopline_detected;
   ManagerState managers;
+  CorePath handoff_gps_path;
+  ReferenceSample handoff_gps_reference;
+  int64_t handoff_gps_saved_ns;
+  bool handoff_gps_known;
+
 };
 
 // 매 틱의 출력 — wrapper가 TargetRef로 변환·발행
@@ -411,6 +433,8 @@ struct CoreOutput
   float traffic_remaining_m;
   bool traffic_distance_known, traffic_stop_in_success_region;
   RouteControl route;
+  bool estop_active;
+  uint64_t estop_request_id;
 };
 
 }  // namespace adas_mgm

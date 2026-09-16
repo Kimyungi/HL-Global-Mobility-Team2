@@ -779,10 +779,42 @@ void mgm_init(CoreState & st, const CoreParams & params)
   // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)
 }
 
-CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
+CoreOutput mgm_step(const CoreSnapshot & input, CoreState & st)
 {
+  CoreSnapshot in = input;
+  in.gps_handoff_cached = false;
+  in.revised_v2 = st.params.revised_v2_enabled != 0;
+  if (in.revised_v2 && !in.new_session) {
+    const auto & route = st.managers.route;
+    const bool waiting = route.phase == RoutePhase::WAIT_ACK;
+    const bool current = in.route.index == route.index && in.route.connecting == route.connecting &&
+      (waiting ? in.route.acknowledged_request < route.request_id : in.route.acknowledged_request == route.request_id);
+    const bool ready = provider_reference(in, MGM_SRC_GPS).valid &&
+      in.route.index == route.requested_index && in.route.connecting == route.requested_connecting &&
+      in.route.acknowledged_request == route.request_id &&
+      in.references[MGM_SRC_GPS].generation > route.request_generation;
+    if ((!waiting || current) && provider_reference(in, MGM_SRC_GPS).valid) {
+      st.handoff_gps_path = in.gps_path;
+      st.handoff_gps_reference = in.references[MGM_SRC_GPS];
+      st.handoff_gps_saved_ns = in.monotonic_ns;
+      st.handoff_gps_known = true;
+    } else if (waiting && !ready) {
+      // Never expose an unacknowledged new route to the steering assembler.
+      in.gps_path.n = 0;
+      if (st.handoff_gps_known && in.gps_fix_quality == 4 && in.gps_valid) {
+        const double elapsed = (in.monotonic_ns - st.handoff_gps_saved_ns) * 1e-9;
+        auto sample = st.handoff_gps_reference;
+        sample.age_s += static_cast<float>(elapsed);
+        if (elapsed >= 0 && sample.age_s <= sample.timeout_s) {
+          in.gps_path = st.handoff_gps_path;
+          in.references[MGM_SRC_GPS] = sample;
+          in.gps_updated = false;
+          in.gps_handoff_cached = true;
+        }
+      }
+    }
+  }
   CoreOutput out{};
-
   if (st.params.base_state_machine_enabled) {
     manager_transition(in, st);
     out = manager_decision(in, st);
@@ -792,6 +824,10 @@ CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
     prioritize(in, st, out);
   }
   CoreSnapshot execution = in;
+  if (in.revised_v2 && st.managers.estop_active && out.path_source == MGM_SRC_ESCAPE) {
+    // Pending recovery provider supplies geometry; do not run the old straight reverse generator.
+    execution.parking_path = in.recovery_path;
+  }
   if (out.route.changed) {
     st.has_raw_target = false;
     st.blend_left = 0;
@@ -810,7 +846,11 @@ CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
   // Invalid providers retain authority but cannot feed malformed/new geometry
   // to the assembler. Existing finite hold/initial stop buffer stays untouched.
   if (!st.params.base_state_machine_enabled || out.selected_reference.valid) {
-    assemble(execution, out.path_source, st);
+    if (in.revised_v2 && st.managers.estop_active && out.path_source == MGM_SRC_ESCAPE) {
+      st.n_out = in.recovery_path.n;
+      for (int i = 0; i < MGM_NUM_POINTS; ++i) {st.ref_out[i] = in.recovery_path.pts[i];}
+      st.has_raw_target = false;
+    } else {assemble(execution, out.path_source, st);}
   }
   out.v_ref = merge(out, st);         // v2 pass-through / legacy rate limit
 

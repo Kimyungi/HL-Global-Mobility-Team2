@@ -59,11 +59,13 @@ void parking_and_recovery()
   r.tick(); r.mission();
   check(r.out.v_ref == 0, "mission handoff still waits for execution ack");
   r.s.parking_updated = true; r.tick();
-  check(near(r.out.v_ref, -1.f), "parking reverse uses negative fixed target");
+  check(near(r.out.v_ref, -.3f), "T parking preserves bounded reverse provider speed");
   r.s.parking_v_suggest = 0.f; r.tick();
   check(r.out.v_ref == 0, "parking phase stop preserved");
   r.s.parking_v_suggest = .05f; r.tick();
-  check(near(r.out.v_ref, 1.f), "parking forward uses positive fixed target");
+  check(near(r.out.v_ref, .05f), "T parking preserves bounded forward provider speed");
+  r.s.parking_v_suggest = 2.f; r.tick();
+  check(near(r.out.v_ref, 1.f), "T parking provider speed cannot exceed v_base");
   r.s.parking_path_blocked = true; r.tick();
   check(r.out.v_ref == 0, "parking blocked stop preserved");
   r.s.parking_path_blocked = false; r.s.parking_v_suggest = -.1f; r.tick();

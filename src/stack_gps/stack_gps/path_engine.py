@@ -15,6 +15,7 @@ stack_gps 노드의 로직 코어. CLAUDE.md §5.5의 정신에 따라 ROS 없�
   - GGA 좌표는 2~3cm 노이즈가 있으므로 접선·곡률을 이웃 한 칸이 아니라
     약 1m 베이스라인(중심 차분)으로 계산해 각도 노이즈를 줄인다.
 """
+from bisect import bisect_right
 import csv
 import math
 import time
@@ -76,7 +77,7 @@ class PoseDeltaTracker:
         return self.delta, self.update
 
 
-def load_waypoints_csv(path, log=None, avoid_starts=None):
+def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, include_states=False):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 
     east_m/north_m 열은 기록 세션의 기준점에 묶여 있어 쓰지 않고,
@@ -87,7 +88,7 @@ def load_waypoints_csv(path, log=None, avoid_starts=None):
     이웃 대비 2.5~2.7m 튀어 시작 횡오차 4m대의 한 원인이었음).
     버린 수는 log 콜백으로 보고.
     """
-    pts, dropped = [], 0
+    pts, yaws, states, dropped = [], [], [], 0
     with open(path, newline="") as f:
         for row in csv.DictReader(f):
             q = row.get("quality")
@@ -97,6 +98,15 @@ def load_waypoints_csv(path, log=None, avoid_starts=None):
             lat, lon = float(row["lat"]), float(row["lon"])
             if not pts or pts[-1] != (lat, lon):
                 pts.append((lat, lon))
+                raw = row.get('yaw_rad')
+                yaw = float(raw) if raw not in (None, '') else (
+                    math.radians(float(row['yaw_deg'])) if row.get('yaw_deg') not in (None, '') else None)
+                if yaw is not None and not math.isfinite(yaw):
+                    raise ValueError('CSV yaw must be finite')
+                yaws.append(yaw)
+                states.append(int(row.get('state') or 0))
+            elif str(row.get('state', '')).strip() == '4':
+                states[-1] = 4
             # Keep marker indices in the filtered/deduplicated geometry, not
             # the CSV's optional idx column. Other state codes retain their roles.
             if avoid_starts is not None and str(row.get('state', '')).strip() == '4':
@@ -107,6 +117,11 @@ def load_waypoints_csv(path, log=None, avoid_starts=None):
         log(f"비-FIXED 웨이포인트 {dropped}개 제외 (FLOAT 오염 방지): {path}")
     if len(pts) < 2:
         raise ValueError(f"웨이포인트가 {len(pts)}개뿐 — 유효한 트랙이 아님: {path}")
+    if include_yaw or include_states:
+        if any(y is not None for y in yaws) and any(y is None for y in yaws):
+            raise ValueError('CSV yaw must be present on every retained waypoint')
+        values = yaws if all(y is not None for y in yaws) else None
+        return (pts, values, states) if include_states else (pts, values)
     return pts
 
 
@@ -238,7 +253,7 @@ class PathEngine:
                  target_max_m=None, target_min_m=None, e_lpf_s=None,
                  curve_ff=None, curve_margin=None,
                  stop_ranges=(), avoid_ranges=(), gps_only_ranges=(),
-                 parallel_parking_ranges=(), station_tracking=False):
+                 parallel_parking_ranges=(), station_tracking=False, waypoint_yaws=None, origin_latlon=None):
         """station_tracking=True: bounded station search and one +2.5m preview.
         generation (distinct fix), v_ref and sample_time are supplied to snapshot().
         The following lookahead/rejoin options describe only historical False mode.
@@ -293,7 +308,7 @@ class PathEngine:
         self._e_lpf = None           # [m] 저역통과된 부호 있는 횡오차
         self._prev_e_t = None
 
-        lat0, lon0 = latlon_pts[0]
+        lat0, lon0 = origin_latlon if origin_latlon is not None else latlon_pts[0]
         self._lat0, self._lon0 = lat0, lon0
         self._m_per_deg_lon = M_PER_DEG_LAT * math.cos(math.radians(lat0))
 
@@ -308,6 +323,11 @@ class PathEngine:
         # 점 간격 추정 → 접선/곡률용 이웃 스텝 k (약 tangent_baseline_m)
         seg = [math.hypot(self.e[i + 1] - self.e[i], self.n[i + 1] - self.n[i])
                for i in range(m - 1)]
+        self.station = [0.0]
+        for length in seg:
+            self.station.append(self.station[-1] + length)
+        self.avoid_event_indices = []
+        self._avoid_last_idx = None
         spacing = sorted(seg)[len(seg) // 2]
         k = max(1, round(tangent_baseline_m / max(spacing, 1e-6)))
         self._spacing = spacing          # set_lookahead() 재계산용
@@ -320,6 +340,11 @@ class PathEngine:
             self.yaw.append(math.atan2(self.n[b] - self.n[a],
                                        self.e[b] - self.e[a]))
 
+        if waypoint_yaws is not None:
+            if len(waypoint_yaws) != m or not all(map(math.isfinite, waypoint_yaws)):
+                raise ValueError('waypoint_yaws must contain one finite yaw per point')
+            self.yaw = [wrap_angle(y) for y in waypoint_yaws]
+
         # 곡률: 헤딩 변화율 Δyaw / 호길이 (좌회전 +, vehicle frame y좌측+와 일치)
         self.curvature = []
         for i in range(m):
@@ -329,6 +354,55 @@ class PathEngine:
             self.curvature.append(dyaw / arc if arc > 1e-6 else 0.0)
 
         self.station_path = StationPath(self.e, self.n, self.yaw, self.curvature) if self.station_tracking else None
+
+    def at_station(self, station):
+        """Interpolate ENU position, CSV/tangent yaw and curvature by arc station.
+
+        Distances use the same ENU polyline as GPS driving, not CSV east/north
+        or a second geodetic origin. Extrapolating beyond the route is forbidden.
+        """
+        if not math.isfinite(station) or not 0.0 <= station <= self.station[-1]:
+            raise ValueError("station outside waypoint route")
+        a = min(bisect_right(self.station, station) - 1, len(self.e) - 2)
+        length = self.station[a + 1] - self.station[a]
+        t = (station - self.station[a]) / length if length > 1e-12 else 0.0
+        return (self.e[a] + t * (self.e[a + 1] - self.e[a]),
+                self.n[a] + t * (self.n[a + 1] - self.n[a]),
+                wrap_angle(self.yaw[a] + t * wrap_angle(self.yaw[a + 1] - self.yaw[a])),
+                self.curvature[a] + t * (self.curvature[a + 1] - self.curvature[a]))
+
+    def project_station(self, e, n):
+        """GPS's nearest vertex + adjacent-segment foot, with station and signed d."""
+        idx, _ = self._nearest_idx(e, n)
+        a, t, fe, fn, distance = self._avoid_project_adjacent(idx, e, n)
+        station = self.station[a] + t * (self.station[a + 1] - self.station[a])
+        yaw = self.at_station(station)[2]
+        lateral = -(e - fe) * math.sin(yaw) + (n - fn) * math.cos(yaw)
+        return station, lateral, idx, distance
+
+    def _avoid_project_adjacent(self, idx, e, n):
+        best = None
+        for a in (idx - 1, idx):
+            if a < 0 or a + 1 >= len(self.e):
+                continue
+            dx, dy = self.e[a+1]-self.e[a], self.n[a+1]-self.n[a]
+            length = dx*dx+dy*dy
+            if length <= 1e-12:
+                continue
+            t = max(0., min(1., ((e-self.e[a])*dx+(n-self.n[a])*dy)/length))
+            x, y = self.e[a]+t*dx, self.n[a]+t*dy
+            distance = math.hypot(e-x,n-y)
+            if best is None or distance < best[-1]:
+                best = (a,t,x,y,distance)
+        if best is None:
+            raise ValueError('route has no nonzero adjacent segment')
+        return best
+
+    def avoid_event(self, idx):
+        previous = self._avoid_last_idx
+        self._avoid_last_idx = idx
+        return any(idx == marker or (previous is not None and previous < marker <= idx)
+                   for marker in self.avoid_event_indices)
 
     def reset_station(self):
         if self.station_path is not None:

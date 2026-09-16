@@ -1,5 +1,19 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> 2026-09-16 후속 회피 교체: `prepare/drive`는 PR #103의 `waypoint_avoid_node`를 사용한다.
+> `waypoint_avoid=true`, `avoid_v2_enabled=false`만 허용한다. 구형 선택 분기·v2 런처·회피 시험 진입점은 제외했다.
+> 이전 New_Avoid_v2/legacy 소스는 기록 비교용이며 현재 v2 실행 그래프에는 포함하지 않는다.
+> PR #105 분리 CSV와 공통 GPS 원점을 사용하고, 09.16 상위 AVOID 전이 조건은 유지한다.
+> 무효 곡률/경로는 points를 비워 정차하며 1m preview를 변경 없이 전달한다.
+> [회피 교체 보고서](docs/V2_PR103_INTEGRATION.md)가 아래 과거 회피 설명보다 우선한다.
+
+> 2026-09-16 T 주차 참조경로 통합: 일반 drive 런처는 좌측 LiDAR 판별 후 03 끝까지 전진,
+> 선택 경로 후진, 후방 벽 0.50m 정차/10초 대기, 같은 경로 전진 복귀 후에만 done을 보낸다.
+> T Mission은 03 종점에서 자동 취소하지 않으며 주차 모듈이 복귀 정차를 확인한 뒤 MGM ACK로 04에 전환한다.
+> T 속도는 provider 권장값을 v_base 이하로 보존한다. 평행 주차 기존 정책은 유지한다.
+> raw dump v33. [연결·검증 범위](src/stack_parking/docs/T_REFERENCE_SEQUENCE.md).
+> 오프라인 검증이며 실차·ROS graph·MPC 폐루프 검증을 뜻하지 않는다.
+
 > 2026-09-15: v2 기본 회피 provider는 전방·좌우 3개 LiDAR를 사용하는 `stack_avoid_v2`다. 기존 zone 진입·GPS_RETURN·완료 표식 조건은 유지한다. 운영 연결은 [벽 중앙 회피 MGM 연결](docs/AVOID_V2_MGM_INTEGRATION.md)을 따른다. 아래 기존 `stack_avoid` 경로 생성/그림자 전용 설명보다 이 연결 계약이 우선한다.
 
 > 2026-09-14 최종 v2 정책: MGM 자체 회피 TTC/경로 실패 AUTO_ESTOP은 사용하지 않는다.

@@ -1,0 +1,183 @@
+"""Single-publisher adapter for the existing MGM PREPARE/ACTIVATE protocol."""
+import math
+from pathlib import Path
+
+import yaml
+from ament_index_python.packages import get_package_share_directory
+from rclpy.qos import qos_profile_sensor_data
+from fma_interfaces.msg import GpsPath, MgmState, ParkingCommand, ParkingStatus, RefPoint, VehicleVector
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import String
+
+from .geometry import Pose2
+from .t_parking_sequence import TParkingSequence, load_course
+from .t_reference_parking import fresh, healthy, scan_from_ranges
+
+
+def stamp_s(stamp):
+    return stamp.sec+stamp.nanosec*1e-9
+
+
+class ReferenceParkingAdapter:
+    def __init__(self, node):
+        self.node = node
+        share = Path(get_package_share_directory('stack_parking'))
+        self.route_csv = Path(node._p('t_reference_route_csv')).resolve()
+        self.course = load_course(node._p('t_reference_origin_csv'), self.route_csv,
+                                  [share/'config'/f'parking_ref_{i:02d}.csv' for i in (1,2)])
+        geometry = Path(get_package_share_directory('lidar_fusion_v2'))/'config/fixed_geometry.yaml'
+        self.sensors = yaml.safe_load(geometry.read_text(encoding='utf-8'))['/**']['ros__parameters']['sensors']
+        self.gps = self.vehicle = self.mgm = None
+        self.scans = {k: None for k in ('a1','a2','b1')}
+        self.core = None
+        self.request_id = 0
+        self.active = self.authorized = False
+        self.started = -math.inf
+        self.route_identity = None
+        self.last_phase = None
+        self.subs = [node.create_subscription(GpsPath,'/perception/gps_path',self.on_gps,1),
+                     node.create_subscription(VehicleVector,str(node._p('vehicle_topic')),self.on_vehicle,qos_profile_sensor_data),
+                     node.create_subscription(MgmState,'/adas/mgm_state',self.on_mgm,1)]
+        for key in self.scans:
+            self.subs.append(node.create_subscription(LaserScan,self.sensors[key]['topic'],
+                              lambda msg,k=key:self.on_scan(k,msg),qos_profile_sensor_data))
+        self.phase_pub = node.create_publisher(String,'/parking/t_reference_phase',1)
+
+    def on_gps(self,msg):
+        self.gps = msg
+
+    def on_vehicle(self,msg):
+        self.vehicle = msg
+
+    def on_mgm(self,msg):
+        self.mgm = msg
+
+    def on_scan(self,key,msg):
+        if msg.header.frame_id.lstrip('/') != f'lidar_{key}_link':
+            self.scans[key] = None
+            return
+        sensor = self.sensors[key]
+        self.scans[key] = scan_from_ranges(
+            stamp_s(msg.header.stamp),msg.ranges,msg.angle_min,msg.angle_increment,
+            max(msg.range_min,sensor['min_range']),min(msg.range_max,sensor['max_range']),
+            Pose2(sensor['x'],sensor['y'],math.radians(sensor['yaw_deg'])),
+            sensor['range_offset_m'],math.radians(sensor['fov_min_deg']),math.radians(sensor['fov_max_deg']))
+
+    def command(self,msg):
+        """Return True if handled; parallel mode still uses the existing pipeline.
+
+        Share the parent request watermark so delayed T/parallel/cancel traffic
+        cannot steal the current session. CANCEL tombstones even before PREPARE.
+        """
+        n = self.node
+        request = int(msg.request_id)
+        if request <= 0 or request < n.search_request_id:
+            return True
+        if msg.action == ParkingCommand.CANCEL:
+            self.active = self.authorized = False
+            n.search_request_id = request
+            n.search_mission_mode = int(msg.mission_mode)
+            n._cancel_search()
+            status = ParkingStatus()
+            status.header.stamp = n.get_clock().now().to_msg()
+            status.request_id, status.mission_mode = request, int(msg.mission_mode)
+            n.status_pub.publish(status)
+            return True
+        if int(msg.mission_mode) != 1:
+            if request > n.search_request_id and msg.action == ParkingCommand.PREPARE:
+                self.active = self.authorized = False
+            return False
+        if msg.action == ParkingCommand.PREPARE:
+            if request == n.search_request_id:
+                return True
+            n._cancel_search()
+            n.search_request_id, n.search_mission_mode = request, 1
+            self.request_id = request
+            self.core = TParkingSequence(*self.course)
+            self.active, self.authorized = True, False
+            self.started = n._clock_s()
+            self.route_identity = None
+            self.last_phase = None
+        elif (msg.action == ParkingCommand.ACTIVATE and self.active
+              and request == self.request_id and self.core.selected is not None
+              and self.core.phase != 'FAULT'):
+            self.authorized = True
+        return True
+
+    def tick(self):
+        if not self.active:
+            return False
+        n, core = self.node, self.core
+        now = n._clock_s()
+        gps, vehicle, mgm = self.gps,self.vehicle,self.mgm
+        if (core.phase == 'DONE' and mgm and fresh(stamp_s(mgm.header.stamp),now,.25)
+            and mgm.mission_request_id == self.request_id and mgm.mission_completed
+            and not mgm.mission_request_active):
+            self.active = self.authorized = False
+            return False  # MGM acknowledged completion; release the sole publisher
+        cfg = core.cfg
+        pose_stamp = stamp_s(gps.reference_stamp) if gps else -math.inf
+        speed_stamp = stamp_s(vehicle.header.stamp) if vehicle else -math.inf
+        pose = Pose2(gps.position_x,gps.position_y,gps.vehicle_heading_rad) if gps else Pose2()
+        route_ok = bool(gps and gps.route.enabled and not gps.route.connecting
+                        and gps.route.route_id == '03'
+                        and Path(gps.route.waypoint_csv).resolve() == self.route_csv)
+        identity = ((gps.route.sequence_id,gps.route.instance_id,gps.route.index)
+                    if route_ok else None)
+        if self.route_identity is None and route_ok:
+            self.route_identity = identity
+        route_ok = route_ok and identity == self.route_identity
+        pose_ok = bool(route_ok and gps.position_valid and gps.vehicle_heading_valid
+                       and gps.heading_source == GpsPath.HEADING_FUSED and gps.fix_quality == 4)
+        owner = bool(mgm and fresh(stamp_s(mgm.header.stamp),now,.25)
+                     and mgm.mission_request_active and mgm.mission_request_id == self.request_id
+                     and mgm.mission == MgmState.MISSION_ACTIVE and mgm.mission_type == 1)
+        # Missing reference during a deliberate zero-speed phase is expected.
+        # External/CAN/operator final arbitration is never bypassed by this node.
+        allowed = bool(owner and mgm.top == 1 and not (mgm.active_safe_stop_reasons & ~(4|16)))
+        sensors = [self.scans[k] for k in ('b1','a2','a1')]
+        inputs = bool(pose_ok and pose_stamp > self.started and speed_stamp > self.started
+                      and fresh(pose_stamp,now,cfg.feedback_timeout)
+                      and fresh(speed_stamp,now,cfg.feedback_timeout)
+                      and all(healthy(s,now,cfg) and s.stamp > self.started for s in sensors))
+        if not pose_ok:
+            pose_stamp = -math.inf
+        if core.selected is None or self.authorized or not inputs or not allowed:
+            result = core.tick(now,pose,pose_stamp,float(vehicle.v) if vehicle else math.nan,
+                               speed_stamp,*sensors,owned=owner,route_at_end=bool(gps and gps.at_end),
+                               motion_allowed=allowed and inputs)
+        else:
+            result = core.out()  # selection is locked; wait for actual ACTIVATE
+        ready = inputs and allowed and core.selected is not None and core.phase != 'FAULT'
+        status = ParkingStatus()
+        status.header.stamp = n.get_clock().now().to_msg()
+        status.header.frame_id = 'base_link'
+        status.request_id, status.mission_mode = self.request_id, 1
+        status.search_active = True
+        status.search_space_found = core.selected is not None
+        status.wall_acquisition_complete = bool(ready)
+        status.wall_acquisition_frames = min(core.votes,255) if ready else 0
+        status.preparation_ready = bool(ready)
+        if ready:
+            # Oldest contributing sensor generation, never a timer heartbeat.
+            seconds = min(pose_stamp,speed_stamp,*(s.stamp for s in sensors))
+            ns = round(seconds*1e9)
+            status.preparation_stamp.sec, status.preparation_stamp.nanosec = divmod(ns,1_000_000_000)
+            status.reference_stamp = status.preparation_stamp
+        status.mission_active = self.authorized
+        status.space_found = core.selected is not None
+        status.path_blocked = core.phase == 'FAULT'
+        status.v_suggest = result.speed if self.authorized and ready else 0.
+        status.done = bool(self.authorized and ready and result.done)
+        if self.authorized and ready and result.reference is not None:
+            p = result.reference
+            status.points = [RefPoint(x=p.x,y=p.y,yaw=p.yaw,curvature=p.curvature)]
+        if gps and inputs:
+            status.dx,status.dy,status.dyaw,status.update = gps.dx,gps.dy,gps.dyaw,gps.update
+        n.status_pub.publish(status)
+        selected = None if result.selected is None else result.selected+1
+        self.phase_pub.publish(String(data=f'{result.phase}: ref={selected} {result.reason}'))
+        if result.phase != self.last_phase:
+            n.get_logger().info(f'T reference parking {result.phase}: {result.reason}')
+            self.last_phase = result.phase
+        return True
