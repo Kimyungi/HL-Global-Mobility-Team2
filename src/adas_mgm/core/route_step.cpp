@@ -102,8 +102,8 @@ void route_step(const CoreSnapshot & s, CoreState & st) {
     if (!s.gps_at_end) {r.seen_nonterminal = true;}
     else if (r.seen_nonterminal) {r.end_reached = true;}
   }
-  // Immediate-entry Parking is ended by mission_step on a valid current endpoint.
-  // Historical PREPARE policy retains its ACTIVE maneuver across the boundary.
+  // T Parking retains authority across this junction until forward exit done.
+  // Parallel parking keeps its existing mission_step endpoint cancellation.
   if (m.mission == MissionState::MISSION_ACTIVE) {return;}
   bool complete = !m.request.active;
   if (!r.connecting) {

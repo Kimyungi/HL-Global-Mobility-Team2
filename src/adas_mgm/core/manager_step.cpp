@@ -565,7 +565,13 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   request.estop = false;  // independent safety arbitration below
   request.traffic_stop_required = false;
   CoreOutput out = existing_source_request(request, st, source_state);
-  if (source_state != MGM_STATE_AVOID) {
+  if (source_state == MGM_STATE_PARKING && m.mission_type == MissionType::T_PARKING) {
+    // Respect the T-reference docking/exit speed; never turn a 0.15 m/s
+    // rear-wall approach into the drive launch's 2 m/s cruise speed.
+    if (std::isfinite(out.v_ref)) {
+      out.v_ref = std::copysign(std::min(std::fabs(out.v_ref), std::fabs(st.params.v_base)), out.v_ref);
+    }
+  } else if (source_state != MGM_STATE_AVOID) {
     out.v_ref = fixed_motion_speed(out.v_ref, st.params.v_base);
   }
   out.top = m.top; out.nav = m.nav; out.avoid = m.avoid; out.signal = m.signal;
@@ -661,10 +667,12 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   }
   // Entry braking precedes the CAN-speed-gated five-frame wall acquisition.
   // Only fresh completion for this request releases normal GPS search speed.
-  if (mission_searches_along_gps(st) && !(s.parking_valid &&
+  const bool t_search_endpoint = m.mission_type == MissionType::T_PARKING &&
+    (m.route.enabled ? m.route.end_reached : s.gps_at_end);
+  if (mission_searches_along_gps(st) && (t_search_endpoint || !(s.parking_valid &&
     s.parking_request_id == m.request.request_id &&
     s.parking_mission_mode == static_cast<uint8_t>(m.mission_type) &&
-    s.parking_wall_acquisition_complete))
+    s.parking_wall_acquisition_complete)))
   {
     out.v_ref = 0.0f;
     out.immediate_stop = true;

@@ -54,7 +54,9 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v29: physical seven-sensor availability and sensor-only SAFE_STOP policy.
 // v30: v2 speed pass-through and measured-speed stop-zone dwell; same snapshot layout.
 // v31: wall planner unblended reference handoff parameter.
-constexpr uint32_t kDumpVersion = 31;
+// v32: T parking retains endpoint authority through forward exit; bounded provider speed.
+// Same snapshot layout; historical dumps require the matching historical build.
+constexpr uint32_t kDumpVersion = 32;
 
 struct DumpHeader
 {

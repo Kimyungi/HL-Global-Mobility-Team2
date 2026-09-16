@@ -619,7 +619,12 @@ def build_launch_description(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
                 get_package_share_directory('stack_parking'),
                 'launch', 'parking.launch.py'])),
-            launch_arguments={'start_multi_lidar': 'true'}.items(),
+            launch_arguments={
+                'start_multi_lidar': 'true',
+                't_reference_enabled': LaunchConfiguration('t_reference_enabled', default='false'),
+                't_reference_origin_csv': LaunchConfiguration('t_reference_origin_csv', default=''),
+                't_reference_route_csv': LaunchConfiguration('t_reference_route_csv', default=''),
+            }.items(),
             condition=IfCondition(LaunchConfiguration('parking_enabled')),
         ),
 

@@ -1,5 +1,12 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> 2026-09-16 T 주차 참조경로 통합: 일반 drive 런처는 좌측 LiDAR 판별 후 03 끝까지 전진,
+> 선택 경로 후진, 후방 벽 0.50m 정차/10초 대기, 같은 경로 전진 복귀 후에만 done을 보낸다.
+> T Mission은 03 종점에서 자동 취소하지 않으며 04 전환은 기존 MGM 정차/ACK가 수행한다.
+> T 속도는 provider 권장값을 v_base 이하로 보존한다. 평행 주차 기존 정책은 유지한다.
+> raw dump v32. [연결·검증 범위](src/stack_parking/docs/T_REFERENCE_SEQUENCE.md).
+> 오프라인 검증이며 실차·ROS graph·MPC 폐루프 검증을 뜻하지 않는다.
+
 > 2026-09-15: v2 기본 회피 provider는 전방·좌우 3개 LiDAR를 사용하는 `stack_avoid_v2`다. 기존 zone 진입·GPS_RETURN·완료 표식 조건은 유지한다. 운영 연결은 [벽 중앙 회피 MGM 연결](docs/AVOID_V2_MGM_INTEGRATION.md)을 따른다. 아래 기존 `stack_avoid` 경로 생성/그림자 전용 설명보다 이 연결 계약이 우선한다.
 
 > 2026-09-14 최종 v2 정책: MGM 자체 회피 TTC/경로 실패 AUTO_ESTOP은 사용하지 않는다.

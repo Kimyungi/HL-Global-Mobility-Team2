@@ -71,6 +71,7 @@ class HeadingFusion:
         self._imu = None           # (yaw_signed, t)
         self._gyro_z = 0.0         # 최신 선회율 — 게이트용 (없으면 0 = 통과)
         self._offset = None
+        self.cog_hold = False  # Parking COG is travel direction, not body heading.
         self._seed_buf = []        # [(target, t)] — 정렬 전 COG 표본
         self._reject_streak = 0
         self.last_innovation = None  # 최근 COG−융합 잔차 [rad] — 진단용
@@ -124,6 +125,8 @@ class HeadingFusion:
     def update_cog(self, cog_yaw, t, speed=None):
         """이동 중 유효한 COG(ENU rad)로 offset 추정. 유효성(속도·나이)
         판정은 호출자 몫. t는 COG '측정 시각' — 같은 표본은 1회만 소비."""
+        if self.cog_hold:
+            return  # Keep the calibrated IMU datum; never reseed from reverse COG.
         if self._last_cog_t is not None and abs(t - self._last_cog_t) < 1e-3:
             return                  # 같은 측정 재소비 금지 (50Hz 루프 × 낡은 표본)
         self._last_cog_t = t

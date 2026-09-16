@@ -203,8 +203,16 @@ class StackParkingNode(Node):
                 % (front_topic, rear_cloud_topic, rear_topic, slam_rate,
                    self.pipeline.stage.value))
 
+        self.reference_adapter = None
+        if bool(self._p('t_reference_enabled')):
+            from .t_parking_adapter import ReferenceParkingAdapter
+            self.reference_adapter = ReferenceParkingAdapter(self)
+
     def _declare_parameters(self) -> None:
         values = {
+            't_reference_enabled': False,
+            't_reference_origin_csv': '',
+            't_reference_route_csv': '',
             'map_frame': 'parking_map',
             'base_frame': 'base_link',
             'front_cloud_topic': '/lidar/a1/cloud',
@@ -562,6 +570,12 @@ class StackParkingNode(Node):
         return mode, side or SIDE_AUTO
 
     def _on_command(self, msg: String) -> None:
+        adapter = getattr(self, 'reference_adapter', None)
+        if adapter is not None and adapter.active:
+            if msg.data.lower().strip() in ('cancel', 'reset', 'stop'):
+                adapter.core.fault('manual_stop_use_mgm_cancel_to_release')
+            self.get_logger().warn('T reference request remains MGM-owned; use /operator/cancel_mission')
+            return
         parsed = self._parse_command(msg.data)
         if parsed is None:
             if msg.data.lower().strip() not in ('cancel', 'reset', 'stop'):
@@ -580,6 +594,9 @@ class StackParkingNode(Node):
         self.reference_input_stamp_s = -math.inf
 
     def _on_mission_command(self, msg: ParkingCommand) -> None:
+        adapter = getattr(self, 'reference_adapter', None)
+        if adapter is not None and adapter.command(msg):
+            return
         request_id = int(msg.request_id)
         if request_id <= 0 or request_id < self.search_request_id:
             return
@@ -881,6 +898,9 @@ class StackParkingNode(Node):
         return now_s - self.last_icp_accepted_s <= float(self._p('slam_stale_timeout_s'))
 
     def _tick(self) -> None:
+        adapter = getattr(self, 'reference_adapter', None)
+        if adapter is not None and adapter.tick():
+            return
         now = self.get_clock().now()
         now_s = now.nanoseconds * 1.0e-9
         vehicle_speed = None

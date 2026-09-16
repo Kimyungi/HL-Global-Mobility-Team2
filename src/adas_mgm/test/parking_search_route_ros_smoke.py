@@ -1,4 +1,4 @@
-"""Real Halla CSV/Zone + GPS wrapper + MGM: no-space search automatically exits to 04.
+"""Real Halla CSV/Zone + GPS wrapper + MGM: unresolved T parking holds route 03.
 
 GNSS positions and vehicle feedback are synthetic. No sensor, CAN or parking node
 is started. The test advances its position only while MGM requests forward motion.
@@ -122,20 +122,21 @@ def main():
             wait_for(lambda: states[-1].mission == 1 and states[-1].reference_source == 1 and refs[-1].v_ref > 0,
                      '03 uploaded T-Parking Zone starts GPS-following search', timeout=15.)
             request = states[-1].mission_request_id
-            wait_for(lambda: plan.index == 2 and states[-1].route.index == 2 and
-                     states[-1].route.phase == 1 and refs[-1].v_ref > 0,
-                     '03 no-space endpoint automatically applies 04 and resumes driving', timeout=10.)
+            wait_for(lambda: any(f.route.route_id == '03' and f.at_end for f in fixes)
+                     and refs[-1].v_ref == 0,
+                     '03 no-space endpoint stops without skipping the T mission', timeout=10.)
+            for _ in range(30): spin()
             assert any(f.route.route_id == '03' and f.at_end for f in fixes)
-            assert fixes[-1].route.route_id == '04'
-            assert Path(fixes[-1].route.waypoint_csv).name == 'waypoints_halla_reference_path_04.csv'
-            assert any(s.mission_request_id == request and s.mission_cancel_reason == 10 and
-                       s.mission_failed and not s.mission_completed for s in states)
-            assert any(c.request_id == request and c.action == ParkingCommand.CANCEL for c in commands)
+            assert fixes[-1].route.route_id == '03' and plan.index == 1
+            assert states[-1].mission_request_active and not states[-1].mission_failed
+            assert not states[-1].mission_completed
+            assert not any(c.request_id == request and c.action == ParkingCommand.CANCEL for c in commands)
             assert not any(c.request_id == request and c.action == ParkingCommand.ACTIVATE for c in commands)
             assert all(s.reference_source == 1 for s in states if s.mission == 1)
             assert states[-1].top == 1 and states[-1].reference_source == 1
             assert len(refs[-1].ref_points) == 1
-            print('PASS: failed Mission recorded, no manual CSV command or second go; real GPS wrapper applied 04', flush=True)
+            assert refs[-1].v_ref == 0
+            print('PASS: unresolved T mission holds 03; only post-exit done or explicit cancel can release it', flush=True)
         except Exception:
             log.seek(0); print(log.read()[-6000:], file=sys.stderr)
             raise
