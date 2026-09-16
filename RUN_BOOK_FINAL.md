@@ -96,7 +96,7 @@ traffic_zone_active: false
 차선 검출·실제 이동 가능 여부는 별도로 판단합니다.
 확인 후 터미널 2에서 Ctrl-C를 누르면 상태 표시만 종료됩니다.
 
-## 3. 주행 런쳐 코드
+## 3. 주행 런쳐 코드 — v2_main 전체 코스
 
 **터미널 1**에서 GPS 상태 표시만 Ctrl-C로 종료한 뒤 실행합니다.
 
@@ -105,14 +105,15 @@ cd /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main
 scripts/v2 prepare \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
   start_waypoint:=01 end_waypoint:=07 \
-  parking_enabled:=true parking_zone_entry_active:=true \
+  parking_enabled:=true parking_zone_entry_active:=true t_reference_enabled:=true \
   avoidance_enabled:=true avoid_zone_only:=true \
   waypoint_avoid:=true avoid_v2_enabled:=false \
   zone_enter_confirm_samples:=5 zone_exit_confirm_samples:=5 \
   traffic_enabled:=true rviz:=true v_base:=2.0
 ```
 
-PR #105의 새 한라대 CSV를 사용하며, 시작부터 끝까지 **01 → 03 → 04 → 05 → 07**로 주행합니다.
+현재 `integration/v2_main`의 새 한라대 CSV와 전체 미션을 실행합니다.
+주행 순서는 시작부터 끝까지 **01 → 03 → 04 → 05 → 07**이며, 03의 T 주차·04의 회피/평행 주차·zone [3]의 Traffic/GPS 단독주행을 포함합니다.
 02는 다른 시작 분기, 06은 다른 종료 분기이므로 01~07을 모두 순서대로 주행하는 구성은 아닙니다.
 경로를 바꾸려면 `start_waypoint`와 `end_waypoint`를 수정합니다.
 센서·상위 제어·RViz와 실제 CAN 송신을 시작하고, 4번 출발 인가를 기다립니다.
