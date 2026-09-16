@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #ifndef ADAS_MGM__TEST__MANAGER_TEST_FIXTURE_HPP_
 #define ADAS_MGM__TEST__MANAGER_TEST_FIXTURE_HPP_
 #include "core/mgm_step.hpp"
@@ -82,7 +83,7 @@ struct Run
   }
   void ready()
   {
-    if (st.managers.mission != MissionState::MISSION_PREPARE) {return;}
+    if (st.managers.mission != legacy::MISSION_PREPARE) {return;}
     const bool updated=s.parking_updated;
     const auto mode=s.parking_mission_mode;
     s.parking_updated=true;

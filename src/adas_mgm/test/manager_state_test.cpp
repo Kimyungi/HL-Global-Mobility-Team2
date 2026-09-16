@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "core/mgm_step.hpp"
 #include <cmath>
 #include <cstdio>
@@ -113,7 +114,7 @@ void mission()
   r.mission(); check(r.out.mission==MissionState::MISSION_ACTIVE && r.out.mission_start &&
     r.out.path_source==MGM_SRC_PARKING,"21: Mission Zone entry starts typed mission");
   r.s.auto_estop=true; r.obstacle();
-  check(r.out.avoid==AvoidState::INACTIVE && r.out.safety!=SafetyState::AUTO_ESTOP,"22: parking masks ordinary avoidance and LiDAR estop");
+  check(r.out.avoid==AvoidState::INACTIVE && r.out.safety!=legacy::AUTO_ESTOP,"22: parking masks ordinary avoidance and LiDAR estop");
   r.s.parking_updated=true; r.s.parking_done=false; r.tick();
   check(r.out.v_ref<0 && r.out.speed_owner==SpeedOwner::MISSION,"parking speed owns output after fresh acknowledgement");
   r.s.external_stop=true; r.tick(); check(r.out.v_ref==0,"parking must honor operator/CAN stop");
@@ -136,10 +137,10 @@ void mission()
 void safety()
 {
   Run r; r.tick(); r.s.auto_estop=true; r.tick();
-  check(r.out.safety==SafetyState::AUTO_ESTOP && r.out.immediate_stop && r.out.v_ref==0,"25: auto estop brakes");
+  check(r.out.safety==legacy::AUTO_ESTOP && r.out.immediate_stop && r.out.v_ref==0,"25: auto estop brakes");
   r.st.params.escape_after_cycles=1000; // existing documented 10s setting, runtime default stays disabled
-  r.tick(998); check(r.out.safety==SafetyState::AUTO_ESTOP,"26: stuck 999 cycles does not reverse");
-  r.tick(); check(r.out.safety==SafetyState::REVERSE_RECOVERY && r.out.v_ref<0 &&
+  r.tick(998); check(r.out.safety==legacy::AUTO_ESTOP,"26: stuck 999 cycles does not reverse");
+  r.tick(); check(r.out.safety==legacy::REVERSE_RECOVERY && r.out.v_ref<0 &&
     r.out.path_source==MGM_SRC_ESCAPE,"26: existing 1000 cycle condition starts existing recovery ref");
   r.s.auto_estop=false; r.gps_zone(true); r.tick();
   check(r.out.safety==SafetyState::NORMAL && r.out.nav==NavState::GPS_ONLY_NAV &&

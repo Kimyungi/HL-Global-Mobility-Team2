@@ -1,3 +1,4 @@
+#include "core/legacy_state_ids.hpp"
 #include "manager_test_fixture.hpp"
 #include <initializer_list>
 #include <limits>
@@ -145,7 +146,7 @@ int main() {
     check(r.out.v_ref>0 && r.out.path_source==MGM_SRC_GPS && r.out.avoid==AvoidState::INACTIVE,
       "GPS recovery resumes search; ordinary Avoidance cannot take over the search route");
     r.s.auto_estop=true;r.tick();
-    check(r.out.v_ref>0 && r.out.safety!=SafetyState::AUTO_ESTOP && r.out.avoid==AvoidState::INACTIVE,
+    check(r.out.v_ref>0 && r.out.safety!=legacy::AUTO_ESTOP && r.out.avoid==AvoidState::INACTIVE,
       "Parking search masks LiDAR E-stop and ordinary avoidance before readiness");
     r.s.auto_estop=false;r.s.external_stop=true;r.tick();
     check(r.out.v_ref==0 && (r.out.safe_stop_reasons&SAFE_STOP_EXTERNAL),"external stop applies during GPS search");
@@ -210,13 +211,13 @@ int main() {
     check(r.out.avoid==AvoidState::AVOID_ACTIVE && r.out.path_source==MGM_SRC_AVOID && r.out.v_ref>0,
       "enabled avoidance takes control during ordinary GPS-only navigation");
     r.s.auto_estop=true;r.tick();
-    check(r.out.v_ref==0 && r.out.safety==SafetyState::AUTO_ESTOP,
+    check(r.out.v_ref==0 && r.out.safety==legacy::AUTO_ESTOP,
       "ordinary driving honors a fresh LiDAR E-stop");
     start(r,type);
-    check(r.out.avoid==AvoidState::INACTIVE && r.out.safety!=SafetyState::AUTO_ESTOP && r.out.v_ref>0,
+    check(r.out.avoid==AvoidState::INACTIVE && r.out.safety!=legacy::AUTO_ESTOP && r.out.v_ref>0,
       "Zone entry clears existing avoidance and E-stop in the same control tick");
     execute(r);
-    check(r.out.avoid==AvoidState::INACTIVE && r.out.safety!=SafetyState::AUTO_ESTOP && r.out.v_ref<0,
+    check(r.out.avoid==AvoidState::INACTIVE && r.out.safety!=legacy::AUTO_ESTOP && r.out.v_ref<0,
       "Parking execution also masks continuously asserted ordinary danger");
     r.s.external_stop=true;r.tick();
     check(r.out.v_ref==0 && (r.out.safe_stop_reasons&SAFE_STOP_EXTERNAL),
@@ -226,7 +227,7 @@ int main() {
       "Parking still stops for an unavailable maneuver reference");
     r.s.parking_path.n=1;r.s.parking_done=true;r.s.parking_mission_active=false;r.tick();
     check(r.out.mission==MissionState::MISSION_IDLE && r.out.v_ref==0 &&
-      r.out.safety==SafetyState::AUTO_ESTOP,
+      r.out.safety==legacy::AUTO_ESTOP,
       "leaving Parking immediately restores LiDAR E-stop");
     r.s.auto_estop=false;r.tick(2);
     check(r.out.avoid==AvoidState::AVOID_ACTIVE && r.out.path_source==MGM_SRC_AVOID && r.out.v_ref>0,

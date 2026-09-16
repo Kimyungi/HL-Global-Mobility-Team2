@@ -5,21 +5,20 @@ RouteControl route
 uint32 SAFE_STOP_ROUTE_SEQUENCE=512
 uint8 MISSION_IDLE=0
 uint8 MISSION_ACTIVE=1
-uint8 MISSION_PREPARE=2
 # 0=AUTONOMOUS_ENABLE, 1=AUTONOMOUS_DRIVE, 2=FINISH
 uint8 top
 # 0=LINE, 1=GPS_BACKUP, 2=GPS_ONLY_NAV
 uint8 navigation
-# 0=INACTIVE, 1=AVOID_ACTIVE, 2=CLEAR_CONFIRM (historical), 3=GPS_RETURN (still AVOID)
+# 0=INACTIVE, 1=AVOID_ACTIVE, 3=GPS_RETURN (still AVOID)
 uint8 avoidance
 float32 avoid_return_cross_track_m
 float32 avoid_return_yaw_error_rad
 bool avoid_return_error_valid
 # 0=SIGNAL_IDLE, 1=RED_DETECTED, 2=APPROACH_STOP_LINE, 3=STOPPED_WAIT
 uint8 signal
-# 0=NORMAL, 1=AUTO_ESTOP (legacy), 2=REVERSE_RECOVERY (legacy), 3=SAFE_STOP, 4=ESTOP
+# 0=NORMAL, 3=SAFE_STOP, 4=ESTOP
 uint8 safety
-# 0=MISSION_IDLE, 1=MISSION_ACTIVE, 2=MISSION_PREPARE
+# 0=MISSION_IDLE, 1=MISSION_ACTIVE
 uint8 mission
 # 0=NONE, 1=T_PARKING, 2=PARALLEL_PARKING
 uint8 mission_type

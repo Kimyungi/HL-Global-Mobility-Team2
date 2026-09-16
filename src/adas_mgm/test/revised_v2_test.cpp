@@ -26,6 +26,15 @@ struct V2 : Run {
   }
 };
 int main() {
+  { V2 r;
+    check(r.st.params.parking_zone_entry_active == 1,"v09.16 fixes active-entry policy even with old false parameter");
+    r.tick(); r.prepare();
+    check(r.out.mission == MissionState::MISSION_ACTIVE && r.out.mission_prepare,
+      "zone entry starts preparation inside ACTIVE, without a PREPARE state");
+    r.tick(5);
+    check(r.out.mission == MissionState::MISSION_ACTIVE,
+      "missing readiness cannot fall back to removed PREPARE state"); }
+
   { V2 r; r.s.gps_fix_quality=5; r.s.lane_confidence=.1f; r.tick(50);
     check(r.out.v_ref==0 && r.out.nav==NavState::GPS_BACKUP,"low lane + FLOAT stops");
     r.s.lane_confidence=.5f; r.tick(60); check(r.out.v_ref==0,"mid-confidence cannot bypass recovery hysteresis");

@@ -164,6 +164,7 @@ DecisionBackend::DecisionBackend(
       throw std::invalid_argument("route sequence requires parallel managers");
     }
     mgm_init(core_state_, params_);
+    params_ = core_state_.params;  // expose the effective v09.16 policy to diagnostics/dumps
     return;
   }
   if (requested != "generated") {

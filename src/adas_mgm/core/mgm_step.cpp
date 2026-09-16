@@ -771,6 +771,8 @@ void mgm_init(CoreState & st, const CoreParams & params)
 {
   st = CoreState{};
   st.params = params;
+  // State v09.16 has no separate Mission preparation state.
+  if (st.params.revised_v2_enabled) {st.params.parking_zone_entry_active = 1;}
   st.managers.recovery.measured_distance_complete = true;
   st.state = MGM_STATE_LANE;
   st.traffic_entry_state = MGM_STATE_LANE;
