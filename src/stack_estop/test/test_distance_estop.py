@@ -1,10 +1,45 @@
 import math
 import unittest
+from types import SimpleNamespace
 
-from stack_estop.node import DistanceEstopController, analyze_corridor_scan
+from stack_estop.node import (DistanceEstopController, analyze_corridor_scan,
+                              rear_clear_level, rear_corridor_clear,
+                              rear_scan_healthy)
 
 
 YAW = 1.57079632679
+
+
+def rear_scan(distance=math.inf, *, frame='base_link'):
+    ranges = [math.inf] * 360
+    ranges[0] = distance  # -pi: 차량 바로 뒤
+    return SimpleNamespace(
+        header=SimpleNamespace(frame_id=frame), ranges=ranges,
+        angle_min=-math.pi, angle_increment=math.pi / 180,
+        range_min=0.15, range_max=12.0)
+
+
+class RearClearTest(unittest.TestCase):
+    def test_rear_corridor(self):
+        self.assertTrue(rear_corridor_clear(rear_scan(1.0)))
+        self.assertFalse(rear_corridor_clear(rear_scan(0.35)))
+        self.assertFalse(rear_corridor_clear(rear_scan(1.0, frame='laser')))
+        scan = rear_scan()
+        scan.ranges[90] = 0.25  # 옆쪽은 후진 통로 밖
+        self.assertTrue(rear_corridor_clear(scan))
+
+    def test_rear_sensor_health(self):
+        self.assertTrue(rear_scan_healthy(rear_scan(1.0)))
+        self.assertFalse(rear_scan_healthy(rear_scan()))
+
+    def test_rear_clear_requires_fresh_inputs(self):
+        args = [True, True, True, True, 0.1, 0.1, 0.35, 0.25]
+        self.assertTrue(rear_clear_level(*args))
+        for index, bad in ((0, False), (1, False), (2, False),
+                           (3, False), (4, None), (5, 0.3)):
+            changed = args.copy()
+            changed[index] = bad
+            self.assertFalse(rear_clear_level(*changed))
 
 
 def front_cluster(distance, count=3):

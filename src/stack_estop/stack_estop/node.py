@@ -18,6 +18,60 @@ def combine_estop_levels(scan_timeout, static_estop, dynamic_estop):
     return bool(scan_timeout or static_estop or dynamic_estop)
 
 
+def rear_scan_healthy(scan):
+    """A live rear sensor must provide a geometrically valid scan with returns."""
+    return bool(
+        scan.ranges
+        and math.isfinite(scan.angle_min)
+        and math.isfinite(scan.angle_increment)
+        and scan.angle_increment != 0.0
+        and any(math.isfinite(r) and scan.range_min <= r <= scan.range_max
+                for r in scan.ranges)
+    )
+
+
+def rear_corridor_clear(scan, *, rear_bumper_x_m=-0.09,
+                        half_width_m=0.40, min_clearance_m=0.35):
+    """Check the rear travel corridor in a fused base_link LaserScan."""
+    if (scan.header.frame_id != 'base_link' or not scan.ranges or
+            not math.isfinite(scan.angle_min) or
+            not math.isfinite(scan.angle_increment) or
+            scan.angle_increment <= 0.0 or
+            not math.isfinite(scan.range_min) or
+            not math.isfinite(scan.range_max) or
+            scan.range_min <= 0.0 or scan.range_max <= scan.range_min):
+        return False
+    angle_max = scan.angle_min + (len(scan.ranges) - 1) * scan.angle_increment
+    # A front-only scan must never certify rear clearance.
+    if scan.angle_min > -math.pi + 0.1 or angle_max < math.pi - 0.1:
+        return False
+    for index, distance in enumerate(scan.ranges):
+        angle = scan.angle_min + index * scan.angle_increment
+        if abs(angle) < math.pi / 2:
+            continue
+        if math.isnan(distance) or distance == -math.inf:
+            return False
+        if not math.isfinite(distance):
+            continue  # +inf means no return in this angular bin.
+        if distance < scan.range_min or distance > scan.range_max:
+            return False
+        x = distance * math.cos(angle)
+        y = distance * math.sin(angle)
+        if x < rear_bumper_x_m and abs(y) <= half_width_m and \
+                rear_bumper_x_m - x <= min_clearance_m:
+            return False
+    return True
+
+
+def rear_clear_level(enabled, sensor_healthy, corridor_clear,
+                     front_scan_fresh, rear_age_s, fused_age_s,
+                     rear_timeout_s, fused_timeout_s):
+    return bool(enabled and sensor_healthy and corridor_clear and
+                front_scan_fresh and rear_age_s is not None and
+                fused_age_s is not None and 0 <= rear_age_s <= rear_timeout_s
+                and 0 <= fused_age_s <= fused_timeout_s)
+
+
 class DistanceEstopController:
     """Scan-driven E-Stop hysteresis independent of perception tracking."""
 
@@ -254,6 +308,12 @@ class StackEstopNode(Node):
         self.declare_parameter('max_index_gap', 1)
         self.declare_parameter('max_neighbor_distance_m', 0.12)
         self.declare_parameter('laser_yaw_in_base_rad', 1.57079632679)
+        self.declare_parameter('rear_clear_enabled', False)
+        self.declare_parameter('rear_scan_timeout_sec', 0.35)
+        self.declare_parameter('rear_fused_timeout_sec', 0.25)
+        self.declare_parameter('rear_bumper_x_m', -0.09)
+        self.declare_parameter('rear_corridor_half_width_m', 0.40)
+        self.declare_parameter('rear_min_clearance_m', 0.35)
         # Must match stack_avoid's lidar_mount.forward_angle_deg=270.0;
         # update both when the shared LiDAR is remounted.
         self.declare_parameter('debug_log_period_sec', 0.20)
@@ -379,6 +439,12 @@ class StackEstopNode(Node):
         self.last_debug_log_time = None
         self.last_status_publish_time = None
         self.last_static_nearest_x = None
+        self.rear_clear_enabled = bool(
+            self.get_parameter('rear_clear_enabled').value)
+        self.rear_scan_healthy = False
+        self.rear_fused_clear = False
+        self.last_rear_scan_time = None
+        self.last_rear_fused_time = None
 
         self.get_logger().info(
             '[ESTOP CONFIG] '
@@ -416,9 +482,44 @@ class StackEstopNode(Node):
         self.subscription = self.create_subscription(
             LaserScan, '/scan', self.scan_callback, qos_profile_sensor_data
         )
+        if self.rear_clear_enabled:
+            self.rear_subscription = self.create_subscription(
+                LaserScan, '/lidar/a2/scan', self.rear_scan_callback,
+                qos_profile_sensor_data)
+            self.rear_fused_subscription = self.create_subscription(
+                LaserScan, '/unified_lidar/scan', self.rear_fused_callback,
+                qos_profile_sensor_data)
         self.timer = self.create_timer(
             self.publish_period_sec, self.publish_heartbeat
         )
+
+    def rear_scan_callback(self, msg):
+        self.rear_scan_healthy = rear_scan_healthy(msg)
+        self.last_rear_scan_time = self.get_clock().now()
+
+    def rear_fused_callback(self, msg):
+        self.rear_fused_clear = rear_corridor_clear(
+            msg,
+            rear_bumper_x_m=float(self.get_parameter('rear_bumper_x_m').value),
+            half_width_m=float(
+                self.get_parameter('rear_corridor_half_width_m').value),
+            min_clearance_m=float(
+                self.get_parameter('rear_min_clearance_m').value))
+        self.last_rear_fused_time = self.get_clock().now()
+
+    @property
+    def rear_clear(self):
+        now = self.get_clock().now()
+        rear_age = None if self.last_rear_scan_time is None else \
+            (now - self.last_rear_scan_time).nanoseconds * 1e-9
+        fused_age = None if self.last_rear_fused_time is None else \
+            (now - self.last_rear_fused_time).nanoseconds * 1e-9
+        return rear_clear_level(
+            self.rear_clear_enabled, self.rear_scan_healthy,
+            self.rear_fused_clear, not self.scan_timeout_active,
+            rear_age, fused_age,
+            float(self.get_parameter('rear_scan_timeout_sec').value),
+            float(self.get_parameter('rear_fused_timeout_sec').value))
 
     def scan_callback(self, msg):
         scan_stamp = (
@@ -555,6 +656,9 @@ class StackEstopNode(Node):
             },
             'scan_timeout': bool(scan_timeout),
             'final_estop': self.current_final_estop,
+            'rear_clear': self.rear_clear,
+            'rear_scan_healthy': self.rear_scan_healthy,
+            'rear_fused_clear': self.rear_fused_clear,
         }
         message = String()
         message.data = json.dumps(status, allow_nan=False)
@@ -601,6 +705,7 @@ class StackEstopNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
         msg.estop = self.current_final_estop
+        msg.rear_clear = self.rear_clear
         self.pub.publish(msg)
 
     def publish_heartbeat(self):

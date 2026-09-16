@@ -103,8 +103,8 @@ mgm_node:
     # ESTOP 상태: 10초 정지 후 실제 장애물이 남아 있고 후방 여유 및
     # 차속 피드백이 확인되면 직선 후진한다. 실제 후진 거리 1m에서 종료하며,
     # 5초 상한 안에 1m를 채우지 못하면 ESTOP 정지 상태를 유지한다.
-    # stack_estop의 rear_clear 산출은 아직 미구현이므로, 후방 센서가
-    # 연결되기 전에는 기본 안전 게이트가 후진을 막는다.
+    # 4-LiDAR 주행 launch에서 stack_estop이 rear_clear를 산출한다.
+    # 후방 센서/융합 스캔이 없거나 오래되면 기본 안전 게이트가 후진을 막는다.
     escape_after_cycles: 1000
     v_escape: -0.3
     escape_max_cycles: 500

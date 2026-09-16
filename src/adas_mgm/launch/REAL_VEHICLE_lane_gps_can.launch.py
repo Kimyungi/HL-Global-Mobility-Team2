@@ -649,6 +649,8 @@ def generate_launch_description():
                 "' == 'true' else '/scan'",
             ]))],
             parameters=[{
+                'rear_clear_enabled': ParameterValue(
+                    LaunchConfiguration('parking_enabled'), value_type=bool),
                 'laser_yaw_in_base_rad': ParameterValue(
                     LaunchConfiguration('laser_yaw_in_base_rad'), value_type=float),
                 'corridor_max_x_m': ParameterValue(
