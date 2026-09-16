@@ -18,7 +18,7 @@ constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
 // 20점으로 보간하면 첫 점이 목표의 1/20(1.5m 목표 → 0.075m)이라 정상값도 작다.
 constexpr float MGM_MIN_REF_X = 0.01f;
 
-// CLAUDE.md §4 스테이트 5개 — TargetRef.msg의 STATE_* 상수와 값 일치
+// 스테이트 6개 — TargetRef.msg의 STATE_* 상수와 값 일치
 enum : uint8_t
 {
   MGM_STATE_LANE = 0,
@@ -26,6 +26,7 @@ enum : uint8_t
   MGM_STATE_AVOID = 2,
   MGM_STATE_PARKING = 3,
   MGM_STATE_TRAFFIC = 4,
+  MGM_STATE_ESTOP = 5,
 };
 
 // 스테이트가 고른 횡방향 경로 소스
@@ -42,9 +43,7 @@ enum : uint8_t
   MGM_SRC_ESCAPE = 4,
 };
 
-// 후진 탈출 페이즈 (CoreState.escape_phase) — AVOID 스테이트 **안의** 단계다.
-// 스테이트로 승격하지 않는 이유: 후진은 새 횡방향 경로 소스를 만드는 일이 아니라
-// 회피를 성립시키기 위한 준비 동작이고, §4가 정지를 스테이트에서 뺀 것과 같은 계열이다.
+// ESTOP 스테이트 내부 후진 페이즈.
 enum : uint8_t
 {
   MGM_ESCAPE_NONE = 0,       // 평시
@@ -211,18 +210,8 @@ struct CoreParams
   //   켜면 구간 밖 장애물의 유일한 방어선은 stack_estop 이다.
   int32_t avoid_zone_only;
 
-  // ── 후진 탈출 (2026-08-24 신설, §4 우선권 표 / AVOID 진입 페이즈).
-  //
-  // 푸는 문제: 회피 불가 장애물 앞에서 estop이 걸리면 차가 영영 못 빠져나온다.
-  // estop은 레벨 신호라 장애물이 치워져야 풀리는데, 시험 코스에서는 치워질 일이
-  // 없는 경우가 있다(길을 막은 구조물·주차된 차). 그러면 v_ref 0 으로 무한 대기다.
-  // 그래서 estop이 충분히 오래 유지되면 **곧게 조금 물러나** 회피가 성립하는
-  // 거리를 만들고 AVOID 로 넘어간다.
-
-  // estop이 이 틱수만큼 **연속** 유지되면 후진을 개시한다. 0 이하 = 기능 끔(구동작).
-  // 1000틱 = 10s. 카운터는 **실제 EstopRequest 인가**로만 센다(estop_latch_release) —
-  // §5.7 watchdog 보정이나 wait_go 대기로 걸린 estop 은 세지 않는다. 이게 없으면
-  // 출발 인가 전 대기 중에 차가 스스로 후진한다.
+  // ESTOP 상태에서 실제 장애물이 10초 지속되면 후진을 개시한다.
+  // 0이면 이 상태 기능을 끄고 기존 스테이트별 즉시 정지를 사용한다.
   int32_t escape_after_cycles;
 
   // 후진 목표 속도 [m/s]. **반드시 음수** — 0 이상이면 기능이 꺼진다(안전 불변식).
@@ -306,6 +295,9 @@ struct CoreState
   // 10초 뒤 차가 스스로 뒤로 물러난다. 한 번이라도 굴러간 뒤에만 "갇혔다"고
   // 말할 수 있다.
   bool escape_armed;
+  uint8_t estop_return_state;  // ESTOP 진입 전 상태
+  bool estop_escape_done;      // 같은 장애물에서 후진 반복 금지
+  float escape_distance_m;     // 실측 차속으로 적분한 후진 거리
   // ── 신호등 정지 (§4, MGM_STATE_TRAFFIC). TRAFFIC 진입 전 주행 상태.
   // 정지 중 횡방향 경로와 green 해제 뒤 복귀 상태를 동일하게 결정한다.
   uint8_t traffic_entry_state;

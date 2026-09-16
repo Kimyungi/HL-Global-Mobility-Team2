@@ -61,6 +61,66 @@ bool paths_equal(const CorePoint * a, const CorePoint * b, int32_t n)
 // ── 판단: 스테이트 전이 (§4 전이 조건표)
 void transition(const CoreSnapshot & s, CoreState & st)
 {
+  // ESTOP은 다른 전이보다 우선한다. 후진 완료 뒤에도 입력이 유지되면
+  // 재진입하지 않고 원래 상태의 정지 우선권으로 멈춘다.
+  if (!s.estop) {
+    st.estop_escape_done = false;
+  }
+  if (st.state == MGM_STATE_ESTOP ||
+    (st.params.escape_after_cycles > 0 && s.estop && !st.estop_escape_done))
+  {
+    if (st.state != MGM_STATE_ESTOP) {
+      st.estop_return_state = st.state;
+      st.state = MGM_STATE_ESTOP;
+      st.estop_hold_cnt = 0;
+      st.escape_ticks = 0;
+      st.escape_distance_m = 0.0f;
+      st.escape_phase = MGM_ESCAPE_NONE;
+    }
+    if (!s.estop) {
+      st.state = st.estop_return_state;
+      st.escape_phase = MGM_ESCAPE_NONE;
+      st.estop_hold_cnt = 0;
+      return;
+    }
+    const bool rear_ok = st.params.escape_require_rear_clear == 0 || s.estop_rear_clear;
+    const bool escape_usable = st.params.escape_after_cycles > 0 &&
+      st.params.escape_max_cycles > 0 && st.params.v_escape < 0.0f &&
+      st.escape_armed && s.estop_latch_release && rear_ok &&
+      s.vehicle_speed_valid && std::isfinite(s.vehicle_speed);
+    if (s.estop_latch_release && st.estop_hold_cnt < st.params.escape_after_cycles) {
+      ++st.estop_hold_cnt;
+    }
+    if (st.escape_phase == MGM_ESCAPE_REVERSING) {
+      if (!escape_usable) {
+        st.escape_phase = MGM_ESCAPE_NONE;
+        st.estop_hold_cnt = 0;
+      } else {
+        // 음수 속도만 후진 거리로 센다. 명령 속도로 추정하면 바퀴가
+        // 막힌 경우에도 1m를 달렸다고 잘못 판단한다.
+        st.escape_distance_m += max_f(0.0f, -s.vehicle_speed) * MGM_PERIOD_S;
+        ++st.escape_ticks;
+        if (st.escape_distance_m >= 1.0f) {
+          st.escape_phase = MGM_ESCAPE_NONE;
+          st.estop_escape_done = true;
+          st.state = st.estop_return_state;
+          st.estop_hold_cnt = 0;
+        } else if (st.escape_ticks >= st.params.escape_max_cycles) {
+          // 거리 미달이면 ESTOP에 머물러 정지한다.
+          st.escape_phase = MGM_ESCAPE_NONE;
+          st.estop_escape_done = true;
+        }
+      }
+    } else if (!st.estop_escape_done && escape_usable &&
+      st.estop_hold_cnt >= st.params.escape_after_cycles)
+    {
+      st.escape_phase = MGM_ESCAPE_REVERSING;
+      st.escape_ticks = 0;
+      st.escape_distance_m = 0.0f;
+    }
+    return;
+  }
+
   // 히스테리시스 카운터 — 이탈/복귀 임계 분리, N주기 연속
   st.lane_low_cnt = (s.lane_confidence < st.params.lane_conf_exit) ? st.lane_low_cnt + 1 : 0;
   st.lane_high_cnt = (s.lane_confidence > st.params.lane_conf_return) ? st.lane_high_cnt + 1 : 0;
@@ -160,70 +220,10 @@ void transition(const CoreSnapshot & s, CoreState & st)
     }
   }
 
-  // ── 후진 탈출 (§4, 2026-08-24) — 회피 불가 장애물 앞에서 estop 이 무한히
-  // 유지되는 교착을 끊는다. estop 은 레벨 신호라 장애물이 치워져야 풀리는데,
-  // 시험 코스에서는 치워질 일이 없는 장애물이 있다. 그러면 v_ref 0 으로 영원히
-  // 서 있게 된다 — 그래서 충분히 오래 갇혀 있었으면 곧게 조금 물러나 회피가
-  // 성립하는 거리를 만들고 AVOID 로 넘어간다.
-  //
-  // 스테이트로 승격하지 않은 이유는 mgm_types.hpp 의 MGM_ESCAPE_* 주석 참조.
-  //
-  // 안전 불변식 5개 — 이 중 하나라도 무너지면 후진하지 않는다:
-  //  ① v_escape < 0        — 탈출 페이즈는 구조적으로 전진할 수 없다
-  //  ② escape_max_cycles>0 — 상한 없는 후진은 만들지 않는다
-  //  ③ escape_armed        — 한 번이라도 굴러간 뒤에만 "갇혔다"고 판정한다
-  //                          (벽을 보고 launch → 출발 인가 전 자동 후진 차단)
-  //  ④ estop_latch_release — **실제** EstopRequest 만 센다. §5.7 watchdog 보정이나
-  //                          wait_go 대기로 걸린 estop 은 교착이 아니라 안전 장치다
-  //  ⑤ 후방 여유           — escape_require_rear_clear 가 켜져 있으면 rear_clear 필수
-  const bool escape_usable =
-    st.params.escape_after_cycles > 0 &&
-    st.params.escape_max_cycles > 0 &&
-    st.params.v_escape < 0.0f;
-
-  // 주행 무장 — 직전 틱의 명령 속도가 0을 넘은 적이 있는가(transition 시점의
-  // st.v 는 아직 이전 틱 값이다). 벽을 마주 보고 launch 하면 첫 틱부터 실제
-  // estop 이 참이라 v 가 0 에서 벗어나지 못하고, 그래서 영원히 무장되지 않는다.
+  // 주행한 적이 있을 때만 estop 자동 후진을 허용한다.
   if (st.v > kStoppedSpeed) {
     st.escape_armed = true;
   }
-
-  // 실제 estop 연속 틱. wrapper 보정이 섞인 s.estop 이 아니라 s.estop_latch_release
-  // 를 쓰는 것이 ④의 핵심이다 — 이 필드는 "신선한 실제 EstopRequest 의 estop 값"이다.
-  if (s.estop_latch_release) {
-    ++st.estop_hold_cnt;
-  } else {
-    st.estop_hold_cnt = 0;
-  }
-
-  // 후방 여유 게이트 — 진입뿐 아니라 **후진 중에도 매 틱 다시 본다**.
-  // 후진하는 동안 뒤에 뭔가 들어오면 그 자리에서 멈춰야 한다.
-  const bool rear_ok =
-    (st.params.escape_require_rear_clear == 0) || s.estop_rear_clear;
-
-  if (st.escape_phase == MGM_ESCAPE_REVERSING) {
-    ++st.escape_ticks;
-    // 종료 조건 4개: 시간 상한 · 후방 막힘 · estop 해제(장애물이 사라짐) ·
-    // 기능이 런타임에 꺼짐. 어느 쪽이든 페이즈를 닫고 카운터를 리셋한다 —
-    // 리셋 덕분에 다시 갇히면 escape_after_cycles 를 새로 채워야 후진한다
-    // (연속 후진으로 트랙에서 무한히 멀어지는 것을 시간으로 막는다).
-    if (!escape_usable || !rear_ok || !s.estop_latch_release ||
-      st.escape_ticks >= st.params.escape_max_cycles)
-    {
-      st.escape_phase = MGM_ESCAPE_NONE;
-      st.escape_ticks = 0;
-      st.estop_hold_cnt = 0;
-    }
-  }
-
-  // 진입 판정 — 위 5개 불변식 + 연속 유지 시간. PARKING 은 제외한다(주차는
-  // parking_v_suggest 로 자체 후진을 하며, 그 판단은 stack_parking 소관이다).
-  const bool escape_entry =
-    escape_usable && st.escape_armed && rear_ok &&
-    st.escape_phase == MGM_ESCAPE_NONE &&
-    st.state != MGM_STATE_PARKING &&
-    st.state != MGM_STATE_TRAFFIC &&
-    st.estop_hold_cnt >= st.params.escape_after_cycles;
 
   // avoid 복귀 보류 카운터 — waypoint에서 GPS 트랙에 재합류할 시간을 벌어준다
   if (st.return_hold_left > 0) {
@@ -271,25 +271,9 @@ void transition(const CoreSnapshot & s, CoreState & st)
 
   const uint8_t prev_state = st.state;
 
-  // 후진 탈출 개시 — 어느 주행 스테이트에 있든 AVOID 로 들어가 후진 페이즈를 연다.
-  // 아래 스테이트별 전이표보다 **먼저** 본다: 교착을 끊는 동작이라, 그 교착을
-  // 만든 스테이트의 평시 전이 조건에 종속시키면 의미가 없다.
-  //
-  // AVOID 로 들어가는 이유는 두 가지다. ① 후진의 목적 자체가 "회피가 성립하는
-  // 거리를 만드는 것"이라 후진은 회피 기동의 첫 단계다 — 물러난 뒤 그대로 AVOID
-  // 안에 있으므로 별도 인수인계가 필요 없다. ② 스테이트가 CAN flags 로 나가므로
-  // 후진이 로그·dSPACE 양쪽에서 관측된다.
-  //
-  // ⚠ avoid_zone_only 게이트는 **적용하지 않는다.** 그 스위치는 "평시 회피를
-  //   지정 구간에만 쓴다"는 운용 선택이지, 구간 밖에서 갇힌 차를 갇힌 채로 두라는
-  //   뜻이 아니다. 그렇게 하면 이 기능이 풀려는 교착을 스위치가 다시 만든다.
-  if (escape_entry) {
-    st.state = MGM_STATE_AVOID;
-    st.escape_phase = MGM_ESCAPE_REVERSING;
-    st.escape_ticks = 0;
-  }
-
   switch (st.state) {
+    case MGM_STATE_ESTOP:
+      break;
     case MGM_STATE_LANE:
       if (traffic_entry) {
         st.state = MGM_STATE_TRAFFIC;
@@ -443,6 +427,15 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
   out.immediate_stop = false;
 
   switch (st.state) {
+    case MGM_STATE_ESTOP:
+      out.path_source = MGM_SRC_ESCAPE;
+      if (st.escape_phase == MGM_ESCAPE_REVERSING) {
+        out.v_ref = st.params.v_escape;
+      } else {
+        out.v_ref = 0.0f;
+        out.immediate_stop = true;
+      }
+      break;
     case MGM_STATE_LANE:
     case MGM_STATE_WAYPOINT:
       out.path_source = (st.state == MGM_STATE_LANE) ? MGM_SRC_LANE : MGM_SRC_GPS;
@@ -478,26 +471,6 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       break;
 
     case MGM_STATE_AVOID:
-      // ── 후진 탈출 페이즈 (2026-08-24) — AVOID 우선권 표의 **최상위**.
-      //
-      // 여기가 이 기능에서 가장 조심해야 할 지점이다: 후진 중에는 estop 이
-      // 참인 채로 차를 움직인다. estop 을 무시하는 유일한 자리이므로, 그
-      // 무시가 안전한 이유를 조건이 아니라 **구조**로 보장한다.
-      //   · v_escape 는 음수임이 transition() 의 escape_usable 에서 이미
-      //     확인됐다 → 이 분기는 전진 명령을 낼 수 없다. estop 을 건 장애물은
-      //     차 앞에 있고, 우리는 그 반대로만 간다.
-      //   · 경로는 인지가 준 것이 아니라 조립 블록이 만드는 직선이다
-      //     (MGM_SRC_ESCAPE) → 후진 중 조향은 중립이다.
-      //   · 시간 상한·후방 여유·estop 해제는 transition() 이 매 틱 다시 보고
-      //     페이즈를 닫는다 → 이 분기는 그 판정 결과를 속도로 옮기기만 한다.
-      //
-      // immediate_stop 을 세우지 않는 이유: rate limit 을 그대로 태워 0 →
-      // v_escape 로 완만히 물러나기 위해서다. 급후진은 그 자체가 위험하다.
-      if (st.escape_phase == MGM_ESCAPE_REVERSING) {
-        out.path_source = MGM_SRC_ESCAPE;
-        out.v_ref = st.params.v_escape;
-        break;
-      }
       out.path_source = MGM_SRC_AVOID;
       // 기동 완료 우선 — 신호등 정지 요구는 기동 이탈 후 적용 (여기서 참조하지 않음).
       // 안전 바닥: TTC < 임계 또는 긴급 정지 → 즉시 정지 (우선권 표 최상위).
@@ -587,13 +560,10 @@ const CorePath * select_path(uint8_t src, const CoreSnapshot & s)
 // ref 를 따라간다. 차 앞 왼쪽에 있는 목표점을 그대로 둔 채 뒤로 가면 차는
 // 그 목표에서 멀어지는 쪽으로 꺾인다 — 물러나면서 엉뚱한 방향으로 돌아버린다.
 // 곧게 빼는 것이 후진 탈출에서 유일하게 예측 가능한 기하다.
-constexpr float kEscapeRefSpanM = 1.5f;
-
 void build_escape_ref(CorePoint * out)
 {
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-    const float t = static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
-    out[i].x = kEscapeRefSpanM * t;
+    out[i].x = -1.0f;
     out[i].y = 0.0f;
     out[i].yaw = 0.0f;
     out[i].curvature = 0.0f;
@@ -615,7 +585,7 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   if (escape) {
     build_escape_ref(target);
   }
-  const int32_t n = escape ? MGM_NUM_POINTS :
+  const int32_t n = escape ? 1 :
     (path->n < MGM_NUM_POINTS ? path->n : MGM_NUM_POINTS);
   const int32_t last = n - 1;
   if (!escape) {
@@ -630,7 +600,7 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   // "1점=str 무반응" 실측의 재확인이며, "원인은 저속"이라는 2026-08-10 재해석을 반증.
   // dSPACE 수정 없이 PC 조립에서 해결 — 와이어에는 항상 다점이 실린다.
   int32_t n_wire = n;
-  if (n == 1) {
+  if (n == 1 && !escape) {
     const CorePoint tgt = path->pts[0];
     const float yaw = atan2f(tgt.y, tgt.x);
     // ★ 등간격(첫 점 = 목표/20 ≈ 7.5cm)은 **의도적으로 유지한다.** 첫 점이
@@ -668,6 +638,14 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
 
   st.n_out = n_wire;
 
+  if (escape) {
+    // 비상 후진 ref는 첫 틱부터 정확히 (-1,0,0,0)이어야 한다.
+    st.ref_out[0] = target[0];
+    st.n_out = 1;
+    st.last_src = src;
+    st.blend_left = 0;
+    return;
+  }
   if (src != st.last_src) {  // 스테이트 전환 → ref 불연속 방지 블렌드 시작
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.blend_from[i] = st.ref_out[i];
