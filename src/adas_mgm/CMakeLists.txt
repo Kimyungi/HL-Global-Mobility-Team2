@@ -253,7 +253,7 @@ if(BUILD_TESTING)
 endif()
 
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS tools/go tools/start_readiness.py tools/state tools/can_watchdog_check.py
+install(PROGRAMS tools/estop_recovery_node.py tools/estop_recovery_core.py tools/go tools/start_readiness.py tools/state tools/can_watchdog_check.py
   tools/straight_lane_publisher.py tools/analyze_mission_calibration.py tools/integration_view.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})

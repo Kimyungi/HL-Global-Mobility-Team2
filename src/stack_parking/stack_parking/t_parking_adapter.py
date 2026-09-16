@@ -35,6 +35,7 @@ class ReferenceParkingAdapter:
         self.started = -math.inf
         self.route_identity = None
         self.last_phase = None
+        self.estop_pause_since = None
         self.subs = [node.create_subscription(GpsPath,'/perception/gps_path',self.on_gps,1),
                      node.create_subscription(VehicleVector,str(node._p('vehicle_topic')),self.on_vehicle,qos_profile_sensor_data),
                      node.create_subscription(MgmState,'/adas/mgm_state',self.on_mgm,1)]
@@ -110,6 +111,15 @@ class ReferenceParkingAdapter:
         n, core = self.node, self.core
         now = n._clock_s()
         gps, vehicle, mgm = self.gps,self.vehicle,self.mgm
+        if mgm and getattr(mgm, 'estop_active', False):
+            if self.estop_pause_since is None:
+                self.estop_pause_since = now
+            return True  # upper ESTOP owns motion; freeze parking progression
+        if self.estop_pause_since is not None:
+            if core.wait_since is not None:
+                core.wait_since += now-self.estop_pause_since
+            core.stopped_since = None
+            self.estop_pause_since = None
         if (core.phase == 'DONE' and mgm and fresh(stamp_s(mgm.header.stamp),now,.25)
             and mgm.mission_request_id == self.request_id and mgm.mission_completed
             and not mgm.mission_request_active):

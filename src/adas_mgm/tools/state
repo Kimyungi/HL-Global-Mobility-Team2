@@ -11,7 +11,7 @@ from fma_interfaces.msg import TargetRef, MgmState
 
 NAMES = {
     0: 'LANE(차선)', 1: 'WAYPOINT(GPS)', 2: 'AVOID(회피)',
-    3: 'PARKING(주차)', 4: 'TRAFFIC(신호등)',
+    3: 'PARKING(주차)', 4: 'TRAFFIC(신호등)', 5: 'ESTOP(회복)',
 }
 
 

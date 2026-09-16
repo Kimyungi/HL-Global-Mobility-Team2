@@ -6,8 +6,8 @@
 #include <cmath>
 
 namespace adas_mgm {
-// Transition contract only. A future executor must echo this episode ID and
-// publish fresh geometry/completion. No historical timed reverse is substituted.
+// Upper transition contract. The PR108 executor echoes the episode ID and
+// publishes measured one-metre recovery completion; hazard clearing is not completion.
 inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
   auto & m = st.managers;
   bool trigger = false;
@@ -74,6 +74,7 @@ inline void estop_decision(const CoreSnapshot & s, const CoreState & st, CoreOut
   ref.valid = ref.fresh && s.recovery_request_id == m.estop_request_id &&
     s.recovery_path.n == MGM_CONTROL_POINTS &&
     reference_geometry_valid(s.recovery_path.pts, s.recovery_path.n) && std::isfinite(s.recovery_speed);
+  out.state = MGM_STATE_ESTOP;
   out.path_source = MGM_SRC_ESCAPE;
   out.safety = SafetyState::ESTOP;
   out.speed_owner = SpeedOwner::SAFETY;

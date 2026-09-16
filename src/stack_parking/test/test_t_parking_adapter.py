@@ -54,6 +54,7 @@ class AdapterTests(unittest.TestCase):
         a.route_csv=Path('route03.csv').resolve();a.core=None;a.request_id=0
         a.active=a.authorized=False;a.started=-math.inf;a.route_identity=None;a.last_phase=None
         a.gps=a.vehicle=a.mgm=None;a.scans={k:None for k in ('a1','a2','b1')}
+        a.estop_pause_since=None
         a.phase_pub=NS(publish=lambda _:None)
         self.send(1,100)
 
@@ -77,6 +78,17 @@ class AdapterTests(unittest.TestCase):
         for _ in range(15): self.supply();self.adapter.tick()
         self.assertTrue(self.messages[-1].preparation_ready)
         self.assertEqual(self.adapter.core.phase,'ADVANCE_3')
+
+    def test_estop_freezes_parking_progress(self):
+        self.ready(); self.send(2); self.supply()
+        a=self.adapter; phase=a.core.phase; count=len(self.messages)
+        a.mgm.estop_active=True
+        a.tick()
+        self.assertEqual(a.core.phase,phase)
+        self.assertEqual(len(self.messages),count)
+        self.assertIsNotNone(a.estop_pause_since)
+        self.supply();a.tick()
+        self.assertIsNone(a.estop_pause_since)
 
     def test_prepare_selects_but_cannot_drive_until_activate(self):
         self.ready()

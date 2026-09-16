@@ -27,6 +27,7 @@ enum : uint8_t
   MGM_STATE_AVOID = 2,
   MGM_STATE_PARKING = 3,
   MGM_STATE_TRAFFIC = 4,
+  MGM_STATE_ESTOP = 5,
 };
 
 // 스테이트가 고른 횡방향 경로 소스

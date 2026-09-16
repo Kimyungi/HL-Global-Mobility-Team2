@@ -66,7 +66,7 @@ int main() {
     check(r.out.safety==SafetyState::ESTOP && r.out.v_ref==0,"third same-sensor hit enters ESTOP; missing executor holds zero");
     r.s.recovery_request_id=1; r.s.recovery_done=true; r.tick(); check(r.st.managers.estop_active,"wrong episode done ignored");
     r.recovered(); check(near(r.out.v_ref,-.2f) && r.out.ref_points[0].x==-1,"executor geometry/speed used without legacy reverse generator");
-    r.s.sensor_alive_mask=0; r.tick(); check(r.out.v_ref<0 && r.out.safety==SafetyState::ESTOP,"all sensor loss does not interrupt recovery");
+    r.s.sensor_alive_mask=0; r.tick(); check(r.out.state==MGM_STATE_ESTOP && r.out.v_ref<0 && r.out.safety==SafetyState::ESTOP,"all sensor loss does not interrupt recovery");
     r.s.external_stop=true; r.tick(); check(r.out.v_ref==0,"operator/CAN stop overrides recovery");
     r.s.external_stop=false; r.s.sensor_alive_mask=1; r.recovered(true);
     check(!r.st.managers.estop_active && r.out.nav==NavState::LINE,"completion returns previous state");

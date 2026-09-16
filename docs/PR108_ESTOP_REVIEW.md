@@ -1,7 +1,8 @@
 # PR #108 ESTOP 검토
 
 2026-09-16. 대상: https://github.com/Kimyungi/HL-Global-Mobility-Team2/pull/108
-이 문서는 검토 결과이며 PR #108 코드를 적용하거나 병합하지 않았다.
+이하 표는 적용 전 검토 기록이다. 이후 사용자 승인으로 현재 상위 ESTOP에 맞춰 통합했다.
+[후속 적용 보고서](V2_PR108_INTEGRATION.md)를 현재 계약으로 사용한다.
 
 PR은 main 대상이며 현재 주행 메인은 integration/v2_main이다.
 실제 EstopRequest가 유지되면 10초 후 후방 여유·차속 조건을 확인해 -0.3m/s로 후진한다.

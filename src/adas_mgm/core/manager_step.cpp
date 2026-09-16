@@ -745,7 +745,7 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
     out.immediate_stop = true;
     out.speed_owner = m.top == TopState::FINISH ? SpeedOwner::FINISH : SpeedOwner::SAFETY;
   }
-  out.state = legacy_state_projection(st);
+  out.state = s.revised_v2 && m.estop_active ? MGM_STATE_ESTOP : legacy_state_projection(st);
   return out;
 }
 }  // namespace adas_mgm
