@@ -51,6 +51,7 @@ case "$V2_ACTION" in
       src/stack_traffic/test src/adas_mgm/test/test_reference_metadata.py \
       src/adas_mgm/test/test_mission_calibration.py src/adas_mgm/test/test_start_readiness.py \
       scripts/test_v2_preparation.py scripts/test_v2_launch.py scripts/test_revised_v2_launch.py \
+      scripts/test_v2_start_selection.py \
       scripts/test_v2_recover_lidars.py scripts/test_v2_front_lidar.py
     ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=181 /usr/bin/python3 -m pytest -q \
       src/adas_mgm/test/test_integration_view.py
@@ -100,7 +101,9 @@ case "$V2_ACTION" in
     ;;
   prepare|drive)
     shift
-    exec ros2 launch "$V2_ROOT/src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py" "$@"
+    source "$V2_ROOT/scripts/v2_select_start.sh"
+    v2_select_start "$@"
+    exec ros2 launch "$V2_ROOT/src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py" "${V2_LAUNCH_ARGS[@]}"
     ;;
   vehicle|vehicle-no-estop)
     echo 'Retired v2 launcher excluded. Use scripts/v2 prepare with RUN_BOOK_FINAL.md.' >&2

@@ -66,6 +66,7 @@ def test_drive_defaults_select_new_provider_and_keep_t_parking():
     spec=importlib.util.spec_from_file_location('waypoint_drive',path)
     mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     context=LaunchContext()
+    context.launch_configurations['start_waypoint']='01'
     for item in mod.generate_launch_description().entities:
         if isinstance(item,DeclareLaunchArgument): item.execute(context)
     assert context.launch_configurations['waypoint_avoid']=='true'

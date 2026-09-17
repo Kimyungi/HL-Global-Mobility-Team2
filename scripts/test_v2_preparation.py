@@ -20,12 +20,32 @@ def module():
 
 def context(mod, tmp_path):
     ctx = LaunchContext()
+    ctx.launch_configurations['start_waypoint'] = '01'
     for item in mod.generate_launch_description().entities:
         if isinstance(item, DeclareLaunchArgument):
             item.execute(ctx)
     ctx.launch_configurations['run_log_dir'] = str(tmp_path / 'run')
     ctx.launch_configurations['rviz'] = 'false'
     return ctx
+
+
+def test_start_csv_is_required_without_wrapper_prompt():
+    ctx = LaunchContext()
+    with pytest.raises(RuntimeError, match='start_waypoint'):
+        for item in module().generate_launch_description().entities:
+            if isinstance(item, DeclareLaunchArgument):
+                item.execute(ctx)
+
+
+@pytest.mark.parametrize('start', ['01', '02', '03', '04', '05', '06', '07'])
+def test_each_selected_start_resolves_to_its_registered_csv(start):
+    end = '06' if start == '06' else '07'
+    selected = module().selected_manifest(
+        ROOT / 'src/stack_gps/waypoints/halla_route_sequence.yaml', start, end)
+    routes = selected['routes']
+    assert routes[0]['id'] == start
+    assert routes[0]['file'].endswith(f'waypoints_halla_20260916_path_{start}.csv')
+    assert routes[-1]['id'] == end
 
 
 def test_show_args_and_invalid_token_do_not_start_receiver(monkeypatch, tmp_path):
