@@ -145,3 +145,19 @@ bool revised_v2
 bool estop_active
 uint64 estop_request_id
 bool traffic_zone_active
+
+# MGM owns the timer, vote aggregation and acknowledged GPS handoff.
+uint8 LAST_IDLE=0
+uint8 LAST_STOPPING=1
+uint8 LAST_JUDGING=2
+uint8 LAST_SELECTED=3
+uint8 LAST_WAIT_ROUTE=4
+uint8 LAST_DONE=5
+uint8 last_mission_phase
+uint64 last_mission_request_id
+uint8 last_mission_zone_id
+uint32 last_mission_left_votes
+uint32 last_mission_right_votes
+uint8 last_mission_route_id
+bool last_mission_fallback
+bool last_mission_detector_enabled

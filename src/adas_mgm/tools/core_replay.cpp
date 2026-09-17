@@ -83,7 +83,7 @@ int main(int argc, char ** argv)
   if (h.params.base_state_machine_enabled) {
     out << ",route_phase,route_index,route_count,route_sequence_id,route_instance_id,route_request_id,route_requested_index,route_end_reached,route_completion,route_connecting,route_requested_connecting,mission_failed,mission_cancel_reason,parking_search_zone_only,parking_zone_entry_active";
   }
-  out << ",sensor_alive_mask,reference_motion_blocked,dump_version,revised_v2,estop_active,estop_request_id\n";
+  out << ",sensor_alive_mask,reference_motion_blocked,dump_version,revised_v2,estop_active,estop_request_id,last_mission_phase,last_mission_request_id,last_mission_route_id,last_mission_fallback,last_mission_left_votes,last_mission_right_votes\n";
 
   CoreState st;
   mgm_init(st, h.params);  // 기록 당시 파라미터로 동일 조건 재생
@@ -125,7 +125,10 @@ int main(int argc, char ** argv)
           << ',' << h.params.parking_search_zone_only << ',' << h.params.parking_zone_entry_active;
     }
     out << ',' << +s.sensor_alive_mask << ',' << o.reference_motion_blocked << ',' << h.version << ',' << s.revised_v2
-        << ',' << o.estop_active << ',' << o.estop_request_id << '\n';
+        << ',' << o.estop_active << ',' << o.estop_request_id
+        << ',' << static_cast<int>(o.last_mission.phase) << ',' << o.last_mission.request_id
+        << ',' << +o.last_mission.route_id << ',' << o.last_mission.fallback
+        << ',' << o.last_mission.left_votes << ',' << o.last_mission.right_votes << '\n';
     ++tick;
   }
 

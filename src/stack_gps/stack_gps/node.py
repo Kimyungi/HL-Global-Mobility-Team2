@@ -490,6 +490,10 @@ class StackGpsNode(Node):
             return
         r = msg.route
         r.enabled = True
+        r.terminal = plan.index in (plan.exit_left, plan.exit_right)
+        r.last_mission_enabled = plan.index == plan.exit_source and not plan.connecting
+        r.left_index = plan.exit_left if r.last_mission_enabled else 0
+        r.right_index = plan.exit_right if r.last_mission_enabled else 0
         r.connecting, r.next_connecting = plan.connecting, plan.next_connecting
         r.sequence_id, r.instance_id = plan.sequence_id, self._route_instance
         r.index, r.count, r.acknowledged_request = plan.index, len(plan.files), plan.acknowledged_request

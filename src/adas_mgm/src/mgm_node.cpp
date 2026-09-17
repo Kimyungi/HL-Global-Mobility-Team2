@@ -44,6 +44,7 @@
 #include "fma_interfaces/msg/traffic_stop.hpp"
 #include "fma_interfaces/msg/estop_request.hpp"
 #include "fma_interfaces/msg/estop_recovery.hpp"
+#include "fma_interfaces/msg/exit_detection.hpp"
 #include "fma_interfaces/msg/can_health.hpp"
 #include "fma_interfaces/msg/target_ref.hpp"
 #include "fma_interfaces/msg/vehicle_vector.hpp"
@@ -74,6 +75,7 @@ struct LatestMsgs
   fma_interfaces::msg::TrafficStop traffic;
   fma_interfaces::msg::EstopRequest estop;
   fma_interfaces::msg::EstopRecovery recovery;
+  fma_interfaces::msg::ExitDetection exit_detection;
   fma_interfaces::msg::CanHealth can;   // 브리지 CAN 링크 건전성 (§5.7 ⑥)
   fma_interfaces::msg::VehicleVector vehicle;  // dSPACE 실차속도 피드백
 };
@@ -119,6 +121,8 @@ CoreSnapshot toSnapshot(const LatestMsgs & m, bool single_point)
   s.gps_at_end = m.gps.at_end;
   const auto & route = m.gps.route;
   s.route.enabled = route.enabled;
+  s.route.terminal = route.terminal; s.route.last_mission_enabled = route.last_mission_enabled;
+  s.route.left_index = route.left_index; s.route.right_index = route.right_index;
   s.route.connecting = route.connecting; s.route.next_connecting = route.next_connecting;
   s.route.completion = static_cast<adas_mgm::RouteCompletion>(route.completion);
   s.route.sequence_id = route.sequence_id; s.route.instance_id = route.instance_id;
@@ -388,7 +392,7 @@ public:
       transitions_.open(transition_csv_path_, std::ios::trunc);
       if (transitions_) {
         transitions_ << (base_managers_ ?
-          "tick,top,navigation,avoidance,signal,safety,mission,mission_type,reference_source,speed_owner,v_ref,ref_valid,ref_fresh,ref_age_s,stop_reasons\n" :
+          "tick,top,navigation,avoidance,signal,safety,mission,mission_type,reference_source,speed_owner,v_ref,ref_valid,ref_fresh,ref_age_s,stop_reasons,last_mission_phase,last_mission_route_id,last_mission_fallback\n" :
           transitionCsvHeader());
         transitions_.flush();
       } else {
@@ -641,6 +645,11 @@ public:
         msgs_.estop = *m;
         last_estop_rx_ns_ = monotonicNs();});}
     if (revised_v2_) {
+      sub_exit_ = create_subscription<fma_interfaces::msg::ExitDetection>(
+        "/perception/exit_detection", qos,
+        [this](fma_interfaces::msg::ExitDetection::ConstSharedPtr msg) {
+          std::lock_guard<std::mutex> lk(mtx_); msgs_.exit_detection = *msg;
+        });
       sub_recovery_ = create_subscription<fma_interfaces::msg::EstopRecovery>(
         "/planning/estop_recovery", qos,
         [this](fma_interfaces::msg::EstopRecovery::ConstSharedPtr msg) {
@@ -1028,6 +1037,12 @@ private:
         s.recovery_path.pts[i] = CorePoint{point.x, point.y, point.yaw, point.curvature};
       }
     }
+    const auto & exit = m.exit_detection;
+    s.exit_reference = exit_clock_.observe(
+      static_cast<int64_t>(exit.reference_stamp.sec)*1'000'000'000 + exit.reference_stamp.nanosec,
+      s.event_time_ns, s.monotonic_ns, 500'000'000);
+    s.exit_request_id = exit.request_id;
+    s.exit_class_id = exit.class_id; s.exit_confidence = exit.confidence;
     s.traffic_status_stamp_ns = static_cast<int64_t>(m.traffic.header.stamp.sec)*1'000'000'000 + m.traffic.header.stamp.nanosec;
     const int64_t traffic_age = s.event_time_ns - s.traffic_status_stamp_ns;
     s.traffic_status_fresh = traffic_rx_ns >= 0 && s.monotonic_ns - traffic_rx_ns <= traffic_stale_ns_ &&
@@ -1231,7 +1246,16 @@ private:
       status.revised_v2 = revised_v2_;
       status.estop_active = out.estop_active;
       status.estop_request_id = out.estop_request_id;
-      status.traffic_zone_active = revised_v2_ && out.zones.in_gps_only_zone;
+      const auto & last = out.last_mission;
+      const bool last_active = last.phase != LastMissionPhase::IDLE && last.phase != LastMissionPhase::DONE;
+      status.last_mission_phase = static_cast<uint8_t>(last.phase);
+      status.last_mission_request_id = last.request_id;
+      status.last_mission_zone_id = last.source_zone_id;
+      status.last_mission_left_votes = last.left_votes; status.last_mission_right_votes = last.right_votes;
+      status.last_mission_route_id = last.route_id; status.last_mission_fallback = last.fallback;
+      status.last_mission_detector_enabled = revised_v2_ && last.phase == LastMissionPhase::JUDGING &&
+        !out.estop_active && !s.external_stop && out.top == TopState::AUTONOMOUS_DRIVE;
+      status.traffic_zone_active = revised_v2_ && out.zones.in_gps_only_zone && !last_active;
       if (traffic_zone_pub_) {
         std_msgs::msg::Bool enabled;
         enabled.data = status.traffic_zone_active;
@@ -1349,6 +1373,7 @@ private:
         status.signal != previous_manager_status_.signal ||
         status.safety != previous_manager_status_.safety ||
         status.mission != previous_manager_status_.mission ||
+        status.last_mission_phase != previous_manager_status_.last_mission_phase ||
         status.mission_type != previous_manager_status_.mission_type ||
         status.reference_source != previous_manager_status_.reference_source ||
         status.speed_owner != previous_manager_status_.speed_owner ||
@@ -1356,17 +1381,19 @@ private:
         status.selected_reference_valid != previous_manager_status_.selected_reference_valid;
       if (changed) {
         RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
-          "MGM top=%u nav=%u avoid=%u signal=%u safety=%u mission=%u type=%u ref=%u speed=%u valid=%d age=%.3f reasons=0x%x",
+          "MGM top=%u nav=%u avoid=%u signal=%u safety=%u mission=%u type=%u ref=%u speed=%u valid=%d age=%.3f reasons=0x%x last=%u exit=%02u",
           status.top, status.navigation, status.avoidance, status.signal, status.safety,
           status.mission, status.mission_type, status.reference_source, status.speed_owner,
-          status.selected_reference_valid, status.selected_reference_age_s, status.active_safe_stop_reasons);
+          status.selected_reference_valid, status.selected_reference_age_s, status.active_safe_stop_reasons, status.last_mission_phase, status.last_mission_route_id);
         if (transitions_) {
           transitions_ << (tick_ - 1) << ',' << +status.top << ',' << +status.navigation << ','
                        << +status.avoidance << ',' << +status.signal << ',' << +status.safety << ','
                        << +status.mission << ',' << +status.mission_type << ','
                        << +status.reference_source << ',' << +status.speed_owner << ',' << out.v_ref << ','
                        << status.selected_reference_valid << ',' << status.selected_reference_fresh << ','
-                       << status.selected_reference_age_s << ',' << status.active_safe_stop_reasons << '\n';
+                       << status.selected_reference_age_s << ',' << status.active_safe_stop_reasons << ','
+                       << +status.last_mission_phase << ',' << +status.last_mission_route_id << ','
+                       << status.last_mission_fallback << '\n';
           transitions_.flush();
         }
         previous_manager_status_ = status;
@@ -1505,7 +1532,8 @@ private:
   double body_front_{.760}, body_rear_{.090}, body_half_width_{.310};
   int64_t raw_estop_stamp_[3]{};
   float raw_estop_clearance_[3]{};
-  ReferenceClock raw_estop_clocks_[3], recovery_clock_;
+  ReferenceClock raw_estop_clocks_[3], recovery_clock_, exit_clock_;
+  rclcpp::Subscription<fma_interfaces::msg::ExitDetection>::SharedPtr sub_exit_;
   rclcpp::Subscription<fma_interfaces::msg::EstopRecovery>::SharedPtr sub_recovery_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr traffic_zone_pub_;
   bool lidar_estop_enabled_{true};   // startup-only, separate test launcher

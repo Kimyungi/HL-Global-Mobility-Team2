@@ -1,7 +1,7 @@
 # Exit decision model
 
 `exit_decision_yolo26n.pt` detects the three-panel exit signal as one bounding box.
-Runtime integration is intentionally excluded from this model-only change.
+The original model-only PR #83 is now connected to MGM through `stack_exit_decision.node`.
 
 ## Classes
 
@@ -17,10 +17,11 @@ must translate that class into the mission direction.
 The user confirmed the mission policy on 2026-09-17: enter at the designated
 zone, stop and observe for ten seconds, then select route 06 for Left or route
 07 for Right. If no direction can be determined, select route 06.
-The Halla entry zone has not been created. Per the user's scope, only the
-standalone state is implemented; runtime integration is deferred. Its logic
-is in `../stack_exit_decision/last_mission_state.py`; MGM/GPS runtime integration
-is pending. See `../../../docs/LAST_MISSION_STATE.md` for its contract and scope.
+The Halla entry zone has not been created, so its current launch retains the
+configured end route (07 by default). Runtime integration is complete for plans
+with an explicit LAST_MISSION_ZONE: the detector publishes observations and MGM
+owns stopping, the ten-second window, selection and acknowledged GPS handoff.
+See [the mission contract](../../../docs/LAST_MISSION_STATE.md).
 
 ## Training summary
 

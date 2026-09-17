@@ -25,3 +25,5 @@ int32 exit_count
 float32 boundary_distance_m -1.0
 
 bool mission_entry_suppressed
+
+uint8 LAST_MISSION_ZONE=3

@@ -207,3 +207,17 @@ parity_replay는 v33을 명확히 거부한다. 이전 로그는 해당 버전 �
 현재 상태 선언에서 CLEAR_CONFIRM, AUTO_ESTOP, REVERSE_RECOVERY, MISSION_PREPARE를 제외했다.
 과거 상태 번호는 재사용하지 않는다. 현재 재생 도구는 v35를 사용하며, v34는
 `build_v2/replay_archive/v34_local` 또는 `f21ef6d` 빌드의 도구로 재생한다.
+
+## 스테이트 v09.17 마지막 미션 통합 — v36
+
+현재 정본은 [STATE_V09_17.md](STATE_V09_17.md)다. `CoreSnapshot`에
+exit_request_id/exit_reference/exit_class_id/exit_confidence가 추가됐고,
+RouteFeedback/RouteControl에는 terminal/last_mission_enabled/left_index/right_index가
+추가됐다. ManagerState와 CoreOutput의 LastMissionControl 버스는 phase, request_id,
+last_frame, started_ns, started_event_ns, left_votes, right_votes, selected_index,
+route_id, source_zone_id, fallback을 가진다. 형식은 core/manager_types.hpp를 따른다.
+
+새 ZoneType::LAST_MISSION_ZONE=3과 LastMissionPhase 0~5는 ROS 메시지 상수와 일치한다.
+CAN 상태 번호는 유지한다. 생성 v1.88 백엔드에는 이 상태를 연결하지 않는다.
+raw dump는 v36이며, v35 로그는 당시 도구로 재생해야 한다. 이 PC의 도구는
+build_v2/replay_archive/v35_local에 보관했다.

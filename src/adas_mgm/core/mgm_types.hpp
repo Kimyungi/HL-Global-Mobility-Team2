@@ -198,6 +198,10 @@ struct CoreSnapshot
   CorePath recovery_path;
   float recovery_speed;
   ReferenceSample recovery_reference;
+  uint64_t exit_request_id;
+  ReferenceSample exit_reference;
+  int32_t exit_class_id;
+  float exit_confidence;
 
 };
 
@@ -436,6 +440,7 @@ struct CoreOutput
   RouteControl route;
   bool estop_active;
   uint64_t estop_request_id;
+  LastMissionControl last_mission;
 };
 
 }  // namespace adas_mgm

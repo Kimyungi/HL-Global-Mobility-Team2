@@ -61,6 +61,7 @@ class RoutePlan:
             if not route_id or route_id in catalog:
                 raise ValueError('route ids must be nonempty and unique')
             catalog[route_id] = entry
+        branches = data.get('exit_branches')
         selection = data.get('sequence')
         if selection is not None:
             if not isinstance(selection, dict) or set(selection) != {'start', 'via', 'end'}:
@@ -75,9 +76,34 @@ class RoutePlan:
             selected = [start_id, *selection['via'], end_id]
             if len(set(selected)) != len(selected):
                 raise ValueError('selected sequence must not repeat a route')
+            # An explicitly defined exit zone enables both final alternatives.
+            # No zone in the selected prefix means the existing fixed end is retained.
+            sources = [key for key in selected[:-1] if any(
+                z.get('zone_type') == 'LAST_MISSION_ZONE' for z in
+                (yaml.safe_load((self.path.parent / catalog[key]['zones_file']).read_text()) or {}).get('zones', []))]
+            if sources:
+                if len(sources) != 1 or sources[0] != selected[-2] or set(selection['end']) != {'06', '07'}:
+                    raise ValueError('last mission requires one zone-bearing final common route and ends 06/07')
+                branches = {'source': sources[0], 'left': '06', 'right': '07'}
+                selected = [*selected[:-1], '06', '07']
             entries = [catalog[key] for key in selected]
         elif start_id or end_id:
             raise ValueError('route_start_id/route_end_id require a selectable sequence manifest')
+        self.exit_branches = branches
+        self.exit_source = self.exit_left = self.exit_right = -1
+        if branches is not None:
+            if not isinstance(branches, dict) or set(branches) != {'source', 'left', 'right'}:
+                raise ValueError('exit_branches requires source/left/right route IDs')
+            ids = [str(entry['id']) for entry in entries]
+            if branches['left'] != '06' or branches['right'] != '07':
+                raise ValueError('exit directions must map Left to 06 and Right to 07')
+            try:
+                source, left, right = (ids.index(branches[k]) for k in ('source', 'left', 'right'))
+            except ValueError as error:
+                raise ValueError('exit branch route missing from preloaded plan') from error
+            if (left, right) != (source + 1, source + 2) or right != len(ids) - 1:
+                raise ValueError('exit branches must follow the final common route as 06,07')
+            self.exit_source, self.exit_left, self.exit_right = source, left, right
         self.files = []
         self._contents = {self.path: self.path.read_bytes()}
         ids = set()
@@ -103,7 +129,12 @@ class RoutePlan:
             points = tuple(load_waypoints_csv(course, log=self._reject))
             if len(points) < 10 or not all(math.isfinite(v) for p in points for v in p):
                 raise ValueError(f'{course}: requires at least 10 finite points')
-            _zone_schema(zones, course)
+            zone_data = _zone_schema(zones, course)
+            has_exit_zone = any(z.get('zone_type') == 'LAST_MISSION_ZONE' for z in zone_data.get('zones', []))
+            if has_exit_zone != (len(self.files) == self.exit_source):
+                raise ValueError('LAST_MISSION_ZONE must be on the configured exit source route only')
+            if len(self.files) in (self.exit_left, self.exit_right) and entry_connection != 'none':
+                raise ValueError('exit branches use their preloaded CSV without an implicit connector')
             # CSV gaps may be traversed by a Zone/Mission. Preserve the configured order.
             self.files.append(RouteFiles(route_id, course, zones, points, completion, entry_connection == 'straight'))
             self._contents[course] = course.read_bytes()
@@ -183,9 +214,13 @@ class RoutePlan:
         if not 0 <= requested_index < len(self.files):
             return False
         resetting = requested_index == 0 and not connecting
-        advancing = not self.connecting and requested_index == self.index + 1 and connecting == bool(self.connections[requested_index])
+        advancing = (self.index != self.exit_source and self.index not in (self.exit_left, self.exit_right)
+                     and not self.connecting and requested_index == self.index + 1
+                     and connecting == bool(self.connections[requested_index]))
+        branching = (self.index == self.exit_source and not self.connecting and not connecting
+                     and requested_index in (self.exit_left, self.exit_right))
         entering = self.connecting and requested_index == self.index and not connecting
-        if not (resetting or advancing or entering):
+        if not (resetting or advancing or entering or branching):
             return False
         self.index = requested_index
         self.connecting = connecting
@@ -207,6 +242,8 @@ class RoutePlan:
 
     @property
     def next_connecting(self):
+        if self.index in (self.exit_source, self.exit_left, self.exit_right):
+            return False
         return self.index + 1 < len(self.files) and self.files[self.index+1].entry_connection and \
             self.files[self.index].points[-1] != self.files[self.index+1].points[0]
 

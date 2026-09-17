@@ -17,6 +17,7 @@ class ZoneType(IntEnum):
     NORMAL_ZONE = 0
     GPS_ONLY_ZONE = 1
     MISSION_ZONE = 2
+    LAST_MISSION_ZONE = 3
 
 
 class MissionType(IntEnum):
