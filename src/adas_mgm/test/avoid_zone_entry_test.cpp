@@ -101,6 +101,33 @@ int main()
   speeds.s.gps_cross_track = 0.f; speeds.tick(3);
   check(speeds.out.avoid == AvoidState::INACTIVE && near(speeds.out.v_ref, 2.f),
     "completed zone returns to normal 2m/s");
+  // Current v09.17 profile: confidence cannot accumulate during either phase.
+  Run lane; configure(lane);
+  lane.st.params.revised_v2_enabled = 1; lane.s.revised_v2 = true;
+  lane.s.gps_fix_quality = 4;
+  lane.tick(lane.st.params.n_cycles);
+  check(lane.st.lane_high_cnt == lane.st.params.n_cycles, "normal lane confidence is evaluated");
+  lane.s.gps_avoid_zone = true; lane.tick();
+  check(lane.out.avoid == AvoidState::AVOID_ACTIVE && lane.st.lane_high_cnt == 0 &&
+    lane.st.lane_low_cnt == 0, "avoid entry discards prior confidence immediately");
+  const auto navigation = lane.out.nav;
+  lane.s.lane_confidence = .1f; lane.tick(100);
+  check(lane.st.lane_high_cnt == 0 && lane.st.lane_low_cnt == 0 && lane.out.nav == navigation,
+    "low lane confidence cannot change counters or background navigation during avoidance");
+  lane.s.lane_confidence = .99f; lane.tick(100);
+  check(lane.st.lane_high_cnt == 0 && lane.st.lane_low_cnt == 0,
+    "high lane confidence is also ignored throughout avoidance");
+  lane.obstacle(); lane.s.avoid_obstacle_detected = false;
+  lane.s.avoid_maneuver_done = true; lane.s.gps_cross_track = .2f; lane.tick(100);
+  check(lane.out.avoid == AvoidState::GPS_RETURN && lane.st.lane_high_cnt == 0 &&
+    lane.st.lane_low_cnt == 0, "GPS return still suppresses lane confidence evaluation");
+  lane.s.gps_cross_track = 0; lane.tick();
+  check(lane.out.avoid == AvoidState::INACTIVE && lane.out.nav == NavState::GPS_BACKUP &&
+    lane.st.lane_high_cnt == 0, "alignment resumes GPS without reusing avoidance-time confidence");
+  lane.tick(lane.st.params.n_cycles - 1);
+  check(lane.out.nav == NavState::GPS_BACKUP, "lane return waits for a fresh post-avoidance confirmation window");
+  lane.tick();
+  check(lane.out.nav == NavState::LINE, "normal lane confidence confirmation resumes after avoidance");
   std::printf("avoid_zone_entry_test: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

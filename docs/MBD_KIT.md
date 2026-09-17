@@ -221,3 +221,10 @@ route_id, source_zone_id, fallback을 가진다. 형식은 core/manager_types.hp
 CAN 상태 번호는 유지한다. 생성 v1.88 백엔드에는 이 상태를 연결하지 않는다.
 raw dump는 v36이며, v35 로그는 당시 도구로 재생해야 한다. 이 PC의 도구는
 build_v2/replay_archive/v35_local에 보관했다.
+
+## 스테이트 v09.17 회피 중 차선 판정 중단 — v37
+
+현재 raw dump는 v37이다. 버스 크기는 같지만 AVOID_ACTIVE/GPS_RETURN에서
+차선 신뢰도 카운터를 초기화하고 판정을 중단하도록 전이 의미가 바뀌었다.
+v36 덤프는 `build_v2/replay_archive/v36_local`의 당시 도구로 재생한다.
+현재 도구는 v36 덤프를 거부해 다른 전이 의미로 재생되는 것을 방지한다.
