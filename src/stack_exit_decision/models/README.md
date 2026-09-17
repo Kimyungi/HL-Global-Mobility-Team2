@@ -5,10 +5,22 @@ Runtime integration is intentionally excluded from this model-only change.
 
 ## Classes
 
-| ID | Name | Signal pattern |
-|---:|---|---|
-| 0 | `red_blue_red` | red-blue-red |
-| 1 | `blue_red_red` | blue-red-red |
+| ID | Name | Signal pattern (left to right) | Mission direction |
+|---:|---|---|---|
+| 0 | `red_blue_red` | red-blue-red | `Right` |
+| 1 | `blue_red_red` | blue-red-red | `Left` |
+
+The mission direction mapping was confirmed by the user on 2026-09-17 for
+`Last_mission_state`. The detector emits the signal class; application logic
+must translate that class into the mission direction.
+
+The user confirmed the mission policy on 2026-09-17: enter at the designated
+zone, stop and observe for ten seconds, then select route 06 for Left or route
+07 for Right. If no direction can be determined, select route 06.
+The Halla entry zone has not been created. Per the user's scope, only the
+standalone state is implemented; runtime integration is deferred. Its logic
+is in `../stack_exit_decision/last_mission_state.py`; MGM/GPS runtime integration
+is pending. See `../../../docs/LAST_MISSION_STATE.md` for its contract and scope.
 
 ## Training summary
 

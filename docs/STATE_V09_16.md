@@ -31,6 +31,28 @@
 T 주차는 PR #106 기반 어댑터, 평행 주차는 기존 ParkingMission 연결을 사용한다.
 평행 주차를 새 T 주차 알고리즘으로 교체한 것은 아니다.
 
+## Last_mission_state 구성 (2026-09-17)
+
+사용자 후속 지시로 **Last_mission_state의 독립 판별 상태 로직을 구성**했다.
+현재 한라대에는 진입 zone이 없으므로, 이 상태는 위 현재 운용 상태 표와 별도로
+관리한다. MGM 실행 전이·CAN 상태 번호·실차 런처에는 연결하지 않는다.
+
+| 단계 | 전이·동작 |
+|---|---|
+| IDLE | 지정 zone 도달 입력에서 STOPPING 진입 |
+| STOPPING | 정지 요구 유지, 유효 실제 정차 확인 후 JUDGING |
+| JUDGING | 정지 요구를 유지하며 10초간 판별. 이동·속도 유효성 소실 시 STOPPING으로 복귀 |
+| DONE | Left는 경로 06, Right는 경로 07 선택. 미판별은 06. 새 세션까지 결과 유지 |
+
+모델 클래스 `0 / red_blue_red`는 Right, `1 / blue_red_red`는 Left다.
+관측 집계 기본값은 신뢰도 0.5 이상·프레임별 1표 다수결이며, 동률은 미판별이다.
+10초가 끝나기 전에는 조기 확정하지 않는다. 향후 실행 연결에서는 DONE 이후에도
+GPS 경로 인계 확인과 기존 주행 인가를 거쳐 출발해야 한다.
+
+[요구사항·구현 범위·검증](LAST_MISSION_STATE.md),
+[상태 로직](../src/stack_exit_decision/stack_exit_decision/last_mission_state.py).
+독립 로직 테스트 15개 통과. zone 생성·실시간 추론·경로 전환·실차 검증은 후속 작업이다.
+
 ## 빈 구현으로 오해하면 안 되는 항목
 
 - ESTOP FAULT: 자동 재시도 없이 정지하는 명시적 동작이다. 정상 회복 완료를 보내지 않는다.
