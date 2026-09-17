@@ -164,7 +164,7 @@ def main():
             assert any(row['last_mission_phase'] == '2' for row in rows)
             assert any(row['last_mission_phase'] == '5' and int(row['last_mission_route_id']) == int(expected)
                        for row in rows)
-            print('PASS: v36 last mission snapshot replay is deterministic', flush=True)
+            print('PASS: last mission snapshot replay is deterministic', flush=True)
 
 
 if __name__ == '__main__':

@@ -88,11 +88,13 @@ void update_avoid_zone(const CoreSnapshot & s, CoreState & st)
 }
 bool line_return_ready(const CoreSnapshot & s, const CoreState & st)
 {
-  return line_valid(s) && st.lane_high_cnt >= st.params.n_cycles &&
+  return (!s.revised_v2 || st.managers.avoid == AvoidState::INACTIVE) &&
+         line_valid(s) && st.lane_high_cnt >= st.params.n_cycles &&
          !st.managers.gps_only_context && (s.revised_v2 || !st.managers.route.connecting) && (st.return_hold_left == 0 || !gps_valid(s));
 }
 void nav_reselect(const CoreSnapshot & s, CoreState & st)
 {
+  if (s.revised_v2 && st.managers.avoid == AvoidState::AVOID_ACTIVE) {return;}
   if (mission_searches_along_gps(st) || st.managers.avoid == AvoidState::GPS_RETURN) {
     st.managers.nav = st.managers.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
   } else if (!s.revised_v2 && st.managers.route.enabled && st.managers.route.connecting) {
@@ -263,13 +265,18 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.safety = m.safe_stop_reasons ? SafetyState::SAFE_STOP : SafetyState::NORMAL;
     return;
   }
-  const bool line = line_valid(s);
+  // v09.17: the whole avoidance episode (including GPS_RETURN) owns control.
+  // Ignore lane confidence and discard its pre-entry hysteresis until it ends.
+  const bool suspend_lane = s.revised_v2 && st.params.avoidance_enabled &&
+    (m.avoid != AvoidState::INACTIVE || (st.params.avoid_zone_only &&
+      m.avoid_zone_inside && !m.avoid_zone_completed && m.mission == MissionState::MISSION_IDLE));
+  const bool line = !suspend_lane && line_valid(s);
   const bool gps = gps_valid(s);
   st.lane_low_cnt = line && s.lane_confidence < st.params.lane_conf_exit ?
     std::min(st.lane_low_cnt + 1, st.params.n_cycles) : 0;
   st.lane_high_cnt = line && s.lane_confidence >= st.params.lane_conf_return ?
     std::min(st.lane_high_cnt + 1, st.params.n_cycles) : 0;
-  if (s.revised_v2) {
+  if (s.revised_v2 && !suspend_lane) {
     if (st.lane_low_cnt >= st.params.n_cycles && !gps) {
       m.lane_recovery_required = true;
     }
@@ -277,18 +284,20 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   }
   if (st.return_hold_left > 0) {--st.return_hold_left;}
 
-  if (!s.revised_v2 && m.route.enabled && m.route.connecting) {
-    m.nav = NavState::GPS_BACKUP;
-  } else if (m.gps_only_context) {
-    m.nav = NavState::GPS_ONLY_NAV;
-  } else if (was_zone) {
-    nav_reselect(s, st);
-  } else if (m.nav == NavState::LINE) {
-    if ((!line || st.lane_low_cnt >= st.params.n_cycles) && (gps || s.revised_v2)) {
+  if (!suspend_lane) {
+    if (!s.revised_v2 && m.route.enabled && m.route.connecting) {
       m.nav = NavState::GPS_BACKUP;
+    } else if (m.gps_only_context) {
+      m.nav = NavState::GPS_ONLY_NAV;
+    } else if (was_zone) {
+      nav_reselect(s, st);
+    } else if (m.nav == NavState::LINE) {
+      if ((!line || st.lane_low_cnt >= st.params.n_cycles) && (gps || s.revised_v2)) {
+        m.nav = NavState::GPS_BACKUP;
+      }
+    } else if (line_return_ready(s, st) || (!gps && line && (!s.revised_v2 || !m.lane_recovery_required))) {
+      m.nav = NavState::LINE;
     }
-  } else if (line_return_ready(s, st) || (!gps && line && (!s.revised_v2 || !m.lane_recovery_required))) {
-    m.nav = NavState::LINE;
   }
 
   if (!st.params.route_sequence_enabled && m.top == TopState::AUTONOMOUS_DRIVE && gps && s.gps_at_end) {
@@ -502,6 +511,9 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     }
   }
 
+  if (s.revised_v2 && m.avoid != AvoidState::INACTIVE) {
+    st.lane_high_cnt = st.lane_low_cnt = 0;  // includes non-zone entry on this tick
+  }
   update_existing_guards(s, st);
   if (!s.new_session && clock_valid) {route_step(s, st);}
   const bool signal_stop = m.signal == SignalState::APPROACH_STOP_LINE ||

@@ -84,7 +84,7 @@ OAK 카메라를 연다. 카메라 취득 시각을 ROS 시각으로 변환하�
 - CAN 상태 0~5와 참조 소스 번호는 기존 계약을 유지한다. 마지막 미션은
   ManagerState.last_mission이라는 병렬 상태이며 CAN 번호를 새로 할당하지 않는다.
 - `scripts/v2 state`, 통합 RViz 상태 표시, 전이 CSV와 core_replay CSV에 마지막 미션을 표시한다.
-- CoreSnapshot/RouteFeedback/ManagerState/CoreOutput 버스가 확장돼 raw dump는 **v36**이다.
+- CoreSnapshot/RouteFeedback/ManagerState/CoreOutput 버스가 확장돼 당시 raw dump를 **v36**으로 올렸다. 현재는 회피 신뢰도 정책 변경으로 **v37**이다.
   v35 도구는 이 PC의 `build_v2/replay_archive/v35_local`에 보관했다.
 
 ## 검증
