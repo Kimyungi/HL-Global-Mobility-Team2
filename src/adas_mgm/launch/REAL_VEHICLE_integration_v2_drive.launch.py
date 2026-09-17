@@ -63,6 +63,7 @@ def start_stack(context):
         raise RuntimeError('Use this workspace scripts/v2 drive and install_v2')
     manifest = selected_manifest(root / 'src/stack_gps/waypoints/halla_route_sequence.yaml',
                                  value('start_waypoint'), value('end_waypoint'))
+    print('[v2 drive] selected start CSV: ' + manifest['routes'][0]['file'], flush=True)
     context.launch_configurations['t_reference_origin_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['t_reference_route_csv'] = str(
         root / 'src/stack_gps/waypoints/waypoints_halla_20260916_path_03.csv')
@@ -124,7 +125,8 @@ def generate_launch_description():
         traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-2', v_base='2.0', v_avoid='1.0', record='false')
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
-        DeclareLaunchArgument('start_waypoint', default_value='01',
+        DeclareLaunchArgument('start_waypoint',
+                              description='Required each session; scripts/v2 prompts when omitted',
                               choices=['01', '02', '03', '04', '05', '06', '07']),
         DeclareLaunchArgument('end_waypoint', default_value='07', choices=['06', '07']),
         DeclareLaunchArgument('run_log_dir', default_value='',
