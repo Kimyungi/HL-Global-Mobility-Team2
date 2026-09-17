@@ -33,3 +33,42 @@ def test_crash_restarts_only_inside_zone():
     now[0] = .6; gate.update(False); assert gate.child is None
     gate.update(True); assert gate.child is not first
     gate.close()
+
+
+def test_main_initializes_real_ros_node_and_forwards_parameters(monkeypatch):
+    """Exercise the Humble Node API without starting a detector or camera."""
+    from pathlib import Path
+    import rclpy
+    import yaml
+    from stack_traffic import zone_supervisor
+
+    captured = {}
+
+    class NoHardwareGate:
+        def __init__(self, command):
+            captured['path'] = Path(command[-1])
+            captured['params'] = yaml.safe_load(captured['path'].read_text())['/**']['ros__parameters']
+
+        def update(self, enabled):
+            assert enabled is False
+
+        def close(self):
+            captured['closed'] = True
+
+    def spin_once(node):
+        assert node.get_name() == 'traffic_zone_supervisor'
+        rclpy.spin_once(node, timeout_sec=0.15)
+        captured['initialized'] = True
+
+    monkeypatch.setattr(zone_supervisor, 'ProcessGate', NoHardwareGate)
+    monkeypatch.setattr(rclpy, 'spin', spin_once)
+    zone_supervisor.main(args=['--ros-args',
+        '-p', 'camera_backend:=oak', '-p', 'show_debug:=false',
+        '-p', 'yolo.confidence:=0.185', '-p', 'test_ids:=[1, 2]'])
+
+    assert captured['initialized'] and captured['closed']
+    for key, expected in {'camera_backend': 'oak', 'show_debug': False,
+                          'yolo.confidence': 0.185, 'test_ids': [1, 2]}.items():
+        assert captured['params'][key] == expected
+    assert not captured['path'].exists()
+    assert not rclpy.ok()
