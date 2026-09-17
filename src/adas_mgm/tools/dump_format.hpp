@@ -59,7 +59,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v32 was independently used by two incompatible branches; never guess which one.
 // v34: upper ESTOP projects CAN state=5; PR108 measured recovery executor.
 // v35: State v09.16 removes obsolete public states; active-only Mission entry is fixed.
-constexpr uint32_t kDumpVersion = 35;
+// v36: Last mission state, exit observations and alternative terminal routes.
+constexpr uint32_t kDumpVersion = 36;
 
 struct DumpHeader
 {

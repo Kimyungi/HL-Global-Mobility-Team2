@@ -14,3 +14,9 @@ uint8[] required_missions
 string route_id
 string waypoint_csv
 string zones_file
+
+# Optional final exit branches, preloaded under the same immutable sequence ID.
+bool terminal
+bool last_mission_enabled
+int32 left_index
+int32 right_index

@@ -14,7 +14,7 @@ enum class SafetyState : uint8_t {NORMAL=0, SAFE_STOP=3, ESTOP=4};
 enum class MissionState : uint8_t {MISSION_IDLE=0, MISSION_ACTIVE=1};
 enum class MissionType : uint8_t {NONE, T_PARKING, PARALLEL_PARKING};
 enum class SpeedOwner : uint8_t {NAVIGATION, AVOIDANCE, TRAFFIC, MISSION, SAFETY, FINISH};
-enum class ZoneType : uint8_t {NORMAL_ZONE, GPS_ONLY_ZONE, MISSION_ZONE};
+enum class ZoneType : uint8_t {NORMAL_ZONE, GPS_ONLY_ZONE, MISSION_ZONE, LAST_MISSION_ZONE};
 
 enum class CalibrationState : uint8_t {UNCALIBRATED=0, CALIBRATED=1, INVALID_CONFIG=2, NOT_REQUIRED=3};
 enum class RearCorridorState : uint8_t {UNKNOWN=0, CLEAR=1, BLOCKED=2};
@@ -158,6 +158,16 @@ struct MissionRequest
 
 enum class RoutePhase : uint8_t {DISABLED=0, RUNNING=1, WAIT_MISSION=2, WAIT_STOP=3, WAIT_ACK=4, FINISHED=5, FAULT=6};
 enum class RouteCompletion : uint8_t {ENDPOINT_AND_MISSIONS=0, MISSIONS_COMPLETE=1};
+enum class LastMissionPhase : uint8_t {IDLE, STOPPING, JUDGING, SELECTED, WAIT_ROUTE, DONE};
+struct LastMissionControl {
+  LastMissionPhase phase;
+  uint64_t request_id, last_frame;
+  int64_t started_ns, started_event_ns;
+  uint32_t left_votes, right_votes;
+  int32_t selected_index;
+  uint8_t route_id, source_zone_id;
+  bool fallback;
+};
 struct RouteFeedback {
   RouteCompletion completion;
   bool enabled;
@@ -165,6 +175,8 @@ struct RouteFeedback {
   uint64_t sequence_id, instance_id, acknowledged_request;
   int32_t index, count, required_count;
   uint8_t required_missions[256];
+  bool terminal, last_mission_enabled;
+  int32_t left_index, right_index;
 };
 struct RouteControl {
   bool enabled;
@@ -176,6 +188,8 @@ struct RouteControl {
   bool connecting, next_connecting, requested_connecting;
   uint64_t last_generation, request_generation;
   bool required_missions[256];
+  bool terminal, last_mission_enabled;
+  int32_t left_index, right_index;
 };
 struct ManagerState
 {
@@ -213,6 +227,7 @@ struct ManagerState
   int64_t previous_tick_ns;
   bool previous_tick_known, previous_reverse_command;
   RouteControl route;
+  LastMissionControl last_mission;
   bool lane_recovery_required;
   bool actual_speed_seen;
   float last_actual_speed;

@@ -1,58 +1,105 @@
-# Last_mission_state
+# Last_mission_state — 스테이트 v09.17
 
-작업 브랜치: `Last_mission_state`.
+PR #113의 독립 판별 로직에 이어, 사용자 후속 지시로 MGM·YOLO·GPS·런처를
+연결했다. 현재 정본은 [스테이트 v09.17](STATE_V09_17.md)이다.
 
-## 사용자 확정 요구사항 (2026-09-17)
+## 요구사항과 현재 한라대 동작
 
-- 해당 zone 도달 시 진입한다. 현재 한라대에는 해당 zone이 생성되지 않았다.
-- 실제 정차 후 10초간 YOLO 모델로 판별한다.
+- 지정 zone 도달 시 정지하고, 실제 정차 후 10초간 판별한다.
 - `0 / red_blue_red` → Right → 경로 07.
 - `1 / blue_red_red` → Left → 경로 06.
-- 10초가 지나도 판별되지 않으면 경로 06을 선택한다.
+- 10초 후 무검출 또는 동률이면 경로 06을 선택한다.
+- **현재 한라대에는 LAST_MISSION_ZONE이 없다.** 지도는 수정하지 않았다.
+  현재 prepare/drive는 기존 `end_waypoint`(기본 07)를 따르고 출구 검출기는 실행하지 않는다.
 
-## 독립 판별 로직
+## 전체 전이와 제어 권한
 
-`src/stack_exit_decision/stack_exit_decision/last_mission_state.py`의
-`LastMissionState`는 ROS 없이 시험할 수 있는 판별 로직이다.
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> STOPPING: 인가 + 지정 zone 확정 도달 + 선행 미션 종료
+    STOPPING --> JUDGING: 유효 실제 정차
+    JUDGING --> STOPPING: 이동 / 속도 소실 / 인가 소실 / ESTOP 중단
+    JUDGING --> SELECTED: 정차 10초 완료
+    SELECTED --> WAIT_ROUTE: 정지 조건 확인 후 06 또는 07 요청
+    WAIT_ROUTE --> DONE: 일치하는 ACK + 새 유효 GPS 위치
+    DONE --> Navigation: ACK 다음 틱
+    Navigation --> FINISH: 선택한 종료 경로 종점 + 실제 정차
+```
 
-`IDLE → STOPPING → JUDGING → DONE`으로 진행한다. `STOPPING`과 `JUDGING`은
-정지 요구 상태다. 유효 실제 속도의 절댓값이 기존 MGM 정차 기준인 0.001m/s
-이하일 때부터 단조 시계 기준 10초를 센다. 이동하거나 속도 유효성이 사라지면
-관측을 버리고 다시 정차 후 10초를 센다. zone 이탈·GPS 소실만으로 취소하지 않는다.
-완료 결과는 명시적인 새 세션 `reset()`까지 유지한다.
+실행 권한은 `adas_mgm/core/last_mission_step.hpp`에 있다. IDLE 진입 조건은
+분기 원본 경로, 확정 zone, 유효 위치, 주행 인가, 주차/회피/신호 비활성 및
+선행 필수 미션 완료/실패 기록이다. 시작 시 zone 안이어도 정상 진입 확인 횟수를 거친다.
 
-판별 집계는 구현 기본 정책이며 별도 사용자 지정값은 아니다. 신뢰도 0.5 이상인
-검출 중 프레임별 최고 신뢰도 클래스에 1표를 부여하고, 10초 종료 시 다수결로
-결정한다. 한 프레임의 최고 신뢰도가 서로 다른 클래스에서 같으면 기권한다.
-전체 동률·무검출은 미판별로 처리해 06을 선택한다. 신뢰도 임계값은 생성자에서
-설정할 수 있다. 조기 확정하지 않고 10초를 모두 관측한다.
+STOPPING부터 WAIT_ROUTE까지 MGM이 즉시 목표속도 0을 출력한다. 유효 실제
+속도 절댓값 ≤0.001m/s부터 단조 시계 기준 10초를 센다. 판별은 신뢰도 0.5 이상인
+프레임별 최고 신뢰도 클래스의 다수결이며, 같은 최고 신뢰도의 상반된 검출은 기권한다.
+조기 확정하지 않는다. 이 집계 방식·임계값은 구현 기본값이다.
 
-정차 전 프레임, 중복·역순 프레임, 미래 시각, 마감 시각 이후 도착한 결과는
-제외한다. 호출자는 카메라 취득 시각과 수신 시각을 같은 단조 시계로 전달해야 한다.
-영상이 없어도 `update()`는 계속 호출해야 10초 후 기본 경로를 선택할 수 있다.
-시계 역행은 기존 관측을 폐기하고 정차 대기를 유지한다.
+관측은 해당 요청 ID와 정차 이후 취득 시각을 가져야 한다. 중복·역순·미래 시각,
+0.5초 초과 관측과 마감 이후 도착한 결과는 표에 포함하지 않는다. 영상 미수신이나
+모델 로드 실패도 MGM 타이머에 영향을 주지 않으므로 10초 뒤 06을 선택한다.
 
-## 현재 구현 범위와 남은 연결
+운전자/CAN 정지, 주행 인가 소실, 이동, 속도 소실은 판별 창을 초기화한다.
+상위 ESTOP은 마지막 미션보다 우선하며, 기존 회복 종료 후 정차부터 다시 판별한다.
+판별 도중 zone을 벗어나거나 GPS가 끊겨도 정지 요구가 취소되지 않는다.
+이미 선택된 경로는 인계 대기 중 유지한다. 새 세션은 마지막 미션 기억을 초기화한다.
 
-사용자 후속 지시에 따라 현재 변경은 독립 판별 상태 로직과 Ultralytics 결과
-변환·클래스 검증 함수까지다. 한라대 zone을 임의로 생성하거나 실차 런처·MGM·GPS에
-연결하지 않는다. 상태 머신 명세에는 구성 완료·실행 미연결 상태로 기록한다.
-향후 zone 생성 및 실행 연결 지시가 있을 때 다음 작업이 필요하다.
+선택 완료 시 원본 경로 종점을 추가로 기다리지 않고 선택한 CSV로 즉시 인계를 요청한다.
+기존 정지 게이트·선행 미션 종료·유효 실제 정차·유효 GPS가 필요하다. GPS는
+동일 sequence/instance와 새 request의 지정 index만 적용한다. MGM은 새 GPS 세대와
+종료 경로 메타데이터를 확인할 때까지 정지한다. ACK 틱도 정지하고 다음 틱부터
+GPS 주행 및 기존 내비게이션 전이를 재개한다. 06과 07은 각각 종료 경로이며 서로
+연속 주행하지 않는다. 불일치 ACK·GPS 프로세스 재시작은 기존 route FAULT 정지를 따른다.
 
-- 해당 zone의 확정 도달 관측을 판별 상태 진입에 연결한다.
-- 정지 요구와 실제 속도를 MGM에 연결하고 세션 초기화를 맞춘다.
-- 카메라 영상의 원본과 취득 시각을 받아 YOLO 추론 결과를 전달한다.
-- 현재 시작 전에 고정하는 종료 경로 선택을 06/07 사전 로드 및 판별 후 선택으로
-  변경하고 기존 요청·응답 계약에 따라 GPS 경로 인계를 확인한다.
-- 판별 완료 자체로 출발시키지 않고 경로 인계 확인과 기존 주행 인가를 거친다.
+## 지도와 런처 설정
 
-모델 파일과 메타데이터는 [모델 README](../src/stack_exit_decision/models/README.md)를 따른다.
+마지막 공통 경로(한라대 경로 05)의 zone 파일 `zones`에 `zone_type: LAST_MISSION_ZONE`을
+지정하면 된다. `zone_id`와 `index_range` 또는 실제 start/end 위경도는 현장에서
+확정한 값을 사용한다. 현재 저장소에는 임의 좌표나 시험용 zone을 추가하지 않았다.
+zone 형식과 범위 검사는 기존 `load_zone_definitions`를 사용하며, preview만의
+도달은 마지막 미션 진입으로 인정하지 않는다. wire zone ID는 기존 RoutePlan 전역
+번호 매핑을 따르므로 지도 내 번호와 전송 번호가 달라질 수 있다.
+
+한라대 선택형 manifest에서는 마지막 공통 경로에 이 zone이 있을 때 06·07을
+함께 사전 로드한다. `selected_manifest`는 중간 경로에서 출발해도 분기 계약을
+보존한다. 정적 manifest를 직접 제공할 때는 routes의 마지막 세 항목을 원본·06·07로
+두고 `exit_branches: {source: '05', left: '06', right: '07'}`를 지정한다.
+zone과 분기 계약이 불일치하면 로드를 거부한다. source는 마지막 공통 경로여야 하며,
+분기 목적지에 암묵적인 직선 연결 구간을 만들지 않는다.
+
+prepare/drive의 기존 검증 함수가 분기 여부를 확인해 출구 검출기를 자동 실행한다.
+이 계약은 revised v2 코어에서만 허용한다. 상위 MGM은 마지막 미션 동안 신호등
+검출기 실행을 해제하고, 출구 검출기는 STOPPING/JUDGING 중에만 같은 두 번째
+OAK 카메라를 연다. 카메라 취득 시각을 ROS 시각으로 변환하며, 추론은 별도 worker에서
+수행한다. MGM 명령이 0.25초 이상 끊기면 카메라를 해제한다.
+`image_topic`을 지정하면 카메라 없이 원본 bgr8/rgb8 영상으로 노드를 시험할 수 있다.
+
+## 메시지·진단·로그
+
+- `/perception/exit_detection`: ExitDetection, 취득 시각·요청 ID·클래스·신뢰도.
+- `/adas/mgm_state`: last_mission_phase, 요청·zone ID, 좌·우 표수, 선택 경로, fallback,
+  검출 허용 여부. 단계는 IDLE=0, STOPPING=1, JUDGING=2, SELECTED=3,
+  WAIT_ROUTE=4, DONE=5다.
+- CAN 상태 0~5와 참조 소스 번호는 기존 계약을 유지한다. 마지막 미션은
+  ManagerState.last_mission이라는 병렬 상태이며 CAN 번호를 새로 할당하지 않는다.
+- `scripts/v2 state`, 통합 RViz 상태 표시, 전이 CSV와 core_replay CSV에 마지막 미션을 표시한다.
+- CoreSnapshot/RouteFeedback/ManagerState/CoreOutput 버스가 확장돼 raw dump는 **v36**이다.
+  v35 도구는 이 PC의 `build_v2/replay_archive/v35_local`에 보관했다.
 
 ## 검증
 
-`python3 -m pytest -q src/stack_exit_decision/test/test_last_mission_state.py`
+검증은 합성 zone·GNSS·차속·LiDAR 입력을 사용했다. 현재 한라대 지도는 그대로다.
+실차 CAN 송신이나 실제 차량 주행 시험은 하지 않았다.
 
-15개 테스트 통과: 좌·우 매핑, 실제 정차부터 10초 대기, 무검출·동률 기본값,
-프레임별 다수결, 오래된/중복/마감 이후 결과 제외, 속도 소실·이동 시 재대기,
-zone 소실 후 유지, 세션 초기화, 시계 역행, 모델 클래스 계약을 확인했다.
-카메라 실시간 추론·GPS 경로 인계·실차 주행은 이번 구현 범위에 포함되지 않는다.
+- 전체 15개 패키지 빌드, CTest 30개(마지막 미션 코어 54개 조건 확인 포함).
+- Python 회귀시험: GPS 203개, 나머지 관련 모듈·런처 684개 통과, 3개 skip.
+- 각 마지막 미션 ROS 덤프를 v36 코어로 두 번 재생해 결과 일치 확인. v35는 보관 도구로 재생하고 새 도구의 명시적 거부 확인.
+- GPS 분기 사전 로드·방향 매핑·중복 요청·종료 분기·zone 미설정 기본 동작 단위시험.
+- 기존 revised v2 및 waypoint provider ROS 회귀시험.
+- last_mission_ros_smoke.py: 실제 MGM와 GPS wrapper에서 Right/Left/미판별 각각
+  zone 진입→10초 정지→경로 ACK→재출발→FINISH 확인. 미판별은 실제 YOLO 모델과
+  빈 영상의 ROS 입력 경로까지 실행했다. 좌·우 신호는 합성 ExitDetection 관측이다.
+
+정적 사진 검출 정확도와 실제 차량의 정차·조향 추종은 위 소프트웨어 시험과 별개다.
+모델 학습 지표는 [모델 README](../src/stack_exit_decision/models/README.md)를 따른다.

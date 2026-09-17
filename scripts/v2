@@ -37,6 +37,8 @@ case "$V2_ACTION" in
     exec ros2 launch lidar_fusion_v2 bringup.launch.py "$@"
     ;;
   test)
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=197 /usr/bin/python3 \
+      src/adas_mgm/test/last_mission_ros_smoke.py
     ctest --test-dir "$V2_ROOT/build_v2/adas_mgm" --output-on-failure
     ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=196 /usr/bin/python3 \
       src/adas_mgm/test/revised_v2_ros_smoke.py "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
@@ -48,7 +50,7 @@ case "$V2_ACTION" in
     /usr/bin/python3 -m pytest -q src/stack_gps/test
     /usr/bin/python3 -m pytest -q src/stack_estop/test \
       src/stack_parking/test src/stack_avoid/test src/lidar_fusion_v2/test src/stack_lane/test \
-      src/stack_traffic/test src/adas_mgm/test/test_reference_metadata.py \
+      src/stack_traffic/test src/stack_exit_decision/test src/adas_mgm/test/test_reference_metadata.py \
       src/adas_mgm/test/test_mission_calibration.py src/adas_mgm/test/test_start_readiness.py \
       scripts/test_v2_preparation.py scripts/test_v2_launch.py scripts/test_revised_v2_launch.py \
       scripts/test_v2_start_selection.py \

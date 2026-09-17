@@ -26,6 +26,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/StopLine.msg"
   "msg/EstopRequest.msg"
   "msg/EstopRecovery.msg"
+  "msg/ExitDetection.msg"
   "msg/CanHealth.msg"
   "msg/MgmState.msg"
   "msg/ZoneContext.msg"

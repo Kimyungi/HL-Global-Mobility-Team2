@@ -12,7 +12,7 @@ void zone_step(const ZoneSnapshot & input, bool gps_usable, ZoneState & state,
     for (int i = 0; i < input.count; ++i) {
       const auto & zone = input.observations[i];
       if (zone.zone_id == 0 || by_id[zone.zone_id] != nullptr ||
-        zone.zone_type > ZoneType::MISSION_ZONE)
+        zone.zone_type > ZoneType::LAST_MISSION_ZONE)
       {
         valid = false;
         break;

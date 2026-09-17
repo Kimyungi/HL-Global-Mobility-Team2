@@ -1,5 +1,6 @@
 #include "route_step.hpp"
 #include "reference_safety.hpp"
+#include "last_mission_step.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -13,6 +14,9 @@ bool metadata(const RouteFeedback & f) {
     f.completion != RouteCompletion::MISSIONS_COMPLETE) {return false;}
   if (f.completion == RouteCompletion::MISSIONS_COMPLETE && f.required_count == 0) {return false;}
   if ((f.index == 0 && f.connecting) || (f.index + 1 == f.count && f.next_connecting)) {return false;}
+  if (f.last_mission_enabled && (f.terminal || f.connecting || f.next_connecting ||
+    f.left_index <= f.index || f.right_index <= f.index || f.left_index >= f.count ||
+    f.right_index >= f.count || f.left_index == f.right_index)) {return false;}
   bool seen[256]{};
   for (int i=0; i<f.required_count; ++i) {
     if (seen[f.required_missions[i]]) {return false;}
@@ -22,6 +26,8 @@ bool metadata(const RouteFeedback & f) {
 }
 void requirements(const RouteFeedback & f, RouteControl & r) {
   r.completion = f.completion;
+  r.terminal = f.terminal; r.last_mission_enabled = f.last_mission_enabled;
+  r.left_index = f.left_index; r.right_index = f.right_index;
   r.connecting = f.connecting; r.next_connecting = f.next_connecting;
   for (auto & required : r.required_missions) {required = false;}
   for (int i=0; i<f.required_count; ++i) {r.required_missions[f.required_missions[i]] = true;}
@@ -74,6 +80,8 @@ void route_observe(const CoreSnapshot & s, CoreState & st) {
     if (!gps(s) || s.gps_handoff_cached) {return;}  // CSV handoff still requires a localized new generation.
     if (f.index == r.requested_index && f.connecting == r.requested_connecting && f.acknowledged_request == r.request_id) {
       if (s.references[MGM_SRC_GPS].generation <= r.request_generation) {return;}
+      if (st.managers.last_mission.phase == LastMissionPhase::WAIT_ROUTE &&
+        (!f.terminal || f.last_mission_enabled)) {r.phase = RoutePhase::FAULT; return;}
       r.index = f.index; r.seen_nonterminal = r.end_reached = false;
       r.last_generation = 0; r.phase = RoutePhase::RUNNING; r.changed = true;
       requirements(f, r);
@@ -92,6 +100,8 @@ void route_observe(const CoreSnapshot & s, CoreState & st) {
   }
   if (f.index != r.index || f.acknowledged_request != r.request_id) {r.phase = RoutePhase::FAULT; return;}
   if (r.completion != f.completion || r.connecting != f.connecting || r.next_connecting != f.next_connecting) {r.phase = RoutePhase::FAULT; return;}
+  if (r.terminal != f.terminal || r.last_mission_enabled != f.last_mission_enabled ||
+    r.left_index != f.left_index || r.right_index != f.right_index) {r.phase = RoutePhase::FAULT; return;}
   bool expected[256]{};
   for (int i=0; i<f.required_count; ++i) {expected[f.required_missions[i]] = true;}
   for (int i=0; i<256; ++i) {
@@ -116,6 +126,23 @@ void route_step(const CoreSnapshot & s, CoreState & st) {
   if (!r.connecting) {
     for (int i=0; i<256; ++i) {complete &= !r.required_missions[i] || m.mission_completed[i] || m.mission_failed[i];}
   }
+  if (s.revised_v2 && r.last_mission_enabled) {
+    auto & last = m.last_mission;
+    if (last.phase != LastMissionPhase::SELECTED) {
+      if (r.end_reached && !last_mission_active(last)) {r.phase = RoutePhase::WAIT_MISSION;}
+      return;
+    }
+    if (!complete || s.external_stop || m.estop_active ||
+      !s.vehicle_speed_valid || !std::isfinite(s.vehicle_speed) || std::fabs(s.vehicle_speed) > 0.001f ||
+      st.stop_zone_holding || st.wrongway_latched ||
+      m.signal != SignalState::SIGNAL_IDLE) {return;}
+    if (last.selected_index != r.left_index && last.selected_index != r.right_index) {
+      r.phase = RoutePhase::FAULT; return;
+    }
+    request(s, r, last.selected_index);
+    if (r.phase == RoutePhase::WAIT_ACK) {last.phase = LastMissionPhase::WAIT_ROUTE;}
+    return;
+  }
   const bool boundary = !s.revised_v2 && !r.connecting && r.completion == RouteCompletion::MISSIONS_COMPLETE ? complete : r.end_reached;
   if (!boundary) {return;}
   r.phase = complete ? RoutePhase::WAIT_STOP : RoutePhase::WAIT_MISSION;
@@ -123,10 +150,10 @@ void route_step(const CoreSnapshot & s, CoreState & st) {
     m.signal == SignalState::APPROACH_STOP_LINE || m.signal == SignalState::STOPPED_WAIT ||
     st.stop_zone_holding || st.wrongway_latched || st.escape_phase != MGM_ESCAPE_NONE ||
     (m.zones.definitions_seen && m.zones.calibration != CalibrationState::CALIBRATED) ||
-    ((!s.revised_v2 || (!r.connecting && r.index + 1 == r.count)) &&
+    ((!s.revised_v2 || (!r.connecting && (r.terminal || r.index + 1 == r.count))) &&
      (!s.vehicle_speed_valid || !std::isfinite(s.vehicle_speed) || std::fabs(s.vehicle_speed) > 1e-3f))) {return;}
   if (r.connecting) {request(s, r, r.index, false);}
-  else if (r.index + 1 == r.count) {
+  else if (r.terminal || r.index + 1 == r.count) {
     r.phase = RoutePhase::FINISHED; m.top = TopState::FINISH; st.at_end_latched = true;
   } else {request(s, r, r.index + 1, r.next_connecting);}
 }

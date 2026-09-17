@@ -8,6 +8,7 @@
 #include "reference_safety.hpp"
 #include "mission_step.hpp"
 #include "estop_state.hpp"
+#include "last_mission_step.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -196,11 +197,13 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const auto previous_request = st.managers.request;
   const auto last_request_id = st.managers.last_request_id;
   const auto previous_route = st.managers.route;
+  const auto previous_exit_request = st.managers.last_mission.request_id;
   if (s.new_session) {
     const CoreParams params = st.params;
     mgm_init(st, params);
     st.managers.last_request_id = last_request_id;
     route_reset(previous_route, s, st);
+    st.managers.last_mission.request_id = previous_exit_request;
   }
   if (!s.revised_v2 || !st.managers.estop_active) {route_observe(s, st);}
   auto & m = st.managers;
@@ -249,7 +252,17 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   m.top = s.autonomous_enabled && (already_driving || starting_ready) ?
     TopState::AUTONOMOUS_DRIVE : TopState::AUTONOMOUS_ENABLE;
 
-  if (s.revised_v2 && estop_transition(s, st)) {return;}
+  if (s.revised_v2 && estop_transition(s, st)) {
+    last_mission_suspend(m.last_mission);
+    return;
+  }
+  if (last_mission_step(s, st)) {
+    update_existing_guards(s, st);
+    if (!s.new_session && clock_valid) {route_step(s, st);}
+    m.safe_stop_reasons = base_stop_reasons(s, st);
+    m.safety = m.safe_stop_reasons ? SafetyState::SAFE_STOP : SafetyState::NORMAL;
+    return;
+  }
   const bool line = line_valid(s);
   const bool gps = gps_valid(s);
   st.lane_low_cnt = line && s.lane_confidence < st.params.lane_conf_exit ?
@@ -627,6 +640,7 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   out.parking_calibration = parking_calibration(st.params);
   out.recovery = m.recovery;
   out.route = m.route;
+  out.last_mission = m.last_mission;
   out.estop_active = m.estop_active;
   out.estop_request_id = m.estop_request_id;
   out.traffic_distance_known = st.traffic_distance_latched;
@@ -728,6 +742,10 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
     out.v_ref = 0.0f;
     out.immediate_stop = true;
     out.speed_owner = SpeedOwner::MISSION;
+  }
+  if (last_mission_active(m.last_mission) ||
+    (m.last_mission.phase == LastMissionPhase::DONE && m.route.changed)) {
+    out.v_ref = 0; out.immediate_stop = true; out.speed_owner = SpeedOwner::MISSION;
   }
   if (s.revised_v2 && m.estop_active) {estop_decision(s, st, out);}
   // A final route waits for real stationary feedback; middle transitions do not.

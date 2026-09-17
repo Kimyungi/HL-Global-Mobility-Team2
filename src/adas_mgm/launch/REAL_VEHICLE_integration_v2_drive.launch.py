@@ -24,11 +24,16 @@ def selected_manifest(catalog_path, start, end):
     plan = RoutePlan(catalog_path, start if start in ('01', '02') else '01', end)
     ids = [route.id for route in plan.files]
     chosen = plan.files[ids.index(start):]
-    return {'routes': [dict(id=route.id, file=str(route.csv),
+    result = {'routes': [dict(id=route.id, file=str(route.csv),
                             zones_file=str(route.zones),
                             completion=('missions_complete' if route.completion
                                         else 'endpoint_and_missions'))
                        for route in chosen]}
+    if plan.exit_branches and plan.exit_branches['source'] in [route.id for route in chosen]:
+        result['exit_branches'] = plan.exit_branches
+    elif start in ('06', '07'):
+        result['routes'] = [route for route in result['routes'] if route['id'] == start]
+    return result
 
 
 def check_lidar_devices():

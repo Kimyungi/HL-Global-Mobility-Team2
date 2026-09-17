@@ -213,9 +213,13 @@ def validate(context, log_dir=LOG_DIR, lidar_estop_enabled=True, revised_v2_enab
     end_id = LaunchConfiguration('route_end_id').perform(context)
     if (start_id or end_id) and not route_file:
         raise RuntimeError('route_start_id/route_end_id require route_sequence_file')
+    context.launch_configurations['last_mission_enabled'] = 'false'
     if route_file:
         from stack_gps.route_plan import RoutePlan
         plan = RoutePlan(route_file, start_id, end_id)
+        if plan.exit_branches and not revised_v2_enabled:
+            raise RuntimeError('Last_mission_state requires the revised v2 MGM backend')
+        context.launch_configurations['last_mission_enabled'] = 'true' if plan.exit_branches else 'false'
         first = plan.files[0]
         if waypoint_csv and os.path.realpath(waypoint_csv) != str(first.csv):
             raise RuntimeError('waypoint_csv must match the first route in route_sequence_file')
@@ -814,6 +818,16 @@ def build_launch_description(
                     LaunchConfiguration('coeff_smoothing_alpha'), value_type=float),
             }],
             output='screen',
+        ),
+
+        Node(
+            package='stack_exit_decision', executable='exit_detector', name='exit_detector',
+            condition=IfCondition(LaunchConfiguration('last_mission_enabled')),
+            parameters=[{'oak_mxid': LaunchConfiguration('traffic_mxid'),
+                         'oak_usb_speed': LaunchConfiguration('usb_speed'),
+                         'oak_exposure_compensation': ParameterValue(
+                             LaunchConfiguration('traffic_exposure_compensation'), value_type=int)}],
+            respawn=True, respawn_delay=2.0, output='screen',
         ),
 
         # 신호등·정지선 — 2번째 OAK-D. traffic_enabled:=true 일 때만 뜬다.

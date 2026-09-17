@@ -163,3 +163,31 @@ def test_retired_selection_fails_before_hardware(monkeypatch,tmp_path,retired,va
     monkeypatch.setattr(persistent_service,'ensure_running',lambda *a:pytest.fail('GPS touched'))
     with pytest.raises(RuntimeError,match='Legacy avoidance'):
         mod.start_stack(ctx)
+
+@pytest.mark.parametrize('start', ['01', '04', '05', '06', '07'])
+def test_exit_zone_preserves_branch_contract_for_partial_start(tmp_path, start):
+    import yaml
+    from stack_gps.route_plan import RoutePlan
+    folder = ROOT / 'src/stack_gps/waypoints'
+    data = yaml.safe_load((folder / 'halla_route_sequence.yaml').read_text())
+    for route in data['routes']:
+        route['file'] = str(folder / route['file'])
+        route['zones_file'] = str(folder / route['zones_file'])
+        if route['id'] == '05':
+            zone = yaml.safe_load(Path(route['zones_file']).read_text())
+            zone['zones'] = [{'zone_id': 20, 'zone_type': 'LAST_MISSION_ZONE', 'index_range': [10, 20]}]
+            zone_file = tmp_path / 'synthetic_exit.yaml'
+            zone_file.write_text(yaml.safe_dump(zone))
+            route['zones_file'] = str(zone_file)
+    catalog = tmp_path / 'catalog.yaml'
+    catalog.write_text(yaml.safe_dump(data))
+    selected = module().selected_manifest(catalog, start, start if start in ('06','07') else '07')
+    selected_file = tmp_path / 'selected.yaml'
+    selected_file.write_text(yaml.safe_dump(selected))
+    plan = RoutePlan(selected_file)
+    assert plan.files[0].id == start
+    if start in ('06','07'):
+        assert len(plan.files) == 1 and plan.exit_source == -1
+    else:
+        assert [r.id for r in plan.files][-3:] == ['05','06','07']
+        assert plan.exit_branches == {'source':'05','left':'06','right':'07'}
