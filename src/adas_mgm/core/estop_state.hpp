@@ -10,6 +10,39 @@ namespace adas_mgm {
 // publishes measured one-metre recovery completion; hazard clearing is not completion.
 inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
   auto & m = st.managers;
+  // Arm once per authorization: measured forward motion, then two seconds.
+  // An already active recovery keeps its existing stop/resume contract.
+  if (!m.estop_active) {
+    if (!s.autonomous_enabled || s.external_stop || m.top != TopState::AUTONOMOUS_DRIVE) {
+      m.estop_detection_enabled = false;
+      m.estop_motion_seen = false;
+      m.estop_motion_start_ns = 0;
+    } else if (!m.estop_detection_enabled) {
+      if (m.estop_motion_seen && s.monotonic_ns < m.estop_motion_start_ns) {
+        m.estop_motion_seen = false;
+      }
+      if (!m.estop_motion_seen && s.vehicle_speed_valid &&
+        std::isfinite(s.vehicle_speed) && s.vehicle_speed > .02f) {
+        m.estop_motion_seen = true;
+        m.estop_motion_start_ns = s.monotonic_ns;
+      }
+      if (m.estop_motion_seen && s.monotonic_ns - m.estop_motion_start_ns >= 2'000'000'000) {
+        m.estop_detection_enabled = true;
+        // Discard the scan already present when the activation boundary is crossed.
+        for (int i = 0; i < 3; ++i) {
+          m.estop_generation[i] = s.estop_scans[i].generation;
+        }
+      }
+    }
+    if (!m.estop_detection_enabled) {
+      for (int i = 0; i < 3; ++i) {
+        m.estop_generation[i] = s.estop_scans[i].generation;
+        m.estop_count[i] = 0;
+        m.estop_rearm_blocked[i] = false;
+      }
+      return false;
+    }
+  }
   bool trigger = false;
   const float limits[] = {.25f, .15f, .15f};
   for (int i = 0; i < 3; ++i) {

@@ -31,7 +31,7 @@ RTCM    580 B/s | FIXED (FIX=4) | 누적 11780 B | GPS PID=12345
 
 현재 구조에서는 **3번 런처가 라이다 4대·차선 카메라 등 주행 센서를 초기화**하고,
 1번에서 연결한 GPS를 재사용합니다. 별도의 전체 센서 초기화 명령은 없습니다.
-신호등 모듈은 새 한라대 맵의 **zone [3] 안에서만 켜집니다**. 같은 구간에서 GPS 단독주행을 사용하며, 구간 밖에서는 신호등 모듈 OFF가 정상입니다.
+현재 PR #116 경로에는 신호등 구간이 없으므로 신호등 감지 모듈 OFF가 정상입니다.
 
 **터미널 2 — 런처 실행 전 장치 연결·접근 권한 확인:**
 
@@ -98,7 +98,15 @@ traffic_zone_active: false
 차선 검출·실제 이동 가능 여부는 별도로 판단합니다.
 확인 후 터미널 2에서 Ctrl-C를 누르면 상태 표시만 종료됩니다.
 
-## 3. 주행 런쳐 코드 — v2_main 전체 코스
+## 3. 주행 런쳐 코드 — PR #116 단일 경로 03
+
+초기 차량 전방을 선택한 경로의 진행 방향에 맞춥니다. v2는 첫 유효한 RTK FIXED
+위치에서 가장 가까운 웨이포인트의 진행 방향과 신선한 IMU yaw로 초기 헤딩을
+한 번 정렬합니다. 초기 정렬을 위한 별도 직진 주행은 필요하지 않습니다.
+`웨이포인트 초기 헤딩 정렬: idx …, heading …°` 로그를 확인합니다.
+이후에는 IMU 회전량을 추적하고 주행 중 GPS COG로 보정합니다. 이 초기 방향은
+실측 방위가 아니라 차량 배치에 대한 가정입니다. 주행 중 IMU 재연결이나 정렬
+손실이 발생하면 경로 방향으로 강제 복귀하지 않고 기존 COG 재정렬을 기다립니다.
 
 **터미널 1**에서 GPS 상태 표시만 Ctrl-C로 종료한 뒤 실행합니다.
 
@@ -106,7 +114,7 @@ traffic_zone_active: false
 cd /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main
 scripts/v2 prepare \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-  start_waypoint:=01 end_waypoint:=07 \
+  start_waypoint:=03 end_waypoint:=03 \
   parking_enabled:=true parking_zone_entry_active:=true t_reference_enabled:=true \
   avoidance_enabled:=true avoid_zone_only:=true \
   waypoint_avoid:=true avoid_v2_enabled:=false \
@@ -114,26 +122,20 @@ scripts/v2 prepare \
   traffic_enabled:=true rviz:=true v_base:=2.0
 ```
 
-현재 `integration/v2_main`의 새 한라대 CSV와 전체 미션을 실행합니다.
-주행 순서는 시작부터 끝까지 **01 → 03 → 04 → 05 → 07**이며, 03의 T 주차·04의 회피/평행 주차·zone [3]의 Traffic/GPS 단독주행을 포함합니다.
-02는 다른 시작 분기, 06은 다른 종료 분기이므로 01~07을 모두 순서대로 주행하는 구성은 아닙니다.
-경로를 바꾸려면 `start_waypoint`와 `end_waypoint`를 수정합니다.
-`prepare`와 `drive` 모두 `start_waypoint`를 생략하면 터미널에서 매번 시작 CSV의
-경로 번호 `01`~`07`을 묻습니다. 빈 입력의 기본값은 없으며, 선택은 다음 실행에 저장하지 않습니다.
-예를 들어 위 명령에서 `start_waypoint:=01`을 지우면 시작 경로를 직접 선택할 수 있습니다.
-현재 등록된 CSV 중 선택하는 기능이며 GPS 위치로 시작 CSV를 자동 추정하지 않습니다.
+현재 런처는 PR #116의 CSV 3개를 사용합니다.
 
-```text
-시작 CSV 선택: 등록된 경로 01 / 02 / 03 / 04 / 05 / 06 / 07
-시작 경로 번호 (기본값 없음): 04
-[v2] 시작 경로: 04 / 종료 경로: 07
-```
+- `parking_waypoint.csv`: 진입 경로 03, 49점, 약 11.77m.
+- `parking_waypoint_rev1.csv`: 후진 후보 1, 33점, 약 7.68m.
+- `parking_waypoint_rev2.csv`: 후진 후보 2, 39점, 약 9.17m.
 
-`start_waypoint:=04`처럼 명시하면 질문 없이 해당 CSV부터 실행합니다.
-자동 실행 등 터미널 입력이 없는 환경과 `ros2 launch` 직접 실행에서는 시작 경로를 반드시 지정해야 합니다.
-종료 경로를 생략하면 기본 `07`이며, `scripts/v2`에서 `06`을 시작으로 선택하면 종료도 `06`으로 맞춥니다.
-`06`과 `07`은 서로 다른 종료 분기이므로 `start_waypoint:=06 end_waypoint:=07` 같은 조합은 거부합니다.
-실행 시 실제로 선택된 시작 CSV의 전체 경로도 출력합니다.
+진입 CSV의 `state=1`인 35번 점에 주차 진입점을 연결했습니다.
+후진 후보 두 개는 주차 모듈이 하나를 선택합니다. CSV 3개를 차례로 주행하지 않습니다.
+기존 주차 절차인 후진 주차·10초 정차·전진 복귀를 마친 뒤 경로 끝에서 정차·종료하며,
+기존 전체 코스로 넘어가지 않습니다.
+
+시작·종료는 03만 허용합니다. 시작 번호를 생략하면 터미널에서 03을 입력해야 하고,
+종료 번호 기본값은 03입니다. 예전 `start_waypoint:=01 end_waypoint:=07` 명령은 거부됩니다.
+이미 실행 중인 런처에는 변경이 소급 적용되지 않으므로 종료 후 위 명령으로 다시 실행합니다.
 
 센서·상위 제어·RViz와 실제 CAN 송신을 시작하고, 4번 출발 인가를 기다립니다.
 **이 터미널은 실행 상태로 둡니다.**
@@ -141,14 +143,14 @@ scripts/v2 prepare \
 정상 런처 시작 예시:
 
 ```text
-[v2 drive] route: 01 -> 03 -> 04 -> 05 -> 07
+[v2 drive] route: 03
 [v2 drive] avoid planner: Waypoint_Avoid_PR103; backend=stack_avoid.waypoint_planner; zone_only=true
 [v2 drive] logs: /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main/drive_logs/v2_20260916_150000_123456; waiting for explicit go
 ```
 
 이 메시지는 런처 시작을 뜻합니다. 센서 준비 완료는 **2번의 상태 화면**에서 확인합니다.
-CSV 파일은 `waypoints_halla_20260916_path_XX.csv`입니다.
-경로 CSV와 Zone은 이 PC의 `src/stack_gps/waypoints/halla_route_sequence.yaml`을 기준으로 읽습니다.
+GPS 시작 CSV는 `parking_waypoint.csv`이며 원점은 `(37.3041743, 127.9075328)`입니다.
+경로 CSV와 Zone은 이 PC의 `src/stack_gps/waypoints/parking_test_route.yaml`을 기준으로 읽습니다.
 세션별 경로 목록 `route_selected.yaml`과 로그는 위 작업 폴더의 `drive_logs/v2_날짜_시간/` 아래에 생성됩니다.
 
 ESTOP은 상위 제어에서 진입하고 실제 정차 10초 후 후방이 확인되면 1m 후진합니다.
@@ -172,3 +174,40 @@ scripts/v2 go
 ```
 
 마지막 메시지가 MGM의 인가 확인입니다. 실제 이동은 현재 상태와 유효한 주행 경로에 따라 결정됩니다.
+
+## PR #117 장애물 회피 전용 런처
+
+손상민의 PR #117 (`48a63ba4c63cdbee79cbea5de15aad7ea18e82ac`)에서
+`obstacle_waypoint.csv`를 원문 그대로 가져왔다. 116점, 약 28.3m이며
+경로 01의 idx=20 (`state=4`, 출발점에서 약 4.92m)에서 회피 진입한다.
+단일 경로 종료 뒤 다음 CSV로 넘어가지 않는다. 주차 구역·주차 미션은 없다.
+GPS와 웨이포인트 회피 플래너는 같은 CSV와 좌표 원점을 사용한다.
+기본 차선/GPS 전환 정책과 회피 후 GPS 복귀 조건은 기존 v2와 같다.
+
+기존 주행 런처를 종료한 뒤 별도 터미널에서 실행:
+
+```bash
+scripts/v2 obstacle REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
+```
+
+경로 01은 자동 선택된다. 준비 확인 후 `scripts/v2 go`로 출발 인가하며,
+`scripts/v2 stop`으로 인가를 해제한다. 초기 헤딩은 웨이포인트 방향을 사용하므로
+차량을 경로 진행 방향(-135도)에 맞춰 놓고 시작한다.
+기존 `scripts/v2 prepare`는 PR #116 주차 시험 경로 03을 유지한다.
+새 런처도 차량 마커 TF/갱신 수정과 누적 SLAM 지도 제외가 적용된 통합 RViz를 쓴다.
+
+2026-09-17 회피 preview는 1.5m로 설정한다. 생성된 경로와 전방 1.5m 원의
+교점으로 계산한다. 진입·복귀 길이는 기존 2.5m를 유지한다.
+
+### 2026-09-17 소형 RC 주차 시험: 내부 정지 조건 변경
+
+사용자 지시에 따라 선택 이후 주차 내부의 전·후방 장애물/선택 경로 충돌 정지,
+입력 나이·센서 간 시각 차이 정지, 로컬 소유권·경로 식별 변경·시간 역행·역방향 이동
+FAULT를 제거했다. 기존 시작점 및 추종 거리·방향 검사 제거도 유지한다.
+선택 전에는 LiDAR로 후보를 고르고, 선택 이후에는 그 경로와 최신 수신 위치·차속을 쓴다.
+T 어댑터의 reference/preparation_stamp는 이 모드에서 입력 취득 시각이 아니라
+재계산 시각이다. 첫 유효 위치·차속이 없거나 값이 비유한 경우에는 제어점을 만들지 않는다.
+상위 MGM의 ESTOP·운전자 정지·CAN 및 최종 출력 제어는 유지한다.
+초기 선택·방향 전환 정차, 주차 완료 판정/10초 대기, 복귀 완료 정지는 유지한다.
+요청 목록에서 제거 대상이 아니었던 경로 끝의 `path_end_without_rear_wall`도 유지한다.
+변경은 런처 재실행부터 적용하며, 실행 중인 차량에 출발/해제 명령은 보내지 않는다.

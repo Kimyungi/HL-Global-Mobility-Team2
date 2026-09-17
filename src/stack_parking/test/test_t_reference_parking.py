@@ -133,27 +133,32 @@ class ReferenceParkingTests(unittest.TestCase):
         self.assertFalse(out.request_stop)
         self.assertLess(out.reference.x, 0)
 
-    def test_selected_path_cannot_switch_while_moving(self):
+    def test_selected_path_remains_locked_despite_new_obstruction(self):
         self.select()
         out = self.tick(.9, left=left(.9, [[-.7, .25]]))
         self.assertEqual(out.selected, 'ref1')
-        self.assertEqual(out.phase, 'FAULT')
-        self.assertEqual(out.v_suggest, 0)
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertLess(out.v_suggest, 0)
 
-    def test_stale_sensor_during_motion_latches_stop(self):
+    def test_stale_sensor_does_not_latch_motion_fault(self):
         self.select()
         out = self.tick(1.5, rear=rear(.8))
-        self.assertEqual(out.phase, 'FAULT')
-        self.assertEqual(self.tick(1.6).phase, 'FAULT')
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertLess(out.v_suggest, 0)
 
-    def test_future_dated_feedback_is_invalid(self):
-        self.assertEqual(self.tick(1, speed_stamp=2).v_suggest, 0)
-        self.assertEqual(self.core.reason, 'await_owner_or_fresh_feedback')
+    def test_feedback_age_does_not_stop_selected_reverse(self):
+        self.select()
+        self.assertLess(self.tick(1., speed_stamp=2.).v_suggest, 0)
 
-    def test_unknown_rear_sector_stops(self):
+    def test_empty_rear_sector_keeps_selected_reverse_path(self):
         self.select()
         bad = Scan(.9, np.c_[np.ones(21), np.linspace(-.3, .3, 21)], (-.11, 0))
-        self.assertEqual(self.tick(.9, rear=bad).reason, 'rear_sector_unknown')
+        out = self.tick(.9, rear=bad)
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertEqual(out.selected, 'ref1')
+        self.assertLess(out.v_suggest, 0)
+        self.assertIsNotNone(out.reference)
+        self.assertFalse(out.parking_success)
 
     def test_wall_50cm_stops_then_confirms_stationary_success(self):
         pose = self.near_end()
@@ -168,18 +173,20 @@ class ReferenceParkingTests(unittest.TestCase):
         self.core.trigger()
         self.assertEqual(self.tick(2.).phase, 'SUCCESS')
 
-    def test_50cm_wall_before_docking_is_not_success(self):
+    def test_50cm_wall_before_docking_does_not_finish_or_stop(self):
         self.select()
         out = self.tick(.9, rear=rear(.9, .49))
-        self.assertEqual(out.phase, 'FAULT')
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertLess(out.v_suggest, 0)
         self.assertFalse(out.parking_success)
 
-    def test_single_near_return_stops_but_is_not_wall_success(self):
+    def test_single_near_return_is_not_wall_success_or_local_stop(self):
         pose = self.near_end()
         far = rear(.9)
         cone = Scan(.9, np.vstack((far.points, [-.5, 0.])), far.origin)
         out = self.tick(.9, pose=pose, rear=cone)
-        self.assertEqual(out.phase, 'FAULT')
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertLess(out.v_suggest, 0)
         self.assertFalse(out.parking_success)
 
     def test_no_wall_at_csv_end_is_not_success(self):
@@ -189,14 +196,19 @@ class ReferenceParkingTests(unittest.TestCase):
         out = self.tick(.9, pose=Pose2(p.x, p.y, p.yaw))
         self.assertEqual(out.reason, 'path_end_without_rear_wall')
 
-    def test_estop_latches_motion_fault(self):
+    def test_estop_holds_without_changing_selected_path(self):
         self.select()
-        self.assertEqual(self.tick(.9, estop=True).phase, 'FAULT')
+        out = self.tick(.9, estop=True)
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertEqual(out.v_suggest, 0)
+        self.assertLess(self.tick(1.).v_suggest, 0)
 
-    def test_tracking_error_stops(self):
+    def test_position_error_alone_keeps_selected_reverse_path(self):
         self.select()
         out = self.tick(.9, pose=Pose2(2, 2, 0))
-        self.assertEqual(out.reason, 'tracking_pose_outside_corridor')
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertLess(out.v_suggest, 0)
+        self.assertEqual(out.selected, 'ref1')
 
     def test_wall_confirmation_needs_new_frames(self):
         pose = self.near_end()

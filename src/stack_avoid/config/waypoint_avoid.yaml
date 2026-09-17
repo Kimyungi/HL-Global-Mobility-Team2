@@ -11,7 +11,7 @@
       approach: 2.5
       hold: 0.7
       departure: 2.5
-      preview: 1.0
+      preview: 1.5
       range_limit: 3.0
       obstacle_offsets: [1.0]   # [0.5, 1.0] enables both placement bands
       lateral_tolerance: 0.25
@@ -26,4 +26,4 @@
       margin: 0.10
       sample_step: 0.025
       min_turn_radius: 1.15
-      enforce_turn_radius: true
+      enforce_turn_radius: false

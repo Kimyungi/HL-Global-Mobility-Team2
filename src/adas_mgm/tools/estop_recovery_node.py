@@ -70,7 +70,8 @@ class EstopRecoveryNode(Node):
         active=bool(m.estop_active) if m is not None else self.core.request!=0
         request=m.estop_request_id if m is not None else self.core.request
         velocity,done=self.core.step(time.monotonic(),seconds,request,active,authorized,
-                                    speed,speed_stamp,self.rear_clear,rear_stamp)
+                                    speed,speed_stamp,self.rear_clear,rear_stamp,
+                                    state_valid=m_fresh)
         if not active or not request:
             return
         msg=EstopRecovery(request_id=request,v_suggest=velocity,done=done)

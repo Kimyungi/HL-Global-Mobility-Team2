@@ -37,6 +37,9 @@ class AdapterTests(unittest.TestCase):
                    MgmState=NS(MISSION_ACTIVE=1),ParkingCommand=cls.command,
                    ParkingStatus=Status,RefPoint=lambda **kw:NS(**kw),VehicleVector=NS),
                'sensor_msgs':NS(), 'sensor_msgs.msg':NS(LaserScan=NS),
+               'nav_msgs.msg':NS(Path=lambda:NS(header=NS(),poses=[])),
+               'geometry_msgs.msg':NS(PoseStamped=lambda:NS(header=NS(),pose=NS(
+                   position=NS(x=0.,y=0.,z=0.),orientation=NS(x=0.,y=0.,z=0.,w=0.)))),
                'std_msgs':NS(), 'std_msgs.msg':NS(String=lambda **kw:NS(**kw))}
         with patch.dict(sys.modules,stubs):
             cls.module=importlib.import_module('stack_parking.t_parking_adapter')
@@ -56,7 +59,21 @@ class AdapterTests(unittest.TestCase):
         a.gps=a.vehicle=a.mgm=None;a.scans={k:None for k in ('a1','a2','b1')}
         a.estop_pause_since=None
         a.phase_pub=NS(publish=lambda _:None)
+        a.publish_selection_view=lambda pose:None
+        self.selected_paths=[]
+        a.selected_path_pub=NS(publish=self.selected_paths.append)
         self.send(1,100)
+
+    def test_selected_path_map_matches_locked_candidate_and_cancel_clears(self):
+        self.ready()
+        selected = self.adapter.core.selected
+        msg = self.selected_paths[-1]
+        self.assertEqual(msg.header.frame_id, 'map')
+        expected = self.adapter.core.candidates[selected].path
+        self.assertEqual([(p.pose.position.x,p.pose.position.y) for p in msg.poses],
+                         [(p.x,p.y) for p in expected])
+        self.send(3)
+        self.assertEqual(self.selected_paths[-1].poses, [])
 
     def send(self,action,request=100,mode=1):
         return self.adapter.command(NS(action=action,request_id=request,mission_mode=mode))
@@ -130,21 +147,32 @@ class AdapterTests(unittest.TestCase):
         self.supply();self.adapter.gps.reference_stamp=stamp(.9);self.adapter.tick()
         self.assertFalse(self.messages[-1].preparation_ready)
 
-    def test_heartbeat_preserves_actual_input_generation(self):
-        self.ready();first=self.messages[-1].reference_stamp
-        self.now+=.01;self.adapter.tick()
-        last=self.messages[-1].reference_stamp
-        self.assertEqual((first.sec,first.nanosec),(last.sec,last.nanosec))
-
-    def test_route_datum_identity_change_stops_without_done(self):
-        self.ready();self.send(2);self.supply();self.adapter.gps.route.instance_id+=1
+    def test_locked_path_recomputes_with_latest_inputs_after_timeout(self):
+        self.ready(); self.send(2)
         self.adapter.tick()
-        self.assertEqual(self.adapter.core.phase,'FAULT')
-        self.assertEqual(self.messages[-1].v_suggest,0);self.assertFalse(self.messages[-1].done)
+        first = self.messages[-1].reference_stamp
+        self.now += 1.
+        self.adapter.tick()
+        msg = self.messages[-1]
+        self.assertGreater(msg.v_suggest, 0)
+        self.assertEqual(len(msg.points), 1)
+        self.assertGreater((msg.reference_stamp.sec,msg.reference_stamp.nanosec),
+                           (first.sec,first.nanosec))
 
-    def test_missing_actual_owner_cannot_drive(self):
+    def test_route_identity_change_does_not_unselect_course(self):
+        self.ready();self.send(2);self.supply()
+        selected=self.adapter.core.selected
+        self.adapter.gps.route.instance_id+=1
+        self.adapter.tick()
+        self.assertEqual(self.adapter.core.phase,'ADVANCE_3')
+        self.assertGreater(self.messages[-1].v_suggest,0)
+        self.assertEqual(self.adapter.core.selected,selected)
+
+    def test_upper_controller_keeps_final_authority_over_local_reference(self):
         self.ready();self.send(2);self.supply();self.adapter.mgm.mission_request_id=99
-        self.adapter.tick();self.assertEqual(self.messages[-1].v_suggest,0)
+        self.adapter.tick()
+        self.assertGreater(self.messages[-1].v_suggest,0)
+        self.assertEqual(self.messages[-1].request_id,100)
 
     def test_done_not_emitted_at_wall_or_wait(self):
         self.ready();self.send(2);self.adapter.core.phase='WAIT_10';self.adapter.core.wait_since=self.now

@@ -197,6 +197,8 @@ class StackGpsNode(Node):
         self.declare_parameter('imu_frame_id', 'imu_link')
         self.declare_parameter('imu_publish_stale_s', 0.25)
         self.declare_parameter('fusion_alpha', 0.1)   # offset 저역통과 이득
+        self.initial_heading_from_waypoint = self.declare_parameter(
+            'initial_heading_from_waypoint', False).value
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
         # Legacy parking_zone_ranges now means T/perpendicular parking.
         # A separate range selects the parallel test case. The two sets must
@@ -561,8 +563,8 @@ class StackGpsNode(Node):
         lat, lon, height, quality, age, fix_t = fix
 
         # 헤딩 선택: 융합(IMU+COG, 정지 포함 유효) > COG(이동 중) > 접선 폴백.
-        # 융합은 이동 중 COG로 IMU→ENU 오프셋을 맞춘 뒤부터 유효 — 그 전에는
-        # 기존 COG/접선 동작과 동일 (출발 전 정렬 필수 — path_engine 참조)
+        # v2는 최초 FIXED 위치의 경로 접선으로 IMU 오프셋을 초기화한다.
+        # 이후 회전은 IMU로 추적하고 이동 중 COG로 보정한다.
         now = time.monotonic()
         cog = self.link.latest_cog()
         # COG 유효 판정에 히스테리시스 — 속도가 문턱(0.5m/s)에 걸치면 10Hz로
@@ -588,6 +590,7 @@ class StackGpsNode(Node):
                 gz = self.imu.latest_gyro_z()
                 self.fusion.update_imu(yawg[0], now - yawg[1],
                                        gyro_z=gz[0] if gz else None)
+            self._initialize_waypoint_heading(lat, lon, quality, now)
             if cog_valid:
                 self.fusion.update_cog(cog[1], now - cog[2], speed=cog[0])
         fused = self.fusion.heading(now) if self.fusion is not None else None
@@ -707,6 +710,18 @@ class StackGpsNode(Node):
         tf.transform.rotation.z = math.sin(yaw / 2.0)
         tf.transform.rotation.w = math.cos(yaw / 2.0)
         self.tf_bc.sendTransform(tf)
+
+    def _initialize_waypoint_heading(self, lat, lon, quality, now):
+        if (not self.initial_heading_from_waypoint or quality != 4
+                or self.fusion is None or self.fusion.aligned):
+            return
+        index, _ = self.engine.index_of(lat, lon)
+        yaw = self.engine.yaw[index]
+        if self.fusion.initialize_from_waypoint(yaw, now):
+            self.get_logger().info(
+                f'웨이포인트 초기 헤딩 정렬: idx {index}, '
+                f'heading {math.degrees(yaw):+.1f}° '
+                '(차량 전방이 경로 진행 방향과 일치한다고 가정)')
 
     def _on_estop(self, msg):
         # estop=false 하트비트(manual_go/stack_estop)가 살아 있는 동안만 GO
@@ -921,7 +936,9 @@ class StackGpsNode(Node):
             else:
                 off = self.fusion.offset
                 align = (f"정렬 {math.degrees(off):+.0f}°" if off is not None
-                         else "미정렬(직진 주행 필요)")
+                         else ("미정렬(초기 waypoint/IMU 대기 또는 재정렬 필요)"
+                               if self.initial_heading_from_waypoint
+                               else "미정렬(직진 주행 필요)"))
                 imu_stat = (f"  IMU:{frames / 2.0:.0f}Hz {align}"
                             + (f" CRC오류 {crc_err}" if crc_err else "")
                             + (f" 잔차거부 {self.fusion.rejected}"

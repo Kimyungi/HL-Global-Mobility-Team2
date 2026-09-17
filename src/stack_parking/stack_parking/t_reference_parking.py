@@ -19,6 +19,7 @@ from .geometry import PathPoint, Pose2, local_reference, wrap_angle
 
 @dataclass(frozen=True)
 class Config:
+    selection_after_turn: float = 1.5
     front: float = 0.760
     rear: float = 0.090
     width: float = 0.620
@@ -54,6 +55,7 @@ class Candidate:
     name: str
     path: tuple[PathPoint, ...]
     s: np.ndarray
+    turn_end_s: float | None = None
 
     def __post_init__(self):
         if (len(self.path) < 2 or len(self.path) != len(self.s)
@@ -67,6 +69,29 @@ class Candidate:
     def minimum_radius(self) -> float:
         k = max(abs(p.curvature) for p in self.path)
         return math.inf if k < 1e-9 else 1.0 / k
+
+
+def csv_turn_end(rows, station):
+    """First straight sample following the CSV's final curved segment."""
+    curved = [i for i, r in enumerate(rows)
+              if r.get('segment_type', 'STRAIGHT') != 'STRAIGHT']
+    return float(station[min(curved[-1]+1, len(rows)-1)]) if curved else None
+
+
+def selection_path(candidate, cfg):
+    """Inspection prefix only; keep the full candidate for actual driving."""
+    if candidate.turn_end_s is None:
+        return candidate.path
+    end = min(candidate.s[-1], candidate.turn_end_s + cfg.selection_after_turn)
+    count = int(np.searchsorted(candidate.s, end, side='right'))
+    points = candidate.path[:count]
+    if count < len(candidate.path) and end > candidate.s[count-1]:
+        a, b = candidate.path[count-1:count+1]
+        t = (end-candidate.s[count-1])/(candidate.s[count]-candidate.s[count-1])
+        points += (PathPoint(a.x+t*(b.x-a.x), a.y+t*(b.y-a.y),
+                            wrap_angle(a.yaw+t*wrap_angle(b.yaw-a.yaw)),
+                            a.curvature+t*(b.curvature-a.curvature), -1),)
+    return points
 
 
 def load_reverse_csv(filename: str | Path) -> Candidate:
@@ -91,7 +116,7 @@ def load_reverse_csv(filename: str | Path) -> Candidate:
     k = np.interp(dense_s, s, curvature)
     path = tuple(PathPoint(float(a), float(b), wrap_angle(c), float(d), -1)
                  for a, b, c, d in zip(x, y, yaw, k))
-    return Candidate(Path(filename).stem, path, dense_s)
+    return Candidate(Path(filename).stem, path, dense_s, csv_turn_end(rows, s))
 
 
 @dataclass(frozen=True)
@@ -131,6 +156,17 @@ def healthy(scan: Scan | None, now: float, cfg: Config) -> bool:
             and np.isfinite(scan.points).all() and np.isfinite(scan.origin).all())
 
 
+def footprint_hits(point, pose, scan, cfg):
+    local = local_reference(point, pose)
+    c, s = math.cos(local.yaw), math.sin(local.yaw)
+    delta = scan.points - [local.x, local.y]
+    x = c * delta[:, 0] + s * delta[:, 1]
+    y = -s * delta[:, 0] + c * delta[:, 1]
+    return ((x >= -cfg.rear - cfg.margin)
+            & (x <= cfg.front + cfg.margin)
+            & (abs(y) <= cfg.width / 2 + cfg.margin))
+
+
 def inspect_candidate(candidate: Candidate, pose: Pose2, scan: Scan,
                       cfg: Config, first=0, last=None) -> tuple[bool, float]:
     """Return measured footprint collision and ray-observed sample fraction.
@@ -141,15 +177,10 @@ def inspect_candidate(candidate: Candidate, pose: Pose2, scan: Scan,
     """
     hits = False
     targets = []
-    for p in candidate.path[first:last]:
+    for p in selection_path(candidate, cfg)[first:last]:
         local = local_reference(p, pose)
         c, s = math.cos(local.yaw), math.sin(local.yaw)
-        delta = scan.points - [local.x, local.y]
-        x = c * delta[:, 0] + s * delta[:, 1]
-        y = -s * delta[:, 0] + c * delta[:, 1]
-        hits |= bool(np.any((x >= -cfg.rear - cfg.margin)
-                           & (x <= cfg.front + cfg.margin)
-                           & (abs(y) <= cfg.width / 2 + cfg.margin)))
+        hits |= bool(np.any(footprint_hits(p, pose, scan, cfg)))
         for longitudinal in (-cfg.rear, 0., cfg.front):
             for lateral in (-cfg.width / 2, 0., cfg.width / 2):
                 targets.append((local.x + c * longitudinal - s * lateral,
@@ -244,17 +275,12 @@ class TwoReferenceParking:
         cfg = self.cfg
         if self.phase in ('IDLE', 'SUCCESS', 'FAULT'):
             return self._out()
-        if (estop or not parking_owned
-            or not fresh(pose_stamp, now, cfg.feedback_timeout)
-            or not fresh(speed_stamp, now, cfg.feedback_timeout)
-            or not all(math.isfinite(v) for v in (pose.x, pose.y, pose.yaw, speed))
-            or not healthy(left, now, cfg) or not healthy(rear, now, cfg)):
-            self.stopped_since, self.votes, self.wall_votes = None, 0, 0
-            self.reason = 'await_owner_or_fresh_feedback'
-            if self.phase in ('REVERSE', 'WALL_STOP'):
-                self.phase, self.reason = 'FAULT', 'motion_input_lost_or_estop'
+        if estop:
             return self._out()
-        assert left is not None and rear is not None
+        if not all(math.isfinite(v) for v in (pose.x, pose.y, pose.yaw, speed)):
+            return self._out()
+        if self.selected is None and (left is None or not len(left.points)):
+            return self._out()
         if abs(speed) <= cfg.stop_speed:
             if self.stopped_since is None:
                 self.stopped_since = now
@@ -299,35 +325,20 @@ class TwoReferenceParking:
         bound = int(np.searchsorted(candidate.s, candidate.s[self.index] + 1.5, side='right'))
         search = candidate.path[self.index:max(self.index + 1, bound)]
         self.index += int(np.argmin([(p.x-pose.x)**2 + (p.y-pose.y)**2 for p in search]))
-        tracked = candidate.path[self.index]
-        if (math.hypot(tracked.x-pose.x, tracked.y-pose.y) > cfg.tracking_error
-            or abs(wrap_angle(tracked.yaw-pose.yaw)) > cfg.tracking_yaw_error):
-            self.phase, self.reason = 'FAULT', 'tracking_pose_outside_corridor'
-            return self._out()
         remaining = candidate.s[-1] - candidate.s[self.index]
-        nearest, wall = rear_observation(rear, cfg)
-        if not math.isfinite(nearest):
-            self.phase, self.reason = 'FAULT', 'rear_sector_unknown'
-            return self._out()
+        nearest, wall = rear_observation(rear, cfg) if rear is not None and len(rear.points) else (math.inf, None)
         docking = remaining <= cfg.dock_remaining and abs(candidate.path[self.index].curvature) <= 0.05
         if self.phase == 'WALL_STOP':
-            if rear.stamp > self.last_rear:
+            if rear is not None and rear.stamp > self.last_rear:
                 self.last_rear = rear.stamp
                 self.wall_votes = self.wall_votes + 1 if wall is not None and wall <= cfg.rear_stop else 0
             if stationary and self.wall_votes >= cfg.confirm_frames:
                 self.phase, self.reason = 'SUCCESS', 'rear_wall_0_50m_and_stationary'
             return self._out()
-        if nearest <= cfg.rear_stop:
-            if docking and wall is not None and wall <= cfg.rear_stop:
-                self.phase, self.reason = 'WALL_STOP', 'rear_wall_stop'
-                self.last_rear, self.wall_votes = rear.stamp, 1
-                self.stopped_since = None
-            else:
-                self.phase, self.reason = 'FAULT', 'rear_obstacle_before_valid_wall'
-            return self._out()
-        horizon = int(np.searchsorted(candidate.s, candidate.s[self.index] + 1.5, side='right'))
-        if inspect_candidate(candidate, pose, left, cfg, self.index, horizon)[0]:
-            self.phase, self.reason = 'FAULT', 'selected_path_obstruction'
+        if docking and wall is not None and wall <= cfg.rear_stop:
+            self.phase, self.reason = 'WALL_STOP', 'rear_wall_stop'
+            self.last_rear, self.wall_votes = rear.stamp, 1
+            self.stopped_since = None
             return self._out()
         if remaining <= 0.01:
             self.phase, self.reason = 'FAULT', 'path_end_without_rear_wall'

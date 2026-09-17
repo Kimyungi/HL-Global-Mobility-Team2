@@ -5,7 +5,7 @@ from estop_recovery_core import Recovery, rear_corridor_clear
 class RecoveryTest(unittest.TestCase):
     def setUp(self):
         self.r=Recovery()
-        self.call(0,active=False,speed=.3)
+        self.call(0,active=False,authorized=False,speed=0.)
     def call(self,t,**kw):
         args=dict(now=t,stamp_now=t,request=1,active=True,authorized=True,
                   speed=0.,speed_stamp=t,rear_clear=True,rear_stamp=t)
@@ -20,9 +20,30 @@ class RecoveryTest(unittest.TestCase):
         for n in range(1,36): self.call(11+n*.1,speed=-.3)
         self.assertEqual(self.r.phase,'SETTLE')
         self.assertEqual(self.call(14.6),(0.,True))
-    def test_no_arm(self):
+    def test_restart_inside_estop_does_not_repeat_reverse(self):
         self.r=Recovery();self.call(1);self.call(12)
         self.assertEqual(self.r.phase,'HOLD')
+        self.assertFalse(self.r.armed)
+    def test_estop_entry_arms_without_forward_history(self):
+        self.assertFalse(self.r.armed)
+        self.assertEqual(self.call(1),(0.,False))
+        self.assertTrue(self.r.armed)
+        self.assertEqual(self.call(10.99),(0.,False))
+        self.assertEqual(self.call(11),(-.3,False))
+    def test_missing_mgm_at_start_is_not_an_inactive_observation(self):
+        self.r=Recovery()
+        self.call(0,active=False,authorized=False,state_valid=False)
+        self.call(1);self.call(12)
+        self.assertFalse(self.r.armed)
+        self.assertEqual(self.r.phase,'HOLD')
+    def test_arming_does_not_bypass_authority_or_fresh_speed(self):
+        self.call(1,authorized=False)
+        self.assertTrue(self.r.armed)
+        self.assertEqual(self.call(12,authorized=False),(0.,False))
+        self.assertEqual(self.call(13,speed_stamp=1),(0.,False))
+        self.assertEqual(self.call(14),(0.,False))
+        self.assertEqual(self.call(23.99),(0.,False))
+        self.assertEqual(self.call(24),(-.3,False))
     def test_movement_resets_hold(self):
         self.call(1);self.call(10,speed=.1);self.call(11)
         self.assertEqual(self.call(20),(0.,False))

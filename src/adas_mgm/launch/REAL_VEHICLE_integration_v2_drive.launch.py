@@ -36,6 +36,16 @@ def selected_manifest(catalog_path, start, end):
     return result
 
 
+def parking_test_manifest(root, start, end):
+    """A terminal approach route; reverse candidates are not GPS sequence legs."""
+    if start != '03' or end != '03':
+        raise ValueError('PR #116 requires start_waypoint=03 and end_waypoint=03')
+    from stack_gps.route_plan import RoutePlan
+    plan = RoutePlan(root / 'src/stack_gps/waypoints/parking_test_route.yaml')
+    return {'routes': [dict(id=r.id, file=str(r.csv), zones_file=str(r.zones),
+                            completion='endpoint_and_missions') for r in plan.files]}
+
+
 def check_lidar_devices():
     """Catch missing USB links before starting CAN; scan readiness is checked in MGM."""
     missing = []
@@ -49,7 +59,17 @@ def check_lidar_devices():
                            + '. scripts/v2_recover_lidars.py --apply로 식별/링크를 복구하세요.')
 
 
-def start_stack(context):
+def obstacle_test_manifest(root, start, end):
+    """PR117 single obstacle course; state=4 owns the avoidance entry marker."""
+    if start != '01' or end != '01':
+        raise ValueError('PR #117 requires start_waypoint=01 and end_waypoint=01')
+    from stack_gps.route_plan import RoutePlan
+    plan = RoutePlan(root / 'src/stack_gps/waypoints/obstacle_test_route.yaml')
+    return {'routes': [dict(id=r.id, file=str(r.csv), zones_file=str(r.zones),
+                            completion='endpoint_and_missions') for r in plan.files]}
+
+
+def start_stack(context, route_profile='parking'):
     value = lambda name: LaunchConfiguration(name).perform(context)
     if value('REAL_VEHICLE_CONFIRM') != 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX':
         raise RuntimeError('REAL_VEHICLE_CONFIRM token required before starting hardware')
@@ -66,12 +86,17 @@ def start_stack(context):
     share = Path(get_package_share_directory('adas_mgm'))
     if not share.resolve().is_relative_to(root / 'install_v2'):
         raise RuntimeError('Use this workspace scripts/v2 drive and install_v2')
-    manifest = selected_manifest(root / 'src/stack_gps/waypoints/halla_route_sequence.yaml',
-                                 value('start_waypoint'), value('end_waypoint'))
+    builder = obstacle_test_manifest if route_profile == 'obstacle' else parking_test_manifest
+    manifest = builder(root, value('start_waypoint'), value('end_waypoint'))
     print('[v2 drive] selected start CSV: ' + manifest['routes'][0]['file'], flush=True)
+    if route_profile == 'obstacle':
+        context.launch_configurations['t_reference_enabled'] = 'false'
     context.launch_configurations['t_reference_origin_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['t_reference_route_csv'] = str(
-        root / 'src/stack_gps/waypoints/waypoints_halla_20260916_path_03.csv')
+        root / 'src/stack_gps/waypoints/parking_waypoint.csv')
+    for i in (1, 2):
+        context.launch_configurations[f't_reference_reverse_{i}_csv'] = str(
+            root / f'src/stack_gps/waypoints/parking_waypoint_rev{i}.csv')
     context.launch_configurations['avoid_waypoint_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['avoid_route_origin_csv'] = manifest['routes'][0]['file']
     # This entry owns route selection; avoid ambiguous overrides from the base launch.
@@ -116,7 +141,7 @@ def start_stack(context):
     return actions
 
 
-def generate_launch_description():
+def generate_launch_description(route_profile='parking'):
     # Match the integrated field session; normal safety/arbitration remains in the core.
     profile = dict(
         parking_enabled='true', t_reference_enabled='true', t_parking_zone_ranges='[0]', parallel_parking_zone_ranges='[0]',
@@ -128,12 +153,20 @@ def generate_launch_description():
         traffic_yolo_inference_interval='2', traffic_red_phase_yolo_inference_interval='3',
         traffic_stopline_yolo_image_size='320', traffic_require_stop_gate='false',
         traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-2', v_base='2.0', v_avoid='1.0', record='false')
+    obstacle = route_profile == 'obstacle'
+    if obstacle:
+        profile['t_reference_enabled'] = 'false'
+    else:
+        profile['v_base'] = '0.5'
+    route_id = '01' if obstacle else '03'
+    start_options = {'default_value': route_id} if obstacle else {}
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
         DeclareLaunchArgument('start_waypoint',
-                              description='Required each session; scripts/v2 prompts when omitted',
-                              choices=['01', '02', '03', '04', '05', '06', '07']),
-        DeclareLaunchArgument('end_waypoint', default_value='07', choices=['06', '07']),
+                              description=('PR117 obstacle course; fixed route 01' if obstacle else
+                                           'Required each session; scripts/v2 prompts when omitted'),
+                              choices=[route_id], **start_options),
+        DeclareLaunchArgument('end_waypoint', default_value=route_id, choices=[route_id]),
         DeclareLaunchArgument('run_log_dir', default_value='',
                               description='New session directory; empty uses workspace drive_logs'),
         DeclareLaunchArgument('start_rtcm', default_value='true', choices=['true', 'false']),
@@ -141,5 +174,5 @@ def generate_launch_description():
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
         DeclareLaunchArgument('rviz', default_value='true', choices=['true', 'false']),
         *[DeclareLaunchArgument(k, default_value=v) for k, v in profile.items()],
-        OpaqueFunction(function=start_stack),
+        OpaqueFunction(function=start_stack, kwargs={'route_profile': route_profile}),
     ])

@@ -249,8 +249,6 @@ class FixedPlanner:
         try:
             if not self.maneuvers:
                 maneuver = self.make_maneuver(obstacle)
-                if ego_station > maneuver.points[0].station:
-                    raise ValueError('obstacle detected after the required approach start')
                 segments = maneuver.segments
                 maneuvers = [maneuver]
             else:
@@ -303,7 +301,7 @@ class FixedPlanner:
                 abs(wrap_angle(pose[2]-yaw)) <= math.radians(20) + 1e-9)
 
     def preview(self, pose):
-        """GPS-style forward Euclidean lookahead, exactly 1 m where intersectable.
+        """GPS-style configured Euclidean lookahead on the sampled curve.
 
         The preview is on the fixed curve. Before/after its endpoints, the
         unchanged waypoint centerline supplies the approach/exit continuation.

@@ -24,6 +24,8 @@ uint8 mission_mode
 # Actual sensor-input generation backing these points, not publication time.
 # Held on republish; zero means unproven/no generated reference. MGM applies
 # the existing provider timeout to this stamp, including transport delay.
+# Exception: RC T-reference adapter uses planning time, recomputing from latest
+# received pose without an acquisition-age gate; this is not sensor freshness.
 builtin_interfaces/Time reference_stamp
 
 # Current MGM request only. 0 denotes the legacy/manual interface.
@@ -36,4 +38,5 @@ bool search_space_found
 # Existing pipeline PARKING + plan + fresh localization, before execution starts.
 bool preparation_ready
 # Actual accepted localization input backing preparation_ready (not heartbeat).
+# RC T-reference adapter: planning time under the same exception as above.
 builtin_interfaces/Time preparation_stamp

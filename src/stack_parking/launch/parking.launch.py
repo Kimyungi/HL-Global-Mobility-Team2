@@ -25,6 +25,8 @@ def generate_launch_description():
         DeclareLaunchArgument('t_reference_enabled', default_value='false'),
         DeclareLaunchArgument('t_reference_origin_csv', default_value=''),
         DeclareLaunchArgument('t_reference_route_csv', default_value=''),
+        DeclareLaunchArgument('t_reference_reverse_1_csv', default_value=''),
+        DeclareLaunchArgument('t_reference_reverse_2_csv', default_value=''),
         DeclareLaunchArgument(
             'start_multi_lidar', default_value='false',
             description=(
@@ -61,6 +63,8 @@ def generate_launch_description():
                 't_reference_enabled': ParameterValue(LaunchConfiguration('t_reference_enabled'), value_type=bool),
                 't_reference_origin_csv': ParameterValue(LaunchConfiguration('t_reference_origin_csv'), value_type=str),
                 't_reference_route_csv': ParameterValue(LaunchConfiguration('t_reference_route_csv'), value_type=str),
+                't_reference_reverse_1_csv': ParameterValue(LaunchConfiguration('t_reference_reverse_1_csv'), value_type=str),
+                't_reference_reverse_2_csv': ParameterValue(LaunchConfiguration('t_reference_reverse_2_csv'), value_type=str),
             }],
         ),
         Node(

@@ -1,0 +1,245 @@
+2026-09-14T21:04:29.784496+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio ttyUSB5: usb_serial_generic_read_bulk_callback - urb stopped: -32
+2026-09-14T21:04:29.821487+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 2 (92f1) error -71
+2026-09-14T21:04:29.821554+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (90a1) error -71
+2026-09-14T21:04:29.821581+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 1 (9302) error -71
+2026-09-14T21:04:29.821600+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (90a1) error -71
+2026-09-14T21:04:29.821622+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 2 (92f1) error -71
+2026-09-14T21:04:29.821636+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (90a1) error -71
+2026-09-14T21:04:29.821650+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 1 (9302) error -71
+2026-09-14T21:04:29.821663+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (90a1) error -71
+2026-09-14T21:04:29.821677+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 2 (92f1) error -71
+2026-09-14T21:04:29.821695+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (90a1) error -71
+2026-09-14T21:04:29.821707+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio ttyUSB5: usb_serial_generic_read_bulk_callback - urb stopped: -32
+2026-09-14T21:04:29.821728+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 1 (9302) error -71
+2026-09-14T21:04:29.821741+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 2 (92f1) error -71
+2026-09-14T21:04:29.821753+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (90a1) error -71
+2026-09-14T21:04:29.821765+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 1 (9302) error -71
+2026-09-14T21:04:29.821778+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (90a1) error -71
+2026-09-14T21:04:29.821790+0900 sangmin-17Z90TL-H-AUB9U1 kernel: kvaser_usb 3-2.1.3:1.0 can0: Tx URB aborted (-71)
+2026-09-14T21:04:29.821817+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 1 (9302) error -71
+2026-09-14T21:04:29.821832+0900 sangmin-17Z90TL-H-AUB9U1 kernel: kvaser_usb 3-2.1.3:1.0 can0: Tx URB aborted (-71)
+2026-09-14T21:04:29.821842+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (90a1) error -71
+2026-09-14T21:04:29.821856+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: USB disconnect, device number 9
+2026-09-14T21:04:29.821876+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: USB disconnect, device number 10
+2026-09-14T21:04:29.821891+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: USB disconnect, device number 13
+2026-09-14T21:04:29.821909+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 1 (9302) error -71
+2026-09-14T21:04:29.821921+0900 sangmin-17Z90TL-H-AUB9U1 kernel: kvaser_usb 3-2.1.3:1.0 can0: Cannot flush queue, error -19
+2026-09-14T21:04:29.821937+0900 sangmin-17Z90TL-H-AUB9U1 kernel: kvaser_usb 3-2.1.3:1.0 can0: Cannot stop device, error -19
+2026-09-14T21:04:29.821948+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: USB disconnect, device number 16
+2026-09-14T21:04:29.821976+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: failed set request 0x7 status: -19
+2026-09-14T21:04:29.821994+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: failed set request 0x12 status: -19
+2026-09-14T21:04:29.822004+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: failed set request 0x0 status: -19
+2026-09-14T21:04:29.822013+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: cp210x converter now disconnected from ttyUSB4
+2026-09-14T21:04:29.822024+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x 3-2.1.4:1.0: device disconnected
+2026-09-14T21:04:29.822035+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: USB disconnect, device number 11
+2026-09-14T21:04:29.822049+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: USB disconnect, device number 15
+2026-09-14T21:04:29.822067+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: USB disconnect, device number 17
+2026-09-14T21:04:29.822085+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio ttyUSB5: error from flowcontrol urb
+2026-09-14T21:04:29.822094+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio ttyUSB5: FTDI USB Serial Device converter now disconnected from ttyUSB5
+2026-09-14T21:04:29.822235+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio 3-2.2.2:1.0: device disconnected
+2026-09-14T21:04:29.822249+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: USB disconnect, device number 19
+2026-09-14T21:04:29.822267+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: USB disconnect, device number 18
+2026-09-14T21:04:30.027550+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: new high-speed USB device number 20 using xhci_hcd
+2026-09-14T21:04:30.163480+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: New USB device found, idVendor=0bda, idProduct=5411, bcdDevice= 0.01
+2026-09-14T21:04:30.163641+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:30.163695+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: Product: USB2.1 Hub
+2026-09-14T21:04:30.163739+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: Manufacturer: Generic
+2026-09-14T21:04:30.164486+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2:1.0: USB hub found
+2026-09-14T21:04:30.165493+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2:1.0: 4 ports detected
+2026-09-14T21:04:30.449502+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: new high-speed USB device number 21 using xhci_hcd
+2026-09-14T21:04:30.485536+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: USB disconnect, device number 20
+2026-09-14T21:04:30.526530+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: Device not responding to setup address.
+2026-09-14T21:04:30.727528+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: Device not responding to setup address.
+2026-09-14T21:04:30.935514+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: device not accepting address 21, error -71
+2026-09-14T21:04:30.935689+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2-port1: attempt power cycle
+2026-09-14T21:04:31.465489+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: new high-speed USB device number 25 using xhci_hcd
+2026-09-14T21:04:31.603477+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: New USB device found, idVendor=0bda, idProduct=5411, bcdDevice= 0.01
+2026-09-14T21:04:31.603643+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:31.603690+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: Product: USB2.1 Hub
+2026-09-14T21:04:31.603728+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: Manufacturer: Generic
+2026-09-14T21:04:31.605476+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2:1.0: USB hub found
+2026-09-14T21:04:31.605722+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2:1.0: 4 ports detected
+2026-09-14T21:04:31.891535+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: new high-speed USB device number 26 using xhci_hcd
+2026-09-14T21:04:31.988498+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: New USB device found, idVendor=0bda, idProduct=5411, bcdDevice= 0.01
+2026-09-14T21:04:31.988661+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:31.988711+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: Product: USB2.1 Hub
+2026-09-14T21:04:31.988756+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: Manufacturer: Generic
+2026-09-14T21:04:31.989469+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2.1:1.0: USB hub found
+2026-09-14T21:04:31.990469+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2.1:1.0: 4 ports detected
+2026-09-14T21:04:32.069511+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: new high-speed USB device number 27 using xhci_hcd
+2026-09-14T21:04:32.164507+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: New USB device found, idVendor=0bda, idProduct=5411, bcdDevice= 0.01
+2026-09-14T21:04:32.164826+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:32.164885+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: Product: USB2.1 Hub
+2026-09-14T21:04:32.164930+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: Manufacturer: Generic
+2026-09-14T21:04:32.167497+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2.2:1.0: USB hub found
+2026-09-14T21:04:32.167638+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2.2:1.0: 4 ports detected
+2026-09-14T21:04:32.273482+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: new high-speed USB device number 28 using xhci_hcd
+2026-09-14T21:04:32.358478+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: New USB device found, idVendor=0bfd, idProduct=0117, bcdDevice= 0.01
+2026-09-14T21:04:32.358678+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: New USB device strings: Mfr=1, Product=2, SerialNumber=4
+2026-09-14T21:04:32.358745+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: Product: Kvaser Leaf v3
+2026-09-14T21:04:32.358814+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: Manufacturer: Kvaser AB
+2026-09-14T21:04:32.358873+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: SerialNumber: 014244-17930
+2026-09-14T21:04:32.435503+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: new high-speed USB device number 29 using xhci_hcd
+2026-09-14T21:04:32.524481+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device found, idVendor=03e7, idProduct=2485, bcdDevice= 0.01
+2026-09-14T21:04:32.524724+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:32.524798+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Product: Movidius MyriadX
+2026-09-14T21:04:32.524860+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Manufacturer: Movidius Ltd.
+2026-09-14T21:04:32.524930+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: SerialNumber: 03e72485
+2026-09-14T21:04:32.598514+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: new full-speed USB device number 30 using xhci_hcd
+2026-09-14T21:04:32.685480+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: New USB device found, idVendor=10c4, idProduct=ea60, bcdDevice= 1.00
+2026-09-14T21:04:32.685703+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:32.685771+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: Product: HandsFree IMU USB to UART Bridge Controller
+2026-09-14T21:04:32.685833+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: Manufacturer: Silicon Labs
+2026-09-14T21:04:32.685889+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: SerialNumber: 0001
+2026-09-14T21:04:32.692445+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x 3-2.1.4:1.0: cp210x converter detected
+2026-09-14T21:04:32.695484+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: cp210x converter now attached to ttyUSB4
+2026-09-14T21:04:32.757492+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: new full-speed USB device number 31 using xhci_hcd
+2026-09-14T21:04:32.845507+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: New USB device found, idVendor=1546, idProduct=01a9, bcdDevice= 1.00
+2026-09-14T21:04:32.845997+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:32.846078+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: Product: u-blox GNSS receiver
+2026-09-14T21:04:32.846148+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: Manufacturer: u-blox AG - www.u-blox.com
+2026-09-14T21:04:32.854472+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cdc_acm 3-2.2.1:1.0: ttyACM0: USB ACM device
+2026-09-14T21:04:32.921507+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: new high-speed USB device number 32 using xhci_hcd
+2026-09-14T21:04:33.008557+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device found, idVendor=03e7, idProduct=2485, bcdDevice= 0.01
+2026-09-14T21:04:33.008803+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:33.008900+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Product: Movidius MyriadX
+2026-09-14T21:04:33.008970+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Manufacturer: Movidius Ltd.
+2026-09-14T21:04:33.009031+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: SerialNumber: 03e72485
+2026-09-14T21:04:33.081520+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: new full-speed USB device number 33 using xhci_hcd
+2026-09-14T21:04:33.172479+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: New USB device found, idVendor=0403, idProduct=6015, bcdDevice=10.00
+2026-09-14T21:04:33.172697+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:33.172769+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: Product: FT231X USB UART
+2026-09-14T21:04:33.172837+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: Manufacturer: FTDI
+2026-09-14T21:04:33.172906+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: SerialNumber: DU0EEYA0
+2026-09-14T21:04:33.182479+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio 3-2.2.2:1.0: FTDI USB Serial Device converter detected
+2026-09-14T21:04:33.182684+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: Detected FT-X
+2026-09-14T21:04:33.182757+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: FTDI USB Serial Device converter now attached to ttyUSB5
+2026-09-14T21:04:35.182498+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: USB disconnect, device number 29
+2026-09-14T21:04:35.439501+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: USB disconnect, device number 32
+2026-09-14T21:04:36.129474+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: new high-speed USB device number 34 using xhci_hcd
+2026-09-14T21:04:36.215480+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device found, idVendor=03e7, idProduct=f63b, bcdDevice= 1.00
+2026-09-14T21:04:36.215708+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:36.215780+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Product: Luxonis Device
+2026-09-14T21:04:36.215839+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Manufacturer: Intel Corporation
+2026-09-14T21:04:36.215896+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: SerialNumber: 14442C105157D3D200
+2026-09-14T21:04:36.400481+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: new high-speed USB device number 35 using xhci_hcd
+2026-09-14T21:04:36.487478+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device found, idVendor=03e7, idProduct=f63b, bcdDevice= 1.00
+2026-09-14T21:04:36.487675+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:36.487755+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Product: Luxonis Device
+2026-09-14T21:04:36.487819+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Manufacturer: Intel Corporation
+2026-09-14T21:04:36.487880+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: SerialNumber: 14442C10B167CFD200
+2026-09-14T21:04:52.467485+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (93b1) error -71
+2026-09-14T21:04:52.467861+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: usb_serial_generic_read_bulk_callback - urb stopped: -32
+2026-09-14T21:04:52.468042+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: USB disconnect, device number 25
+2026-09-14T21:04:52.468710+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: USB disconnect, device number 26
+2026-09-14T21:04:52.468927+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: USB disconnect, device number 28
+2026-09-14T21:04:52.469080+0900 sangmin-17Z90TL-H-AUB9U1 kernel: kvaser_usb 3-2.1.3:1.0 can0: Cannot flush queue, error -19
+2026-09-14T21:04:52.469162+0900 sangmin-17Z90TL-H-AUB9U1 kernel: kvaser_usb 3-2.1.3:1.0 can0: Cannot stop device, error -19
+2026-09-14T21:04:52.469185+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: clear tt 2 (91b1) error -71
+2026-09-14T21:04:52.469331+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: clear tt 4 (93b1) error -71
+2026-09-14T21:04:52.479481+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: USB disconnect, device number 30
+2026-09-14T21:04:52.479558+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: failed set request 0x7 status: -19
+2026-09-14T21:04:52.479582+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: failed set request 0x12 status: -19
+2026-09-14T21:04:52.479592+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: failed set request 0x0 status: -19
+2026-09-14T21:04:52.479602+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x ttyUSB4: cp210x converter now disconnected from ttyUSB4
+2026-09-14T21:04:52.479613+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x 3-2.1.4:1.0: device disconnected
+2026-09-14T21:04:52.481668+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: USB disconnect, device number 27
+2026-09-14T21:04:52.481793+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: USB disconnect, device number 31
+2026-09-14T21:04:52.484470+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: USB disconnect, device number 33
+2026-09-14T21:04:52.484529+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio ttyUSB5: error from flowcontrol urb
+2026-09-14T21:04:52.484554+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio ttyUSB5: FTDI USB Serial Device converter now disconnected from ttyUSB5
+2026-09-14T21:04:52.484573+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio 3-2.2.2:1.0: device disconnected
+2026-09-14T21:04:52.486491+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: USB disconnect, device number 34
+2026-09-14T21:04:52.490557+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: USB disconnect, device number 35
+2026-09-14T21:04:52.712522+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: new high-speed USB device number 36 using xhci_hcd
+2026-09-14T21:04:52.847501+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: New USB device found, idVendor=0bda, idProduct=5411, bcdDevice= 0.01
+2026-09-14T21:04:52.847934+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:52.848047+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: Product: USB2.1 Hub
+2026-09-14T21:04:52.848127+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2: Manufacturer: Generic
+2026-09-14T21:04:52.850491+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2:1.0: USB hub found
+2026-09-14T21:04:52.850676+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2:1.0: 4 ports detected
+2026-09-14T21:04:53.138498+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: new high-speed USB device number 37 using xhci_hcd
+2026-09-14T21:04:53.235478+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: New USB device found, idVendor=0bda, idProduct=5411, bcdDevice= 0.01
+2026-09-14T21:04:53.235697+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:53.235789+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: Product: USB2.1 Hub
+2026-09-14T21:04:53.235853+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1: Manufacturer: Generic
+2026-09-14T21:04:53.237476+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2.1:1.0: USB hub found
+2026-09-14T21:04:53.237617+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2.1:1.0: 4 ports detected
+2026-09-14T21:04:53.318501+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: new high-speed USB device number 38 using xhci_hcd
+2026-09-14T21:04:53.416515+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: New USB device found, idVendor=0bda, idProduct=5411, bcdDevice= 0.01
+2026-09-14T21:04:53.416843+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:53.416902+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: Product: USB2.1 Hub
+2026-09-14T21:04:53.416941+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2: Manufacturer: Generic
+2026-09-14T21:04:53.419501+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2.2:1.0: USB hub found
+2026-09-14T21:04:53.421469+0900 sangmin-17Z90TL-H-AUB9U1 kernel: hub 3-2.2:1.0: 4 ports detected
+2026-09-14T21:04:53.504501+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: new high-speed USB device number 39 using xhci_hcd
+2026-09-14T21:04:53.591479+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device found, idVendor=03e7, idProduct=f63b, bcdDevice= 1.00
+2026-09-14T21:04:53.591709+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:53.591802+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Product: Luxonis Device
+2026-09-14T21:04:53.591861+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Manufacturer: Intel Corporation
+2026-09-14T21:04:53.591920+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: SerialNumber: 14442C105157D3D200
+2026-09-14T21:04:53.664482+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: new high-speed USB device number 40 using xhci_hcd
+2026-09-14T21:04:53.750482+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: New USB device found, idVendor=0bfd, idProduct=0117, bcdDevice= 0.01
+2026-09-14T21:04:53.750758+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: New USB device strings: Mfr=1, Product=2, SerialNumber=4
+2026-09-14T21:04:53.750845+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: Product: Kvaser Leaf v3
+2026-09-14T21:04:53.750907+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: Manufacturer: Kvaser AB
+2026-09-14T21:04:53.750969+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.3: SerialNumber: 014244-17930
+2026-09-14T21:04:53.825541+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: new high-speed USB device number 41 using xhci_hcd
+2026-09-14T21:04:53.911492+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device found, idVendor=03e7, idProduct=f63b, bcdDevice= 1.00
+2026-09-14T21:04:53.911669+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:53.911732+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Product: Luxonis Device
+2026-09-14T21:04:53.911780+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Manufacturer: Intel Corporation
+2026-09-14T21:04:53.911823+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: SerialNumber: 14442C10B167CFD200
+2026-09-14T21:04:53.984480+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: new full-speed USB device number 42 using xhci_hcd
+2026-09-14T21:04:54.068357+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: New USB device found, idVendor=1546, idProduct=01a9, bcdDevice= 1.00
+2026-09-14T21:04:54.068689+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: New USB device strings: Mfr=1, Product=2, SerialNumber=0
+2026-09-14T21:04:54.068775+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: Product: u-blox GNSS receiver
+2026-09-14T21:04:54.068838+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.1: Manufacturer: u-blox AG - www.u-blox.com
+2026-09-14T21:04:54.078478+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cdc_acm 3-2.2.1:1.0: ttyACM0: USB ACM device
+2026-09-14T21:04:54.143478+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: new full-speed USB device number 43 using xhci_hcd
+2026-09-14T21:04:54.231496+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: New USB device found, idVendor=10c4, idProduct=ea60, bcdDevice= 1.00
+2026-09-14T21:04:54.231993+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:54.232091+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: Product: HandsFree IMU USB to UART Bridge Controller
+2026-09-14T21:04:54.232156+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: Manufacturer: Silicon Labs
+2026-09-14T21:04:54.232217+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: SerialNumber: 0001
+2026-09-14T21:04:54.238486+0900 sangmin-17Z90TL-H-AUB9U1 kernel: cp210x 3-2.1.4:1.0: cp210x converter detected
+2026-09-14T21:04:54.241472+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.1.4: cp210x converter now attached to ttyUSB4
+2026-09-14T21:04:54.305513+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: new full-speed USB device number 44 using xhci_hcd
+2026-09-14T21:04:54.397129+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: New USB device found, idVendor=0403, idProduct=6015, bcdDevice=10.00
+2026-09-14T21:04:54.397374+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:54.397446+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: Product: FT231X USB UART
+2026-09-14T21:04:54.397522+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: Manufacturer: FTDI
+2026-09-14T21:04:54.397582+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: SerialNumber: DU0EEYA0
+2026-09-14T21:04:54.406496+0900 sangmin-17Z90TL-H-AUB9U1 kernel: ftdi_sio 3-2.2.2:1.0: FTDI USB Serial Device converter detected
+2026-09-14T21:04:54.406925+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: Detected FT-X
+2026-09-14T21:04:54.407502+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.2.2: FTDI USB Serial Device converter now attached to ttyUSB5
+2026-09-14T21:04:54.897488+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: USB disconnect, device number 39
+2026-09-14T21:04:55.136542+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: new high-speed USB device number 45 using xhci_hcd
+2026-09-14T21:04:55.220492+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device found, idVendor=03e7, idProduct=2485, bcdDevice= 0.01
+2026-09-14T21:04:55.220659+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:55.220711+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Product: Movidius MyriadX
+2026-09-14T21:04:55.220758+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Manufacturer: Movidius Ltd.
+2026-09-14T21:04:55.220800+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: SerialNumber: 03e72485
+2026-09-14T21:04:55.224482+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: USB disconnect, device number 41
+2026-09-14T21:04:56.617488+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: new high-speed USB device number 46 using xhci_hcd
+2026-09-14T21:04:56.702489+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device found, idVendor=03e7, idProduct=2485, bcdDevice= 0.01
+2026-09-14T21:04:56.702657+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:04:56.702717+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Product: Movidius MyriadX
+2026-09-14T21:04:56.702759+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Manufacturer: Movidius Ltd.
+2026-09-14T21:04:56.702795+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: SerialNumber: 03e72485
+2026-09-14T21:04:59.762479+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: USB disconnect, device number 45
+2026-09-14T21:04:59.869474+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: USB disconnect, device number 46
+2026-09-14T21:05:00.709505+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: new high-speed USB device number 47 using xhci_hcd
+2026-09-14T21:05:00.794511+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device found, idVendor=03e7, idProduct=f63b, bcdDevice= 1.00
+2026-09-14T21:05:00.794779+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:05:00.794857+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Product: Luxonis Device
+2026-09-14T21:05:00.794919+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: Manufacturer: Intel Corporation
+2026-09-14T21:05:00.794977+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: SerialNumber: 14442C105157D3D200
+2026-09-14T21:05:00.982477+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: new high-speed USB device number 48 using xhci_hcd
+2026-09-14T21:05:01.067523+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device found, idVendor=03e7, idProduct=f63b, bcdDevice= 1.00
+2026-09-14T21:05:01.067999+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+2026-09-14T21:05:01.068090+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Product: Luxonis Device
+2026-09-14T21:05:01.068172+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: Manufacturer: Intel Corporation
+2026-09-14T21:05:01.068335+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: SerialNumber: 14442C10B167CFD200
+2026-09-14T21:06:06.843478+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.3: USB disconnect, device number 47
+2026-09-14T21:06:06.951474+0900 sangmin-17Z90TL-H-AUB9U1 kernel: usb 3-2.4: USB disconnect, device number 48

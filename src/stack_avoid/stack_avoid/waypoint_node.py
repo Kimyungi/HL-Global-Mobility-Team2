@@ -233,7 +233,7 @@ class WaypointAvoidNode(Node):
                     reason = 'observed obstacle intersects the fixed vehicle corridor'
                 preview = self.planner.preview(pose)
                 if preview is None:
-                    reason = reason or 'no forward 1 m preview intersection'
+                    reason = reason or f'no forward {self.cfg.preview:g} m preview intersection'
                 else:
                     x, y, yaw, curvature = to_vehicle(preview, pose)
                     ref = RefPoint()

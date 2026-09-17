@@ -234,6 +234,9 @@ struct ManagerState
   bool traffic_zone_active;
   int64_t traffic_zone_enter_ns;
   bool estop_active;
+  bool estop_detection_enabled;
+  bool estop_motion_seen;
+  int64_t estop_motion_start_ns;
   uint64_t estop_request_id;
   uint64_t estop_generation[3];
   int32_t estop_count[3];

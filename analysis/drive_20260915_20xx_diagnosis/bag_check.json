@@ -1,0 +1,730 @@
+[
+  {
+    "run": "v2_20260915_201818_359722",
+    "topics": {
+      "/perception/gps_path": {
+        "messages": 215,
+        "fix_4": 215,
+        "heading_2": 215
+      },
+      "/perception/avoid": {
+        "messages": 181,
+        "with_points": 57,
+        "clear": 46,
+        "empty": 124,
+        "detected": 135
+      },
+      "/adas/target_ref": {
+        "messages": 2152,
+        "compared": 2152
+      },
+      "/rosout": {
+        "messages": 185
+      }
+    },
+    "logs": [
+      {
+        "t": 1789471274.9049103,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.8  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -133° 잔차거부 1  idx 14  횡오차 0.38m"
+      },
+      {
+        "t": 1789471276.9040568,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.8  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 21  횡오차 0.21m"
+      },
+      {
+        "t": 1789471277.3961465,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: waypoint station+1m is outside route window; target=False; pose=gps; GPS_station=5.6068121435764615; anchor=6.6068121435764615; current_pose_fallback=False; side=None; return=None; updates=705; goal_side=None; side_switched=False"
+      },
+      {
+        "t": 1789471277.4957607,
+        "node": "stack_avoid_node",
+        "msg": "avoid compute: backend=native; planning_ms=0.011; target=False; updates=706; fixed_goals=0; passed_goals=0"
+      },
+      {
+        "t": 1789471278.9050124,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.6  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 26  횡오차 0.67m  [트랙 끝]"
+      },
+      {
+        "t": 1789471280.9045396,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.8  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 5  횡오차 0.31m"
+      },
+      {
+        "t": 1789471282.9042792,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.8  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -135° 잔차거부 1  idx 10  횡오차 0.44m"
+      },
+      {
+        "t": 1789471284.4157228,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: no collision-free cubic obstacle chain; target=False; pose=gps; GPS_station=1.194958964952814; anchor=2.1949589649528143; current_pose_fallback=False; side=None; return=None; updates=1; goal_side=None; side_switched=False"
+      },
+      {
+        "t": 1789471284.484329,
+        "node": "stack_avoid_node",
+        "msg": "avoid compute: backend=native; planning_ms=66.368; target=True; updates=2; fixed_goals=1; passed_goals=0"
+      },
+      {
+        "t": 1789471284.484501,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=3.7304563970356157; anchor=4.730456397035615; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=2; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471284.9050982,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -135° 잔차거부 1  idx 17  횡오차 0.28m"
+      },
+      {
+        "t": 1789471285.5806506,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=4.77181845081254; anchor=5.77181845081254; current_pose_fallback=True; side=8.274166765448472; return=10.974166765448473; updates=17; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471285.677585,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=4.77181845081254; anchor=5.77181845081254; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=18; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471286.182475,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.23380501479913; anchor=6.23380501479913; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=23; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471286.2747521,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.3349643536180515; anchor=6.3349643536180515; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=24; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471286.4764426,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=5.493543280756731; anchor=6.493543280756731; current_pose_fallback=True; side=8.274166765448472; return=10.974166765448473; updates=26; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471286.5746672,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.537293339231332; anchor=6.537293339231332; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=27; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471286.674666,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.584563666228002; anchor=6.584563666228002; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=28; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471286.774713,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.584563666228002; anchor=6.584563666228002; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=29; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471286.9043152,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 23  횡오차 0.00m"
+      },
+      {
+        "t": 1789471287.0737908,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.641891440712804; anchor=6.641891440712804; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=32; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471287.173162,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.641891440712804; anchor=6.641891440712804; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=33; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471287.2773962,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=5.641891440712804; anchor=6.641891440712804; current_pose_fallback=True; side=8.274166765448472; return=10.974166765448473; updates=34; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471287.3779085,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.651948888200938; anchor=6.651948888200938; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=35; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471287.7700922,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=5.651948888200938; anchor=6.651948888200938; current_pose_fallback=True; side=8.274166765448472; return=10.974166765448473; updates=39; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471287.9688532,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.651948888200938; anchor=6.651948888200938; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=41; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471288.0670605,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=5.651948888200938; anchor=6.651948888200938; current_pose_fallback=True; side=8.274166765448472; return=10.974166765448473; updates=42; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471288.1720755,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.651948888200938; anchor=6.651948888200938; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=43; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471288.3677285,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.662006335689071; anchor=6.662006335689071; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=45; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471288.4709742,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.6720637831772045; anchor=6.6720637831772045; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=46; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471288.5669239,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.682121230665338; anchor=6.682121230665338; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=47; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471288.7701945,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.682121230665338; anchor=6.682121230665338; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=49; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471288.873821,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.682121230665338; anchor=6.682121230665338; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=50; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471288.9049094,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.6  age 0.0s  RTCM 438B/s  헤딩:융합  IMU:302Hz 정렬 -134° 잔차거부 1  idx 23  횡오차 0.03m"
+      },
+      {
+        "t": 1789471289.0697477,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.69569894667554; anchor=6.69569894667554; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=52; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471289.1733942,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.69569894667554; anchor=6.69569894667554; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=53; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471289.2715993,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=5.69569894667554; anchor=6.69569894667554; current_pose_fallback=True; side=8.274166765448472; return=10.974166765448473; updates=54; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471289.4658115,
+        "node": "stack_avoid_node",
+        "msg": "avoid compute: backend=native; planning_ms=13.484; target=False; updates=56; fixed_goals=1; passed_goals=0"
+      },
+      {
+        "t": 1789471289.4658966,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.69569894667554; anchor=6.69569894667554; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=56; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471289.5637755,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.69569894667554; anchor=6.69569894667554; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=57; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471289.7696893,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.69569894667554; anchor=6.69569894667554; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=59; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471289.968549,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=61; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471290.170661,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.705756394163672; anchor=6.705756394163672; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=63; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471290.2601435,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=64; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471290.3665373,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=65; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471290.4597979,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=66; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471290.5697858,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=67; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471290.7653403,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=69; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471290.8575227,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=70; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471290.9044018,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.6  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 23  횡오차 0.03m"
+      },
+      {
+        "t": 1789471291.056802,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=72; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471291.3603415,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=75; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471291.4564998,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=76; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471291.756022,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.705756394163672; anchor=6.705756394163672; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=79; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471291.8542068,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=80; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471291.9612324,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=81; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471292.0535173,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.705756394163672; anchor=6.705756394163672; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=82; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471292.2595305,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=84; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471292.458569,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.729512519493764; anchor=6.729512519493764; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=86; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471292.5603025,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=87; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471292.7511532,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.729512519493764; anchor=6.729512519493764; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=89; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471292.904238,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.6  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 23  횡오차 0.04m"
+      },
+      {
+        "t": 1789471292.9563353,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.729512519493764; anchor=6.729512519493764; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=91; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471293.254973,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=94; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471293.350011,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=95; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471293.4480557,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=96; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471293.5468605,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=97; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471293.853612,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=100; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471293.9536533,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=101; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471294.052209,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=102; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471294.2577116,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=104; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471294.3466043,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=105; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471294.4515564,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=True; side=8.274166765448472; return=10.974166765448473; updates=106; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471294.5515807,
+        "node": "stack_avoid_node",
+        "msg": "avoid compute: backend=native; planning_ms=17.904; target=False; updates=107; fixed_goals=1; passed_goals=0"
+      },
+      {
+        "t": 1789471294.551964,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=107; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471294.7451274,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=109; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471294.9042196,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.6  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 23  횡오차 0.03m"
+      },
+      {
+        "t": 1789471295.1515422,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=113; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471295.240507,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle goals; cubic chain revalidated; target=True; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=True; side=8.274166765448472; return=10.974166765448473; updates=114; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471295.351987,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.719334110173874; anchor=6.719334110173874; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=115; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471295.5478544,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: fixed obstacle chain blocked; goals retained; target=False; pose=gps; GPS_station=5.705756394163672; anchor=6.705756394163672; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=117; goal_side=-1; side_switched=False"
+      },
+      {
+        "t": 1789471295.6418047,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: observed obstacle has no free side candidate; fixed goals retained; target=False; pose=gps; GPS_station=5.705756394163672; anchor=6.705756394163672; current_pose_fallback=False; side=8.274166765448472; return=10.974166765448473; updates=118; goal_side=-1; side_switched=False"
+      }
+    ],
+    "avoid_pub_reference_age_s": {
+      "min": 0.10106897354125977,
+      "median": 0.15251445770263672,
+      "max": 0.5197503566741943,
+      "over_0.2": 11,
+      "n": 57
+    }
+  },
+  {
+    "run": "v2_20260915_202501_628508",
+    "topics": {
+      "/perception/gps_path": {},
+      "/perception/avoid": {},
+      "/adas/target_ref": {},
+      "/rosout": {}
+    },
+    "logs": []
+  },
+  {
+    "run": "v2_20260915_204046_106454",
+    "topics": {
+      "/perception/gps_path": {
+        "messages": 845,
+        "fix_4": 845,
+        "heading_2": 845
+      },
+      "/perception/avoid": {
+        "messages": 846,
+        "empty": 839,
+        "clear": 660,
+        "detected": 186,
+        "with_points": 7
+      },
+      "/adas/target_ref": {
+        "messages": 8448,
+        "compared": 8447,
+        "geometry_mismatch": 2,
+        "unaligned": 1
+      },
+      "/rosout": {
+        "messages": 419
+      }
+    },
+    "logs": [
+      {
+        "t": 1789472544.812255,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472546.8120804,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472548.8130553,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472550.813312,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472552.8131168,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.8  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472554.8121893,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472556.812951,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472558.8120923,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472560.8122478,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472562.812882,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 1  횡오차 0.29m"
+      },
+      {
+        "t": 1789472564.8121533,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.8  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 7  횡오차 0.24m"
+      },
+      {
+        "t": 1789472566.812153,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.8  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -135° 잔차거부 1  idx 15  횡오차 0.19m"
+      },
+      {
+        "t": 1789472568.8120542,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:299Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472570.8121753,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472572.8121982,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472574.8130093,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.8  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472576.812233,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.6  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472578.8129468,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.6  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:299Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472580.813161,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472582.8122113,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472584.8125637,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:296Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.16m"
+      },
+      {
+        "t": 1789472586.8141031,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:292Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472588.8120654,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:292Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472590.8124332,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:294Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.14m"
+      },
+      {
+        "t": 1789472592.8134947,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:294Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.16m"
+      },
+      {
+        "t": 1789472594.8121717,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:296Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.16m"
+      },
+      {
+        "t": 1789472596.8229575,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:297Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.15m"
+      },
+      {
+        "t": 1789472598.8126361,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:296Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.14m"
+      },
+      {
+        "t": 1789472600.8121104,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.0s  RTCM 581B/s  헤딩:융합  IMU:296Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.14m"
+      },
+      {
+        "t": 1789472602.8128145,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:297Hz 정렬 -134° 잔차거부 1  idx 18  횡오차 0.14m"
+      },
+      {
+        "t": 1789472604.812152,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -134° 잔차거부 1  idx 22  횡오차 0.07m"
+      },
+      {
+        "t": 1789472606.3924336,
+        "node": "stack_avoid_node",
+        "msg": "avoid compute: backend=native; planning_ms=0.011; target=False; updates=1; fixed_goals=0; passed_goals=0"
+      },
+      {
+        "t": 1789472606.3925376,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: waypoint station+1m is outside route window; target=False; pose=gps; GPS_station=6.420929121074789; anchor=7.420929121074789; current_pose_fallback=False; side=None; return=None; updates=1; goal_side=None; side_switched=False"
+      },
+      {
+        "t": 1789472606.8119826,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -134° 잔차거부 1  idx 26  횡오차 0.78m  [트랙 끝]"
+      },
+      {
+        "t": 1789472608.6866374,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: following GPS station+1m; target=True; pose=gps; GPS_station=1.0826859967729754; anchor=2.0826859967729754; current_pose_fallback=False; side=None; return=None; updates=1; goal_side=None; side_switched=False"
+      },
+      {
+        "t": 1789472608.8129492,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:299Hz 정렬 -135° 잔차거부 1  idx 5  횡오차 0.04m"
+      },
+      {
+        "t": 1789472609.4578831,
+        "node": "stack_avoid_node",
+        "msg": "avoid planner: no collision-free cubic obstacle chain; target=False; pose=gps; GPS_station=1.3763294812938722; anchor=2.3763294812938724; current_pose_fallback=False; side=None; return=None; updates=8; goal_side=None; side_switched=False"
+      },
+      {
+        "t": 1789472610.8121138,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -135° 잔차거부 1  idx 8  횡오차 0.17m"
+      },
+      {
+        "t": 1789472611.5374293,
+        "node": "stack_avoid_node",
+        "msg": "avoid compute: backend=native; planning_ms=58.177; target=False; updates=29; fixed_goals=0; passed_goals=0"
+      },
+      {
+        "t": 1789472612.8130095,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:300Hz 정렬 -135° 잔차거부 1  idx 8  횡오차 0.16m"
+      },
+      {
+        "t": 1789472614.8134625,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 465B/s  헤딩:융합  IMU:298Hz 정렬 -135° 잔차거부 1  idx 8  횡오차 0.16m"
+      },
+      {
+        "t": 1789472616.6301792,
+        "node": "stack_avoid_node",
+        "msg": "avoid compute: backend=native; planning_ms=68.982; target=False; updates=80; fixed_goals=0; passed_goals=0"
+      },
+      {
+        "t": 1789472616.8123076,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 378B/s  헤딩:융합  IMU:298Hz 정렬 -135° 잔차거부 1  idx 8  횡오차 0.16m"
+      },
+      {
+        "t": 1789472618.813401,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -135° 잔차거부 1  idx 8  횡오차 0.16m"
+      },
+      {
+        "t": 1789472620.8125966,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:298Hz 정렬 -135° 잔차거부 1  idx 8  횡오차 0.16m"
+      },
+      {
+        "t": 1789472622.8124087,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:299Hz 정렬 -135° 잔차거부 1  idx 9  횡오차 0.14m"
+      },
+      {
+        "t": 1789472624.8121507,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:297Hz 정렬 -135° 잔차거부 1  idx 9  횡오차 0.14m"
+      },
+      {
+        "t": 1789472626.8170657,
+        "node": "stack_gps_node",
+        "msg": "FIXED  위성 12개 HDOP 0.7  age 0.1s  RTCM 581B/s  헤딩:융합  IMU:297Hz 정렬 -135° 잔차거부 1  idx 8  횡오차 0.16m"
+      }
+    ],
+    "avoid_pub_reference_age_s": {
+      "min": 0.10117125511169434,
+      "median": 0.10214853286743164,
+      "max": 0.17675995826721191,
+      "over_0.2": 0,
+      "n": 7
+    }
+  }
+]

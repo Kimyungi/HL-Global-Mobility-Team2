@@ -32,36 +32,37 @@ def arguments(result):
 
 
 def test_interactive_selection_rejects_blank_and_invalid_then_accepts_short_number():
-    result = select('rviz:=false', terminal_input='\n08\n4\n')
-    assert arguments(result) == ['rviz:=false', 'start_waypoint:=04', 'end_waypoint:=07']
-    assert result.stderr.decode().count('01~07 중 하나를 입력하세요.') == 2
+    result = select('rviz:=false', terminal_input='\n08\n3\n')
+    assert arguments(result) == ['rviz:=false', 'start_waypoint:=03', 'end_waypoint:=03']
+    assert result.stderr.decode().count('주차 시험 경로 03을 입력하세요.') == 2
 
 
 def test_each_invocation_requires_a_new_selection():
     assert 'start_waypoint:=03' in arguments(select(terminal_input='03\n'))
-    assert 'start_waypoint:=05' in arguments(select(terminal_input='05\n'))
+    assert 'start_waypoint:=03' in arguments(select(terminal_input='03\n'))
     assert select().returncode == 2
 
 
 def test_explicit_start_skips_prompt_and_preserves_argument_boundaries():
-    result = select('start_waypoint:=04', 'run_log_dir:=/tmp/run with spaces', 'v_base:=1.0')
-    assert arguments(result) == ['start_waypoint:=04', 'run_log_dir:=/tmp/run with spaces',
-                                 'v_base:=1.0', 'end_waypoint:=07']
+    result = select('start_waypoint:=03', 'run_log_dir:=/tmp/run with spaces', 'v_base:=1.0')
+    assert arguments(result) == ['start_waypoint:=03', 'run_log_dir:=/tmp/run with spaces',
+                                 'v_base:=1.0', 'end_waypoint:=03']
     assert '시작 경로 번호' not in result.stderr.decode()
 
 
-@pytest.mark.parametrize('start', ['06', '07'])
-def test_terminal_start_defaults_to_the_same_terminal_branch(start):
-    assert arguments(select('start_waypoint:=' + start)) == [
-        'start_waypoint:=' + start, 'end_waypoint:=' + start]
+def test_only_pr116_route_is_allowed():
+    for start in ('01', '02', '04', '05', '06', '07'):
+        assert select('start_waypoint:=' + start).returncode == 2
+    assert arguments(select('start_waypoint:=03')) == [
+        'start_waypoint:=03', 'end_waypoint:=03']
 
 
 @pytest.mark.parametrize('args', [(), ('start_waypoint:=',), ('start_waypoint:=08',),
-    ('start_waypoint:=03', 'start_waypoint:=04'),
+    ('start_waypoint:=03', 'start_waypoint:=03'),
     ('start_waypoint:=03', 'end_waypoint:=05'),
-    ('start_waypoint:=06', 'end_waypoint:=07'),
+    ('start_waypoint:=06', 'end_waypoint:=03'),
     ('start_waypoint:=07', 'end_waypoint:=06'),
-    ('start_waypoint:=03', 'end_waypoint:=06', 'end_waypoint:=07')])
+    ('start_waypoint:=03', 'end_waypoint:=06', 'end_waypoint:=03')])
 def test_missing_invalid_or_conflicting_selection_never_produces_launch_arguments(args):
     result = select(*args)
     assert result.returncode == 2

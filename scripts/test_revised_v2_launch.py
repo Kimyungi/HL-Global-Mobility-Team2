@@ -35,6 +35,7 @@ def test_runbook_profile_excludes_legacy_estop_and_starts_traffic_supervisor():
     assert len(params['estop_mount.front'])==8
     gps=next(n for n in nodes if n.node_package=='stack_gps')
     assert evaluate_parameters(context,gps._Node__parameters)[0]['turn_zone_policy']
+    assert evaluate_parameters(context,gps._Node__parameters)[0]['initial_heading_from_waypoint']
 
 
 def test_waypoint_provider_is_exclusive_and_uses_selected_origin():
@@ -66,7 +67,7 @@ def test_drive_defaults_select_new_provider_and_keep_t_parking():
     spec=importlib.util.spec_from_file_location('waypoint_drive',path)
     mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     context=LaunchContext()
-    context.launch_configurations['start_waypoint']='01'
+    context.launch_configurations['start_waypoint']='03'
     for item in mod.generate_launch_description().entities:
         if isinstance(item,DeclareLaunchArgument): item.execute(context)
     assert context.launch_configurations['waypoint_avoid']=='true'

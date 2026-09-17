@@ -75,7 +75,15 @@ def test_one_view_transforms_track_and_slam_and_displays_each_preview(display):
     assert markers['GPS'].pose.position.x == 2.5
     assert markers['CAMERA'].pose.position.y == pytest.approx(-.4)
     points=view.point_cloud2.read_points_numpy(out['map'],field_names=('x','y'))
-    np.testing.assert_allclose(points,[(2.,0.)],atol=1e-6)
+    assert len(points) == 0  # accumulated SLAM is excluded from the overview
+    vehicle = markers['vehicle']
+    assert vehicle.frame_locked
+    assert vehicle.header.stamp.sec == vehicle.header.stamp.nanosec == 0
+    assert all(m.action != m.DELETEALL for m in out['markers'].markers)
+    node.samples.pop('lane')
+    node.render()
+    assert any(m.ns == 'CAMERA' and m.action == m.DELETE for m in out['markers'].markers)
+    assert any(m.ns == 'vehicle' and m.action == m.ADD for m in out['markers'].markers)
     assert out['hud'].height==1160 and out['hud'].width==720
     assert all(m.header.frame_id==('map' if m.ns=='gps_route' else view.FRAME)
                for m in out['markers'].markers)
@@ -124,3 +132,28 @@ def test_absolute_avoid_path_marker_does_not_move_with_vehicle(display):
         marker=next(m for m in out['markers'].markers if m.ns=='AVOID_PATH')
         assert marker.header.frame_id=='map'
         assert [(p.x,p.y) for p in marker.points]==[(100.,200.),(99.,203.),(100.,206.)]
+
+
+def test_fixed_avoid_curve_remains_visible_without_valid_control_preview(display):
+    node, out = display
+    stamp = node.get_clock().now().to_msg()
+    state = MgmState(avoidance=1)
+    state.header.stamp = stamp
+    node.receive('mgm', state)
+    path = Path()
+    path.header.frame_id = 'map'
+    # Geometry is latched, not a fresh control reference.
+    for x, y in [(1., 0.), (2., 1.), (3., 0.)]:
+        pose = PoseStamped()
+        pose.pose.position.x, pose.pose.position.y = x, y
+        path.poses.append(pose)
+    node.receive('fixed_avoid_path', path)
+    node.render()
+    curve = next(m for m in out['markers'].markers if m.ns == 'AVOID_FIXED_REFERENCE')
+    assert curve.header.frame_id == 'map'
+    assert len(curve.points) == 3
+    assert curve.points[1].y == 1.
+    state.avoidance = 0
+    node.render()
+    assert any(m.ns == 'AVOID_FIXED_REFERENCE' and m.action == m.DELETE
+               for m in out['markers'].markers)

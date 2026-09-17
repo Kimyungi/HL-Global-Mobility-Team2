@@ -87,7 +87,11 @@ def main():
             expect(lambda s,r:s.start_ready,'ready')
             go.publish(Bool(data=True))
             expect(lambda s,r:s.go_authorized and r.v_ref>0,'authorized normal driving')
-            vehicle.v=.3; pump(.5)  # measured forward activity arms executor
+            vehicle.v=0.; messages[scans[0]].ranges=[.2]*10; pump(.5)
+            assert not states[-1].estop_active, 'stationary departure must not enter ESTOP'
+            vehicle.v=.03; pump(1.)
+            assert not states[-1].estop_active, 'motion alone cannot bypass two second delay'
+            messages[scans[0]].ranges=[10.]*10; pump(1.2)
             messages[scans[0]].ranges=[.2]*10
             vehicle.v=0.
             expect(lambda s,r:s.estop_active and r.state==5 and r.v_ref==0,'upper ESTOP state 5')

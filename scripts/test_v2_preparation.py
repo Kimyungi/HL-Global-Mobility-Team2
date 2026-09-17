@@ -20,7 +20,7 @@ def module():
 
 def context(mod, tmp_path):
     ctx = LaunchContext()
-    ctx.launch_configurations['start_waypoint'] = '01'
+    ctx.launch_configurations['start_waypoint'] = '03'
     for item in mod.generate_launch_description().entities:
         if isinstance(item, DeclareLaunchArgument):
             item.execute(ctx)
@@ -113,7 +113,7 @@ def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkey
     ctx = context(mod, tmp_path)
     ctx.launch_configurations.update(
         REAL_VEHICLE_CONFIRM='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX',
-        start_waypoint='04', end_waypoint='07', parking_enabled='true',
+        start_waypoint='03', end_waypoint='03', parking_enabled='true',
         parking_zone_entry_active='true', avoidance_enabled='true', avoid_zone_only='true',
         zone_enter_confirm_samples='5',
         zone_exit_confirm_samples='5', traffic_enabled='true', v_base='2.0')
@@ -134,7 +134,7 @@ def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkey
     assert 'stack_avoid_v2' not in nodes
     assert nodes['stack_avoid'].condition.evaluate(ctx)
     waypoint = evaluate_parameters(ctx, nodes['stack_avoid']._Node__parameters)[1]
-    assert waypoint['waypoint_csv'].endswith('waypoints_halla_20260916_path_04.csv')
+    assert waypoint['waypoint_csv'].endswith('parking_waypoint.csv')
     assert waypoint['route_origin_csv'] == waypoint['waypoint_csv']
     assert waypoint['target_speed_mps'] == 1.0
     mgm = evaluate_parameters(ctx, nodes['adas_mgm']._Node__parameters)[1]
@@ -191,3 +191,99 @@ def test_exit_zone_preserves_branch_contract_for_partial_start(tmp_path, start):
     else:
         assert [r.id for r in plan.files][-3:] == ['05','06','07']
         assert plan.exit_branches == {'source':'05','left':'06','right':'07'}
+
+
+def test_pr116_runtime_manifest_and_reverse_candidates(monkeypatch, tmp_path):
+    from types import SimpleNamespace as NS
+    import math
+    from stack_gps.node import StackGpsNode
+    from stack_gps.path_engine import PathEngine
+    from stack_gps.route_plan import RoutePlan
+    from stack_parking.t_parking_sequence import load_course
+    mod = module()
+    ctx = context(mod, tmp_path)
+    ctx.launch_configurations['REAL_VEHICLE_CONFIRM'] = 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX'
+    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
+    monkeypatch.setattr(mod, 'check_lidar_devices', lambda: None)
+    monkeypatch.setattr(persistent_service, 'ensure_running', lambda *a: None)
+    mod.start_stack(ctx)
+    plan = RoutePlan(tmp_path / 'run/route_selected.yaml')
+    assert [r.id for r in plan.files] == ['03']
+    assert plan.files[0].csv.name == 'parking_waypoint.csv'
+    assert len(plan.files[0].points) == 49
+    assert plan.exit_branches is None
+    config = ctx.launch_configurations
+    reverse = [config[f't_reference_reverse_{i}_csv'] for i in (1, 2)]
+    assert [Path(p).name for p in reverse] == ['parking_waypoint_rev1.csv', 'parking_waypoint_rev2.csv']
+    candidates, approach, _ = load_course(config['t_reference_origin_csv'],
+                                         config['t_reference_route_csv'], reverse)
+    assert len(candidates) == 2
+    for c in candidates:
+        assert math.hypot(c.path[0].x-approach[-1].x, c.path[0].y-approach[-1].y) < .03
+
+    def factory(route):
+        values = dict(waypoint_csv=str(route.csv), zones_file=str(route.zones),
+                      stop_zone_snap_max_m=3., stop_zone_span_m=1., parking_zone_span_m=1.,
+                      stop_points_latlon='', avoid_zone_latlon='', gps_only_zone_latlon='',
+                      avoid_zone_lead_m=5.)
+        log = NS(info=lambda msg: None, warn=lambda msg: None, error=lambda msg: pytest.fail(msg))
+        node = NS(engine=PathEngine(route.points), turn_zone_policy=True, get_logger=lambda: log)
+        StackGpsNode._setup_zones(node, lambda key: NS(value=values[key]))
+        return node.engine, node.zone_map
+
+    plan.bind(factory)
+    assert len(plan.required[0]) == 1
+    first, last = plan.engines[0].parking_ranges[0]
+    assert first <= 35 <= last
+    assert not plan.next_connecting
+    assert not plan.apply(plan.sequence_id, 1, 1, 1, 1)
+
+
+@pytest.mark.parametrize('start,end', [('01', '07'), ('03', '07'), ('04', '03')])
+def test_pr116_rejects_old_route_selection(start, end):
+    with pytest.raises(ValueError, match='PR #116 requires'):
+        module().parking_test_manifest(ROOT, start, end)
+
+
+def test_pr117_obstacle_runtime_binding(monkeypatch, tmp_path):
+    from types import SimpleNamespace as NS
+    from stack_gps.node import StackGpsNode
+    from stack_gps.path_engine import PathEngine
+    from stack_gps.route_plan import RoutePlan
+    mod = module()
+    ctx = LaunchContext()
+    for item in mod.generate_launch_description(route_profile='obstacle').entities:
+        if isinstance(item, DeclareLaunchArgument):
+            item.execute(ctx)
+    ctx.launch_configurations.update(REAL_VEHICLE_CONFIRM='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX',
+                                     run_log_dir=str(tmp_path/'run'), rviz='false')
+    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
+    monkeypatch.setattr(mod, 'check_lidar_devices', lambda: None)
+    monkeypatch.setattr(persistent_service, 'ensure_running', lambda *a: None)
+    mod.start_stack(ctx, route_profile='obstacle')
+    plan = RoutePlan(tmp_path/'run/route_selected.yaml')
+    assert [r.id for r in plan.files] == ['01']
+    route = plan.files[0]
+    assert route.csv.name == 'obstacle_waypoint.csv'
+    assert len(route.points) == 116
+    assert ctx.launch_configurations['avoid_waypoint_csv'] == str(route.csv)
+    assert ctx.launch_configurations['avoid_route_origin_csv'] == str(route.csv)
+    assert ctx.launch_configurations['t_reference_enabled'] == 'false'
+
+    def factory(route):
+        values = dict(waypoint_csv=str(route.csv), zones_file=str(route.zones),
+                      stop_zone_snap_max_m=3., stop_zone_span_m=1., parking_zone_span_m=1.,
+                      stop_points_latlon='', avoid_zone_latlon='', gps_only_zone_latlon='',
+                      avoid_zone_lead_m=5.)
+        log = NS(info=lambda msg: None, warn=lambda msg: None, error=lambda msg: pytest.fail(msg))
+        node = NS(engine=PathEngine(route.points), turn_zone_policy=True, get_logger=lambda: log)
+        StackGpsNode._setup_zones(node, lambda key: NS(value=values[key]))
+        return node.engine, node.zone_map
+    plan.bind(factory)
+    assert plan.engines[0].avoid_ranges == [(20, 115)]
+    assert not plan.engines[0].parking_ranges
+    assert not plan.engines[0].parallel_parking_ranges
+    assert plan.required == [()]
+    assert not plan.next_connecting
+    with pytest.raises(ValueError, match='PR #117'):
+        mod.obstacle_test_manifest(ROOT, '03', '03')

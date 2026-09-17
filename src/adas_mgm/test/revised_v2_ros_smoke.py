@@ -94,6 +94,8 @@ def main():
             muted.add(scans[1])
             expect(lambda s,r:not s.lidar_ready and r.v_ref>0,'rear loss alone does not stop runtime')
             muted.clear()
+            messages['/vehicle/vector'].v=.03; pump(2.2)
+            messages['/vehicle/vector'].v=0.
             messages[scans[0]].ranges=[.2]*10
             expect(lambda s,r:s.estop_active and s.safety==4 and r.v_ref==0,'raw front scans enter upper ESTOP; no executor holds zero')
             episode=states[-1].estop_request_id

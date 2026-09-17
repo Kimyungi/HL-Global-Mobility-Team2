@@ -520,6 +520,7 @@ class StackTrafficNode(Node):
         )
         self.camera_pub = self.create_publisher(Header, "/perception/traffic_camera", 1)
         self.debug_image_pub = self.create_publisher(Image, '/perception/traffic_debug_image', 1)
+        self.raw_image_pub = self.create_publisher(Image, '/perception/traffic_image_raw', 1)
 
         self.red_history: Deque[int] = deque(maxlen=self.vote_window)
         self.green_history: Deque[int] = deque(maxlen=self.vote_window)
@@ -1988,6 +1989,16 @@ class StackTrafficNode(Node):
         self.last_camera_success_monotonic = time.monotonic()
         # Only a successfully read frame renews physical camera health.
         self.camera_pub.publish(Header(stamp=self.get_clock().now().to_msg()))
+        # Publish untouched camera pixels before inference or debug drawing.
+        if self.raw_image_pub.get_subscription_count() > 0:
+            raw = Image()
+            raw.header.stamp = self.get_clock().now().to_msg()
+            raw.header.frame_id = 'oak_rgb_optical_frame'
+            raw.height, raw.width = frame.shape[:2]
+            raw.encoding = 'bgr8'
+            raw.step = raw.width * 3
+            raw.data = frame.tobytes()
+            self.raw_image_pub.publish(raw)
         if (
             self.camera_backend == "oak"
             and getattr(self.oak_camera, "depth_resized", False)

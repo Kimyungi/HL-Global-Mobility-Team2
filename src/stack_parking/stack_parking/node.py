@@ -213,6 +213,8 @@ class StackParkingNode(Node):
             't_reference_enabled': False,
             't_reference_origin_csv': '',
             't_reference_route_csv': '',
+            't_reference_reverse_1_csv': '',
+            't_reference_reverse_2_csv': '',
             'map_frame': 'parking_map',
             'base_frame': 'base_link',
             'front_cloud_topic': '/lidar/a1/cloud',

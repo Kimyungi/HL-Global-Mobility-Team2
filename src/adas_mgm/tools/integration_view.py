@@ -77,6 +77,7 @@ class IntegrationView(Node):
         self.rear = float(self.declare_parameter('vehicle_rear_m', .090).value)
         self.width = float(self.declare_parameter('vehicle_width_m', .62).value)
         self.samples = {}
+        self.previous_markers = set()
         self.decoded_cloud = None
         self.route_key = None
         self.track_since = 0.
@@ -91,6 +92,8 @@ class IntegrationView(Node):
             ('avoid_path', Path, '/perception/avoid_path'),
             ('wall_plan', AvoidPlan, '/avoid_v2/plan'), ('avoid_path', Path, '/avoid_v2/path'),
             ('parking', ParkingStatus, '/perception/parking'), ('pose', PoseStamped, '/parking/slam_pose'),
+            ('selected_parking_path', Path, '/parking/selected_path_map'),
+            ('parking_selection', MarkerArray, '/parking/selection_markers'),
             ('map', PointCloud2, '/parking/local_map'), ('plan', Path, '/parking/reference_path'),
             ('active', Path, '/parking/active_path'), ('walls', MarkerArray, '/parking/debug_markers'),
             ('left_wall', MarkerArray, '/parking/left_wall/markers'),
@@ -105,6 +108,8 @@ class IntegrationView(Node):
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.subs.append(self.create_subscription(Path, '/perception/gps_track_viz',
                                                  lambda msg: self.receive('track', msg), latched))
+        self.subs.append(self.create_subscription(Path, '/perception/avoid_path_map',
+                                                 lambda msg: self.receive('fixed_avoid_path', msg), latched))
         self.markers_pub = self.create_publisher(MarkerArray, PREFIX+'/markers', 1)
         self.hud_pub = self.create_publisher(Image, PREFIX+'/dashboard', qos_profile_sensor_data)
         self.cloud_pubs = {key: self.create_publisher(PointCloud2, PREFIX+'/'+key, qos_profile_sensor_data)
@@ -128,6 +133,7 @@ class IntegrationView(Node):
             previous = self.samples.get('gps')
             if self.route_key is not None and route != self.route_key and previous:
                 self.track_since = seconds(previous[0].header.stamp)
+                self.samples.pop('fixed_avoid_path', None)
             self.route_key = route
         if key == 'mgm' and msg.mission_request_active and msg.mission_request_id != self.request_id:
             self.request_id = msg.mission_request_id
@@ -158,6 +164,7 @@ class IntegrationView(Node):
     def marker(self, name, kind, color, scale=.08):
         msg = Marker(header=self.header, ns=name, id=0, type=kind, action=Marker.ADD)
         msg.pose.orientation.w = 1.
+        msg.frame_locked = True
         msg.color = ColorRGBA(r=float(color[0]), g=float(color[1]), b=float(color[2]), a=1.)
         msg.scale.x = msg.scale.y = msg.scale.z = scale
         msg.lifetime = Duration(nanosec=400_000_000)
@@ -203,8 +210,10 @@ class IntegrationView(Node):
                            point_step=12, row_step=12*len(xyz), data=xyz.tobytes())
 
     def render(self):
-        self.header = Header(stamp=self.get_clock().now().to_msg(), frame_id=FRAME)
-        self.markers = [Marker(header=self.header, action=Marker.DELETEALL)]
+        # Display against the latest available TF, without waiting for a future
+        # map->base_link sample. Stable IDs replace objects without blank frames.
+        self.header = Header(frame_id=FRAME)
+        self.markers = []
         self.line('vehicle', [(-self.rear,-self.width/2),(self.front,-self.width/2),
                               (self.front,self.width/2),(-self.rear,self.width/2),(-self.rear,-self.width/2)], WHITE)
         self.line('vehicle_heading', [(0,0),(self.front,0),(self.front-.2,.15),
@@ -223,6 +232,23 @@ class IntegrationView(Node):
             self.preview('CAMERA', lane, CYAN, .20)
         if target is not None:
             self.preview('MGM', target, PINK, .30)
+        # Fixed geometry is latched and only republished on planner revisions.
+        # Keep it visible even when curvature validation withholds control points.
+        fixed = self.samples.get('fixed_avoid_path')
+        if fixed is not None and state is not None and state.avoidance != 0:
+            path = fixed[0]
+            if path.header.frame_id == 'map':
+                self.line('AVOID_FIXED_REFERENCE',
+                          [(p.pose.position.x, p.pose.position.y) for p in path.poses],
+                          YELLOW, .10, .18, frame='map')
+        selected_parking = self.get('selected_parking_path', .5)
+        selection = self.get('parking_selection', .5)
+        if selection is not None:
+            self.markers.extend(selection.markers)
+        if selected_parking is not None and selected_parking.header.frame_id == 'map':
+            self.line('PARKING_SELECTED_PATH',
+                      [(p.pose.position.x, p.pose.position.y) for p in selected_parking.poses],
+                      GREEN, .12, .20, frame='map')
         avoid_path = self.get('avoid_path', .5)
         if avoid_path is not None and avoid_path.header.frame_id.lstrip('/') in ('base_link', 'map'):
             self.line('AVOID_PATH', [(p.pose.position.x, p.pose.position.y)
@@ -248,8 +274,9 @@ class IntegrationView(Node):
         map_msg = self.get('map')
         mapped = []
         if slam is not None:
-            if map_msg is not None and map_msg.header.frame_id == pose_msg.header.frame_id and self.decoded_cloud is not None:
-                mapped = local_xy(self.decoded_cloud, slam)
+            # The accumulated parking SLAM map drifts relative to GPS and leaves
+            # old observations on this overview. Raw live LiDAR layers below
+            # provide the surroundings; keep SLAM data in its original topics.
             for key, color in [('plan', (.15,.55,.2)), ('active', GREEN)]:
                 path = self.get(key)
                 if path is not None and path.header.frame_id == pose_msg.header.frame_id:
@@ -271,6 +298,7 @@ class IntegrationView(Node):
                     marker.pose.orientation.x = marker.pose.orientation.y = 0.
                     marker.pose.orientation.z, marker.pose.orientation.w = math.sin((world[2]-slam[2])/2), math.cos((world[2]-slam[2])/2)
                     marker.header, marker.ns = self.header, 'parking_'+marker.ns
+                    marker.frame_locked = True
                     marker.lifetime = Duration(nanosec=400_000_000)
                     self.markers.append(marker)
         self.cloud_pubs['map'].publish(self.cloud(mapped))
@@ -281,7 +309,13 @@ class IntegrationView(Node):
             else:
                 raw = deepcopy(raw)
                 raw.header.frame_id = FRAME
+                raw.header.stamp = self.header.stamp
             self.cloud_pubs[sid].publish(raw)
+        current = {(m.ns, m.id) for m in self.markers}
+        for ns, marker_id in self.previous_markers - current:
+            self.markers.append(Marker(header=self.header, ns=ns, id=marker_id,
+                                       action=Marker.DELETE))
+        self.previous_markers = current
         self.markers_pub.publish(MarkerArray(markers=self.markers))
         self.dashboard(gps, lane, state, traffic, parking, target, slam is not None)
 

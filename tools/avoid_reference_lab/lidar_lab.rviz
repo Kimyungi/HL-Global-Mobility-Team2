@@ -1,0 +1,68 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Global Options:
+    Fixed Frame: base_link
+    Background Color: 15; 23; 38
+    Frame Rate: 20
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: 0.5m grid
+      Enabled: true
+      Cell Size: 0.5
+      Plane Cell Count: 40
+      Color: 65; 80; 105
+    - Class: rviz_default_plugins/LaserScan
+      Name: Live front LiDAR
+      Enabled: true
+      Topic:
+        Value: /avoid_lab/scan_front
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+        Depth: 5
+      Style: Points
+      Size (Pixels): 4
+      Color Transformer: FlatColor
+      Color: 255; 175; 85
+    - Class: rviz_default_plugins/Path
+      Name: Avoidance cubic path
+      Enabled: true
+      Topic:
+        Value: /avoid_lab/path
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 1
+      Color: 65; 235; 175
+      Line Style: Lines
+      Line Width: 0.04
+    - Class: rviz_default_plugins/Marker
+      Name: Planner state
+      Enabled: true
+      Topic:
+        Value: /avoid_lab/station
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 1
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Test status and reference route
+      Enabled: true
+      Topic:
+        Value: /avoid_lab/guide
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        Depth: 1
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Target Frame: base_link
+      Scale: 110
+      Angle: -1.57079632679
+      X: 3.0
+      Y: 0.0
+Window Geometry:
+  Width: 1400
+  Height: 950

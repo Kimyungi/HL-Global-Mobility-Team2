@@ -1,0 +1,41 @@
+[
+  {
+    "name": "v2_20260915_210519_955004",
+    "first_go": null,
+    "manual_start": null,
+    "manual_t": null,
+    "drive_s": 0.0,
+    "state_seconds": {},
+    "fix_counts": {},
+    "heading_counts": {},
+    "max_cross": 0,
+    "transition_check_count": 9,
+    "blocked_seconds": 0.0,
+    "route_points_behind_seconds": 0.0
+  },
+  {
+    "name": "v2_20260915_210541_593370",
+    "first_go": "21:06:51.285",
+    "manual_start": "21:07:34.135",
+    "manual_t": 1789474054.135496,
+    "drive_s": 42.85,
+    "state_seconds": {
+      "ESTOP": 4.13,
+      "GPS": 26.54,
+      "LANE": 12.18
+    },
+    "fix_counts": {
+      "5": 71,
+      "4": 357
+    },
+    "heading_counts": {
+      "접선": 55,
+      "COG": 11,
+      "융합": 362
+    },
+    "max_cross": 47.289,
+    "transition_check_count": 22,
+    "blocked_seconds": 0.0,
+    "route_points_behind_seconds": 12.85
+  }
+]

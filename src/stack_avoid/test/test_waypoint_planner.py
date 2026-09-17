@@ -204,8 +204,10 @@ class WaypointTests(unittest.TestCase):
         self.assertTrue(p.accept(detected[0], pose[0]))
         self.assertTrue(p.samples)
         late = FixedPlanner(route())
-        self.assertFalse(late.accept(detected[0], 6.0))
-        self.assertIn('after the required approach start', late.last_reason)
+        self.assertTrue(late.accept(detected[0], 6.0))
+        self.assertTrue(late.samples)
+        self.assertEqual(late.samples, p.samples)
+        self.assertIsNotNone(late.preview((6.0, 0., 0.)))
 
     def test_return_requires_ten_cm_and_twenty_degrees(self):
         for curved in (False, True):
@@ -288,3 +290,30 @@ class WaypointTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+def test_field_profile_pr117_curve_and_one_point_five_preview():
+    import yaml
+    data = yaml.safe_load((SRC/'stack_avoid/config/waypoint_avoid.yaml').read_text())
+    cfg = Config(**data['/**']['ros__parameters']['waypoint_avoid'])
+    points, yaws = load_waypoints_csv(SRC/'stack_gps/waypoints/obstacle_waypoint.csv', include_yaw=True)
+    for side in (-1., 1.):
+        planner = FixedPlanner(PathEngine(points, waypoint_yaws=yaws), cfg)
+        assert planner.accept(obstacle(planner, 10., side), 7.)
+        assert not cfg.enforce_turn_radius
+        report = planner.geometry_report()
+        assert report['min_radius'] < cfg.min_turn_radius
+        assert report['valid'], report
+        frozen = planner.samples
+        xy = np.array([p[:2] for p in frozen])
+        for sample in frozen[20::30]:
+            if frozen[-1][4] - sample[4] < 1.6:
+                continue
+            target = planner.preview(sample[:3])
+            assert target is not None
+            assert abs(math.hypot(target[0]-sample[0], target[1]-sample[1])-1.5) < 1e-8
+            delta = xy[1:]-xy[:-1]
+            v = np.array(target[:2])-xy[:-1]
+            t = np.clip((v*delta).sum(axis=1)/np.maximum((delta*delta).sum(axis=1),1e-12),0,1)
+            assert np.linalg.norm(v-t[:,None]*delta,axis=1).min() < 1e-8
+        assert planner.samples == frozen

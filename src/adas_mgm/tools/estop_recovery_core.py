@@ -14,6 +14,7 @@ class Recovery:
 
     def __init__(self):
         self.armed = False
+        self._seen_inactive = False
         self.request = 0
         self.phase = 'IDLE'
         self.distance = 0.
@@ -29,18 +30,22 @@ class Recovery:
         return 0., False
 
     def step(self, now, stamp_now, request, active, authorized,
-             speed, speed_stamp, rear_clear, rear_stamp):
+             speed, speed_stamp, rear_clear, rear_stamp, *, state_valid=True):
         speed_ok = math.isfinite(speed) and fresh(speed_stamp, stamp_now)
         rear_ok = rear_clear and fresh(rear_stamp, stamp_now, .35)
         if not active:
-            if authorized and speed_ok and speed > .02:
-                self.armed = True
+            if state_valid:
+                self._seen_inactive = True
             self.request, self.phase = 0, 'IDLE'
             self.last_now = now
             return 0., False
         if request <= 0:
             return 0., False
         if request != self.request:
+            # A newly observed ESTOP entry arms recovery even before any motion.
+            # Starting/restarting inside an existing episode must not repeat
+            # a partly completed reverse with its travelled distance forgotten.
+            self.armed = self._seen_inactive
             self.request, self.phase = request, 'HOLD'
             self.distance, self.hold_since, self.reverse_since = 0., None, None
             self.last_speed_stamp = None

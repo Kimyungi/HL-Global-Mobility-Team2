@@ -1,0 +1,21 @@
+routes:
+- id: '01'
+  file: waypoints_halla_reference_path_01.csv
+  zones_file: zones_halla_reference_path_01.yaml
+  completion: endpoint_and_missions
+- id: '03'
+  file: waypoints_halla_reference_path_03.csv
+  zones_file: zones_halla_reference_path_03.yaml
+  completion: endpoint_and_missions
+- id: '04'
+  file: waypoints_halla_reference_path_04.csv
+  zones_file: zones_halla_reference_path_04.yaml
+  completion: endpoint_and_missions
+- id: '05'
+  file: waypoints_halla_reference_path_05.csv
+  zones_file: zones_halla_reference_path_05.yaml
+  completion: endpoint_and_missions
+- id: '07'
+  file: waypoints_halla_reference_path_07.csv
+  zones_file: zones_halla_reference_path_07.yaml
+  completion: endpoint_and_missions

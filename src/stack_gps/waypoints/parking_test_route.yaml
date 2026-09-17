@@ -1,0 +1,6 @@
+# PR #116: one GPS approach; two reverse candidates are owned by parking.
+routes:
+- id: '03'
+  file: parking_waypoint.csv
+  zones_file: zones_parking_waypoint.yaml
+  completion: endpoint_and_missions

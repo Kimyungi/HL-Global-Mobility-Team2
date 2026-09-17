@@ -246,7 +246,7 @@ Visualization Manager:
       Name: Current View
       Near Clip Distance: 0.009999999776482582
       Scale: 65
-      Target Frame: v2_vehicle_view
+      Target Frame: map
       Value: TopDownOrtho (rviz_default_plugins)
       X: 0
       Y: 0

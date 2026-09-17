@@ -100,6 +100,22 @@ class SequenceTests(unittest.TestCase):
         self.assertGreater(math.hypot(self.pose.x,self.pose.y),1)
         self.assertEqual(self.tick().phase,'ADVANCE_3')
 
+    def test_forward_distance_error_does_not_fault_approach_or_exit(self):
+        self.select()
+        self.pose = Pose2(-2., .357, 0.)
+        out = self.tick()
+        self.assertEqual(out.phase, 'ADVANCE_3')
+        self.assertGreater(out.speed, 0.)
+        self.assertIsNotNone(out.reference)
+        self.core.exit_path = self.approach
+        self.core.exit_station = self.core.station
+        self.core.phase = 'EXIT'
+        self.core.index = None
+        out = self.tick()
+        self.assertEqual(out.phase, 'EXIT')
+        self.assertGreater(out.speed, 0.)
+        self.assertFalse(out.done)
+
     def test_endpoint_requires_metric_and_gps_agreement(self):
         self.select()
         self.assertEqual(self.tick(route_at_end=True).phase,'ADVANCE_3')
@@ -109,11 +125,45 @@ class SequenceTests(unittest.TestCase):
         self.assertEqual(out.speed,0)
         self.assertEqual(self.tick(route_at_end=True).phase,'STOP_REVERSE')
 
-    def test_stale_pose_faults_during_advance_and_never_done(self):
+    def test_selected_reverse_starts_without_alignment_gate(self):
         self.select()
-        out=self.tick(pose_stamp=0)
-        self.assertEqual(out.phase,'FAULT'); self.assertFalse(out.done)
-        self.assertEqual(self.tick().phase,'FAULT')
+        selected = self.core.selected
+        self.core.phase = 'STOP_REVERSE'
+        self.core.stopped_since = None
+        self.pose = Pose2(.33, 0., math.radians(25))
+        for _ in range(7):
+            out = self.tick(route_at_end=True)
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertEqual(out.selected, selected)
+
+    def test_forward_yaw_error_does_not_reject_reference(self):
+        self.select()
+        self.pose = Pose2(-2., 0., math.radians(50))
+        self.assertIsNotNone(self.core._track(self.approach, self.core.station, self.pose))
+
+    def test_stale_pose_retains_selected_forward_path(self):
+        self.select()
+        selected = self.core.selected
+        out = self.tick(pose_stamp=0)
+        self.assertEqual(out.phase, 'ADVANCE_3')
+        self.assertGreater(out.speed, 0)
+        self.assertIsNotNone(out.reference)
+        self.assertEqual(self.core.selected, selected)
+
+    def test_missing_rear_keeps_selected_reverse_path(self):
+        self.to_reverse()
+        selected = self.core.selected
+        out = self.tick(rear=None, motion_allowed=False)
+        self.assertEqual(out.phase, 'REVERSE')
+        self.assertLess(out.speed, 0)
+        self.assertFalse(out.done)
+        self.assertEqual(self.core.selected, selected)
+
+    def test_timestamp_skew_does_not_stop_selected_path(self):
+        self.select()
+        out = self.tick(pose_stamp=self.now+.1-.22)
+        self.assertEqual(out.phase, 'ADVANCE_3')
+        self.assertGreater(out.speed, 0)
 
     def test_stop_feedback_required_for_selection(self):
         for _ in range(20): self.assertEqual(self.tick(speed=.2).phase,'STOP_SELECT')
@@ -125,23 +175,29 @@ class SequenceTests(unittest.TestCase):
         for _ in range(20): self.tick(left=fixed)
         self.assertIsNone(self.core.selected)
 
-    def test_front_obstacle_stops_forward(self):
+    def test_front_obstacle_does_not_override_upper_controller(self):
         self.select()
         front=Scan(self.now+.1,np.c_[np.full(21,1.),np.linspace(-.3,.3,21)],(.76,0.))
-        self.assertEqual(self.tick(front=front).reason,'front_obstacle')
+        out = self.tick(front=front)
+        self.assertEqual(out.phase, 'ADVANCE_3')
+        self.assertGreater(out.speed, 0)
 
-    def test_no_front_returns_are_not_clear(self):
+    def test_healthy_scan_without_corridor_returns_follows_forward_path(self):
         self.select()
         front=Scan(self.now+.1,np.c_[np.full(21,5.),np.full(21,2.)],(.76,0.))
-        self.assertEqual(self.tick(front=front).reason,'front_corridor_unknown')
+        out = self.tick(front=front)
+        self.assertEqual(out.phase, 'ADVANCE_3')
+        self.assertGreater(out.speed, 0)
+        self.assertIsNotNone(out.reference)
 
-    def test_authority_loss_during_wait_never_exits(self):
+    def test_local_owner_flag_does_not_latch_fault(self):
         self.to_wait()
-        self.assertEqual(self.tick(owned=False).phase,'FAULT')
-        self.assertEqual(self.tick(dt=20.).speed,0)
+        self.assertEqual(self.tick(owned=False).phase, 'WAIT_10')
+        self.assertEqual(self.tick(dt=20.).phase, 'EXIT')
 
-    def test_clock_rollback_latches_stop(self):
-        self.select(); self.assertEqual(self.tick(dt=-1).reason,'clock_reversed')
+    def test_clock_rollback_resets_timers_without_fault(self):
+        self.select()
+        self.assertEqual(self.tick(dt=-1).phase, 'ADVANCE_3')
 
     def test_rolling_during_wait_restarts_ten_seconds(self):
         self.to_wait(); self.tick(dt=5.)
@@ -150,8 +206,9 @@ class SequenceTests(unittest.TestCase):
         for _ in range(8): self.tick()
         self.assertLess(self.now-self.core.wait_since,1)
 
-    def test_wrong_direction_feedback_faults(self):
-        self.select(); self.assertEqual(self.tick(speed=-.2).reason,'wrong_direction_forward')
+    def test_wrong_direction_feedback_does_not_latch_local_fault(self):
+        self.select()
+        self.assertGreater(self.tick(speed=-.2).speed, 0)
 
 
 class RealCsvTests(unittest.TestCase):
@@ -177,7 +234,8 @@ class RealCsvTests(unittest.TestCase):
             side=np.array([-math.sin(p.yaw),math.cos(p.yaw)])*.58
             walls.append((centre-side,centre+side))
         for free in (0,1):
-            occupied=transform(body,candidates[1-free].path[-1])
+            from stack_parking.t_reference_parking import selection_path
+            occupied=transform(body,selection_path(candidates[1-free],Config())[-1])
             segments=walls+list(zip(occupied,np.roll(occupied,-1,axis=0)))
             points=[]
             for angle in np.deg2rad(np.arange(35,145.01,.5)+1.703610)+pose.yaw:

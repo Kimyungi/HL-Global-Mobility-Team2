@@ -4,8 +4,8 @@ set -eo pipefail
 V2_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 V2_ACTION=${1:-check}
 case "$V2_ACTION" in
-  build|check|test|bench|lidar|vehicle|vehicle-no-estop|prepare|gps-start|gps-status|gps-off|drive|view|go|state|stop) ;;
-  *) echo 'Usage: scripts/v2 [build|check|test|bench|lidar [launch arguments]|vehicle|vehicle-no-estop|prepare|gps-start|gps-status|gps-off|drive [launch arguments]|view|go [options]|state|stop]' >&2; exit 2 ;;
+  build|check|test|bench|lidar|vehicle|vehicle-no-estop|prepare|obstacle|gps-start|gps-status|gps-off|drive|view|go|state|stop) ;;
+  *) echo 'Usage: scripts/v2 [build|check|test|bench|lidar [launch arguments]|vehicle|vehicle-no-estop|prepare|obstacle|gps-start|gps-status|gps-off|drive [launch arguments]|view|go [options]|state|stop]' >&2; exit 2 ;;
 esac
 if [[ ${FMA_V2_CLEAN:-} != "$V2_ROOT" ]]; then
   exec env -i HOME="$HOME" USER="${USER:-}" LANG="${LANG:-C.UTF-8}" \
@@ -100,6 +100,10 @@ case "$V2_ACTION" in
     exec /usr/bin/python3 -m stack_gps.persistent_service "$V2_GPS_ACTION" \
       --config "$V2_ROOT/src/stack_gps/config/persistent_gps.yaml" \
       --relay-script "$V2_ROOT/src/stack_gps/tools/base_station/rtcm_server.py"
+    ;;
+  obstacle)
+    shift
+    exec ros2 launch "$V2_ROOT/src/adas_mgm/launch/REAL_VEHICLE_integration_v2_obstacle.launch.py" "$@"
     ;;
   prepare|drive)
     shift

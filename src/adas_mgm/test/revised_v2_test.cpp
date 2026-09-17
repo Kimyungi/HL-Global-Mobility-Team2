@@ -9,6 +9,9 @@ struct V2 : Run {
     mgm_init(st, p); s.gps_fix_quality = 4; s.sensor_alive_mask = 0x77;
     s.start_lidar_ready = true; s.traffic_status_fresh = true;
   }
+  void arm_estop() {
+    s.vehicle_speed=.03f; tick(); tick(200); s.vehicle_speed=0;
+  }
   void traffic(bool red, bool line) {
     s.traffic_red_active = red; s.traffic_stopline_detected = line;
     s.traffic_status_stamp_ns = s.event_time_ns + 10'000'000;
@@ -26,6 +29,36 @@ struct V2 : Run {
   }
 };
 int main() {
+  { V2 r;
+    r.s.autonomous_enabled=false; r.s.vehicle_speed=.03f;
+    r.scan(0,.1f,1); r.scan(0,.1f,2); r.scan(0,.1f,3); r.tick(300);
+    check(!r.st.managers.estop_motion_seen && !r.st.managers.estop_active,"no authorization cannot start ESTOP timer");
+    r.s.autonomous_enabled=true;
+    for (float speed : {0.f,.02f,-.03f,std::numeric_limits<float>::quiet_NaN()}) {
+      r.s.vehicle_speed=speed; r.tick(250);
+      check(!r.st.managers.estop_motion_seen,"zero, threshold, reverse and NaN do not arm");
+    }
+    r.s.vehicle_speed=.03f; r.s.vehicle_speed_valid=false; r.tick(250);
+    check(!r.st.managers.estop_motion_seen,"invalid actual speed does not arm");
+    r.s.vehicle_speed_valid=true; r.tick();
+    r.s.vehicle_speed=0; r.tick(198); r.scan(0,.1f,4);
+    check(!r.st.managers.estop_detection_enabled && !r.st.managers.estop_active,"1.99 seconds still ignores hazards");
+    r.scan(0,.1f,5);
+    check(r.st.managers.estop_detection_enabled && !r.st.managers.estop_active,"two seconds arms and discards boundary scan");
+    r.tick(10); r.scan(0,.1f,6); r.scan(0,.1f,7);
+    check(!r.st.managers.estop_active,"preactivation hits cannot contribute");
+    r.scan(0,.1f,8); check(r.st.managers.estop_active,"three new hits trigger even when stopped after activation");
+  }
+  { V2 r; r.s.vehicle_speed=.03f; r.tick(); r.tick(100);
+    r.s.autonomous_enabled=false; r.tick(); r.s.autonomous_enabled=true;
+    r.s.vehicle_speed=0; r.tick(300);
+    check(!r.st.managers.estop_detection_enabled && !r.st.managers.estop_motion_seen,"revoked go resets pending timer");
+    r.arm_estop(); r.s.external_stop=true; r.tick(); r.s.external_stop=false; r.tick(300);
+    check(!r.st.managers.estop_detection_enabled,"operator stop resets an enabled gate");
+    r.arm_estop(); r.s.new_session=true; r.tick(); r.s.new_session=false;
+    check(!r.st.managers.estop_detection_enabled,"new session requires fresh forward motion");
+  }
+
   { V2 r;
     check(r.st.params.parking_zone_entry_active == 1,"v09.16 fixes active-entry policy even with old false parameter");
     r.tick(); r.prepare();
@@ -69,7 +102,7 @@ int main() {
     r.gps_zone(false); r.tick(); check(!r.st.managers.traffic_zone_active && !r.st.traffic_distance_latched,"zone exit resets signal distance"); }
   { V2 r; r.s.vehicle_speed_valid=false; r.gps_zone(true); r.tick(); r.traffic(true,true); r.traffic(true,false); r.tick();
     check(r.out.traffic_remaining_m<1.5f && r.out.v_ref>0,"no actual history integrates previous output command"); }
-  { V2 r; r.scan(0,.25f,1); r.tick(20); check(!r.st.managers.estop_active,"held scan never counts as new detection");
+  { V2 r; r.arm_estop(); r.scan(0,.25f,1); r.tick(20); check(!r.st.managers.estop_active,"held scan never counts as new detection");
     r.scan(1,.15f,1); r.scan(2,.15f,1); check(!r.st.managers.estop_active,"different sensors do not sum");
     r.scan(0,.25f,2); r.s.estop_scans[0].age_s=.36f; r.tick(); r.scan(0,.25f,3);
     check(r.out.safety==SafetyState::ESTOP && r.out.v_ref==0,"third same-sensor hit enters ESTOP; missing executor holds zero");
@@ -82,7 +115,7 @@ int main() {
     r.scan(0,.2f,4); r.scan(0,.2f,5); r.scan(0,.2f,6); check(!r.st.managers.estop_active,"continuing front condition cannot retrigger");
     r.scan(1,.5f,2); r.scan(1,.1f,3); r.scan(1,.1f,4); r.scan(1,.1f,5);
     check(r.st.managers.estop_active,"another rearmed sensor can trigger"); }
-  { V2 r; r.st.managers.mission=MissionState::MISSION_ACTIVE;
+  { V2 r; r.arm_estop(); r.st.managers.mission=MissionState::MISSION_ACTIVE;
     // Preserve an active parking episode while ESTOP owns the output.
     r.st.managers.request.active=true; r.st.managers.request.request_id=10;
     r.st.managers.mission_type=MissionType::T_PARKING;

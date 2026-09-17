@@ -1,0 +1,70 @@
+[
+  {
+    "name": "v2_20260915_201818_359722",
+    "first_go": "20:21:14.172",
+    "manual_start": "20:21:35.692",
+    "manual_t": 1789471295.692672,
+    "drive_s": 21.52,
+    "state_seconds": {
+      "GPS": 8.32,
+      "AVOID_HOLD": 11.16,
+      "AVOID": 2.04
+    },
+    "fix_counts": {
+      "4": 215
+    },
+    "heading_counts": {
+      "융합": 215
+    },
+    "max_cross": 1.239,
+    "transition_check_count": 41,
+    "blocked_seconds": 11.16,
+    "route_points_behind_seconds": 0.48
+  },
+  {
+    "name": "v2_20260915_202501_628508",
+    "first_go": "20:31:10.323",
+    "manual_start": "20:31:40.433",
+    "manual_t": 1789471900.433458,
+    "drive_s": 22.37,
+    "state_seconds": {
+      "GPS": 3.26,
+      "AVOID_HOLD": 2.94,
+      "AVOID": 4.96,
+      "ESTOP": 11.21
+    },
+    "fix_counts": {
+      "4": 224
+    },
+    "heading_counts": {
+      "융합": 224
+    },
+    "max_cross": 1.162,
+    "transition_check_count": 35,
+    "blocked_seconds": 13.85,
+    "route_points_behind_seconds": 0.58
+  },
+  {
+    "name": "v2_20260915_204046_106454",
+    "first_go": "20:42:22.848",
+    "manual_start": "20:43:47.328",
+    "manual_t": 1789472627.328064,
+    "drive_s": 42.08,
+    "state_seconds": {
+      "GPS": 28.26,
+      "ESTOP": 10.45,
+      "AVOID_HOLD": 2.59,
+      "AVOID": 0.78
+    },
+    "fix_counts": {
+      "4": 420
+    },
+    "heading_counts": {
+      "융합": 420
+    },
+    "max_cross": 1.074,
+    "transition_check_count": 18,
+    "blocked_seconds": 12.99,
+    "route_points_behind_seconds": 0.4
+  }
+]

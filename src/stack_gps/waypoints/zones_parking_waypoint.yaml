@@ -1,0 +1,10 @@
+track: parking_waypoint.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points:
+- mode: perpendicular
+  lat: 37.304117163
+  lon: 127.9074655873
+  note: 'PR #116 state=1, idx=35'
+turn_zones: []

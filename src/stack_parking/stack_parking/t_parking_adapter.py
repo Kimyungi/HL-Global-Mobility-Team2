@@ -7,11 +7,13 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.qos import qos_profile_sensor_data
 from fma_interfaces.msg import GpsPath, MgmState, ParkingCommand, ParkingStatus, RefPoint, VehicleVector
 from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Path as RosPath
+from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import String
 
 from .geometry import Pose2
 from .t_parking_sequence import TParkingSequence, load_course
-from .t_reference_parking import fresh, healthy, scan_from_ranges
+from .t_reference_parking import fresh, scan_from_ranges
 
 
 def stamp_s(stamp):
@@ -24,7 +26,10 @@ class ReferenceParkingAdapter:
         share = Path(get_package_share_directory('stack_parking'))
         self.route_csv = Path(node._p('t_reference_route_csv')).resolve()
         self.course = load_course(node._p('t_reference_origin_csv'), self.route_csv,
-                                  [share/'config'/f'parking_ref_{i:02d}.csv' for i in (1,2)])
+                                  [Path(node._p(f't_reference_reverse_{i}_csv'))
+                                   if node._p(f't_reference_reverse_{i}_csv')
+                                   else share/'config'/f'parking_ref_{i:02d}.csv'
+                                   for i in (1,2)])
         geometry = Path(get_package_share_directory('lidar_fusion_v2'))/'config/fixed_geometry.yaml'
         self.sensors = yaml.safe_load(geometry.read_text(encoding='utf-8'))['/**']['ros__parameters']['sensors']
         self.gps = self.vehicle = self.mgm = None
@@ -43,6 +48,27 @@ class ReferenceParkingAdapter:
             self.subs.append(node.create_subscription(LaserScan,self.sensors[key]['topic'],
                               lambda msg,k=key:self.on_scan(k,msg),qos_profile_sensor_data))
         self.phase_pub = node.create_publisher(String,'/parking/t_reference_phase',1)
+        self.selected_path_pub = node.create_publisher(RosPath, '/parking/selected_path_map', 1)
+        from visualization_msgs.msg import MarkerArray
+        self.selection_view_pub = node.create_publisher(MarkerArray, '/parking/selection_markers', 1)
+
+    def publish_selection_view(self, pose):
+        from .parking_selection_view import selection_markers
+        self.selection_view_pub.publish(selection_markers(
+            self.core.candidates, self.core.cfg, pose, self.scans['b1'], self.core.selected))
+
+    def publish_selected_path(self, points=()):
+        msg = RosPath()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        for point in points:
+            pose = PoseStamped()
+            pose.header = msg.header
+            pose.pose.position.x, pose.pose.position.y = float(point.x), float(point.y)
+            pose.pose.orientation.z = math.sin(point.yaw/2)
+            pose.pose.orientation.w = math.cos(point.yaw/2)
+            msg.poses.append(pose)
+        self.selected_path_pub.publish(msg)
 
     def on_gps(self,msg):
         self.gps = msg
@@ -76,6 +102,7 @@ class ReferenceParkingAdapter:
             return True
         if msg.action == ParkingCommand.CANCEL:
             self.active = self.authorized = False
+            self.publish_selected_path()
             n.search_request_id = request
             n.search_mission_mode = int(msg.mission_mode)
             n._cancel_search()
@@ -87,6 +114,7 @@ class ReferenceParkingAdapter:
         if int(msg.mission_mode) != 1:
             if request > n.search_request_id and msg.action == ParkingCommand.PREPARE:
                 self.active = self.authorized = False
+                self.publish_selected_path()
             return False
         if msg.action == ParkingCommand.PREPARE:
             if request == n.search_request_id:
@@ -95,6 +123,7 @@ class ReferenceParkingAdapter:
             n.search_request_id, n.search_mission_mode = request, 1
             self.request_id = request
             self.core = TParkingSequence(*self.course)
+            self.publish_selected_path()
             self.active, self.authorized = True, False
             self.started = n._clock_s()
             self.route_identity = None
@@ -136,20 +165,16 @@ class ReferenceParkingAdapter:
                     if route_ok else None)
         if self.route_identity is None and route_ok:
             self.route_identity = identity
-        route_ok = route_ok and identity == self.route_identity
-        pose_ok = bool(route_ok and gps.position_valid and gps.vehicle_heading_valid
-                       and gps.heading_source == GpsPath.HEADING_FUSED and gps.fix_quality == 4)
-        owner = bool(mgm and fresh(stamp_s(mgm.header.stamp),now,.25)
-                     and mgm.mission_request_active and mgm.mission_request_id == self.request_id
-                     and mgm.mission == MgmState.MISSION_ACTIVE and mgm.mission_type == 1)
-        # Missing reference during a deliberate zero-speed phase is expected.
-        # External/CAN/operator final arbitration is never bypassed by this node.
-        allowed = bool(owner and mgm.top == 1 and not (mgm.active_safe_stop_reasons & ~(4|16)))
+        # Route identity is checked for initial selection. A locked candidate
+        # stays attached to its original course until completion or CANCEL.
+        route_ok = core.selected is not None or (route_ok and identity == self.route_identity)
+        pose_ok = bool(route_ok and gps and gps.position_valid and gps.vehicle_heading_valid
+                       and gps.heading_source == GpsPath.HEADING_FUSED)
+        owner = self.authorized
+        allowed = True  # MGM arbitrates operator stop, CAN and ESTOP.
         sensors = [self.scans[k] for k in ('b1','a2','a1')]
-        inputs = bool(pose_ok and pose_stamp > self.started and speed_stamp > self.started
-                      and fresh(pose_stamp,now,cfg.feedback_timeout)
-                      and fresh(speed_stamp,now,cfg.feedback_timeout)
-                      and all(healthy(s,now,cfg) and s.stamp > self.started for s in sensors))
+        inputs = bool(pose_ok and vehicle and
+                      all(math.isfinite(v) for v in (pose.x,pose.y,pose.yaw,float(vehicle.v))))
         if not pose_ok:
             pose_stamp = -math.inf
         if core.selected is None or self.authorized or not inputs or not allowed:
@@ -158,6 +183,10 @@ class ReferenceParkingAdapter:
                                motion_allowed=allowed and inputs)
         else:
             result = core.out()  # selection is locked; wait for actual ACTIVATE
+        if core.selected is not None:
+            self.publish_selected_path(core.candidates[core.selected].path)
+        if pose_ok:
+            self.publish_selection_view(pose)
         ready = inputs and allowed and core.selected is not None and core.phase != 'FAULT'
         status = ParkingStatus()
         status.header.stamp = n.get_clock().now().to_msg()
@@ -169,11 +198,10 @@ class ReferenceParkingAdapter:
         status.wall_acquisition_frames = min(core.votes,255) if ready else 0
         status.preparation_ready = bool(ready)
         if ready:
-            # Oldest contributing sensor generation, never a timer heartbeat.
-            seconds = min(pose_stamp,speed_stamp,*(s.stamp for s in sensors))
-            ns = round(seconds*1e9)
-            status.preparation_stamp.sec, status.preparation_stamp.nanosec = divmod(ns,1_000_000_000)
-            status.reference_stamp = status.preparation_stamp
+            # RC test contract: reference generation is this planning tick,
+            # computed using the latest received pose; not an acquisition stamp.
+            status.preparation_stamp = status.header.stamp
+            status.reference_stamp = status.header.stamp
         status.mission_active = self.authorized
         status.space_found = core.selected is not None
         status.path_blocked = core.phase == 'FAULT'

@@ -79,6 +79,7 @@ int main() {
     check(r.out.v_ref==0 && r.out.last_mission.phase==LastMissionPhase::STOPPING, "operator stop suspends judgment");
     r.s.external_stop=false; r.tick();
     check(r.out.last_mission.right_votes==0, "resume starts a new observation window");
+    r.s.vehicle_speed=.03f; r.tick(201); r.s.vehicle_speed=0;
     for (int i=0;i<3;++i) {
       r.s.estop_scans[0]=ReferenceSample{static_cast<uint64_t>(100+i),0,.35f};
       r.s.estop_clearance_m[0]=.1f; r.tick();

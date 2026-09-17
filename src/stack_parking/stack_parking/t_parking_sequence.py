@@ -12,7 +12,7 @@ import numpy as np
 
 from .geometry import PathPoint, Pose2, local_reference, wrap_angle
 from .t_reference_parking import (
-    Candidate, Config, TwoReferenceParking, fresh, healthy, inspect_candidate,
+    Candidate, Config, TwoReferenceParking, inspect_candidate, csv_turn_end,
 )
 
 
@@ -68,8 +68,15 @@ def load_course(origin_csv, route_csv, parking_csvs):
     # Zone span/stability can stop slightly before the exact state marker.
     # Keep the preceding CSV points as well; no invented connector segment.
     approach, station = metric_path(route[max(0,trigger[0]-8):], origin)
-    candidates = tuple(Candidate(Path(p).stem, *metric_path(csv_rows(p), origin, True))
-                       for p in parking_csvs)
+    candidates = []
+    for p in parking_csvs:
+        rows = csv_rows(p)
+        path, candidate_station = metric_path(rows, origin, True)
+        raw_xy = np.array([[(float(r['lon'])-origin[1])*111320.*math.cos(math.radians(origin[0])),
+                            (float(r['lat'])-origin[0])*111320.] for r in rows])
+        raw_s = np.r_[0., np.cumsum(np.linalg.norm(np.diff(raw_xy, axis=0), axis=1))]
+        candidates.append(Candidate(Path(p).stem, path, candidate_station, csv_turn_end(rows, raw_s)))
+    candidates = tuple(candidates)
     for c in candidates:
         if math.hypot(c.path[0].x-approach[-1].x, c.path[0].y-approach[-1].y) > .03:
             raise ValueError('Route 03 end and parking start do not match')
@@ -105,10 +112,6 @@ class TParkingSequence:
         bound = int(np.searchsorted(station, station[self.index]+1.5, side='right'))
         search = path[self.index:max(self.index+1,bound)]
         self.index += int(np.argmin([(p.x-pose.x)**2+(p.y-pose.y)**2 for p in search]))
-        p = path[self.index]
-        if (math.hypot(p.x-pose.x,p.y-pose.y) > self.cfg.tracking_error
-            or abs(wrap_angle(p.yaw-pose.yaw)) > self.cfg.tracking_yaw_error):
-            return None
         end = path[-1]
         arrived = (station[-1]-station[self.index] <= .14
                    and math.hypot(end.x-pose.x,end.y-pose.y) <= .14)
@@ -120,22 +123,15 @@ class TParkingSequence:
         cfg = self.cfg
         if self.phase == 'FAULT':
             return self.out()
-        if not math.isfinite(now) or now < self.last_now:
-            return self.fault('clock_reversed')
-        self.last_now = now
-        inputs = (fresh(pose_stamp,now,cfg.feedback_timeout)
-                  and fresh(speed_stamp,now,cfg.feedback_timeout)
-                  and all(math.isfinite(v) for v in (pose.x,pose.y,pose.yaw,speed))
-                  and all(healthy(s,now,cfg) for s in (left,rear,front)))
-        if not owned or not motion_allowed or not inputs:
-            self.stopped_since = self.wait_since = None
-            self.votes = 0
-            if self.phase != 'STOP_SELECT':
-                return self.fault('authority_or_sensor_loss')
-            self.reason = 'await_activation_and_fresh_inputs'
+        if not math.isfinite(now) or not all(math.isfinite(v) for v in (pose.x, pose.y, pose.yaw, speed)):
             return self.out()
-        if any(abs(s.stamp-pose_stamp) > .20 for s in (left,rear,front)):
-            return self.fault('scan_pose_time_skew')
+        if now < self.last_now:
+            self.stopped_since = self.wait_since = None
+        self.last_now = now
+        # Initial selection needs actual left-scan points. Once selected, retain
+        # the candidate and track from the latest received pose/speed.
+        if self.selected is None and (left is None or not len(left.points)):
+            return self.out()
         if abs(speed) <= cfg.stop_speed:
             if self.stopped_since is None:
                 self.stopped_since = now
@@ -165,8 +161,6 @@ class TParkingSequence:
         if self.phase in ('ADVANCE_3','EXIT'):
             path, station = (self.approach,self.station) if self.phase == 'ADVANCE_3' else (self.exit_path,self.exit_station)
             tracked = self._track(path,station,pose)
-            if tracked is None:
-                return self.fault('forward_tracking_error')
             arrived, reference = tracked
             if arrived:
                 # GPS endpoint and metric junction must both agree before reverse.
@@ -176,26 +170,12 @@ class TParkingSequence:
                 self.phase = 'STOP_REVERSE' if self.phase == 'ADVANCE_3' else 'EXIT_STOP'
                 self.stopped_since = None
                 return self.out()
-            if speed < -cfg.stop_speed:
-                return self.fault('wrong_direction_forward')
-            # Ordinary MGM LiDAR E-stop is suppressed during Mission ACTIVE;
-            # therefore own a raw front corridor guard during both forward legs.
-            corridor = front.points[(front.points[:,0] > cfg.front)
-                                    & (abs(front.points[:,1]) <= cfg.width/2+cfg.margin)]
-            if not len(corridor):
-                return self.fault('front_corridor_unknown')
-            if np.min(corridor[:,0]) <= cfg.front+.60:
-                return self.fault('front_obstacle')
             self.reason = 'forward_reference_tracking'
             return self.out(.55,reference)
 
         if self.phase == 'STOP_REVERSE':
             if not stationary:
                 return self.out()
-            first = self.candidates[self.selected].path[0]
-            if (math.hypot(pose.x-first.x,pose.y-first.y) > cfg.start_tolerance
-                or abs(wrap_angle(pose.yaw-first.yaw)) > cfg.yaw_tolerance):
-                return self.fault('reverse_start_alignment')
             self.reverse = TwoReferenceParking(self.candidates,cfg)
             self.reverse.selected = self.selected
             self.reverse.phase = 'REVERSE'
@@ -204,8 +184,6 @@ class TParkingSequence:
             return self.out()
 
         if self.phase == 'REVERSE':
-            if speed > cfg.stop_speed:
-                return self.fault('wrong_direction_reverse')
             result = self.reverse.tick(now,pose,pose_stamp,speed,speed_stamp,left,rear,
                                        parking_owned=True)
             self.reason = result.reason

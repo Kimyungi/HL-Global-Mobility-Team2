@@ -1,0 +1,6 @@
+# PR #117, commit 48a63ba4c63cdbee79cbea5de15aad7ea18e82ac
+routes:
+- id: '01'
+  file: obstacle_waypoint.csv
+  zones_file: zones_obstacle_waypoint.yaml
+  completion: endpoint_and_missions

@@ -61,7 +61,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v35: State v09.16 removes obsolete public states; active-only Mission entry is fixed.
 // v36: Last mission state, exit observations and alternative terminal routes.
 // v37: suspend lane-confidence hysteresis through AVOID_ACTIVE/GPS_RETURN.
-constexpr uint32_t kDumpVersion = 37;
+// v38: upper ESTOP arms two seconds after authorized measured forward motion.
+constexpr uint32_t kDumpVersion = 38;
 
 struct DumpHeader
 {
