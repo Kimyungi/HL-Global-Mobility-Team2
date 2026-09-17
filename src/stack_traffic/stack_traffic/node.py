@@ -764,7 +764,7 @@ class StackTrafficNode(Node):
         self.declare_parameter("detection_tile_width_ratio", 1.00)
         self.declare_parameter("process_period_sec", 0.10)
         self.declare_parameter("camera_timeout_sec", 0.50)
-        self.declare_parameter("confidence_threshold", 0.20)
+        self.declare_parameter("confidence_threshold", 0.185)
         self.declare_parameter("tracking_confidence_threshold", 0.10)
         self.declare_parameter("tracking_max_missed_frames", 5)
         self.declare_parameter("tracking_minimum_iou", 0.10)
@@ -2073,7 +2073,7 @@ class StackTrafficNode(Node):
             yolo_started = time.perf_counter()
             results = self.model.predict(
                 source=detection_frame,
-                # 낮은 threshold 후보까지 받은 뒤 신규 검출은 0.20,
+                # 낮은 threshold 후보까지 받은 뒤 신규 검출은 기본 0.185,
                 # 기존 target 주변의 연속 후보만 0.10까지 허용한다.
                 conf=self.tracking_confidence_threshold,
                 imgsz=self.yolo_image_size,
