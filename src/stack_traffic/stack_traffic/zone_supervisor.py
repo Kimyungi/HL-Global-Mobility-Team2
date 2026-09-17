@@ -59,7 +59,8 @@ def main(args=None):
 
     rclpy.init(args=args)
     node = Node('traffic_zone_supervisor', automatically_declare_parameters_from_overrides=True)
-    params = {name: node.get_parameter(name).value for name in node.list_parameters([], depth=100).names}
+    params = {name: parameter.value
+              for name, parameter in node.get_parameters_by_prefix('').items()}
     handle = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', prefix='traffic_zone_', delete=False)
     with handle:
         yaml.safe_dump({'/**': {'ros__parameters': params}}, handle)
