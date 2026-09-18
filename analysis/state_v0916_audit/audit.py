@@ -11,7 +11,7 @@ plan=RoutePlan(D/'halla_route_sequence.yaml','01','07')
 origin=plan.files[0].points[0]
 result={'commit':'2991216','sequence':[r.id for r in plan.files],'routes':[],'junctions':[]}
 for i in range(1,8):
- p=D/f'waypoints_halla_20260916_path_{i:02}.csv'
+ p=D/f'halla_0919_path_{i:02}.csv'
  rows=list(csv.DictReader(p.open()));lat=np.array([float(r['lat']) for r in rows]);lon=np.array([float(r['lon']) for r in rows]);yaw=np.unwrap([float(r['yaw_rad']) for r in rows])
  xy=np.c_[(lon-origin[1])*111320*np.cos(np.radians(origin[0])),(lat-origin[0])*111320]
  ds=np.linalg.norm(np.diff(xy,axis=0),axis=1);s=np.r_[0,np.cumsum(ds)]

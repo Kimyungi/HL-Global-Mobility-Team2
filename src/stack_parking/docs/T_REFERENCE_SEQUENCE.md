@@ -35,7 +35,7 @@ ParkingStatus는 기존 노드에서 하나만 발행하며, 평행 주차는 �
   `t_reference_enabled=true`로 어댑터를 사용한다. 일반 parking 단독/다른 런처 기본은 false다.
 - `t_reference_origin_csv`는 이번 실행에서 선택한 **첫 CSV**로 자동 설정한다.
   start=01/02/03에 따라 달라지는 `RoutePlan`의 원점을 그대로 사용한다.
-- `t_reference_route_csv`는 `waypoints_halla_20260916_path_03.csv`이다.
+- `t_reference_route_csv`는 `halla_0919_path_03.csv`이다.
   입력 GPS의 route ID, CSV 경로, sequence/instance/index가 다르면 진행하지 않는다.
 - 주차 ref CSV의 lat/lon을 `stack_gps`와 동일한 111320 및 원점 위도 cos로 변환한다.
   원점이 다른 `east_m/north_m`를 GPS pose에 직접 더하지 않는다.

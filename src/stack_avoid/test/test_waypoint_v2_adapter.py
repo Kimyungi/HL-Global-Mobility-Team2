@@ -17,8 +17,8 @@ ROOT = Path(__file__).parents[2] / 'stack_gps/waypoints'
 @pytest.fixture
 def adapter(monkeypatch):
     monkeypatch.setenv("ROS_LOCALHOST_ONLY", "1")
-    route = ROOT/'waypoints_halla_20260916_path_04.csv'
-    origin = ROOT/'waypoints_halla_20260916_path_01.csv'
+    route = ROOT/'halla_0919_path_04.csv'
+    origin = ROOT/'halla_0919_path_01.csv'
     rclpy.init(args=['--ros-args','-p',f'waypoint_csv:={route}', '-p',f'route_origin_csv:={origin}'], domain_id=197)
     node = WaypointAvoidNode()
     node.destroy_timer(node._timers[-1])
@@ -86,11 +86,11 @@ def test_invalid_geometry_never_reaches_mgm_as_a_drivable_point(adapter):
 
 def test_route_changes_reset_planner_and_preserve_session_origin(adapter):
     adapter._supply()
-    lat0,lon0=load_waypoints_csv(ROOT/'waypoints_halla_20260916_path_01.csv')[0]
-    lat,lon=load_waypoints_csv(ROOT/'waypoints_halla_20260916_path_04.csv')[0]
+    lat0,lon0=load_waypoints_csv(ROOT/'halla_0919_path_01.csv')[0]
+    lat,lon=load_waypoints_csv(ROOT/'halla_0919_path_04.csv')[0]
     assert adapter.route.e[0]==pytest.approx((lon-lon0)*M_PER_DEG_LAT*math.cos(math.radians(lat0)))
     assert adapter.route.n[0]==pytest.approx((lat-lat0)*M_PER_DEG_LAT)
-    gps=adapter.gps;gps.route.waypoint_csv=str(ROOT/'waypoints_halla_20260916_path_05.csv')
+    gps=adapter.gps;gps.route.waypoint_csv=str(ROOT/'halla_0919_path_05.csv')
     gps.route.index=3;gps.reference_stamp=adapter.get_clock().now().to_msg()
     adapter.on_gps(gps)
     assert not adapter.session.active and not adapter.planner.samples
