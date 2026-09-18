@@ -643,6 +643,11 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   } else if (source_state != MGM_STATE_AVOID) {
     out.v_ref = fixed_motion_speed(out.v_ref, st.params.v_base);
   }
+  // zone [3] 접근 시 정지선 검출 전부터 전진 목표속도를 최대 1 m/s로 제한한다.
+  // 기존의 더 낮은 속도·정지 요구는 유지하고, 이탈 시 세션 속도로 복귀한다.
+  if (s.revised_v2 && !mission && m.zones.contexts[3].in_zone && out.v_ref > 0.0f) {
+    out.v_ref = std::min(out.v_ref, 1.0f);
+  }
   if (gps_return && !mission && st.params.avoid_zone_only && st.params.v_avoid > 0.0f) {
     // The zone episode owns its reduced speed until GPS alignment releases it.
     // Reference source changes to GPS before that episode is complete.
