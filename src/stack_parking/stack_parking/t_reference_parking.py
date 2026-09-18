@@ -40,9 +40,9 @@ class Config:
     wall_min_points: int = 6
     wall_min_width: float = 0.25
     wall_residual: float = 0.025
-    reverse_speed: float = 1.5
-    dock_speed: float = 1.5
-    forward_speed: float = 1.5
+    reverse_speed: float = 1.0
+    dock_speed: float = 1.0
+    forward_speed: float = 1.0
     preview: float = 1.8
     dock_remaining: float = 2.0
     start_tolerance: float = 0.30
@@ -353,10 +353,10 @@ class TwoReferenceParking:
             return self._out()
         preview = min(int(np.searchsorted(candidate.s, candidate.s[self.index] + cfg.preview)), len(candidate.path)-1)
         self.reason = 'reverse_docking' if docking else 'reverse_tracking'
-        # Reverse references use a virtual origin 0.2 m behind the measured
+        # Reverse references use a virtual origin 0.4 m behind the measured
         # vehicle, along its own x axis. Shift in the shared metric frame first,
         # then rotate/translate the reference into that virtual local frame.
-        reference_pose = Pose2(pose.x - 0.2 * math.cos(pose.yaw),
-                               pose.y - 0.2 * math.sin(pose.yaw), pose.yaw)
+        reference_pose = Pose2(pose.x - 0.4 * math.cos(pose.yaw),
+                               pose.y - 0.4 * math.sin(pose.yaw), pose.yaw)
         return self._out(-cfg.dock_speed if docking else -cfg.reverse_speed,
                          local_reference(candidate.path[preview], reference_pose))
