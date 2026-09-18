@@ -544,6 +544,8 @@ class StackTrafficNode(Node):
             maxlen=self.stopline_depth_window,
         )
         self.last_stopline_runtime = self._empty_stopline_runtime()
+        self.stopline_tracked_bbox: Optional[BBox] = None
+        self.stopline_tracking_missed_frames = 0
         # YOLO miss에는 단순 stale 좌표가 아니라 검증된 짧은 template
         # 추적 결과만 색 판정과 bbox 표시를 이어 가는 데 사용한다.
         self.tracked_bbox: Optional[BBox] = None
@@ -597,6 +599,7 @@ class StackTrafficNode(Node):
             "stopline_detector=yolo_seg "
             f"stopline_model={stopline_model_path or '-'} "
             f"stopline_yolo_conf={self.stopline_yolo_confidence_threshold:.2f} "
+            f"stopline_track_conf={self.stopline_tracking_confidence_threshold:.2f} "
             f"stopline_yolo_imgsz={self.stopline_yolo_image_size} "
             f"stopline_roi=[{self.stopline_roi_x_min:.2f},"
             f"{self.stopline_roi_y_min:.2f}-"
@@ -811,6 +814,8 @@ class StackTrafficNode(Node):
         self.declare_parameter("stopline_detection_enabled", False)
         self.declare_parameter("stopline_model_path", "")
         self.declare_parameter("stopline_yolo_confidence_threshold", 0.35)
+        self.declare_parameter("stopline_tracking_confidence_threshold", 0.20)
+        self.declare_parameter("stopline_tracking_max_missed_frames", 3)
         self.declare_parameter("stopline_yolo_image_size", 640)
         self.declare_parameter("stopline_roi_x_min", 0.08)
         self.declare_parameter("stopline_roi_y_min", 0.48)
@@ -1056,6 +1061,12 @@ class StackTrafficNode(Node):
         ).strip()
         self.stopline_yolo_confidence_threshold = float(
             self.get_parameter("stopline_yolo_confidence_threshold").value
+        )
+        self.stopline_tracking_confidence_threshold = float(
+            self.get_parameter("stopline_tracking_confidence_threshold").value
+        )
+        self.stopline_tracking_max_missed_frames = int(
+            self.get_parameter("stopline_tracking_max_missed_frames").value
         )
         self.stopline_yolo_image_size = int(
             self.get_parameter("stopline_yolo_image_size").value
@@ -1362,6 +1373,10 @@ class StackTrafficNode(Node):
             raise ValueError(
                 "stopline_yolo_confidence_threshold는 0~1이어야 합니다."
             )
+        if not 0.0 <= self.stopline_tracking_confidence_threshold <= 1.0:
+            raise ValueError("stopline_tracking_confidence_threshold는 0~1이어야 합니다.")
+        if self.stopline_tracking_max_missed_frames < 1:
+            raise ValueError("stopline_tracking_max_missed_frames는 1 이상이어야 합니다.")
         if self.stopline_yolo_image_size < 32:
             raise ValueError("stopline_yolo_image_size는 32 이상이어야 합니다.")
         if self.stopline_detection_window < 1:
@@ -1686,11 +1701,15 @@ class StackTrafficNode(Node):
             self.stopline_roi_x_max,
             self.stopline_roi_y_max,
         )
+        # 최초 후보는 0.35, 기존 정지선과 이어지는 후보는 0.20까지 허용한다.
+        inference_confidence = self.stopline_yolo_confidence_threshold
+        if self.stopline_tracked_bbox is not None:
+            inference_confidence = min(inference_confidence, self.stopline_tracking_confidence_threshold)
         results = self.stopline_model.predict(
             # 학습 영상과 같은 전체 프레임 문맥을 모델에 보여 준 뒤,
             # 아래 변환 함수에서 하단 search ROI와 겹치는 마스크만 쓴다.
             source=frame,
-            conf=self.stopline_yolo_confidence_threshold,
+            conf=inference_confidence,
             imgsz=self.stopline_yolo_image_size,
             classes=self.stopline_class_ids,
             max_det=5,
@@ -1704,7 +1723,16 @@ class StackTrafficNode(Node):
             frame_shape=frame.shape,
             roi_bbox=roi_bbox,
             confidence_threshold=self.stopline_yolo_confidence_threshold,
+            tracked_bbox=self.stopline_tracked_bbox,
+            tracking_confidence_threshold=self.stopline_tracking_confidence_threshold,
         )
+        if detection.detected:
+            self.stopline_tracked_bbox = detection.bbox
+            self.stopline_tracking_missed_frames = 0
+        else:
+            self.stopline_tracking_missed_frames += 1
+            if self.stopline_tracking_missed_frames >= self.stopline_tracking_max_missed_frames:
+                self.stopline_tracked_bbox = None
         self.stopline_y_history.append(
             detection.maximum_edge_y_px
             if detection.detected
@@ -2046,6 +2074,8 @@ class StackTrafficNode(Node):
             else:
                 stopline_runtime = self.last_stopline_runtime
         else:
+            self.stopline_tracked_bbox = None
+            self.stopline_tracking_missed_frames = 0
             self.stopline_y_history.clear()
             self.stopline_y_history.extend(
                 [math.nan] * self.stopline_detection_window

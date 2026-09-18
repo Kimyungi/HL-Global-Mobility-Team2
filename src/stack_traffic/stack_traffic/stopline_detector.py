@@ -9,6 +9,8 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
+from stack_traffic.logic import select_tracking_candidate
+
 
 BBox = Tuple[int, int, int, int]
 
@@ -130,6 +132,8 @@ def detect_stop_line_from_yolo_result(
     roi_bbox: BBox,
     confidence_threshold: float = 0.35,
     class_name: str = "stop_line",
+    tracked_bbox: Optional[BBox] = None,
+    tracking_confidence_threshold: float = 0.20,
 ) -> StopLineDetection:
     """YOLO segmentation 결과를 기존 거리 판단용 형식으로 변환한다.
 
@@ -138,6 +142,8 @@ def detect_stop_line_from_yolo_result(
     겹치는 부분만 사용한다. 모델은 정지선의 의미를 판별하고, 이 함수는
     마스크에서 차량 쪽 경계와 전체 영상 좌표를 계산한다. 여러 정지선이 있으면
     신뢰도와 영상 아래쪽 위치를 함께 보아 차량에 가까운 후보를 우선한다.
+    tracked_bbox가 있으면 위치·크기가 이어지는 후보에 한해 추적용 신뢰도
+    문턱까지 허용한다. 추적 수명과 연속 미검출 횟수는 호출 노드가 관리한다.
     """
     if len(frame_shape) < 2:
         raise ValueError("frame_shape에는 높이와 폭이 있어야 합니다.")
@@ -179,7 +185,8 @@ def detect_stop_line_from_yolo_result(
             _result_class_name(names, class_id)
         )
         confidence = _result_scalar(confidences, index)
-        if detected_name != target_name or confidence < confidence_threshold:
+        minimum_confidence = min(confidence_threshold, tracking_confidence_threshold) if tracked_bbox else confidence_threshold
+        if detected_name != target_name or not math.isfinite(confidence) or confidence < minimum_confidence:
             continue
 
         polygon = np.asarray(polygons[index], dtype=np.float32).copy()
@@ -214,6 +221,16 @@ def detect_stop_line_from_yolo_result(
             continue
 
         x, y, width, height = cv2.boundingRect(contour)
+        if confidence < confidence_threshold:
+            # 낮은 신뢰도는 이전 정지선과 위치·크기가 이어지는 후보만 허용한다.
+            candidate_bbox = (roi_x1 + x, roi_y1 + y,
+                              roi_x1 + x + width, roi_y1 + y + height)
+            if tracked_bbox is None or select_tracking_candidate(
+                [(candidate_bbox, confidence)], tracked_bbox,
+                minimum_iou=0.10, maximum_center_shift_ratio=0.10,
+                minimum_size_similarity=0.50,
+            ) is None:
+                continue
         rect = cv2.minAreaRect(contour)
         (_, _), (rect_width, rect_height), _ = rect
         long_side = max(float(rect_width), float(rect_height))
