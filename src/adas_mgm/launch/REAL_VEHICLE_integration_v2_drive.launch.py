@@ -69,7 +69,7 @@ def obstacle_test_manifest(root, start, end):
                             completion='endpoint_and_missions') for r in plan.files]}
 
 
-def start_stack(context, route_profile='parking'):
+def start_stack(context, route_profile='halla'):
     value = lambda name: LaunchConfiguration(name).perform(context)
     if value('REAL_VEHICLE_CONFIRM') != 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX':
         raise RuntimeError('REAL_VEHICLE_CONFIRM token required before starting hardware')
@@ -86,17 +86,23 @@ def start_stack(context, route_profile='parking'):
     share = Path(get_package_share_directory('adas_mgm'))
     if not share.resolve().is_relative_to(root / 'install_v2'):
         raise RuntimeError('Use this workspace scripts/v2 drive and install_v2')
-    builder = obstacle_test_manifest if route_profile == 'obstacle' else parking_test_manifest
-    manifest = builder(root, value('start_waypoint'), value('end_waypoint'))
+    if route_profile == 'halla':
+        manifest = selected_manifest(root / 'src/stack_gps/waypoints/halla_route_sequence.yaml',
+                                     value('start_waypoint'), value('end_waypoint'))
+    else:
+        builder = obstacle_test_manifest if route_profile == 'obstacle' else parking_test_manifest
+        manifest = builder(root, value('start_waypoint'), value('end_waypoint'))
     print('[v2 drive] selected start CSV: ' + manifest['routes'][0]['file'], flush=True)
     if route_profile == 'obstacle':
         context.launch_configurations['t_reference_enabled'] = 'false'
     context.launch_configurations['t_reference_origin_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['t_reference_route_csv'] = str(
-        root / 'src/stack_gps/waypoints/parking_waypoint.csv')
+        root / ('src/stack_gps/waypoints/halla_0919_path_03.csv' if route_profile == 'halla'
+                else 'src/stack_gps/waypoints/parking_waypoint.csv'))
     for i in (1, 2):
         context.launch_configurations[f't_reference_reverse_{i}_csv'] = str(
-            root / f'src/stack_gps/waypoints/parking_waypoint_rev{i}.csv')
+            root / (f'src/stack_parking/config/parking_ref_{i:02}.csv' if route_profile == 'halla'
+                    else f'src/stack_gps/waypoints/parking_waypoint_rev{i}.csv'))
     context.launch_configurations['avoid_waypoint_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['avoid_route_origin_csv'] = manifest['routes'][0]['file']
     # This entry owns route selection; avoid ambiguous overrides from the base launch.
@@ -141,7 +147,7 @@ def start_stack(context, route_profile='parking'):
     return actions
 
 
-def generate_launch_description(route_profile='parking'):
+def generate_launch_description(route_profile='halla'):
     # Match the integrated field session; normal safety/arbitration remains in the core.
     profile = dict(
         parking_enabled='true', t_reference_enabled='true', t_parking_zone_ranges='[0]', parallel_parking_zone_ranges='[0]',
@@ -165,8 +171,9 @@ def generate_launch_description(route_profile='parking'):
         DeclareLaunchArgument('start_waypoint',
                               description=('PR117 obstacle course; fixed route 01' if obstacle else
                                            'Required each session; scripts/v2 prompts when omitted'),
-                              choices=[route_id], **start_options),
-        DeclareLaunchArgument('end_waypoint', default_value=route_id, choices=[route_id]),
+                              choices=([f'{i:02}' for i in range(1,8)] if route_profile == 'halla' else [route_id]), **start_options),
+        DeclareLaunchArgument('end_waypoint', default_value=('07' if route_profile == 'halla' else route_id),
+                              choices=(['06','07'] if route_profile == 'halla' else [route_id])),
         DeclareLaunchArgument('run_log_dir', default_value='',
                               description='New session directory; empty uses workspace drive_logs'),
         DeclareLaunchArgument('start_rtcm', default_value='true', choices=['true', 'false']),

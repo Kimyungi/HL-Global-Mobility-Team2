@@ -7,7 +7,7 @@ def fresh(stamp, now, timeout=.25):
 
 
 class Recovery:
-    HOLD_SECONDS = 10.
+    HOLD_SECONDS = 6.
     REVERSE_SECONDS = 5.
     DISTANCE = 1.
     SPEED = -.3
@@ -69,7 +69,7 @@ class Recovery:
             if self.hold_since is None:
                 self.hold_since = now
             if now-self.hold_since < self.HOLD_SECONDS or not rear_ok:
-                self.reason = 'holding 10 seconds / waiting for observed rear clearance'
+                self.reason = 'holding 6 seconds / waiting for observed rear clearance'
                 return 0., False
             self.phase, self.reverse_since = 'REVERSE', now
             self.last_speed_stamp, self.last_speed = speed_stamp, speed
