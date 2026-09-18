@@ -1,4 +1,4 @@
-"""ROS-independent route-3 -> reverse park -> 10 s -> forward exit controller.
+"""ROS-independent route-3 -> reverse park -> 3 s -> forward exit controller.
 
 MGM owns activation, final arbitration and the route-4 switch. This module
 never publishes CAN, guesses a gear acknowledgement, or synthesizes a pose.
@@ -86,7 +86,7 @@ def load_course(origin_csv, route_csv, parking_csvs, *, route_id=3, mission_stat
 
 
 class TParkingSequence:
-    WAIT_SECONDS = 10.
+    WAIT_SECONDS = 3.
 
     def __init__(self, candidates, approach, station, cfg=Config(), *, exits=None):
         self.candidates, self.approach, self.station, self.cfg = candidates, approach, station, cfg
@@ -170,7 +170,10 @@ class TParkingSequence:
                 if self.phase == 'ADVANCE_3' and not route_at_end:
                     self.reason = 'await_gps_route3_endpoint'
                     return self.out()
-                self.phase = 'STOP_REVERSE' if self.phase == 'ADVANCE_3' else 'EXIT_STOP'
+                if self.phase == 'EXIT':
+                    self.phase, self.reason = 'DONE', 'exit_complete_continue_next_route'
+                    return self.out(cfg.forward_speed, reference)
+                self.phase = 'STOP_REVERSE'
                 self.stopped_since = None
                 return self.out()
             self.reason = 'forward_reference_tracking'
@@ -202,22 +205,23 @@ class TParkingSequence:
                     self.exit_path = tuple(replace(p,gear=1) for p in reversed(prefix))
                     distances = candidate.s[:self.reverse.index+1]
                     self.exit_station = distances[-1]-distances[::-1]
-                self.phase, self.wait_since = 'WAIT_10', now
+                self.phase, self.wait_since = 'WAIT_3', now
                 return self.out()
             return self.out(result.v_suggest,result.reference)
 
-        if self.phase == 'WAIT_10':
+        if self.phase == 'WAIT_3':
             if not stationary:
                 self.wait_since = None
                 return self.out()
             if self.wait_since is None:
                 self.wait_since = now
             if now-self.wait_since >= self.WAIT_SECONDS:
-                self.phase, self.index, self.reason = 'EXIT', 0, 'ten_seconds_complete'
+                self.phase, self.index, self.reason = 'EXIT', 0, 'three_seconds_complete'
             return self.out()  # zero-speed boundary before changing velocity sign
 
-        if self.phase == 'EXIT_STOP':
-            if stationary:
-                self.phase, self.reason = 'DONE', 'returned_to_route3_end_and_stopped'
-            return self.out()
+        if self.phase == 'DONE':
+            # Keep publishing the final forward reference until MGM acknowledges
+            # completion. A zero-speed completion message would brake the car
+            # before the next route's normal navigation takes ownership.
+            return self.out(cfg.forward_speed, local_reference(self.exit_path[-1], pose))
         return self.out()

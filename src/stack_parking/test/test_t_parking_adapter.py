@@ -192,7 +192,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(self.messages[-1].request_id,100)
 
     def test_done_not_emitted_at_wall_or_wait(self):
-        self.ready();self.send(2);self.adapter.core.phase='WAIT_10';self.adapter.core.wait_since=self.now
+        self.ready();self.send(2);self.adapter.core.phase='WAIT_3';self.adapter.core.wait_since=self.now
         self.supply();self.adapter.tick()
         self.assertFalse(self.messages[-1].done);self.assertEqual(self.messages[-1].v_suggest,0)
 

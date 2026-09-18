@@ -289,6 +289,27 @@ int main() {
     check(r.out.mission_request.active && !r.out.mission_cancel && r.out.v_ref==0,
       "Yongin parallel without ready stays stopped at route endpoint");
   }
+  for (auto type : {MissionType::T_PARKING,MissionType::PARALLEL_PARKING}) {
+    Run r; configure(r); start(r,type); execute(r);
+    r.st.params.revised_v2_enabled=1; r.s.revised_v2=true;
+    r.s.sensor_alive_mask=0x7f; r.s.gps_fix_quality=4;
+    r.st.params.v_base=2.f; r.s.parking_v_suggest=1.f;
+    r.s.vehicle_speed=.7f; endpoint(r);
+    r.s.parking_done=true; r.tick();
+    check(r.out.active_mission_completed && r.out.route.phase==RoutePhase::WAIT_ACK &&
+      r.out.v_ref>0 && !r.out.immediate_stop,
+      "moving CSV parking exit requests next route without an intermediate stop");
+    r.tick();
+    check(r.out.v_ref>0 && !r.out.immediate_stop,
+      "valid reference carries forward motion while next-route acknowledgement arrives");
+    r.s.route.index=1; r.s.route.acknowledged_request=r.out.route.request_id;
+    r.s.route.required_count=0; r.s.gps_at_end=false;
+    ++r.s.references[MGM_SRC_GPS].generation; r.tick();
+    check(r.out.route.index==1 && r.out.v_ref>0 && !r.out.immediate_stop,
+      "fresh next-route acknowledgement continues forward without stopping");
+    r.s.external_stop=true; r.tick();
+    check(r.out.v_ref==0,"operator stop still overrides moving parking handoff");
+  }
   std::printf("parking_entry_test: %d checks, %d failures\n",checks,failures);
   return failures?1:0;
 }

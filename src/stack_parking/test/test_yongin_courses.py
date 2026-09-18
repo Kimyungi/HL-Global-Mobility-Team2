@@ -36,7 +36,7 @@ def test_t_uses_paired_exit_parallel_retraces_driven_prefix():
             core.reverse=NS(index=index,tick=lambda *a,**kw:NS(reason='done',phase='SUCCESS',parking_success=True))
             point=candidate.path[index]
             result=core.tick(1.,Pose2(point.x,point.y,point.yaw),1.,0.,1.,None,None,None,owned=True)
-            assert result.phase=='WAIT_10'
+            assert result.phase=='WAIT_3'
             if mode==1:
                 assert core.exit_path is c.exits[selected][0]
                 assert all(p.gear==1 for p in core.exit_path)

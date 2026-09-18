@@ -67,8 +67,8 @@ class SequenceTests(unittest.TestCase):
             self.assertNotEqual(out.phase,'FAULT',out.reason)
         for _ in range(8):
             out = self.tick(rear=rear(self.now+.1,.49))
-            if out.phase == 'WAIT_10': break
-        self.assertEqual(out.phase,'WAIT_10')
+            if out.phase == 'WAIT_3': break
+        self.assertEqual(out.phase,'WAIT_3')
         self.assertFalse(out.done)
 
     def test_full_sequence_both_slots_and_exact_hold(self):
@@ -76,24 +76,27 @@ class SequenceTests(unittest.TestCase):
             with self.subTest(free=free):
                 self.setUp(); self.free=free; self.to_wait()
                 entered = self.core.wait_since
-                for _ in range(99):
+                for _ in range(29):
                     out = self.tick(rear=rear(self.now+.1,.49))
-                    self.assertEqual(out.phase,'WAIT_10')
+                    self.assertEqual(out.phase,'WAIT_3')
                     self.assertEqual(out.speed,0)
                     self.assertFalse(out.done)
-                while self.core.phase == 'WAIT_10':
+                while self.core.phase == 'WAIT_3':
                     out = self.tick(rear=rear(self.now+.1,.49))
-                self.assertGreaterEqual(self.now-entered,10.)
+                self.assertGreaterEqual(self.now-entered,3.)
                 self.assertEqual(out.speed,0)
                 for p in self.core.exit_path:
                     self.pose=Pose2(p.x,p.y,p.yaw)
                     out=self.tick()
                     self.assertIn(out.speed, (0., 1.0))
-                    self.assertFalse(out.done)
-                self.assertEqual(out.phase,'EXIT_STOP')
-                for _ in range(7): out=self.tick()
+                    self.assertEqual(out.done, out.phase == 'DONE')
+                self.assertEqual(out.phase,'DONE')
+                self.assertGreater(out.speed, 0)
+                for _ in range(7):
+                    out=self.tick(speed=.7)
+                    self.assertGreater(out.speed, 0)
                 self.assertTrue(out.done)
-                self.assertEqual(self.history,['STOP_SELECT','ADVANCE_3','STOP_REVERSE','REVERSE','WAIT_10','EXIT','EXIT_STOP','DONE'])
+                self.assertEqual(self.history,['STOP_SELECT','ADVANCE_3','STOP_REVERSE','REVERSE','WAIT_3','EXIT','DONE'])
 
     def test_endpoint_without_wall_continues_through_wait_and_forward_exit(self):
         self.to_reverse()
@@ -103,16 +106,17 @@ class SequenceTests(unittest.TestCase):
             self.assertNotEqual(out.phase, 'FAULT', out.reason)
         for _ in range(8):
             out = self.tick(rear=rear(self.now+.1, 2.))
-            if out.phase == 'WAIT_10': break
-        self.assertEqual(out.phase, 'WAIT_10')
-        for _ in range(99):
-            self.assertEqual(self.tick().phase, 'WAIT_10')
-        while self.core.phase == 'WAIT_10': self.tick()
+            if out.phase == 'WAIT_3': break
+        self.assertEqual(out.phase, 'WAIT_3')
+        for _ in range(29):
+            self.assertEqual(self.tick().phase, 'WAIT_3')
+        while self.core.phase == 'WAIT_3': self.tick()
         for p in self.core.exit_path:
             self.pose = Pose2(p.x, p.y, p.yaw)
             out = self.tick()
             self.assertIn(out.speed, (0., 1.0))
-        self.assertEqual(out.phase, 'EXIT_STOP')
+        self.assertEqual(out.phase, 'DONE')
+        self.assertGreater(out.speed, 0)
         for _ in range(7): out = self.tick()
         self.assertTrue(out.done)
 
@@ -213,15 +217,15 @@ class SequenceTests(unittest.TestCase):
 
     def test_local_owner_flag_does_not_latch_fault(self):
         self.to_wait()
-        self.assertEqual(self.tick(owned=False).phase, 'WAIT_10')
+        self.assertEqual(self.tick(owned=False).phase, 'WAIT_3')
         self.assertEqual(self.tick(dt=20.).phase, 'EXIT')
 
     def test_clock_rollback_resets_timers_without_fault(self):
         self.select()
         self.assertEqual(self.tick(dt=-1).phase, 'ADVANCE_3')
 
-    def test_rolling_during_wait_restarts_ten_seconds(self):
-        self.to_wait(); self.tick(dt=5.)
+    def test_rolling_during_wait_restarts_three_seconds(self):
+        self.to_wait(); self.tick(dt=1.)
         self.tick(speed=.1)
         self.assertIsNone(self.core.wait_since)
         for _ in range(8): self.tick()
