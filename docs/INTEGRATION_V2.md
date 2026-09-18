@@ -1,3 +1,5 @@
+> 2026-09-18 갱신: 현재 지도는 [0919 실행 지도](../src/stack_gps/waypoints/HALLA_MAP_0919.md)를 따른다. 아래 옛 자료의 zone 경계·평행주차·고정 출구 설명은 현재 설정이 아니다.
+
 # Integration v2_main — 실차 검증 전 통합 기준
 
 > 2026-09-14 주행 준비 변경: `scripts/v2 prepare`는 전체 스택을 준비하고,

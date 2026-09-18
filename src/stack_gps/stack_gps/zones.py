@@ -70,21 +70,20 @@ class ZoneMap:
         """All memberships, including false levels for configured zones.
 
         Current station memberships take precedence over preview-only zones.
+        Overlapping candidates select only the lowest zone_id, regardless of type.
         Preview can enter GPS-only zones only outside all current station zones.
         station_priority also covers stop/avoid ranges carried outside ZoneContext.
         """
-        memberships = []
-        station_priority = station_priority or any(
-            zone.start_index <= current_position_index <= zone.end_index
-            for zone in self.definitions)
-        for zone in self.definitions:
-            bounds = [(zone.start_index, zone.end_index)]
-            in_zone = PathEngine._in_ranges(current_position_index, bounds)
-            if (not station_priority and not in_zone and preview_position_index is not None and
-                    zone.zone_type == ZoneType.GPS_ONLY_ZONE):
-                in_zone = PathEngine._in_ranges(preview_position_index, bounds)
-            memberships.append((zone, in_zone))
-        return tuple(memberships)
+        current = [zone for zone in self.definitions
+                   if zone.start_index <= current_position_index <= zone.end_index]
+        candidates = current
+        if not current and not station_priority and preview_position_index is not None:
+            candidates = [zone for zone in self.definitions
+                          if zone.zone_type == ZoneType.GPS_ONLY_ZONE
+                          and zone.start_index <= preview_position_index <= zone.end_index]
+        # Definitions are sorted by zone_id: one deterministic station winner.
+        selected = candidates[0] if candidates else None
+        return tuple((zone, zone == selected) for zone in self.definitions)
 
     @classmethod
     def from_engine(cls, engine, explicit=()):

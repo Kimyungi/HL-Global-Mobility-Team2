@@ -77,7 +77,7 @@ class PoseDeltaTracker:
         return self.delta, self.update
 
 
-def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, include_states=False):
+def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, include_states=False, zone_indices=None):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 
     east_m/north_m 열은 기록 세션의 기준점에 묶여 있어 쓰지 않고,
@@ -107,6 +107,11 @@ def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, inc
                 states.append(int(row.get('state') or 0))
             elif str(row.get('state', '')).strip() == '4':
                 states[-1] = 4
+            if zone_indices is not None:
+                zone_id = int(row.get('zone_id') or 0)
+                if zone_id > 0 and int(row.get('inside_zone') or (1 if 'inside_zone' not in row else 0)):
+                    index = len(pts) - 1
+                    zone_indices[index] = min(zone_id, zone_indices.get(index, zone_id))
             # Keep marker indices in the filtered/deduplicated geometry, not
             # the CSV's optional idx column. Other state codes retain their roles.
             if avoid_starts is not None and str(row.get('state', '')).strip() == '4':
@@ -123,6 +128,19 @@ def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, inc
         values = yaws if all(y is not None for y in yaws) else None
         return (pts, values, states) if include_states else (pts, values)
     return pts
+
+
+def csv_zone_ranges(path, zone_id=None):
+    """CSV physical-zone ranges in the same filtered/deduplicated index space."""
+    membership = {}
+    load_waypoints_csv(path, zone_indices=membership)
+    ranges = []
+    for index in sorted(i for i, zid in membership.items() if zone_id is None or zid == zone_id):
+        if ranges and index == ranges[-1][1] + 1:
+            ranges[-1] = (ranges[-1][0], index)
+        else:
+            ranges.append((index, index))
+    return ranges
 
 
 def avoidance_marker_range(path):
@@ -273,6 +291,7 @@ class PathEngine:
         # ROS v2 always enables this. False retains historical offline replay semantics.
         self.station_tracking = bool(station_tracking)
         self.accel_ranges = list(accel_ranges)
+        self.physical_waypoint_ranges = []
         self.parking_ranges = list(parking_ranges)
         self.parallel_parking_ranges = list(parallel_parking_ranges)
         for first in self.parking_ranges:
@@ -426,9 +445,11 @@ class PathEngine:
         # Current station zones win over a different preview-only GPS zone.
         station_zone = any(self._in_ranges(idx, ranges) for ranges in (
             self.gps_only_ranges, self.parking_ranges, self.parallel_parking_ranges,
-            self.stop_ranges, self.avoid_ranges, self.accel_ranges))
+            self.stop_ranges, self.avoid_ranges, self.accel_ranges, self.physical_waypoint_ranges))
         gps_only = (self._in_ranges(idx, self.gps_only_ranges) or
                     (not station_zone and self._in_ranges(preview_idx, self.gps_only_ranges)))
+        physical_gps_only = (self._in_ranges(idx, self.physical_waypoint_ranges) or
+            (not station_zone and self._in_ranges(preview_idx, self.physical_waypoint_ranges)))
         waypoint_stations, waypoint_world = track.window()
         waypoint_points = [(c*(e-ev)+s*(n-nv), -s*(e-ev)+c*(n-nv),
                             wrap_angle(a-psi), k) for e, n, a, k in waypoint_world]
@@ -437,12 +458,14 @@ class PathEngine:
                     idx=idx, cross_track_m=math.hypot(foot_e-ev, foot_n-nv),
                     station_yaw_error_rad=wrap_angle(track.heading()-psi),
                     station_error_valid=heading is not None,
-                    accel_zone=self._in_ranges(idx, self.accel_ranges),
+                    accel_zone=(self._in_ranges(idx, self.accel_ranges) or
+                                (not station_zone and self._in_ranges(preview_idx, self.accel_ranges))),
                     parking_zone=perpendicular or parallel,
                     parking_mode='perpendicular' if perpendicular else 'parallel' if parallel else None,
                     stop_zone=self._zone_id(idx, self.stop_ranges),
                     avoid_zone=self._in_ranges(idx, self.avoid_ranges),
-                    gps_only_zone=gps_only,
+                    gps_only_zone=gps_only or physical_gps_only,
+                    physical_gps_only=physical_gps_only,
                     at_end=idx >= len(self.e)-2)
 
     def set_lookahead(self, lookahead_m):

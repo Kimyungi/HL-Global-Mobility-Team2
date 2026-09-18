@@ -45,7 +45,7 @@ from stack_gps.route_plan import RoutePlan, copy_geometry
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
 from stack_gps.imu_link import ImuLink
-from stack_gps.path_engine import PathEngine, PoseDeltaTracker, load_waypoints_csv, wrap_angle, avoidance_marker_range
+from stack_gps.path_engine import PathEngine, PoseDeltaTracker, load_waypoints_csv, wrap_angle, avoidance_marker_range, csv_zone_ranges
 
 
 def _pair_ranges(flat, name, logger):
@@ -648,7 +648,8 @@ class StackGpsNode(Node):
             msg.stop_zone += self._route_plan.stop_offsets[self._route_plan.index]
         msg.avoid_zone = snap['avoid_zone']
         msg.gps_only_zone = snap['gps_only_zone']
-        self._fill_zone_context(msg, snap['idx'], snap.get('preview_index'))
+        self._fill_zone_context(msg, snap['idx'], snap.get('preview_index'),
+                                physical_gps_only=snap.get('physical_gps_only', False))
         self._fill_zone_telemetry(msg, fix_t, east, north, yaw, heading is not None, local_position)
         msg.at_end = snap['at_end']
         msg.fix_quality = quality
@@ -738,12 +739,13 @@ class StackGpsNode(Node):
         if self._reference_stamp is not None:
             msg.reference_stamp = self._reference_stamp
 
-    def _fill_zone_context(self, msg, current_position_index, preview_position_index=None):
+    def _fill_zone_context(self, msg, current_position_index, preview_position_index=None, *, physical_gps_only=False):
         """Publish station-first memberships and the matching GPS-only flag."""
         msg.zone_valid = True
         for definition, in_zone in self.zone_map.snapshot(
                 current_position_index, preview_position_index,
-                station_priority=bool(msg.stop_zone or msg.avoid_zone or msg.accel_zone)):
+                station_priority=bool(msg.stop_zone or msg.avoid_zone or
+                    self.engine._in_ranges(current_position_index, self.engine.accel_ranges))):
             context = ZoneContext()
             context.zone_valid = True
             context.zone_id = definition.zone_id
@@ -753,7 +755,7 @@ class StackGpsNode(Node):
             context.in_zone = in_zone
             context.raw_in_zone = in_zone
             msg.zones.append(context)
-        msg.gps_only_zone = any(context.in_zone and context.zone_type == int(ZoneType.GPS_ONLY_ZONE)
+        msg.gps_only_zone = physical_gps_only or any(context.in_zone and context.zone_type == int(ZoneType.GPS_ONLY_ZONE)
                                 for context in msg.zones)
 
     def _fill_zone_telemetry(self, msg, fix_t, east, north, yaw, heading_valid, local_position=None):
@@ -887,6 +889,9 @@ class StackGpsNode(Node):
         explicit_zones = load_zone_definitions(p('zones_file').value, self.engine, snap_max)
         self.zone_map = ZoneMap.from_engine(self.engine, explicit_zones)
         if getattr(self, 'turn_zone_policy', False):
+            # Every physical CSV zone uses waypoints; only zone [4] also slows down.
+            self.engine.physical_waypoint_ranges = csv_zone_ranges(p('waypoint_csv').value)
+            self.engine.accel_ranges = csv_zone_ranges(p('waypoint_csv').value, 4)
             from .zones import turn_zone_map
             self.zone_map = turn_zone_map(p('zones_file').value, self.engine, snap_max, self.zone_map)
             log.info('Revised v2: legacy GPS-only zones excluded; shared turn/traffic zones: '

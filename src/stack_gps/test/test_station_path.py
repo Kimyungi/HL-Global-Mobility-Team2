@@ -241,3 +241,43 @@ def test_station_mission_range_blocks_preview_only_gps_zone(ranges):
     assert snap['idx'] == 5 and snap['preview_index'] == 7
     assert not snap['gps_only_zone']
     assert snap['points'][0][0] == pytest.approx(2.5, abs=1e-7)
+
+
+def test_speed_zone_preview_entry_station_hold_and_exit():
+    def snapshot(x, **kwargs):
+        engine = PathEngine([latlon(float(i)) for i in range(21)],
+                            station_tracking=True, accel_ranges=[(7, 9)], **kwargs)
+        return engine.snapshot(*latlon(x), heading=0., v_ref=2., generation=1.)
+    assert not snapshot(4.)['accel_zone']
+    assert snapshot(5.)['accel_zone']  # preview reaches index 7
+    assert snapshot(9.)['accel_zone']  # station remains inside after preview exits
+    assert not snapshot(10.)['accel_zone']
+    assert not snapshot(5., gps_only_ranges=[(4, 6)])['accel_zone']  # station zone wins
+
+
+def test_physical_zone_ranges_follow_filtered_geometry(tmp_path):
+    from stack_gps.path_engine import csv_zone_ranges
+    path = tmp_path / 'zones.csv'
+    path.write_text('lat,lon,quality,zone_id\n37,127,4,0\n'
+                    '37,127.001,5,4\n37,127.002,4,4\n'
+                    '37,127.002,4,4\n37,127.003,4,4\n37,127.004,4,0\n')
+    assert csv_zone_ranges(path, 4) == [(1, 2)]
+
+
+def test_physical_csv_zone_forces_waypoint_from_preview_through_station_exit():
+    def snapshot(x):
+        engine = PathEngine([latlon(float(i)) for i in range(21)], station_tracking=True)
+        engine.physical_waypoint_ranges = [(7, 9)]
+        return engine.snapshot(*latlon(x), heading=0., v_ref=2., generation=1.)
+    for x in (5., 7., 9.):
+        snap = snapshot(x)
+        assert snap['physical_gps_only'] and snap['gps_only_zone']
+    assert not snapshot(10.)['gps_only_zone']
+
+
+@pytest.mark.parametrize('zone_id', [1, 2, 3, 4, 9, 254])
+def test_every_csv_zone_id_enables_waypoint_tracking(tmp_path, zone_id):
+    from stack_gps.path_engine import csv_zone_ranges
+    file = tmp_path / 'physical.csv'
+    file.write_text(f'lat,lon,zone_id\n37,127,0\n37,127.001,{zone_id}\n37,127.002,{zone_id}\n')
+    assert csv_zone_ranges(file) == [(1, 2)]

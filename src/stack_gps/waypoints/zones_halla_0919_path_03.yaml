@@ -1,0 +1,17 @@
+# Derived from the matching 0919 CSV: zone_id/inside_zone and state markers.
+track: halla_0919_path_03.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points:
+- mode: perpendicular
+  lat: 37.3038968
+  lon: 127.9072031
+  east_m: -29.231453
+  north_m: -30.797922
+turn_zones:
+- zone_id: 3
+  index_range:
+  - 75
+  - 116
+zones: []

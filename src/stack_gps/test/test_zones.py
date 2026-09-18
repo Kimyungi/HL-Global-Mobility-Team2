@@ -13,12 +13,12 @@ def engine(**kwargs):
     return PathEngine(make_track([(i * .2, 0) for i in range(100)]), **kwargs)
 
 
-def test_existing_gps_and_parking_ranges_are_reused_and_overlap_retained():
+def test_existing_ranges_are_reused_and_lowest_id_wins_overlap():
     eng = engine(gps_only_ranges=[(10, 30)], parking_ranges=[(20, 25)],
                  parallel_parking_ranges=[(40, 50)])
     zones = ZoneMap.from_engine(eng)
     current = [(d, inside) for d, inside in zones.snapshot(22) if inside]
-    assert {d.zone_type for d, _ in current} == {ZoneType.GPS_ONLY_ZONE, ZoneType.MISSION_ZONE}
+    assert {d.zone_type for d, _ in current} == {ZoneType.GPS_ONLY_ZONE}
     assert len({d.zone_id for d in zones.definitions}) == 3
     missions = [d for d in zones.definitions if d.zone_type == ZoneType.MISSION_ZONE]
     assert {d.mission_type for d in missions} == {MissionType.T_PARKING, MissionType.PARALLEL_PARKING}
@@ -37,7 +37,7 @@ def test_range_edges_are_inclusive_and_preview_extends_only_gps_only_zone():
     assert not membership[mission]
     membership = dict(zones.snapshot(20, 21))
     assert membership[gps_only]
-    assert membership[mission]
+    assert not membership[mission]
     membership = dict(zones.snapshot(21, 20))
     assert membership[gps_only]
     assert not membership[mission]
@@ -142,7 +142,21 @@ def test_station_gps_zone_wins_regardless_of_zone_id_sort_order():
     assert dict(ZoneMap([ahead,current],40).snapshot(20,23)) == {ahead:False,current:True}
 
 
-def test_true_station_overlap_keeps_both_current_memberships():
+def test_true_station_overlap_selects_lower_id_instead_of_mission_priority():
     current = ZoneDefinition(9, ZoneType.MISSION_ZONE, 10, 20, 0, MissionType.T_PARKING)
     gps = ZoneDefinition(3, ZoneType.GPS_ONLY_ZONE, 15, 25)
-    assert all(inside for _,inside in ZoneMap([current,gps],40).snapshot(17,27))
+    assert dict(ZoneMap([current,gps],40).snapshot(17,27)) == {gps:True, current:False}
+
+
+def test_lower_mission_id_wins_overlapping_station_gps_zone():
+    mission = ZoneDefinition(2, ZoneType.MISSION_ZONE, 10, 20, 0, MissionType.T_PARKING)
+    gps = ZoneDefinition(3, ZoneType.GPS_ONLY_ZONE, 15, 25)
+    zones = ZoneMap([gps, mission], 40)
+    assert dict(zones.snapshot(17, 23)) == {mission:True, gps:False}
+    assert dict(zones.snapshot(21, 24)) == {mission:False, gps:True}
+
+
+def test_overlapping_preview_gps_zones_select_lower_id():
+    a = ZoneDefinition(3, ZoneType.GPS_ONLY_ZONE, 10, 20)
+    b = ZoneDefinition(9, ZoneType.GPS_ONLY_ZONE, 15, 25)
+    assert dict(ZoneMap([b, a], 40).snapshot(5, 17)) == {a:True, b:False}

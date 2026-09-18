@@ -264,7 +264,7 @@ def test_halla0919_default_runtime_and_parking_join(monkeypatch, tmp_path):
     mod.start_stack(ctx)
     import yaml
     data = yaml.safe_load((tmp_path/'run/route_selected.yaml').read_text())
-    assert [r['id'] for r in data['routes']] == ['01','03','04','05','07']
+    assert [r['id'] for r in data['routes']] == ['01','03','04','05','06','07']
     assert all(Path(r['file']).name == f"halla_0919_path_{r['id']}.csv" for r in data['routes'])
     cfg = ctx.launch_configurations
     assert cfg['avoid_route_origin_csv'] == data['routes'][0]['file']

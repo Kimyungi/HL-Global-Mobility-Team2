@@ -27,7 +27,7 @@ class HallaMap20260916Tests(unittest.TestCase):
 
     def test_user_upload_is_preserved_byte_for_byte(self):
         self.assertEqual(hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
-                         '1cf87e59fe5bdc3c3a2f7ad3a713ee1bb1a09334e3d88b582279118d3041e0ef')
+                         '1b3dde94d9114a8448467bf9af7283ca7c5bb43199b364ae4654b3852f7fa71b')
 
     def test_split_csvs_preserve_every_column_and_row(self):
         self.assertEqual(len(self.source), 901)
@@ -72,7 +72,7 @@ class HallaMap20260916Tests(unittest.TestCase):
         self.assertEqual((float(marked[0]['east_m']),float(marked[0]['north_m'])),
                          (-51.91973,-60.044973))
         for i in range(1,8):
-            config = yaml.safe_load((DATA / f'zones_halla_20260916_path_{i:02d}.yaml').read_text(encoding='utf-8'))
+            config = yaml.safe_load((DATA / f'zones_halla_0919_path_{i:02d}.yaml').read_text(encoding='utf-8'))
             self.assertEqual(len(config['stop_points']), int(i == 5))
             if i == 5:
                 stop = config['stop_points'][0]
@@ -97,19 +97,21 @@ class HallaMap20260916Tests(unittest.TestCase):
         for start in ('01','02'):
             for end in ('06','07'):
                 plan=RoutePlan(DATA / 'halla_route_sequence.yaml',start,end)
-                self.assertEqual([r.id for r in plan.files],[start,'03','04','05',end])
-                self.assertTrue(all('halla_0919' in r.csv.name and '20260916' in r.zones.name for r in plan.files))
+                self.assertEqual([r.id for r in plan.files],[start,'03','04','05','06','07'])
+                self.assertTrue(all('halla_0919' in r.csv.name and '0919' in r.zones.name for r in plan.files))
                 self.assertTrue(all(not r.entry_connection and r.completion == 0 for r in plan.files))
                 for previous,current in zip(plan.files,plan.files[1:]):
+                    if (previous.id,current.id) == ('06','07'): continue
                     a,b=previous.points[-1],current.points[0]
                     self.assertLess(math.hypot((a[0]-b[0])*111000,(a[1]-b[1])*88500),.02)
                 identities.add(plan.sequence_id)
-        self.assertEqual(len(identities),4)
+        self.assertEqual(len(identities),2)
 
     def test_parking_and_avoidance_events_survive_new_indices(self):
-        expected={3:('perpendicular',145),4:('parallel',185)}
+        expected={3:('perpendicular',145)}
+        self.assertEqual(yaml.safe_load((DATA / 'zones_halla_0919_path_04.yaml').read_text())['parking_points'], [])
         for i,(mode,index) in expected.items():
-            config=yaml.safe_load((DATA / f'zones_halla_20260916_path_{i:02d}.yaml').read_text(encoding='utf-8'))
+            config=yaml.safe_load((DATA / f'zones_halla_0919_path_{i:02d}.yaml').read_text(encoding='utf-8'))
             point=config['parking_points'][0]
             row=self.groups[i][index]
             self.assertEqual(point['mode'],mode)
@@ -119,10 +121,14 @@ class HallaMap20260916Tests(unittest.TestCase):
     def test_zone_endpoints_use_retained_coordinates(self):
         for i,rows in self.groups.items():
             available={(float(r['lat']),float(r['lon'])) for r in rows}
-            zones=yaml.safe_load((DATA / f'zones_halla_20260916_path_{i:02d}.yaml').read_text(encoding='utf-8'))
+            zones=yaml.safe_load((DATA / f'zones_halla_0919_path_{i:02d}.yaml').read_text(encoding='utf-8'))
             self.assertEqual(zones['track'],f'halla_0919_path_{i:02d}.csv')
             for key in ('gps_only_zones','avoid_zones','turn_zones'):
                 for interval in zones[key]:
+                    if 'index_range' in interval:
+                        first, last = interval['index_range']
+                        self.assertTrue(0 <= first <= last < len(rows))
+                        continue
                     for end in ('start','end'):
                         self.assertIn((interval[end]['lat'],interval[end]['lon']),available)
 

@@ -236,7 +236,11 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   zone_step(s.zones, zone_source_confirmed && zone_gps_valid(s), m.zones,
     st.params.zone_enter_confirm_samples, st.params.zone_exit_confirm_samples);
   if (zone_source_confirmed) {update_avoid_zone(s, st);}
-  m.gps_only_context = m.zones.in_gps_only_zone;
+  // Physical CSV zones force waypoint navigation without enabling traffic.
+  // Retain the restriction while position/route acknowledgement is unavailable.
+  m.gps_only_context = m.zones.in_gps_only_zone || (s.revised_v2 &&
+    (m.zones.selected.zone_id != 0 ||
+     ((!zone_source_confirmed || !s.gps_position_valid) ? was_zone : s.gps_gps_only_zone)));
   if (s.new_session || (m.route.enabled && m.route.session_reset_pending &&
     m.route.phase == RoutePhase::RUNNING)) {
     for (auto & zone : m.zones.contexts) {
@@ -643,6 +647,12 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   } else if (source_state != MGM_STATE_AVOID) {
     out.v_ref = fixed_motion_speed(out.v_ref, st.params.v_base);
   }
+  // Revised GPS marks physical CSV zone [4] (station or eligible preview)
+  // through the existing speed-range flag. Parking/avoidance keep their speeds.
+  if (s.revised_v2 && !mission && !avoid && s.gps_accel_zone && out.v_ref > 0.0f &&
+    std::isfinite(st.params.v_accel_zone) && st.params.v_accel_zone > 0.0f) {
+    out.v_ref = std::min(out.v_ref, st.params.v_accel_zone);
+  }
   // zone [3] 접근 시 정지선 검출 전부터 전진 목표속도를 최대 1 m/s로 제한한다.
   // 기존의 더 낮은 속도·정지 요구는 유지하고, 이탈 시 세션 속도로 복귀한다.
   if (s.revised_v2 && !mission && in_traffic_zone(m.zones) && out.v_ref > 0.0f) {
@@ -674,6 +684,7 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   out.active_mission_completed = m.mission_completed[m.request.mission_id];
   out.active_mission_failed = m.mission_failed[m.request.mission_id];
   out.zones = m.zones;
+  out.zones.in_gps_only_zone = m.gps_only_context;
   out.active_mission_id = m.active_mission;
   out.speed_owner = mission ? SpeedOwner::MISSION : avoid ? SpeedOwner::AVOIDANCE : SpeedOwner::NAVIGATION;
   out.safe_stop_reasons = base_stop_reasons(s, st);

@@ -9,8 +9,9 @@ PR #113의 독립 판별 로직에 이어, 사용자 후속 지시로 MGM·YOLO�
 - `0 / red_blue_red` → Right → 경로 07.
 - `1 / blue_red_red` → Left → 경로 06.
 - 10초 후 무검출 또는 동률이면 경로 06을 선택한다.
-- **현재 한라대에는 LAST_MISSION_ZONE이 없다.** 지도는 수정하지 않았다.
-  현재 prepare/drive는 기존 `end_waypoint`(기본 06)를 따르고 출구 검출기는 실행하지 않는다.
+- **0919 기준 경로 05의 zone [2], idx 300~316을 LAST_MISSION_ZONE으로 사용한다.**
+  state=3인 idx 300부터 진입하며, prepare/drive는 06·07을 함께 사전 로드한다.
+  이 구역에서만 출구 검출기를 활성화하고 판별 결과에 따라 하나의 출구를 선택한다.
 
 ## 전체 전이와 제어 권한
 

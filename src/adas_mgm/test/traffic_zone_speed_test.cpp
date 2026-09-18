@@ -43,6 +43,13 @@ int main()
   r.zone(3, ZoneType::GPS_ONLY_ZONE); r.tick();
   check(r.st.managers.traffic_zone_active && in_traffic_zone(r.out.zones) && near(r.out.v_ref, 1.f),
     "zone 3 signal gate and cap use the same configured identity");
+  r.zone(3, ZoneType::GPS_ONLY_ZONE, MissionType::NONE, 0, false);
+  r.s.gps_gps_only_zone = true; r.s.gps_accel_zone = true;
+  r.st.params.v_accel_zone = .5f; r.tick();
+  check(r.out.nav == NavState::GPS_ONLY_NAV && near(r.out.v_ref, .5f),
+    "CSV zone 4 selects GPS and its configured approach speed");
+  check(!in_traffic_zone(r.out.zones) && !r.st.managers.traffic_zone_active,
+    "physical CSV waypoint zone cannot enable the traffic detector");
   std::printf("traffic_zone_speed_test: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

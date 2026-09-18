@@ -12,12 +12,12 @@ WAYPOINTS = Path(__file__).parents[1] / 'waypoints'
 @pytest.mark.parametrize('end', ['06', '07'])
 def test_selected_five_routes_meet_at_uploaded_endpoints(start, end):
     plan = RoutePlan(WAYPOINTS / 'halla_route_sequence.yaml', start, end)
-    assert [r.id for r in plan.files] == [start, '03', '04', '05', end]
-    gaps = [(a.id,b.id) for a,b in zip(plan.files,plan.files[1:]) if a.points[-1] != b.points[0]]
+    assert [r.id for r in plan.files] == [start, '03', '04', '05', '06', '07']
+    gaps = [(a.id,b.id) for a,b in zip(plan.files,plan.files[1:]) if (a.id, b.id) != ('06', '07') and a.points[-1] != b.points[0]]
     assert gaps == []  # 2026-09-16 map: route 4 is trimmed at the route-5 junction
     assert all(r.completion == 0 and not r.entry_connection for r in plan.files)
     plan.bind(lambda files: (PathEngine(files.points), ZoneMap([], len(files.points))))
-    assert plan.connections == [None]*5
+    assert plan.connections == [None]*6
 
 
 @pytest.mark.parametrize('start,end', [('', ''), ('01', ''), ('', '07'), ('03','07'), ('01','05'), ('1','7')])
@@ -29,7 +29,7 @@ def test_branch_choices_are_required_and_never_guessed(start, end):
 def test_each_selected_branch_has_a_distinct_identity():
     identities = {RoutePlan(WAYPOINTS / 'halla_route_sequence.yaml', s, e).sequence_id
                   for s in ('01','02') for e in ('06','07')}
-    assert len(identities) == 4
+    assert len(identities) == 2
 
 
 def copy_manifest(tmp_path):
@@ -38,6 +38,12 @@ def copy_manifest(tmp_path):
     for r in data['routes']:
         r['file'] = str((WAYPOINTS / r['file']).resolve())
         r['zones_file'] = str((WAYPOINTS / r['zones_file']).resolve())
+        if r['id'] == '05':
+            zone = yaml.safe_load(Path(r['zones_file']).read_text())
+            zone['zones'] = []  # This fixture tests generic fixed manifests.
+            zone_path = tmp_path / 'fixed_05.yaml'
+            zone_path.write_text(yaml.safe_dump(zone))
+            r['zones_file'] = str(zone_path)
     path = tmp_path/'plan.yaml'
     return path, data
 

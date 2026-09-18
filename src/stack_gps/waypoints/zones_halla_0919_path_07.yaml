@@ -1,0 +1,8 @@
+# Derived from the matching 0919 CSV: zone_id/inside_zone and state markers.
+track: halla_0919_path_07.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points: []
+turn_zones: []
+zones: []

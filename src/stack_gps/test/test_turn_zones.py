@@ -53,7 +53,7 @@ def test_halla_shared_zone_keeps_explicit_yaml_bounds_and_missions():
         csv_path = root / f'halla_0919_path_{number:02d}.csv'
         rows = list(csv.DictReader(csv_path.open()))
         engine = PathEngine([(float(r['lat']), float(r['lon'])) for r in rows])
-        zone_path = root / f'zones_halla_20260916_path_{number:02d}.yaml'
+        zone_path = root / f'zones_halla_0919_path_{number:02d}.yaml'
         config = yaml.safe_load(zone_path.read_text())
         assert config['gps_only_zones'] == []
         for point in config['parking_points']:
@@ -62,10 +62,8 @@ def test_halla_shared_zone_keeps_explicit_yaml_bounds_and_missions():
             ranges.append((first, last))
         existing = ZoneMap.from_engine(engine)
         result = turn_zone_map(zone_path, engine, 2., existing)
-        # PR119 changes CSV zone labels but explicitly preserves runtime YAML zones.
-        preserved_bounds = {3:(28,116), 5:(276,316), 6:(0,25), 7:(0,36)}
-        bounds = preserved_bounds.get(number)
-        expected = set(range(bounds[0], bounds[1]+1)) if bounds else set()
+        expected = {i for i, row in enumerate(rows)
+                    if int(row['zone_id']) == 3 and int(row['inside_zone']) == 1}
         actual = {i for i in range(len(rows)) if any(z.zone_type == ZoneType.GPS_ONLY_ZONE and inside for z, inside in result.snapshot(i))}
         assert actual == expected, number
         assert [z for z in result.definitions if z.zone_type == ZoneType.MISSION_ZONE] == list(existing.definitions)

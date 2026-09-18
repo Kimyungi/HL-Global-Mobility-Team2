@@ -12,7 +12,7 @@ WAYPOINTS = Path(__file__).parents[1] / 'waypoints'
 
 def plan_for(tmp_path, start):
     catalog = yaml.safe_load((WAYPOINTS / 'halla_route_sequence.yaml').read_text())
-    ids = [start, *[f'{i:02}' for i in range(max(3, int(start) + 1), 7)]]
+    ids = [start, *[f'{i:02}' for i in (range(max(3, int(start) + 1), 8) if int(start) < 6 else [])]]
     entries = []
     for route_id in ids:
         row = next(dict(r) for r in catalog['routes'] if r['id'] == route_id)
@@ -20,7 +20,10 @@ def plan_for(tmp_path, start):
         row['zones_file'] = str(WAYPOINTS / row['zones_file'])
         entries.append(row)
     path = tmp_path / 'selected.yaml'
-    path.write_text(yaml.safe_dump({'routes': entries}))
+    data = {'routes': entries}
+    if int(start) <= 5:
+        data['exit_branches'] = {'source': '05', 'left': '06', 'right': '07'}
+    path.write_text(yaml.safe_dump(data))
     return RoutePlan(path)
 
 
@@ -34,7 +37,10 @@ def test_halla_traffic_id_stays_three_for_every_start(tmp_path, start):
     plan.bind(factory)
     traffic = [z for zones in plan.zone_maps for z in zones.definitions
                if z.zone_type == ZoneType.GPS_ONLY_ZONE]
-    assert traffic and {z.zone_id for z in traffic} == {3}
+    assert {z.zone_id for z in traffic} == ({3} if int(start) <= 3 else set())
+    exits = [z for zones in plan.zone_maps for z in zones.definitions
+             if z.zone_type == ZoneType.LAST_MISSION_ZONE]
+    assert {z.zone_id for z in exits} == ({2} if int(start) <= 5 else set())
     assert all(z.explicit_id for z in traffic)
     assert all(z.zone_id != 3 for zones in plan.zone_maps for z in zones.definitions
                if z.zone_type == ZoneType.MISSION_ZONE)

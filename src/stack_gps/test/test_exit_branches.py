@@ -14,10 +14,10 @@ def manifest(tmp_path, *, zone=True):
     for route in data['routes']:
         route['file'] = str(WAYPOINTS / route['file'])
         route['zones_file'] = str(WAYPOINTS / route['zones_file'])
-        if route['id'] == '05' and zone:
+        if route['id'] == '05':
             definitions = yaml.safe_load(Path(route['zones_file']).read_text())
             # Synthetic test-only zone; the checked-in Halla map stays unchanged.
-            definitions['zones'] = [{'zone_id': 20, 'zone_type': 'LAST_MISSION_ZONE', 'index_range': [10, 20]}]
+            definitions['zones'] = ([{'zone_id': 20, 'zone_type': 'LAST_MISSION_ZONE', 'index_range': [10, 20]}] if zone else [])
             zone_path = tmp_path / 'exit_zone.yaml'
             zone_path.write_text(yaml.safe_dump(definitions))
             route['zones_file'] = str(zone_path)
