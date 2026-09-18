@@ -21,6 +21,7 @@ def module():
 def context(mod, tmp_path):
     ctx = LaunchContext()
     ctx.launch_configurations['start_waypoint'] = '03'
+    ctx.launch_configurations['v_base'] = '2.0'
     for item in mod.generate_launch_description().entities:
         if isinstance(item, DeclareLaunchArgument):
             item.execute(ctx)
@@ -105,7 +106,8 @@ def test_missing_lidar_aborts_before_hardware(monkeypatch,tmp_path):
 
 
 
-def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkeypatch, tmp_path):
+@pytest.mark.parametrize('session_speed', ['0.7','2.0'])
+def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkeypatch, tmp_path, session_speed):
     from launch_ros.actions import Node
     from launch_ros.utilities import evaluate_parameters
     from stack_avoid import compute_backend
@@ -116,7 +118,7 @@ def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkey
         start_waypoint='03', end_waypoint='07', parking_enabled='true',
         parking_zone_entry_active='true', avoidance_enabled='true', avoid_zone_only='true',
         zone_enter_confirm_samples='5',
-        zone_exit_confirm_samples='5', traffic_enabled='true', v_base='2.0')
+        zone_exit_confirm_samples='5', traffic_enabled='true', v_base=session_speed)
     monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
     monkeypatch.setattr(mod, 'check_lidar_devices', lambda: None)
     monkeypatch.setattr(persistent_service, 'ensure_running', lambda *a: None)
@@ -141,7 +143,7 @@ def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkey
     assert mgm['avoid_v2_enabled'] is False and mgm['wait_go'] is True
     assert mgm['avoid_zone_only'] is True and mgm['avoidance_enabled'] is True
     assert mgm['zone_enter_confirm_samples'] == 5
-    assert mgm['v_base'] == 2.0 and mgm['v_avoid'] == 1.0
+    assert mgm['v_base'] == float(session_speed) and mgm['v_avoid'] == 1.0
     assert (tmp_path / 'run' / 'avoid_planner_mode.txt').read_text().strip() == 'Waypoint_Avoid_PR103'
     assert (tmp_path / 'run' / 'avoid_compute_backend.txt').read_text().strip() == 'stack_avoid.waypoint_planner'
 
@@ -310,3 +312,19 @@ def test_halla0919_default_runtime_and_parking_join(monkeypatch, tmp_path):
     candidates, approach, _ = load_course(cfg['t_reference_origin_csv'],cfg['t_reference_route_csv'],
         [cfg[f't_reference_reverse_{i}_csv'] for i in (1,2)])
     assert all(.07 < math.hypot(c.path[0].x-approach[-1].x,c.path[0].y-approach[-1].y) < .09 for c in candidates)
+
+
+def test_direct_halla_launch_requires_explicit_session_speed():
+    ctx=LaunchContext()
+    ctx.launch_configurations['start_waypoint']='01'
+    with pytest.raises(RuntimeError, match='v_base'):
+        for item in module().generate_launch_description().entities:
+            if isinstance(item,DeclareLaunchArgument): item.execute(ctx)
+
+
+@pytest.mark.parametrize('speed', ['0','-1','nan','inf'])
+def test_invalid_speed_rejected_before_hardware(monkeypatch,tmp_path,speed):
+    mod=module();ctx=context(mod,tmp_path)
+    ctx.launch_configurations.update(REAL_VEHICLE_CONFIRM='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX',v_base=speed)
+    monkeypatch.setattr(mod,'check_lidar_devices',lambda:pytest.fail('hardware checked before speed validation'))
+    with pytest.raises(ValueError,match='v_base'):mod.start_stack(ctx)

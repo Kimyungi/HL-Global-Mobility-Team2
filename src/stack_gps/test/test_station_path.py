@@ -231,3 +231,13 @@ def test_engine_station_error_is_separate_from_preview_yaw_and_rejects_fallback(
     assert snap['station_yaw_error_rad'] == pytest.approx(-.3, abs=1e-7)
     snap = eng.snapshot(*latlon(5.), heading=None, v_ref=1., generation=2.)
     assert not snap['station_error_valid']
+
+
+@pytest.mark.parametrize('ranges', ['parking_ranges','parallel_parking_ranges','stop_ranges','avoid_ranges'])
+def test_station_mission_range_blocks_preview_only_gps_zone(ranges):
+    eng = PathEngine([latlon(float(i)) for i in range(21)], station_tracking=True,
+                     gps_only_ranges=[(7,9)], **{ranges:[(4,6)]})
+    snap = eng.snapshot(*latlon(5.), heading=0., generation=1.)
+    assert snap['idx'] == 5 and snap['preview_index'] == 7
+    assert not snap['gps_only_zone']
+    assert snap['points'][0][0] == pytest.approx(2.5, abs=1e-7)

@@ -1,5 +1,6 @@
 """Halla full-stack + vehicle RTCM relay + unified RViz; explicit go stays separate."""
 import importlib.util
+import math
 import os
 import stat
 from datetime import datetime
@@ -73,6 +74,9 @@ def start_stack(context, route_profile='halla'):
     value = lambda name: LaunchConfiguration(name).perform(context)
     if value('REAL_VEHICLE_CONFIRM') != 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX':
         raise RuntimeError('REAL_VEHICLE_CONFIRM token required before starting hardware')
+    speed = float(value('v_base'))
+    if not math.isfinite(speed) or speed <= 0:
+        raise ValueError('v_base must be a finite positive speed in m/s')
     # No legacy fallback: reject retired switches before opening any hardware.
     if value('waypoint_avoid') != 'true' or value('avoid_v2_enabled') != 'false':
         raise RuntimeError('Legacy avoidance excluded: waypoint_avoid=true and avoid_v2_enabled=false required')
@@ -92,6 +96,7 @@ def start_stack(context, route_profile='halla'):
     else:
         builder = obstacle_test_manifest if route_profile == 'obstacle' else parking_test_manifest
         manifest = builder(root, value('start_waypoint'), value('end_waypoint'))
+    print(f'[v2 drive] general driving v_base: {speed:g} m/s', flush=True)
     print('[v2 drive] selected start CSV: ' + manifest['routes'][0]['file'], flush=True)
     if route_profile == 'obstacle':
         context.launch_configurations['t_reference_enabled'] = 'false'
@@ -164,6 +169,8 @@ def generate_launch_description(route_profile='halla'):
         profile['t_reference_enabled'] = 'false'
     else:
         profile['v_base'] = '0.5'
+    if route_profile == 'halla':
+        del profile['v_base']  # Explicit speed required for every full-course session.
     route_id = '01' if obstacle else '03'
     start_options = {'default_value': route_id} if obstacle else {}
     return LaunchDescription([
@@ -180,6 +187,8 @@ def generate_launch_description(route_profile='halla'):
         DeclareLaunchArgument('rtcm_device', default_value='/dev/ttyRadio'),
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
         DeclareLaunchArgument('rviz', default_value='true', choices=['true', 'false']),
+        *([DeclareLaunchArgument('v_base', description='Required each session: positive general driving speed in m/s')]
+          if route_profile == 'halla' else []),
         *[DeclareLaunchArgument(k, default_value=v) for k, v in profile.items()],
         OpaqueFunction(function=start_stack, kwargs={'route_profile': route_profile}),
     ])

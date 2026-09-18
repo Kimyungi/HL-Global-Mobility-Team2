@@ -2,7 +2,8 @@
 
 No path generation, waypoint reach detector, distance threshold or course order.
 Mission membership uses only the current station index. GPS-only membership may
-also use the discrete waypoint nearest the station preview.
+also use the discrete waypoint nearest the station preview when no current
+station zone takes precedence.
 """
 from dataclasses import dataclass
 from enum import IntEnum
@@ -64,17 +65,21 @@ class ZoneMap:
                 raise ValueError('only MISSION_ZONE can carry a mission_type')
             seen.add(zone.zone_id)
 
-    def snapshot(self, current_position_index, preview_position_index=None):
+    def snapshot(self, current_position_index, preview_position_index=None, *, station_priority=False):
         """All memberships, including false levels for configured zones.
 
-        A preview may extend only GPS-only navigation membership. Mission Zones
-        stay tied to the current station so a lookahead cannot start parking.
+        Current station memberships take precedence over preview-only zones.
+        Preview can enter GPS-only zones only outside all current station zones.
+        station_priority also covers stop/avoid ranges carried outside ZoneContext.
         """
         memberships = []
+        station_priority = station_priority or any(
+            zone.start_index <= current_position_index <= zone.end_index
+            for zone in self.definitions)
         for zone in self.definitions:
             bounds = [(zone.start_index, zone.end_index)]
             in_zone = PathEngine._in_ranges(current_position_index, bounds)
-            if (not in_zone and preview_position_index is not None and
+            if (not station_priority and not in_zone and preview_position_index is not None and
                     zone.zone_type == ZoneType.GPS_ONLY_ZONE):
                 in_zone = PathEngine._in_ranges(preview_position_index, bounds)
             memberships.append((zone, in_zone))
