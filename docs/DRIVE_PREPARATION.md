@@ -7,7 +7,7 @@ GPS 수신기/RTCM만 별도 프로세스에 남기므로 `stop`이나 준비 �
 ## 사용
 
 ```bash
-# 통합 준비: 기본 한라대 01 → 03 → 04 → 05 → 07, RViz 포함
+# 통합 준비: 기본 한라대 01 → 03 → 04 → 05 → 06, RViz 포함
 scripts/v2 prepare REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
 
 # 다른 터미널에서 출발 / 중지 / 같은 경로로 재출발

@@ -33,7 +33,7 @@ def arguments(result):
 
 def test_interactive_selection_rejects_blank_and_invalid_then_accepts_short_number():
     result = select('rviz:=false', terminal_input='\n08\n3\n2.0\n')
-    assert arguments(result) == ['rviz:=false', 'start_waypoint:=03', 'end_waypoint:=07', 'v_base:=2.0']
+    assert arguments(result) == ['rviz:=false', 'start_waypoint:=03', 'end_waypoint:=06', 'v_base:=2.0']
     assert result.stderr.decode().count('01~07 경로를 입력하세요.') == 2
 
 
@@ -46,13 +46,13 @@ def test_each_invocation_requires_a_new_selection():
 def test_explicit_start_skips_prompt_and_preserves_argument_boundaries():
     result = select('start_waypoint:=03', 'run_log_dir:=/tmp/run with spaces', 'v_base:=1.0')
     assert arguments(result) == ['start_waypoint:=03', 'run_log_dir:=/tmp/run with spaces',
-                                 'v_base:=1.0', 'end_waypoint:=07']
+                                 'v_base:=1.0', 'end_waypoint:=06']
     assert '시작 경로 번호' not in result.stderr.decode()
 
 
 def test_all_halla_starts_are_allowed():
     for start in ('01', '02', '03', '04', '05', '06', '07'):
-        end = '06' if start == '06' else '07'
+        end = '07' if start == '07' else '06'
         assert arguments(select('start_waypoint:=' + start, 'v_base:=2.0')) == [
             'start_waypoint:=' + start, 'v_base:=2.0', 'end_waypoint:=' + end]
 
