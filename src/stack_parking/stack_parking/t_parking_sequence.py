@@ -173,7 +173,7 @@ class TParkingSequence:
                 self.stopped_since = None
                 return self.out()
             self.reason = 'forward_reference_tracking'
-            return self.out(.55,reference)
+            return self.out(cfg.forward_speed,reference)
 
         if self.phase == 'STOP_REVERSE':
             if not stationary:
