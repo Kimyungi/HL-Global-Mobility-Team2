@@ -42,7 +42,7 @@ class Config:
     wall_residual: float = 0.025
     reverse_speed: float = 0.55
     dock_speed: float = 0.15
-    preview: float = 0.5
+    preview: float = 1.5
     dock_remaining: float = 2.0
     start_tolerance: float = 0.30
     yaw_tolerance: float = math.radians(20)
