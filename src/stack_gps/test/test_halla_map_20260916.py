@@ -27,7 +27,7 @@ class HallaMap20260916Tests(unittest.TestCase):
 
     def test_user_upload_is_preserved_byte_for_byte(self):
         self.assertEqual(hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
-                         '6bb043e60f6402bba59e3ac7c80298b9c9f03dadb88c3be0dcc52144ffcfc3d4')
+                         '1cf87e59fe5bdc3c3a2f7ad3a713ee1bb1a09334e3d88b582279118d3041e0ef')
 
     def test_split_csvs_preserve_every_column_and_row(self):
         self.assertEqual(len(self.source), 901)
@@ -37,11 +37,33 @@ class HallaMap20260916Tests(unittest.TestCase):
 
     def test_boundary_3_4_preserved_and_4_5_tail_trimmed(self):
         xy = lambda r: (float(r['east_m']),float(r['north_m']))
-        self.assertEqual(xy(self.groups[3][-1]), (-31.372,-32.9603))
+        self.assertEqual(xy(self.groups[3][-1]), (-31.310493,-33.010403))
         self.assertEqual(xy(self.groups[3][-1]), xy(self.groups[4][0]))
         self.assertEqual(len(self.groups[4]), 206)
         self.assertEqual(xy(self.groups[4][-1]), (-64.335,-70.648))
         self.assertEqual(xy(self.groups[4][-1]), xy(self.groups[5][0]))
+
+    def test_boundary_3_4_is_straight_with_consistent_heading_and_distance(self):
+        # Retained anchors surround the three adjusted waypoints.
+        points = self.groups[3][155:] + self.groups[4][1:3]
+        headings = []
+        for a, b in zip(points, points[1:]):
+            de = float(b['east_m']) - float(a['east_m'])
+            dn = float(b['north_m']) - float(a['north_m'])
+            headings.append(math.atan2(dn, de))
+        self.assertLess(max(headings) - min(headings), math.radians(0.001))
+        for row in self.groups[3][156:] + self.groups[4][:1]:
+            self.assertAlmostEqual(float(row['yaw_rad']), headings[0], places=5)
+            self.assertAlmostEqual(float(row['yaw_deg']), math.degrees(headings[0]), places=3)
+        for group, start in ((self.groups[3], 157), (self.groups[4], 1)):
+            for i in range(start, len(group)):
+                a, b = group[i-1], group[i]
+                distance = math.hypot(float(b['east_m'])-float(a['east_m']),
+                                      float(b['north_m'])-float(a['north_m']))
+                self.assertAlmostEqual(float(b['s_m'])-float(a['s_m']), distance, places=5)
+        # User cleared the parallel-parking CSV state; the separate parking
+        # configuration and reference trajectories are intentionally retained.
+        self.assertEqual(self.groups[4][185]['state'], '0')
 
     def test_state5_is_the_only_new_stop_and_retains_user_coordinates(self):
         marked = [r for r in self.source if int(r['state']) == 5]
