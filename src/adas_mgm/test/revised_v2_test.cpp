@@ -83,14 +83,14 @@ int main() {
   }
   { V2 r; r.st.managers.nav=NavState::GPS_BACKUP; r.s.gps_fix_quality=5; r.tick();
     check(r.out.nav==NavState::LINE && r.out.v_ref>0,"ordinary GPS loss permits immediate valid lane"); }
-  { V2 r; r.gps_zone(true); r.s.gps_fix_quality=5; r.tick(60);
+  { V2 r; r.zone(3, ZoneType::GPS_ONLY_ZONE); r.s.gps_fix_quality=5; r.tick(60);
     check(r.out.zones.in_gps_only_zone && r.out.v_ref==0,"FLOAT classifies zone but cannot drive even with good lane");
     r.s.gps_fix_quality=4; r.tick(); check(r.out.v_ref>0 && r.out.path_source==MGM_SRC_GPS,"turn zone resumes FIXED"); }
   { V2 r; r.s.auto_estop=true; r.tick(1200); check(r.out.v_ref>0,"legacy independent estop excluded");
     r.s.sensor_alive_mask=8; r.tick(); check(r.out.safety==SafetyState::SAFE_STOP,"rear alone does not satisfy runtime health");
     r.s.sensor_alive_mask=64; r.tick(); check(r.out.v_ref>0,"one monitored sensor recovers"); }
   { V2 r; r.traffic(true,true); check(r.out.signal==SignalState::SIGNAL_IDLE,"traffic outside zone ignored");
-    r.gps_zone(true); r.tick(); r.traffic(true,true); r.traffic(true,false);
+    r.zone(3, ZoneType::GPS_ONLY_ZONE); r.tick(); r.traffic(true,true); r.traffic(true,false);
     check(near(r.out.traffic_remaining_m,1.5f),"stopline loss seeds 1.5");
     r.s.vehicle_speed=1; r.tick(10); check(r.out.traffic_remaining_m<1.5f,"actual speed integrates");
     r.traffic(true,true); r.traffic(true,false); check(near(r.out.traffic_remaining_m,1.5f),"every loss reseeds");
@@ -99,8 +99,8 @@ int main() {
     r.s.vehicle_speed_valid=true; r.s.vehicle_speed=0; r.tick(); check(r.out.signal==SignalState::STOPPED_WAIT,"actual zero confirms stopped");
     r.s.traffic_status_fresh=false; r.traffic(false,false); check(r.out.v_ref==0,"stale no-red cannot release established stop");
     r.s.traffic_status_fresh=true; r.traffic(false,false); check(r.out.v_ref>0,"fresh red absence resumes same GPS");
-    r.gps_zone(false); r.tick(); check(!r.st.managers.traffic_zone_active && !r.st.traffic_distance_latched,"zone exit resets signal distance"); }
-  { V2 r; r.s.vehicle_speed_valid=false; r.gps_zone(true); r.tick(); r.traffic(true,true); r.traffic(true,false); r.tick();
+    r.zone(3, ZoneType::GPS_ONLY_ZONE, MissionType::NONE, 0, false); r.tick(); check(!r.st.managers.traffic_zone_active && !r.st.traffic_distance_latched,"zone exit resets signal distance"); }
+  { V2 r; r.s.vehicle_speed_valid=false; r.zone(3, ZoneType::GPS_ONLY_ZONE); r.tick(); r.traffic(true,true); r.traffic(true,false); r.tick();
     check(r.out.traffic_remaining_m<1.5f && r.out.v_ref>0,"no actual history integrates previous output command"); }
   { V2 r; r.arm_estop(); r.scan(0,.25f,1); r.tick(20); check(!r.st.managers.estop_active,"held scan never counts as new detection");
     r.scan(1,.15f,1); r.scan(2,.15f,1); check(!r.st.managers.estop_active,"different sensors do not sum");

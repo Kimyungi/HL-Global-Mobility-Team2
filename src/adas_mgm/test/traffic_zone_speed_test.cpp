@@ -1,4 +1,5 @@
 #include "manager_test_fixture.hpp"
+#include "core/zone_step.hpp"
 using namespace manager_test;
 int main()
 {
@@ -32,6 +33,16 @@ int main()
   check(near(r.out.v_ref, 2.f), "zone exit restores session speed");
   r.zone(2, ZoneType::GPS_ONLY_ZONE); r.tick();
   check(near(r.out.v_ref, 2.f), "other GPS-only zone is not capped");
+  check(!r.st.managers.traffic_zone_active && !in_traffic_zone(r.out.zones),
+    "zone 2 cannot enable the zone 3 signal detector");
+  r.s.traffic_status_stamp_ns = r.s.event_time_ns + 10'000'000;
+  r.redline();
+  check(r.out.signal == SignalState::SIGNAL_IDLE && near(r.out.v_ref, 2.f),
+    "zone 2 ignores zone 3 red/stopline inputs");
+  r.zone(2, ZoneType::GPS_ONLY_ZONE, MissionType::NONE, 0, false);
+  r.zone(3, ZoneType::GPS_ONLY_ZONE); r.tick();
+  check(r.st.managers.traffic_zone_active && in_traffic_zone(r.out.zones) && near(r.out.v_ref, 1.f),
+    "zone 3 signal gate and cap use the same configured identity");
   std::printf("traffic_zone_speed_test: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

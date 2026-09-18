@@ -39,6 +39,7 @@ class ZoneDefinition:
     end_index: int
     mission_id: int = 0
     mission_type: MissionType = MissionType.NONE
+    explicit_id: bool = False  # User-configured IDs survive route composition.
 
 
 class ZoneMap:
@@ -156,7 +157,7 @@ def load_zone_definitions(path, engine, snap_max_m, *, key="zones", turn_only=Fa
             if type(zone_id) is not int or type(mission_id) is not int:
                 raise ValueError('zone_id and mission_id must be integers')
             definitions.append(ZoneDefinition(
-                zone_id, zone_type, first, last, mission_id, mission_type))
+                zone_id, zone_type, first, last, mission_id, mission_type, explicit_id=True))
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError(f'invalid ZoneDefinition {entry!r}: {error}') from error
     # Validate explicit entries together before reserving IDs for legacy ranges.

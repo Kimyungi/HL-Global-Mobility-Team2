@@ -161,10 +161,20 @@ class RoutePlan:
         raise ValueError(message)
 
     def bind(self, factory):
-        """Use the existing engine/Zone conversion; assign course-wide wire IDs."""
-        zone_id, mission_id, stop_offset = 1, 0, 0
-        for files in self.files:
-            engine, zones = factory(files)
+        """Preserve configured Zone IDs; allocate only generated IDs course-wide."""
+        prepared = [(files, *factory(files)) for files in self.files]
+        reserved = {}
+        for _, _, zones in prepared:
+            for zone in zones.definitions:
+                if not zone.explicit_id:
+                    continue
+                identity = (zone.zone_type, zone.mission_type)
+                if zone.zone_id in reserved and reserved[zone.zone_id] != identity:
+                    raise ValueError(f'configured zone {zone.zone_id} has conflicting types across routes')
+                reserved[zone.zone_id] = identity
+        used_ids = set(reserved)
+        mission_id, stop_offset = 0, 0
+        for files, engine, zones in prepared:
             local_missions = {}
             definitions = []
             for zone in zones.definitions:
@@ -174,9 +184,14 @@ class RoutePlan:
                         local_missions[zone.mission_id] = mission_id
                         mission_id += 1
                     mapped_mission = local_missions[zone.mission_id]
+                zone_id = zone.zone_id
+                if not zone.explicit_id:
+                    zone_id = next((i for i in range(1, 256) if i not in used_ids), None)
+                    if zone_id is None:
+                        raise ValueError('sequence exceeds uint8 Zone/Mission/stop ID capacity')
+                    used_ids.add(zone_id)
                 definitions.append(replace(zone, zone_id=zone_id, mission_id=mapped_mission))
-                zone_id += 1
-            if zone_id > 256 or mission_id > 256 or stop_offset + len(engine.stop_ranges) > 255:
+            if mission_id > 256 or stop_offset + len(engine.stop_ranges) > 255:
                 raise ValueError('sequence exceeds uint8 Zone/Mission/stop ID capacity')
             if files.completion == 1 and not local_missions:
                 raise ValueError(f'{files.id}: missions_complete requires at least one Mission Zone')

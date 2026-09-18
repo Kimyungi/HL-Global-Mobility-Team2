@@ -84,7 +84,7 @@ def main():
             expect(lambda s,r:r.v_ref==0 and s.navigation==1,'FLOAT backup stopped')
             lane.confidence=.9
             expect(lambda s,r:r.v_ref>0 and s.navigation==0,'lane recovery resumes without go or FIXED')
-            zone=ZoneContext(zone_id=1,zone_type=1,zone_valid=True,in_zone=True)
+            zone=ZoneContext(zone_id=3,zone_type=1,zone_valid=True,in_zone=True)
             gps.zones=[zone]
             expect(lambda s,r:s.traffic_zone_active and r.v_ref==0,'FLOAT enters turn zone but cannot drive')
             gps.fix_quality=4

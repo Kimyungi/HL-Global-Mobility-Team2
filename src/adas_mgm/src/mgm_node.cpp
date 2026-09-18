@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include "avoid_plan_input.hpp"
+#include "core/zone_step.hpp"
 #include "estop_scan.hpp"
 #include <atomic>
 #include <cmath>
@@ -1255,7 +1256,7 @@ private:
       status.last_mission_route_id = last.route_id; status.last_mission_fallback = last.fallback;
       status.last_mission_detector_enabled = revised_v2_ && last.phase == LastMissionPhase::JUDGING &&
         !out.estop_active && !s.external_stop && out.top == TopState::AUTONOMOUS_DRIVE;
-      status.traffic_zone_active = revised_v2_ && out.zones.in_gps_only_zone && !last_active;
+      status.traffic_zone_active = revised_v2_ && in_traffic_zone(out.zones) && !last_active;
       if (traffic_zone_pub_) {
         std_msgs::msg::Bool enabled;
         enabled.data = status.traffic_zone_active;

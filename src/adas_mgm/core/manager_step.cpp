@@ -435,7 +435,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.actual_speed_seen = true;
     m.last_actual_speed = s.vehicle_speed;
   }
-  const bool traffic_zone = !s.revised_v2 || m.gps_only_context;
+  const bool traffic_zone = !s.revised_v2 || in_traffic_zone(m.zones);
   if (s.revised_v2 && traffic_zone != m.traffic_zone_active) {
     m.traffic_zone_active = traffic_zone;
     m.traffic_zone_enter_ns = s.event_time_ns;
@@ -645,7 +645,7 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   }
   // zone [3] 접근 시 정지선 검출 전부터 전진 목표속도를 최대 1 m/s로 제한한다.
   // 기존의 더 낮은 속도·정지 요구는 유지하고, 이탈 시 세션 속도로 복귀한다.
-  if (s.revised_v2 && !mission && m.zones.contexts[3].in_zone && out.v_ref > 0.0f) {
+  if (s.revised_v2 && !mission && in_traffic_zone(m.zones) && out.v_ref > 0.0f) {
     out.v_ref = std::min(out.v_ref, 1.0f);
   }
   if (gps_return && !mission && st.params.avoid_zone_only && st.params.v_avoid > 0.0f) {
