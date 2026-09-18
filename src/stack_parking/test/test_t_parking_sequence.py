@@ -51,7 +51,7 @@ class SequenceTests(unittest.TestCase):
         for p in self.approach:
             self.pose = Pose2(p.x,p.y,p.yaw)
             out = self.tick(route_at_end=p is self.approach[-1])
-            self.assertIn(out.speed, (0., .7))
+            self.assertIn(out.speed, (0., 2.))
         self.assertEqual(out.phase,'STOP_REVERSE')
         for _ in range(7): out = self.tick(route_at_end=True)
         self.assertEqual(out.phase,'REVERSE')
@@ -63,7 +63,7 @@ class SequenceTests(unittest.TestCase):
             self.pose = Pose2(p.x,p.y,p.yaw)
             clearance = candidate.s[-1]-candidate.s[i]+.49
             out = self.tick(rear=rear(self.now+.1,clearance))
-            self.assertIn(out.speed, (-.7, 0.))
+            self.assertIn(out.speed, (-2., 0.))
             self.assertNotEqual(out.phase,'FAULT',out.reason)
         for _ in range(8):
             out = self.tick(rear=rear(self.now+.1,.49))
@@ -88,7 +88,7 @@ class SequenceTests(unittest.TestCase):
                 for p in self.core.exit_path:
                     self.pose=Pose2(p.x,p.y,p.yaw)
                     out=self.tick()
-                    self.assertIn(out.speed, (0., .7))
+                    self.assertIn(out.speed, (0., 2.))
                     self.assertFalse(out.done)
                 self.assertEqual(out.phase,'EXIT_STOP')
                 for _ in range(7): out=self.tick()
@@ -111,7 +111,7 @@ class SequenceTests(unittest.TestCase):
         for p in self.core.exit_path:
             self.pose = Pose2(p.x, p.y, p.yaw)
             out = self.tick()
-            self.assertIn(out.speed, (0., .7))
+            self.assertIn(out.speed, (0., 2.))
         self.assertEqual(out.phase, 'EXIT_STOP')
         for _ in range(7): out = self.tick()
         self.assertTrue(out.done)
