@@ -746,7 +746,8 @@ class StackGpsNode(Node):
         msg.zone_valid = True
         for definition, in_zone in self.zone_map.snapshot(
                 current_position_index, preview_position_index,
-                station_priority=bool(msg.stop_zone or msg.avoid_zone or
+                station_priority=bool(msg.stop_zone or
+                    self.engine._in_ranges(current_position_index, self.engine.avoid_preview_ranges) or
                     self.engine._in_ranges(current_position_index, self.engine.accel_ranges))):
             context = ZoneContext()
             context.zone_valid = True
@@ -855,6 +856,9 @@ class StackGpsNode(Node):
         # A CSV state=4 marker has no geographic exit: retain its indication
         # through this route and let MGM latch completion after waypoint return.
         avoid_ranges = avoidance_marker_range(p('waypoint_csv').value)
+        # The held state=4 indication is an episode trigger, not a geographic
+        # zone extending to the route end. Only its entry station has priority.
+        avoid_preview_ranges = [(start, start) for start, _ in avoid_ranges]
         if avoid_ranges:
             log.info(f"CSV state=4 회피 시작: idx {avoid_ranges[0][0]}; 종료는 MGM waypoint 복귀 판정")
         for lat1, lon1, lat2, lon2 in file_avoid + _parse_latlon_spec(
@@ -870,10 +874,12 @@ class StackGpsNode(Node):
             lead = float(p('avoid_zone_lead_m').value)
             a_lead = self.engine.index_before(a, lead)
             avoid_ranges.append((a_lead, b))
+            avoid_preview_ranges.append((a_lead, b))
             log.info(f"회피 허용 구간 {len(avoid_ranges)}: idx {a_lead}~{b} "
                      f"(찍은 구간 {a}~{b} + 앞쪽 {lead:.1f}m 확장 — "
                      f"감지 거리 안에서 미리 무장해야 회피가 성립한다, 스냅 {d1:.2f}/{d2:.2f}m)")
         self.engine.avoid_ranges = avoid_ranges
+        self.engine.avoid_preview_ranges = avoid_preview_ranges
         self.engine.exit_stop_index = exit_stop_index(p('waypoint_csv').value)
 
         gps_only_ranges = []

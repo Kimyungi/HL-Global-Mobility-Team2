@@ -28,7 +28,7 @@ uint8 reference_source
 uint8 speed_owner
 bool reference_available
 bool immediate_stop
-ZoneContext zone       # display priority: MISSION > GPS_ONLY > NORMAL
+ZoneContext zone       # display priority: lowest active zone_id; 0 when no special zone
 ZoneContext[] zones    # all current memberships plus exit edges; overlap is preserved
 bool in_gps_only_zone
 uint8 active_mission_id

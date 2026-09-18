@@ -74,9 +74,9 @@ void zone_step(const ZoneSnapshot & input, bool gps_usable, ZoneState & state,
     }
     if (!context.in_zone) {continue;}
     state.in_gps_only_zone = state.in_gps_only_zone || context.zone_type == ZoneType::GPS_ONLY_ZONE;
-    // Ascending ID makes equal-priority overlaps deterministic. All contexts
-    // remain available to Mission/Safety regardless of this display selection.
-    if (selected.zone_id == 0 || context.zone_type > selected.zone_type) {selected = context;}
+    // GPS emits one lowest-ID membership. During confirmation transitions,
+    // multiple stable contexts can remain; the lowest ID also wins display.
+    if (selected.zone_id == 0) {selected = context;}
   }
   auto & normal = state.contexts[0];
   const bool was_normal = normal.in_zone;

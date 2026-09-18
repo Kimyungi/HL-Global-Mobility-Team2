@@ -281,3 +281,13 @@ def test_every_csv_zone_id_enables_waypoint_tracking(tmp_path, zone_id):
     file = tmp_path / 'physical.csv'
     file.write_text(f'lat,lon,zone_id\n37,127,0\n37,127.001,{zone_id}\n37,127.002,{zone_id}\n')
     assert csv_zone_ranges(file) == [(1, 2)]
+
+
+def test_held_avoid_marker_does_not_block_physical_or_explicit_zone_preview():
+    eng = PathEngine([latlon(float(i)) for i in range(21)], station_tracking=True,
+                     gps_only_ranges=[(7,9)], avoid_ranges=[(4,20)])
+    eng.avoid_preview_ranges=[(4,4)]
+    eng.physical_waypoint_ranges=[(7,9)]
+    snap=eng.snapshot(*latlon(5.), heading=0., generation=1.)
+    assert snap['avoid_zone'] and snap['idx']==5 and snap['preview_index']==7
+    assert snap['gps_only_zone'] and snap['physical_gps_only']

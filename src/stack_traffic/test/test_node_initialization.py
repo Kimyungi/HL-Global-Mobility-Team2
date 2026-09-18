@@ -47,6 +47,132 @@ class FakeOakCamera:
 
 
 class TestNodeInitialization(unittest.TestCase):
+    def test_zone_gate_keeps_camera_live_and_resets_only_perception(self):
+        from std_msgs.msg import Bool
+        rclpy.init(args=['--ros-args', '-p', 'camera_backend:=oak',
+                        '-p', 'traffic_zone_gated:=true'])
+        node = None
+        try:
+            with patch('stack_traffic.node.YOLO', FakeYolo), \
+                 patch('stack_traffic.node.OakRgbdCamera', FakeOakCamera):
+                node = StackTrafficNode()
+            camera = node.oak_camera
+            camera.frame = np.zeros((360, 640, 3), dtype=np.uint8)
+            node.publisher = Mock()
+            node.camera_pub = Mock()
+            node.raw_image_pub = Mock()
+            node.raw_image_pub.get_subscription_count.return_value = 1
+            node.debug_image_pub = Mock()
+            node.debug_image_pub.get_subscription_count.return_value = 1
+            warmup_calls = node.model.predict_calls
+            for _ in range(3):
+                node.tick()
+            self.assertEqual(node.model.predict_calls, warmup_calls)
+            self.assertEqual(node.camera_pub.publish.call_count, 3)
+            self.assertEqual(node.raw_image_pub.publish.call_count, 3)
+            self.assertEqual(node.debug_image_pub.publish.call_count, 3)
+            node.publisher.publish.assert_not_called()
+            node._publish(True, -1.)  # Fault reports also stay gated outside.
+            node.publisher.publish.assert_not_called()
+
+            node._on_traffic_zone(Bool(data=True))
+            node.tick()
+            self.assertGreater(node.model.predict_calls, warmup_calls)
+            self.assertTrue(node.publisher.publish.called)
+            node.red_history.append(1)
+            node.red_phase_latched = node.stop_required_latched = True
+            node.tracked_bbox = (1, 2, 3, 4)
+            node._on_traffic_zone(Bool(data=True))
+            self.assertTrue(node.red_phase_latched)  # Repeated enable retains votes.
+            node.camera_fault_latched = True
+            node._on_traffic_zone(Bool(data=False))
+            self.assertFalse(node.red_history)
+            self.assertFalse(node.red_phase_latched)
+            self.assertFalse(node.stop_required_latched)
+            self.assertIsNone(node.tracked_bbox)
+            self.assertTrue(node.camera_fault_latched)
+            self.assertIs(node.oak_camera, camera)
+            calls = node.model.predict_calls
+            node.publisher.reset_mock()
+            node.tick()
+            self.assertEqual(node.model.predict_calls, calls)
+            node.publisher.publish.assert_not_called()
+            node._on_traffic_zone(Bool(data=True))
+            self.assertEqual(node.frame_index, 0)
+            self.assertEqual(node.startup_yolo_runs, 0)
+            self.assertTrue(node.camera_fault_latched)
+        finally:
+            if node is not None:
+                node.destroy_node()
+            rclpy.shutdown()
+
+    def test_halla_stopline_runs_without_red(self):
+        for enabled in (False, True):
+            rclpy.init(args=['--ros-args', '-p', 'camera_backend:=oak',
+                            '-p', 'stopline_detection_enabled:=true',
+                            '-p', f'halla_stopline_test_enabled:={str(enabled).lower()}'])
+            node = None
+            try:
+                with patch('stack_traffic.node.YOLO',
+                           side_effect=[FakeYolo('traffic'), FakeStopLineYolo('stopline')]), \
+                     patch('stack_traffic.node.OakRgbdCamera', FakeOakCamera):
+                    node = StackTrafficNode()
+                node.oak_camera.frame = np.zeros((360, 640, 3), dtype=np.uint8)
+                with patch.object(node, '_process_stopline',
+                                  return_value=node._empty_stopline_runtime()) as process:
+                    for _ in range(6):
+                        node.tick()
+                    self.assertEqual(process.called, enabled)
+                    self.assertFalse(node.red_phase_latched)
+            finally:
+                if node is not None:
+                    node.destroy_node()
+                rclpy.shutdown()
+
+    def test_stopline_tracking_threshold_and_miss_reset(self):
+        from types import SimpleNamespace
+        rclpy.init(args=['--ros-args', '-p', 'camera_backend:=oak',
+                        '-p', 'stopline_detection_enabled:=true'])
+        node = None
+        try:
+            with patch('stack_traffic.node.YOLO',
+                       side_effect=[FakeYolo('traffic'), FakeStopLineYolo('stopline')]), \
+                 patch('stack_traffic.node.OakRgbdCamera', FakeOakCamera):
+                node = StackTrafficNode()
+            frame = np.zeros((360, 640, 3), dtype=np.uint8)
+            def result(score):
+                return SimpleNamespace(
+                    orig_shape=(360, 640), names={0: 'stop_line'},
+                    boxes=SimpleNamespace(cls=[0], conf=[score]),
+                    masks=SimpleNamespace(xy=[np.asarray(
+                        [[100, 250], [500, 250], [500, 270], [100, 270]], dtype=np.float32)]))
+            with patch.object(node.stopline_model, 'predict') as predict:
+                predict.return_value = [result(.2)]
+                self.assertFalse(node._process_stopline(frame, None).detection.detected)
+                self.assertEqual(predict.call_args.kwargs['conf'], .30)
+                predict.return_value = [result(.30)]
+                self.assertTrue(node._process_stopline(frame, None).detection.detected)
+                predict.return_value = [result(.2)]
+                node._process_stopline(frame, None)
+                runtime = node._process_stopline(frame, None)
+                self.assertTrue(runtime.stable)
+                self.assertEqual(predict.call_args.kwargs['conf'], .2)
+                predict.return_value = []
+                for _ in range(3):
+                    node._process_stopline(frame, None)
+                self.assertIsNone(node.stopline_tracked_bbox)
+                predict.return_value = [result(.2)]
+                self.assertFalse(node._process_stopline(frame, None).detection.detected)
+                self.assertEqual(predict.call_args.kwargs['conf'], .30)
+                predict.return_value = [result(.4)]
+                node._process_stopline(frame, None)
+                node._reset_zone_history()
+                self.assertIsNone(node.stopline_tracked_bbox)
+        finally:
+            if node is not None:
+                node.destroy_node()
+            rclpy.shutdown()
+
     def test_yolo_import_failure_preserves_original_error(self):
         os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
         original_error = RuntimeError(
@@ -112,7 +238,7 @@ class TestNodeInitialization(unittest.TestCase):
                 "traffic-oak-mxid",
             )
             self.assertEqual(FakeOakCamera.last_kwargs["usb_speed"], "high")
-            self.assertEqual(FakeOakCamera.last_kwargs["exposure_compensation"], -2)
+            self.assertEqual(FakeOakCamera.last_kwargs["exposure_compensation"], 0)
             self.assertTrue(node.describe_parameter("oak_exposure_compensation").read_only)
             self.assertIn(
                 "mxid=traffic-oak-mxid",

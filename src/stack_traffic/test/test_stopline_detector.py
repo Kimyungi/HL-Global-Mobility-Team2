@@ -40,6 +40,21 @@ class FakeSegmentationResult:
 
 
 class TestStopLineDetector(unittest.TestCase):
+    def test_low_confidence_requires_matching_previous_stopline(self):
+        polygon = np.asarray([[20, 100], [480, 100], [480, 120], [20, 120]], dtype=np.float32)
+        def detect(score, tracked=None, shift=0):
+            result = FakeSegmentationResult([0], [score], [polygon + [0, shift]])
+            return detect_stop_line_from_yolo_result(
+                result, (480, 640, 3), (70, 220, 570, 470),
+                tracked_bbox=tracked, tracking_confidence_threshold=.2)
+        self.assertFalse(detect(.2).detected)
+        initial = detect(.4)
+        self.assertTrue(initial.detected)
+        self.assertTrue(detect(.2, initial.bbox, 5).detected)
+        self.assertFalse(detect(.19, initial.bbox, 5).detected)
+        self.assertFalse(detect(.25, initial.bbox, 100).detected)
+        self.assertTrue(detect(.4, initial.bbox, 100).detected)
+
     def test_depth_bbox_uses_near_edge_and_inner_span(self):
         bbox = make_stopline_depth_bbox(
             (100, 300, 500, 330),

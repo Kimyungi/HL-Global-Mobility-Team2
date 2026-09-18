@@ -189,6 +189,10 @@ if(BUILD_TESTING)
   target_link_libraries(lidar_only_estop_test mgm_core)
   add_test(NAME lidar_only_estop_test COMMAND lidar_only_estop_test)
 
+  add_executable(halla_stopline_test test/halla_stopline_test.cpp)
+  target_link_libraries(halla_stopline_test mgm_core)
+  add_test(NAME halla_stopline_test COMMAND halla_stopline_test)
+
   add_executable(traffic_gps_release_test test/traffic_gps_release_test.cpp)
   target_link_libraries(traffic_gps_release_test mgm_core)
   add_test(NAME traffic_gps_release_test COMMAND traffic_gps_release_test)

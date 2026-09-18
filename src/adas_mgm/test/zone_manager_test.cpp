@@ -63,8 +63,8 @@ void missions()
   Run overlap; overlap.tick(50); overlap.obstacle(); overlap.gps_zone(true); overlap.mission();
   check(overlap.out.mission_start && overlap.out.path_source==MGM_SRC_PARKING &&
     overlap.out.avoid==AvoidState::INACTIVE,"Z16: Mission ready preempts running avoidance");
-  check(overlap.out.zones.selected.zone_type==ZoneType::MISSION_ZONE && overlap.out.zones.in_gps_only_zone,
-    "Mission display priority retains overlapping GPS-only context");
+  check(overlap.out.zones.selected.zone_id==1 && overlap.out.zones.in_gps_only_zone,
+    "Lowest stable zone ID wins display even while a mission retains control");
   overlap.s.parking_updated=true; overlap.s.auto_estop=true; overlap.tick();
   check(overlap.out.path_source==MGM_SRC_PARKING && overlap.out.avoid==AvoidState::INACTIVE,
     "Z19: ordinary avoidance never overwrites mission reference");

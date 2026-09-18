@@ -136,6 +136,8 @@ def start_stack(context, route_profile='yongin'):
         log_dir=str(run), default_homography=str(root / 'src/stack_lane/config/homography.json'),
         default_lane_weights=str(root / 'src/stack_lane/models/yolopv2.pt'),
         lidar_estop_enabled=False, revised_v2_enabled=True,
+        # 한라대 전용 정지선 인식 여부 판단을 위한 임시 스테이트 전이조건.
+        halla_stopline_test_enabled=False,
         required_lidar_topics=['/lidar/a1/scan', '/lidar/a2/scan',
                                '/lidar/b1/scan', '/lidar/b2/scan'])
     actions = list(stack.entities)
@@ -160,7 +162,7 @@ def generate_launch_description(route_profile='yongin'):
         traffic_depth_enabled='false', traffic_yolo_image_size='640',
         traffic_yolo_inference_interval='2', traffic_red_phase_yolo_inference_interval='3',
         traffic_stopline_yolo_image_size='320', traffic_require_stop_gate='false',
-        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-2', v_base='2.0', v_avoid='1.0', v_accel_zone='0.5', record='false')
+        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='0', v_base='2.0', v_avoid='1.0', v_accel_zone='0.5', record='false')
     obstacle = route_profile == 'obstacle'
     if obstacle:
         profile['t_reference_enabled'] = 'false'

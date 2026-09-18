@@ -286,6 +286,8 @@ public:
       declare_parameter<bool>("escape_require_rear_clear", true) ? 1 : 0;
     p.traffic_state_enabled =
       declare_parameter<bool>("traffic_state_enabled", true) ? 1 : 0;
+    p.halla_stopline_test_enabled =
+      declare_parameter<bool>("halla_stopline_test_enabled", false) ? 1 : 0;
     // ── 정지 거리 추적 (2026-09-02 개정 — 정지선 소실 edge 기준,
     // mgm_types.hpp 주석 참조). 정지선을 한 번도 못 본 run(정지선 인식이
     // 실패하는 조건 포함)에서는 MGM_STATE_TRAFFIC의 !traffic_distance_latched

@@ -235,6 +235,8 @@ struct ManagerState
   float last_actual_speed;
   bool traffic_zone_active;
   int64_t traffic_zone_enter_ns;
+  int64_t halla_stopline_start_ns;
+  bool halla_stopline_wait_clear;
   bool estop_active;
   bool estop_detection_enabled;
   bool estop_motion_seen;

@@ -31,6 +31,49 @@ void motion()
   check(near(r.out.v_ref, .01f), "avoidance immediately publishes a fresh nonzero target");
 }
 
+void approach_zone_speed()
+{
+  Run r; r.st.params.revised_v2_enabled=1;r.s.sensor_alive_mask=0x77; r.s.gps_fix_quality=4;
+  r.st.params.v_base=2.f; r.st.params.v_accel_zone=.5f;
+  r.tick(); check(near(r.out.v_ref,2.f), "outside approach zone uses session speed");
+  r.s.gps_accel_zone=true; r.s.gps_gps_only_zone=true; r.tick();
+  check(near(r.out.v_ref,.5f) && r.out.path_source==MGM_SRC_GPS &&
+    r.out.nav==NavState::GPS_ONLY_NAV && r.out.zones.in_gps_only_zone,
+    "zone-4 preview selects waypoint at 0.5m/s despite good camera");
+  check(!r.st.managers.traffic_zone_active, "physical waypoint zone alone does not enable traffic");
+  r.s.gps_fix_quality=5; r.tick();
+  check(r.out.v_ref==0 && r.out.path_source==MGM_SRC_GPS,
+    "physical waypoint zone never falls back to camera on FLOAT");
+  r.s.gps_fix_quality=4; r.tick();
+  r.gps_zone(true); r.tick();
+  check(near(r.out.v_ref,.5f), "zone-4 caps GPS navigation speed");
+  r.s.external_stop=true; r.tick();
+  check(r.out.v_ref==0, "zone cap preserves operator stop");
+  r.s.external_stop=false; r.s.gps_accel_zone=false;r.s.gps_gps_only_zone=false; r.tick();
+  check(near(r.out.v_ref,2.f), "zone exit restores session speed");
+  r.st.params.v_base=.3f; r.s.gps_accel_zone=true; r.tick();
+  check(near(r.out.v_ref,.3f), "speed cap never raises a lower session speed");
+}
+
+void every_active_zone_uses_waypoints()
+{
+  for (uint8_t id : {1,2,3,4,9,254}) {
+    Run r; r.st.params.revised_v2_enabled=1; r.s.sensor_alive_mask=0x77;
+    r.s.gps_fix_quality=4; r.st.params.v_base=2.f; r.tick(60);
+    r.zone(id,ZoneType::NORMAL_ZONE); r.tick();
+    check(r.out.path_source==MGM_SRC_GPS && r.out.nav==NavState::GPS_ONLY_NAV,
+      "any active nonzero zone selects GPS regardless of ID/type and camera confidence");
+    r.tick(60);
+    check(r.out.path_source==MGM_SRC_GPS, "good camera cannot escape active zone");
+    r.s.gps_fix_quality=5; r.tick();
+    check(r.out.path_source==MGM_SRC_GPS && r.out.v_ref==0,
+      "active zone with FLOAT stops instead of selecting camera");
+    r.s.gps_position_valid=false; r.s.gps_gps_only_zone=false; r.tick();
+    check(r.out.path_source==MGM_SRC_GPS && r.out.v_ref==0,
+      "position outage retains zone restriction");
+  }
+}
+
 void stops()
 {
   Run r; r.st.params.a_up = .5f; r.st.params.a_down = 1.5f;
@@ -218,7 +261,7 @@ void stop_zone_measured_dwell()
 }
 int main()
 {
-  motion(); stops(); parking_and_recovery(); rc_recovery(); signal_and_invalid();
+  every_active_zone_uses_waypoints(); approach_zone_speed(); motion(); stops(); parking_and_recovery(); rc_recovery(); signal_and_invalid();
   signal_without_output_ramp(); stop_zone_measured_dwell();
   std::printf("fixed_speed_test: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;

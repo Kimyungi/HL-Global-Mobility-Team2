@@ -119,7 +119,7 @@ int main()
   {
     MpcTargetFdPayload tgt{};
     tgt.x = 1.8; tgt.y = -0.25; tgt.yaw = 0.12; tgt.curvature = 0.469;
-    tgt.dx = 0.06; tgt.dy = -0.01; tgt.dyaw = 0.005; tgt.update = 42;
+    setCanPoseDelta(tgt, 1, 0.06, -0.01, 0.005, 42);
     check(sendCanFrame(sv[0], kIdRefPointBase, tgt, /*fd=*/true), "MPC_TARGET(64B) 송신");
     CanRxFrame rx{};
     check(readCanFrame(sv[1], rx), "MPC_TARGET(64B) 수신");
@@ -129,8 +129,8 @@ int main()
     std::memcpy(back, rx.data, sizeof(back));
     check(back[0] == 1.8 && back[1] == -0.25 && back[2] == 0.12 && back[3] == 0.469,
       "x/y/yaw/curvature 가 DBC 오프셋 0/8/16/24");
-    check(back[4] == 0.06 && back[5] == -0.01 && back[6] == 0.005,
-      "dx/dy/dyaw 필드 보존");
+    check(back[4] == 0.06 && back[5] == -0.01 && back[6] == -0.005,
+      "CAN은 dx/dy 보존, dyaw 반전 (오프셋 32/40/48)");
     uint64_t upd = 1;
     std::memcpy(&upd, rx.data + 56, sizeof(upd));
     check(upd == 42, "update 필드 보존 (오프셋 56)");
@@ -140,6 +140,21 @@ int main()
   check(!stateUsesPoseDelta(2), "AVOID는 pose delta 미사용");
   check(stateUsesPoseDelta(3), "PARKING은 LiDAR pose delta 사용");
   check(stateUsesPoseDelta(4), "TRAFFIC은 lane 경로이므로 GPS delta 사용");
+  for (uint8_t state : {0U, 1U, 3U, 4U}) {
+    for (double yaw_delta : {-3.141592653589793, -0.1, 0.0, 0.1}) {
+      MpcTargetFdPayload target{};
+      setCanPoseDelta(target, state, -0.2, 0.03, yaw_delta, 71);
+      check(target.dx == -0.2 && target.dy == 0.03 &&
+        target.dyaw == -yaw_delta && target.update == 71,
+        "모든 유효 상태: 후진/좌측 이동 보존, 회전 양방향 반전");
+      setCanPoseDelta(target, state, -0.2, 0.03, yaw_delta, 71);
+      check(target.dyaw == -yaw_delta, "같은 sample 재송신 시 이중 반전 없음");
+      setCanPoseDelta(target, 2, -0.2, 0.03, yaw_delta, 71);
+      check(target.dx == 0.0 && target.dy == 0.0 &&
+        target.dyaw == 0.0 && target.update == 0,
+        "미사용 상태는 이전 delta를 남기지 않음");
+    }
+  }
   {
     PoseDeltaUpdateGate gate;
     check(gate.shouldApply(0, 42), "LANE의 새 update는 1회 적용");

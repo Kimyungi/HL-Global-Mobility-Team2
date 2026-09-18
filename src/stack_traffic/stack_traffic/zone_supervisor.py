@@ -1,8 +1,4 @@
-"""Keep the perception process/camera OFF outside MGM's confirmed turn zone.
-
-This supervisor owns no traffic decision. Each launch creates fresh detector
-history; MGM alone owns signal stops and ignores heartbeat loss as a new stop.
-"""
+"""Keep the camera process running; gate only perception inside the child node."""
 import os
 import signal
 import subprocess
@@ -59,30 +55,26 @@ def main(args=None):
     import yaml
     from fma_interfaces.msg import MgmState
     from rclpy.node import Node
-    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-    from std_msgs.msg import Bool
 
     rclpy.init(args=args)
     node = Node('traffic_zone_supervisor', automatically_declare_parameters_from_overrides=True)
     params = {name: parameter.value
               for name, parameter in node.get_parameters_by_prefix('').items()}
+    params['traffic_zone_gated'] = True
     handle = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', prefix='traffic_zone_', delete=False)
     with handle:
         yaml.safe_dump({'/**': {'ros__parameters': params}}, handle)
     gate = ProcessGate(['ros2', 'run', 'stack_traffic', 'stack_traffic_node',
                        '--ros-args', '--params-file', handle.name])
-    state = {'enabled': False, 'exit_camera': False}
-    qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
-                     durability=DurabilityPolicy.TRANSIENT_LOCAL)
-    def received(msg):
-        state['enabled'] = msg.data
-        gate.update(msg.data and not state['exit_camera'])
-    node.create_subscription(Bool, '/adas/traffic_zone_enabled', received, qos)
+    gate.update(True)
+    exit_camera = [False]
     def status(msg):
-        state['exit_camera'] = exit_camera_requested(msg)
-        gate.update(state['enabled'] and not state['exit_camera'])
+        # Exit detector uses the same OAK. Keep it released through the mission,
+        # including temporary authorization loss, until IDLE/DONE is reported.
+        exit_camera[0] = exit_camera_requested(msg)
+        gate.update(not exit_camera[0])
     node.create_subscription(MgmState, '/adas/mgm_state', status, 1)
-    node.create_timer(.1, lambda: gate.update(state['enabled'] and not state['exit_camera']))
+    node.create_timer(.1, lambda: gate.update(not exit_camera[0]))
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):

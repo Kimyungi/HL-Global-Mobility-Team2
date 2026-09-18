@@ -303,6 +303,8 @@ struct CoreParams
   // ── 신호등 정지 상태 (§4, MGM_STATE_TRAFFIC). 0이면 생성 v1.88 호환을 위해
   // 기능을 끈다.
   int32_t traffic_state_enabled;
+  // 한라대 전용 정지선 인식 여부 판단을 위한 임시 스테이트 전이조건.
+  int32_t halla_stopline_test_enabled;
   // ── 정지 거리 추적 (2026-09-02 개정, 사용자 지정 — 정지선 소실 edge 기준).
   // 카메라 optical-Z 거리(TrafficStop.stop_distance)는 검출이 불안정하면
   // 즉시 무효가 돼 그 자체로는 연속 신뢰 기준으로 못 쓴다. 대신 "정지선이

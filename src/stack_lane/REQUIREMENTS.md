@@ -10,6 +10,9 @@
 ## 계약 (이것만 지키면 나머지는 자유)
 
 - 입력: camera (100ms, OAK-D Pro). 차선 검출은 YOLO 기반.
+- 2026-09-18: 통합 revised_v2는 `zone_gated=true`. 카메라 영상·heartbeat는 상시 유지하고,
+  MGM의 GPS 전용·신호등·미션 zone 및 활성 주차·회피 상태, GPS 회피 범위에서 추론·차선 경로 발행을 중단한다.
+  일반 구간 복귀 시 이전 추적 이력을 초기화한다. 단독 실행 기본은 기존 상시 추론이다.
 - 출력 ①: `/perception/lane_path` (`fma_interfaces/LanePath`), 카메라 주기마다.
   - `points[]`: **vehicle frame** ref points — 생성 시점 차량 = (0,0,0). {x, y, yaw, curvature}.
   - `confidence`: 0.0~1.0. lane↔waypoint 전이 판정의 **재료** — 전이 판단 자체는 MGM이 한다.

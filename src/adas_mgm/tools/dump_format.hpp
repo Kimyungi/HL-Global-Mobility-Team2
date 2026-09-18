@@ -63,7 +63,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v37: suspend lane-confidence hysteresis through AVOID_ACTIVE/GPS_RETURN.
 // v38: upper ESTOP arms two seconds after authorized measured forward motion.
 // v39: exit detection on zone entry; stop only at CSV state=3.
-constexpr uint32_t kDumpVersion = 39;
+// v40: persist the optional, default-off Halla stopline test parameter.
+constexpr uint32_t kDumpVersion = 40;
 
 struct DumpHeader
 {

@@ -242,12 +242,14 @@ int main() {
     check(r.out.v_ref==0 && r.out.mission_request.active,
       "T no-space search also stops at endpoint even if old wall collection was complete");
     execute(r);
-    r.st.params.v_base=2.f;r.s.parking_v_suggest=.55f;r.tick();
+    r.st.params.v_base=2.f;r.st.params.v_accel_zone=.5f;
+    r.st.params.revised_v2_enabled=1;r.s.sensor_alive_mask=0x77;r.s.gps_fix_quality=4;r.s.gps_accel_zone=true;
+    r.s.parking_v_suggest=.55f;r.tick();
     check(near(r.out.v_ref,.55f) && r.out.path_source==MGM_SRC_PARKING,
       "T adapter owns forward route-3 remainder with bounded provider speed");
-    r.s.parking_v_suggest=-.15f;r.tick();
-    check(near(r.out.v_ref,-.15f) && r.out.mission_request.active &&
-      r.out.route.phase!=RoutePhase::WAIT_ACK,"docking remains 0.15m/s, not 2m/s; route stays 03");
+    r.s.parking_v_suggest=-1.f;r.tick();
+    check(near(r.out.v_ref,-1.f) && r.out.mission_request.active &&
+      r.out.route.phase!=RoutePhase::WAIT_ACK,"reverse remains 1m/s; route stays 03");
     r.s.parking_v_suggest=0;r.s.vehicle_speed=0;r.tick(1100);
     check(r.out.mission_request.active && !r.out.active_mission_completed &&
       r.out.route.index==0 && r.out.route.phase!=RoutePhase::WAIT_ACK,
@@ -260,11 +262,13 @@ int main() {
     status(r);r.s.parking_v_suggest=0;r.s.parking_done=true;r.tick();
     check(r.out.active_mission_completed && r.out.route.phase==RoutePhase::WAIT_ACK &&
       r.out.route.requested_index==1,"only acknowledged exit done and measured stop request route 04");
+    r.s.gps_accel_zone=false;
     r.s.route.index=1;r.s.route.acknowledged_request=r.out.route.request_id;
     r.s.route.required_count=0;r.s.gps_at_end=false;
     ++r.s.references[MGM_SRC_GPS].generation;r.tick();r.tick();
-    check(r.out.route.index==1 && r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0,
-      "fresh route-04 acknowledgement resumes normal waypoint following");
+    check(r.out.route.index==1 && (r.out.path_source==MGM_SRC_GPS ||
+      r.out.path_source==MGM_SRC_LANE) && near(r.out.v_ref,2.f),
+      "fresh route-04 acknowledgement resumes 2m/s normal navigation");
   }
   {
     Run r; configure(r); start(r,MissionType::PARALLEL_PARKING); execute(r);

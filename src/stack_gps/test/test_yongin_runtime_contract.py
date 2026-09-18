@@ -58,3 +58,24 @@ def test_exit_stop_marker_uses_csv_current_station():
     # The zone can be active before the independent stop marker is reached.
     engine=next(e for r,e in zip(p.files,p.engines) if r.id=='05')
     assert 84 < engine.exit_stop_index
+
+
+def test_production_zone_publication_allows_preview_after_avoid_marker():
+    from fma_interfaces.msg import GpsPath
+    p=plan()
+    i=next(i for i,r in enumerate(p.files) if r.id=='03')
+    engine,zones=p.engines[i],p.zone_maps[i]
+    node=NS(engine=engine,zone_map=zones)
+    assert engine.avoid_ranges == [(336,len(engine.e)-1)]
+    assert engine.avoid_preview_ranges == [(336,336)]
+    for station,preview,expected in [(462,463,1),(564,565,3),(579,580,3)]:
+        msg=GpsPath();msg.avoid_zone=True
+        StackGpsNode._fill_zone_context(node,msg,station,preview)
+        assert [z.zone_id for z in msg.zones if z.in_zone] == [expected]
+        assert msg.gps_only_zone
+    # A preview at the final-mission zone does not arm that mission.
+    i=next(i for i,r in enumerate(p.files) if r.id=='05')
+    node=NS(engine=p.engines[i],zone_map=p.zone_maps[i])
+    msg=GpsPath()
+    StackGpsNode._fill_zone_context(node,msg,83,92)
+    assert not any(z.zone_id==2 and z.in_zone for z in msg.zones)

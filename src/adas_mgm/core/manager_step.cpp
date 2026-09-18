@@ -471,6 +471,8 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   if (s.revised_v2 && traffic_zone != m.traffic_zone_active) {
     m.traffic_zone_active = traffic_zone;
     m.traffic_zone_enter_ns = s.event_time_ns;
+    m.halla_stopline_start_ns = 0;
+    m.halla_stopline_wait_clear = false;
     m.signal = SignalState::SIGNAL_IDLE;
     st.traffic_distance_latched = st.traffic_prev_stopline_detected = false;
     st.traffic_stopline_distance = 0;
@@ -480,9 +482,22 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   if (st.params.traffic_state_enabled && traffic_zone) {
     // (!red) || (!red && green) reduces to !red. Apply the GPS handoff
     // only on a signal exit, not on every ordinary no-signal driving tick.
-    const bool release = traffic_fresh && !s.traffic_red_active;
+    // 한라대 전용 정지선 인식 여부 판단을 위한 임시 스테이트 전이조건:
+    // 적색 없이 정지선만으로 진입, 최초 인식 후 3초에 탈출 (정차 후 3초 아님).
+    const bool halla_test = s.revised_v2 && st.params.halla_stopline_test_enabled;
+    if (halla_test && m.halla_stopline_wait_clear && traffic_fresh &&
+      !s.traffic_stopline_detected) {m.halla_stopline_wait_clear = false;}
+    const bool release = halla_test ?
+      ((m.signal == SignalState::APPROACH_STOP_LINE || m.signal == SignalState::STOPPED_WAIT) &&
+      s.monotonic_ns - m.halla_stopline_start_ns >= 3'000'000'000LL) :
+      traffic_fresh && !s.traffic_red_active;
     const bool signal_exit = release && m.signal != SignalState::SIGNAL_IDLE;
     if (release) {
+      if (halla_test) {
+        m.halla_stopline_start_ns = 0;
+        // 같은 정지선이 계속 보일 때 즉시 재진입하지 않는다.
+        m.halla_stopline_wait_clear = true;
+      }
       m.signal = SignalState::SIGNAL_IDLE;
       st.traffic_distance_latched = false;
       st.traffic_stopline_distance = 0.0f;
@@ -504,7 +519,13 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
         }
       }
     } else {
-      if (traffic_fresh && m.signal == SignalState::SIGNAL_IDLE && s.traffic_red_active) {
+      if (halla_test && traffic_fresh && !m.halla_stopline_wait_clear &&
+        m.signal == SignalState::SIGNAL_IDLE && s.traffic_stopline_detected)
+      {
+        m.signal = SignalState::APPROACH_STOP_LINE;
+        m.halla_stopline_start_ns = s.monotonic_ns;
+      }
+      if (!halla_test && traffic_fresh && m.signal == SignalState::SIGNAL_IDLE && s.traffic_red_active) {
         m.signal = SignalState::RED_DETECTED;
       }
       if (traffic_fresh && m.signal == SignalState::RED_DETECTED && s.traffic_red_active &&

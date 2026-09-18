@@ -8,7 +8,7 @@ class Child:
     def wait(self, timeout): self.result = 0
 
 
-def test_zone_lifecycle_no_camera_outside_no_duplicate_process():
+def test_process_gate_stop_and_restart_without_duplicate_process():
     now = [0.0]
     children, killed = [], []
     def spawn(command, **kwargs):
@@ -25,7 +25,7 @@ def test_zone_lifecycle_no_camera_outside_no_duplicate_process():
     gate.close()
 
 
-def test_crash_restarts_only_inside_zone():
+def test_process_gate_crash_restarts_only_when_enabled():
     now = [0.0]
     gate = ProcessGate(['detector'], popen=lambda *a, **kw: Child(), kill=lambda *x: None, clock=lambda: now[0])
     gate.update(True); first = gate.child
@@ -50,7 +50,7 @@ def test_main_initializes_real_ros_node_and_forwards_parameters(monkeypatch):
             captured['params'] = yaml.safe_load(captured['path'].read_text())['/**']['ros__parameters']
 
         def update(self, enabled):
-            assert enabled is False
+            assert enabled is True
 
         def close(self):
             captured['closed'] = True
@@ -67,6 +67,7 @@ def test_main_initializes_real_ros_node_and_forwards_parameters(monkeypatch):
         '-p', 'yolo.confidence:=0.185', '-p', 'test_ids:=[1, 2]'])
 
     assert captured['initialized'] and captured['closed']
+    assert captured['params']['traffic_zone_gated'] is True
     for key, expected in {'camera_backend': 'oak', 'show_debug': False,
                           'yolo.confidence': 0.185, 'test_ids': [1, 2]}.items():
         assert captured['params'][key] == expected

@@ -223,7 +223,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 23; 25; 28
-    Fixed Frame: map
+    Fixed Frame: v2_vehicle_view
     Frame Rate: 15
   Name: root
   Tools:
@@ -246,7 +246,7 @@ Visualization Manager:
       Name: Current View
       Near Clip Distance: 0.009999999776482582
       Scale: 65
-      Target Frame: map
+      Target Frame: v2_vehicle_view
       Value: TopDownOrtho (rviz_default_plugins)
       X: 0
       Y: 0

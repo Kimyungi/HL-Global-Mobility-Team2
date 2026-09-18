@@ -39,7 +39,8 @@ from fma_interfaces.msg import TrafficStop
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from std_msgs.msg import Header
+from std_msgs.msg import Bool, Header
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from stack_traffic.depth_utils import (
     StopLineDepthMeasurement,
     measure_stopline_depth,
@@ -522,59 +523,15 @@ class StackTrafficNode(Node):
         self.debug_image_pub = self.create_publisher(Image, '/perception/traffic_debug_image', 1)
         self.raw_image_pub = self.create_publisher(Image, '/perception/traffic_image_raw', 1)
 
-        self.red_history: Deque[int] = deque(maxlen=self.vote_window)
-        self.green_history: Deque[int] = deque(maxlen=self.vote_window)
-        self.bbox_observed_history: Deque[int] = deque(
-            maxlen=self.vote_window
-        )
-        self.red_fresh_seeded = False
-        self.stopline_y_history: Deque[float] = deque(
-            [math.nan] * self.stopline_detection_window,
-            maxlen=self.stopline_detection_window,
-        )
-        self.stopline_distance_history: Deque[float] = deque(
-            [math.nan] * self.stopline_depth_window,
-            maxlen=self.stopline_depth_window,
-        )
-        self.last_stopline_runtime = self._empty_stopline_runtime()
-        # YOLO miss에는 단순 stale 좌표가 아니라 검증된 짧은 template
-        # 추적 결과만 색 판정과 bbox 표시를 이어 가는 데 사용한다.
-        self.tracked_bbox: Optional[BBox] = None
-        self.stop_target_bbox: Optional[BBox] = None
-        self.red_phase_target_bbox: Optional[BBox] = None
-        self.tracking_missed_frames = 0
-        self.tracking_age_frames = 0
-        self.template_tracking_failed_frames = 0
-        self.template_tracker = ShortTermTemplateTracker(
-            context_scale=self.template_tracking_context_scale,
-            search_scale=self.template_tracking_search_scale,
-            minimum_score=self.template_tracking_minimum_score,
-            maximum_center_shift_ratio=(
-                self.template_tracking_maximum_center_shift_ratio
-            ),
-        )
-        self.stop_required_latched = False
-        self.red_phase_latched = False
         self.camera_fault_latched = False
-        self.startup_hold_latched = bool(
-            self.stopline_detection_enabled
-            and (
-                self.stopline_stop_y_ratio > 0.0
-                or self.stopline_stop_distance_m > 0.0
-            )
-        )
-        self.startup_yolo_runs = 0
-        self.startup_minimum_frames = max(
-            self.stopline_detection_window,
-            (
-                self.stopline_depth_window
-                if self.stopline_stop_distance_m > 0.0
-                else 0
-            ),
-        )
-        self.frame_index = 0
-        self.detection_scan_index = 0
-        self.last_detection_tile_bbox: Optional[BBox] = None
+        self._reset_zone_history()
+        self.traffic_zone_gated = self.get_parameter('traffic_zone_gated').value
+        self.traffic_zone_enabled = not self.traffic_zone_gated
+        if self.traffic_zone_gated:
+            self.zone_subscription = self.create_subscription(
+                Bool, '/adas/traffic_zone_enabled', self._on_traffic_zone,
+                QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                           durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.last_camera_success_monotonic = time.monotonic()
         self.depth_resize_logged = False
         self.previous_time = time.perf_counter()
@@ -590,6 +547,7 @@ class StackTrafficNode(Node):
             "stopline_detector=yolo_seg "
             f"stopline_model={stopline_model_path or '-'} "
             f"stopline_yolo_conf={self.stopline_yolo_confidence_threshold:.2f} "
+            f"stopline_track_conf={self.stopline_tracking_confidence_threshold:.2f} "
             f"stopline_yolo_imgsz={self.stopline_yolo_image_size} "
             f"stopline_roi=[{self.stopline_roi_x_min:.2f},"
             f"{self.stopline_roi_y_min:.2f}-"
@@ -716,6 +674,7 @@ class StackTrafficNode(Node):
             "2",
             ParameterDescriptor(dynamic_typing=True),
         )
+        self.declare_parameter("traffic_zone_gated", False)
         self.declare_parameter("camera_width", 640)
         self.declare_parameter("camera_height", 480)
         self.declare_parameter("oak_width", 640)
@@ -732,9 +691,9 @@ class StackTrafficNode(Node):
         #   HDOP 도 RTCM 도 정상으로 보이는 채 FIXED 만 안 잡혀 원인을 찾기 어렵다.
         #   안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 명시적으로 올린다.
         self.declare_parameter("oak_usb_speed", "high")
-        # 신호등 RGB 센서만 두 단계 어둡게. SDK -9..9, 0=원래 자동 노출.
+        # 신호등 RGB 센서 자동 노출 보정. SDK -9..9, 기본 0=보정 없음.
         self.declare_parameter(
-            "oak_exposure_compensation", -2,
+            "oak_exposure_compensation", 0,
             ParameterDescriptor(
                 read_only=True,
                 description="RGB auto-exposure compensation (-9..9); restart to apply",
@@ -811,9 +770,12 @@ class StackTrafficNode(Node):
         self.declare_parameter("minimum_depth_valid_ratio", 0.10)
         self.declare_parameter("minimum_depth_valid_pixels", 10)
         # 하단 RGB 정지선 + OAK 정렬 depth 진단. 정지 임계값 0은 출력만 한다.
+        self.declare_parameter("halla_stopline_test_enabled", False)
         self.declare_parameter("stopline_detection_enabled", False)
         self.declare_parameter("stopline_model_path", "")
         self.declare_parameter("stopline_yolo_confidence_threshold", 0.30)
+        self.declare_parameter("stopline_tracking_confidence_threshold", 0.20)
+        self.declare_parameter("stopline_tracking_max_missed_frames", 3)
         self.declare_parameter("stopline_yolo_image_size", 640)
         self.declare_parameter("stopline_roi_x_min", 0.08)
         self.declare_parameter("stopline_roi_y_min", 0.48)
@@ -1052,6 +1014,9 @@ class StackTrafficNode(Node):
         self.minimum_depth_valid_pixels = int(
             self.get_parameter("minimum_depth_valid_pixels").value
         )
+        self.halla_stopline_test_enabled = bool(
+            self.get_parameter("halla_stopline_test_enabled").value
+        )
         self.stopline_detection_enabled = bool(
             self.get_parameter("stopline_detection_enabled").value
         )
@@ -1060,6 +1025,12 @@ class StackTrafficNode(Node):
         ).strip()
         self.stopline_yolo_confidence_threshold = float(
             self.get_parameter("stopline_yolo_confidence_threshold").value
+        )
+        self.stopline_tracking_confidence_threshold = float(
+            self.get_parameter("stopline_tracking_confidence_threshold").value
+        )
+        self.stopline_tracking_max_missed_frames = int(
+            self.get_parameter("stopline_tracking_max_missed_frames").value
         )
         self.stopline_yolo_image_size = int(
             self.get_parameter("stopline_yolo_image_size").value
@@ -1359,6 +1330,10 @@ class StackTrafficNode(Node):
             raise ValueError(
                 "stopline_yolo_confidence_threshold는 0~1이어야 합니다."
             )
+        if not 0.0 <= self.stopline_tracking_confidence_threshold <= 1.0:
+            raise ValueError("stopline_tracking_confidence_threshold는 0~1이어야 합니다.")
+        if self.stopline_tracking_max_missed_frames < 1:
+            raise ValueError("stopline_tracking_max_missed_frames는 1 이상이어야 합니다.")
         if self.stopline_yolo_image_size < 32:
             raise ValueError("stopline_yolo_image_size는 32 이상이어야 합니다.")
         if self.stopline_detection_window < 1:
@@ -1682,11 +1657,15 @@ class StackTrafficNode(Node):
             self.stopline_roi_x_max,
             self.stopline_roi_y_max,
         )
+        # 최초 후보는 0.30, 기존 정지선과 이어지는 후보는 0.20까지 허용한다.
+        inference_confidence = self.stopline_yolo_confidence_threshold
+        if self.stopline_tracked_bbox is not None:
+            inference_confidence = min(inference_confidence, self.stopline_tracking_confidence_threshold)
         results = self.stopline_model.predict(
             # 학습 영상과 같은 전체 프레임 문맥을 모델에 보여 준 뒤,
             # 아래 변환 함수에서 하단 search ROI와 겹치는 마스크만 쓴다.
             source=frame,
-            conf=self.stopline_yolo_confidence_threshold,
+            conf=inference_confidence,
             imgsz=self.stopline_yolo_image_size,
             classes=self.stopline_class_ids,
             max_det=5,
@@ -1700,7 +1679,16 @@ class StackTrafficNode(Node):
             frame_shape=frame.shape,
             roi_bbox=roi_bbox,
             confidence_threshold=self.stopline_yolo_confidence_threshold,
+            tracked_bbox=self.stopline_tracked_bbox,
+            tracking_confidence_threshold=self.stopline_tracking_confidence_threshold,
         )
+        if detection.detected:
+            self.stopline_tracked_bbox = detection.bbox
+            self.stopline_tracking_missed_frames = 0
+        else:
+            self.stopline_tracking_missed_frames += 1
+            if self.stopline_tracking_missed_frames >= self.stopline_tracking_max_missed_frames:
+                self.stopline_tracked_bbox = None
         self.stopline_y_history.append(
             detection.maximum_edge_y_px
             if detection.detected
@@ -2011,6 +1999,10 @@ class StackTrafficNode(Node):
             )
             self.depth_resize_logged = True
 
+        if not self.traffic_zone_enabled:
+            self._publish_idle_camera(frame)
+            return
+
         self.frame_index += 1
         processing_started = time.perf_counter()
         now = time.perf_counter()
@@ -2039,7 +2031,7 @@ class StackTrafficNode(Node):
             red_phase_signal_interval=(
                 self.red_phase_yolo_inference_interval
             ),
-            red_phase_latched=self.red_phase_latched,
+            red_phase_latched=(self.red_phase_latched or self.halla_stopline_test_enabled),
             stopline_enabled=self.stopline_detection_enabled,
             signal_phase_frozen=signal_phase_frozen,
         )
@@ -2047,13 +2039,16 @@ class StackTrafficNode(Node):
         # 정지선 인지는 확정 적색 이후에만 시작한다. 적색과 같은 프레임에서는 아직
         # latch가 갱신되기 전이므로 다음 카메라 프레임(통상 100ms 뒤)부터 시작한다.
         # 비적색 동안의 흰 선 이력은 적색 진입에 섞이지 않도록 비운다.
-        if self.red_phase_latched:
+        # 한라대 전용 정지선 인식 시험: 적색 전에도 정지선 인지를 실행한다.
+        if self.red_phase_latched or self.halla_stopline_test_enabled:
             if stopline_ran:
                 stopline_runtime = self._process_stopline(frame, depth_mm)
                 self.last_stopline_runtime = stopline_runtime
             else:
                 stopline_runtime = self.last_stopline_runtime
         else:
+            self.stopline_tracked_bbox = None
+            self.stopline_tracking_missed_frames = 0
             self.stopline_y_history.clear()
             self.stopline_y_history.extend(
                 [math.nan] * self.stopline_detection_window
@@ -2496,6 +2491,86 @@ class StackTrafficNode(Node):
                 green_mask,
             )
 
+    def _reset_zone_history(self) -> None:
+        """Start each zone with fresh votes/tracks; preserve camera fault state."""
+        self.red_history: Deque[int] = deque(maxlen=self.vote_window)
+        self.green_history: Deque[int] = deque(maxlen=self.vote_window)
+        self.bbox_observed_history: Deque[int] = deque(
+            maxlen=self.vote_window
+        )
+        self.red_fresh_seeded = False
+        self.stopline_y_history: Deque[float] = deque(
+            [math.nan] * self.stopline_detection_window,
+            maxlen=self.stopline_detection_window,
+        )
+        self.stopline_distance_history: Deque[float] = deque(
+            [math.nan] * self.stopline_depth_window,
+            maxlen=self.stopline_depth_window,
+        )
+        self.last_stopline_runtime = self._empty_stopline_runtime()
+        self.stopline_tracked_bbox: Optional[BBox] = None
+        self.stopline_tracking_missed_frames = 0
+        # YOLO miss에는 단순 stale 좌표가 아니라 검증된 짧은 template
+        # 추적 결과만 색 판정과 bbox 표시를 이어 가는 데 사용한다.
+        self.tracked_bbox: Optional[BBox] = None
+        self.stop_target_bbox: Optional[BBox] = None
+        self.red_phase_target_bbox: Optional[BBox] = None
+        self.tracking_missed_frames = 0
+        self.tracking_age_frames = 0
+        self.template_tracking_failed_frames = 0
+        self.template_tracker = ShortTermTemplateTracker(
+            context_scale=self.template_tracking_context_scale,
+            search_scale=self.template_tracking_search_scale,
+            minimum_score=self.template_tracking_minimum_score,
+            maximum_center_shift_ratio=(
+                self.template_tracking_maximum_center_shift_ratio
+            ),
+        )
+        self.stop_required_latched = False
+        self.red_phase_latched = False
+        self.startup_hold_latched = bool(
+            self.stopline_detection_enabled
+            and (
+                self.stopline_stop_y_ratio > 0.0
+                or self.stopline_stop_distance_m > 0.0
+            )
+        )
+        self.startup_yolo_runs = 0
+        self.startup_minimum_frames = max(
+            self.stopline_detection_window,
+            (
+                self.stopline_depth_window
+                if self.stopline_stop_distance_m > 0.0
+                else 0
+            ),
+        )
+        self.frame_index = 0
+        self.detection_scan_index = 0
+        self.last_detection_tile_bbox: Optional[BBox] = None
+
+    def _on_traffic_zone(self, msg: Bool) -> None:
+        if self.traffic_zone_enabled != msg.data:
+            self._reset_zone_history()
+            self.traffic_zone_enabled = msg.data
+
+    def _publish_idle_camera(self, frame: np.ndarray) -> None:
+        """Live preview outside the zone, without inference or traffic decisions."""
+        if self.debug_image_pub.get_subscription_count() > 0 or self.show_debug:
+            preview = frame.copy()
+            cv2.putText(preview, 'Traffic zone OFF - camera live', (10, 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, .56, (255, 255, 255), 2)
+            image = Image()
+            image.header.stamp = self.get_clock().now().to_msg()
+            image.header.frame_id = 'oak_rgb_optical_frame'
+            image.height, image.width = preview.shape[:2]
+            image.encoding = 'bgr8'
+            image.step = image.width * 3
+            image.data = preview.tobytes()
+            self.debug_image_pub.publish(image)
+            if self.show_debug:
+                cv2.imshow('traffic_red_binary_test', preview)
+                cv2.waitKey(1)
+
     def _reset_target_histories(self) -> None:
         """서로 다른 신호등의 색 투표가 섞이지 않게 한다."""
         self.red_history.clear()
@@ -2512,6 +2587,8 @@ class StackTrafficNode(Node):
         stopline_detected: bool = False,
         fail_safe_stop: bool = True,
     ) -> None:
+        if not self.traffic_zone_enabled:
+            return
         msg = TrafficStop()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = (

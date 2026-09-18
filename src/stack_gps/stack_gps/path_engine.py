@@ -314,6 +314,7 @@ class PathEngine:
         # "이미 정지함"을 기억해야 하기 때문 (GpsPath.msg stop_zone 주석).
         self.stop_ranges = list(stop_ranges)
         self.avoid_ranges = list(avoid_ranges)
+        self.avoid_preview_ranges = list(avoid_ranges)
         self.gps_only_ranges = list(gps_only_ranges)
         self.lookahead_m = float(lookahead_m)
         self.rate_damp_s = (self.REJOIN_RATE_DAMP_S if rate_damp_s is None
@@ -454,7 +455,7 @@ class PathEngine:
         # Current station zones win over a different preview-only GPS zone.
         station_zone = any(self._in_ranges(idx, ranges) for ranges in (
             self.gps_only_ranges, self.parking_ranges, self.parallel_parking_ranges,
-            self.stop_ranges, self.avoid_ranges, self.accel_ranges, self.physical_waypoint_ranges))
+            self.stop_ranges, self.avoid_preview_ranges, self.accel_ranges, self.physical_waypoint_ranges))
         gps_only = (self._in_ranges(idx, self.gps_only_ranges) or
                     (not station_zone and self._in_ranges(preview_idx, self.gps_only_ranges)))
         physical_gps_only = (self._in_ranges(idx, self.physical_waypoint_ranges) or

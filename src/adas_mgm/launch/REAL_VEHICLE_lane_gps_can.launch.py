@@ -337,7 +337,8 @@ def validate(context, log_dir=LOG_DIR, lidar_estop_enabled=True, revised_v2_enab
 def build_launch_description(
         log_dir=LOG_DIR, default_homography=DEFAULT_HOMOGRAPHY,
         default_lane_weights=os.path.expanduser('~/FMA_ws/src/stack_lane/models/yolopv2.pt'),
-        *, lidar_estop_enabled=True, required_lidar_topics=None, revised_v2_enabled=False):
+        *, lidar_estop_enabled=True, required_lidar_topics=None, revised_v2_enabled=False,
+        halla_stopline_test_enabled=False):
     estop_mount_params = {}
     if revised_v2_enabled:
         geometry_path = Path(get_package_share_directory('lidar_fusion_v2')) / 'config/fixed_geometry.yaml'
@@ -551,8 +552,8 @@ def build_launch_description(
         # 신호등용 OAK-D MxID (CLAUDE.md §6 정본표). 차선용과 반드시 달라야 한다 —
         # 핀닝이 없거나 겹치면 어느 노드가 어느 카메라를 잡을지 부팅 순서에 좌우된다.
         DeclareLaunchArgument('traffic_mxid', default_value='14442C10B167CFD200'),
-        # 신호등 RGB 자동 노출 보정: -2=두 단계 어둡게, 0=원복 (SDK -9..9).
-        DeclareLaunchArgument('traffic_exposure_compensation', default_value='-2'),
+        # 신호등 RGB 자동 노출 보정: 기본 0=보정 없음 (SDK -9..9).
+        DeclareLaunchArgument('traffic_exposure_compensation', default_value='0'),
         # ⚠ USB2 공유 대역폭 — 두 카메라가 같은 허브(2026-08-27 확정 배치의 허브 A)에
         #   물려 있고 둘 다 USB2(480Mbps, 실효 ~40MB/s)다. 비압축 BGR 3B/px 기준:
         #     차선   1280x720@10 = 27.65 MB/s
@@ -803,6 +804,7 @@ def build_launch_description(
             condition=IfCondition(LaunchConfiguration('lane_enabled')),
             parameters=[{
                 'homography_path': LaunchConfiguration('homography_path'),
+                'zone_gated': revised_v2_enabled,
                 'weights': LaunchConfiguration('lane_weights'),
                 'camera_mxid': LaunchConfiguration('camera_mxid'),
                 'camera_fps': ParameterValue(
@@ -835,6 +837,7 @@ def build_launch_description(
         ),
 
         # 신호등·정지선 — 2번째 OAK-D. traffic_enabled:=true 일 때만 뜬다.
+        # revised v2는 카메라/영상을 상시 유지하고 traffic zone 안에서만 판단한다.
         # MGM 은 /perception/traffic_stop 을 구독만 하고(§5.7 ③), 이 노드가
         # 없으면 watchdog 도 잠들어 있으므로 껐을 때 거동은 지금과 동일하다.
         Node(
@@ -850,6 +853,7 @@ def build_launch_description(
             parameters=[{
                 # 노드 기본은 'opencv'(USB 웹캠) — 실차는 반드시 oak 로 바꾼다.
                 'camera_backend': 'oak',
+                'halla_stopline_test_enabled': halla_stopline_test_enabled,
                 'show_debug': ParameterValue(
                     LaunchConfiguration('traffic_show_debug'), value_type=bool),
                 'oak_mxid': LaunchConfiguration('traffic_mxid'),
@@ -899,6 +903,7 @@ def build_launch_description(
             parameters=[mgm_params, {   # 기존 REAL_VEHICLE launch의 params 누락 수정
                 'lidar_estop_enabled': lidar_estop_enabled,
                 'revised_v2_enabled': revised_v2_enabled,
+                'halla_stopline_test_enabled': halla_stopline_test_enabled,
                 **estop_mount_params,
                 **({'traffic_stop_offset_m': 1.1} if revised_v2_enabled else {}),
                 # run별 진단 산출물 — back-to-back 재현(§5.5)과 지터 판정(§7)

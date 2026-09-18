@@ -43,7 +43,7 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
-from fma_interfaces.msg import LanePath, RefPoint
+from fma_interfaces.msg import GpsPath, LanePath, MgmState, RefPoint
 from std_msgs.msg import Header
 
 from stack_lane.bev import BevGrid, DEFAULT_HOMOGRAPHY_PATH, load_homography
@@ -108,6 +108,7 @@ class StackLaneNode(Node):
         self.declare_parameter('usb_speed', 'high')
         self.declare_parameter('warmup_frames', 30)
         self.declare_parameter('poll_period_sec', 0.02)
+        self.declare_parameter('zone_gated', False)
         self.declare_parameter('publish_debug_image', False)
         self.declare_parameter('log_csv', '')
 
@@ -169,11 +170,49 @@ class StackLaneNode(Node):
 
         self.pub = self.create_publisher(LanePath, '/perception/lane_path', 1)
         self.camera_pub = self.create_publisher(Header, '/perception/lane_camera', 1)
+        self._zone_gated = bool(self.get_parameter('zone_gated').value)
+        self._mgm_blocks_lane = False
+        self._gps_blocks_lane = False
+        self._lane_enabled = True
+        if self._zone_gated:
+            self._mgm_sub = self.create_subscription(
+                MgmState, '/adas/mgm_state', self._on_mgm_state, 1)
+            self._gps_sub = self.create_subscription(
+                GpsPath, '/perception/gps_path', self._on_gps_zone, 1)
         period = float(self.get_parameter('poll_period_sec').value)
         self.timer = self.create_timer(period, self.tick)
         self.get_logger().info(
             f'stack_lane_node 준비됨 (preview_station_m={CAMERA_PREVIEW_STATION_M}, '
             f'output_points=1, internal_samples={self.n_points})')
+
+    def _on_mgm_state(self, msg):
+        # Mission/avoidance retain ownership after leaving their entry zone.
+        self._mgm_blocks_lane = bool(
+            msg.in_gps_only_zone or msg.traffic_zone_active
+            or msg.mission or msg.avoidance
+            or any(z.in_zone and z.zone_type != 0 for z in msg.zones))
+        self._update_lane_gate()
+
+    def _on_gps_zone(self, msg):
+        # Physical waypoint zones may lead confirmed MGM membership. A held
+        # state=4 trigger is not active avoidance; MGM owns the episode lifetime.
+        self._gps_blocks_lane = bool(msg.zone_valid and msg.gps_only_zone)
+        self._update_lane_gate()
+
+    def _update_lane_gate(self):
+        enabled = not (self._mgm_blocks_lane or self._gps_blocks_lane)
+        if enabled != self._lane_enabled:
+            self._prev_y = self._prev_coeffs = self._held_estimate = None
+            self._reference_stamp = None
+            self._track_status = 'lost'
+            self._age_frames = 0
+            self._lane_enabled = enabled
+
+    def _publish_idle_frame(self, frame):
+        if self.debug_pub is not None:
+            image = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+            image.header.stamp = self.get_clock().now().to_msg()
+            self.debug_pub.publish(image)
 
     def _warmup_model(self) -> None:
         dummy = torch.zeros(1, 3, self.img_size, self.img_size, device=self.device)
@@ -313,7 +352,8 @@ class StackLaneNode(Node):
 
         self._publish_camera_status(self._capture_monotonic(pkt))
         self._frames_seen += 1
-        if self._frames_seen <= self.warmup_frames:
+        if not self._lane_enabled or self._frames_seen <= self.warmup_frames:
+            self._publish_idle_frame(pkt.getCvFrame())
             return  # 노출 적응 대기 중 — 오검출 위험 있는 콜드스타트 프레임 스킵
 
         # 프레임 **캡처 시각**을 붙잡아 둔다 (아래 header.stamp 용).

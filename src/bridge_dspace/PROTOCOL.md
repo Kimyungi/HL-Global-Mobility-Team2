@@ -133,10 +133,14 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 | 24 | f64 | curvature | 1/m |
 | 32 | f64 | dx | 직전 유효 localization pose 기준 전방 이동량 [m] |
 | 40 | f64 | dy | 직전 유효 localization pose 기준 좌측 이동량 [m] |
-| 48 | f64 | dyaw | 직전→현재 localization yaw 변화량, `[-π,π)` [rad] |
+| 48 | f64 | dyaw | 직전→현재 localization yaw 변화량의 부호 반전, 시계 방향 양수, `(-π,π]` [rad] |
 | 56 | u64 | update | 새 유효 localization sample마다 +1 (wrap) |
 
 - vehicle frame (생성 시점 차량 = 0,0,0). **양자화 없음** — v3 의 int16 스케일은 v5 에서 안 쓴다.
+- CAN `dyaw = -TargetRef.dyaw`: 내부 ROS localization delta는 반시계 방향 양수를
+  유지하고, CAN 송신부에서 모든 유효 상태에 한 번만 부호 반전을 적용한다.
+  주차 목표 yaw의 반전 규칙에 맞춘 계약이며 `dx` 전방 양수·`dy` 좌측 양수는 유지한다.
+  하위 제어는 수신 `dyaw`를 시계 방향 양수로 해석해야 한다.
 - `dx`/`dy`는 두 연속 localization pose의 이동량을 **이전 pose의 vehicle frame**으로
   회전한 값이다. 첫 유효 sample은 `dx=dy=dyaw=0`, `update=1`이다. source sample 사이의
   10ms CAN 주기에는 네 필드를 직전 값으로 유지한다. LANE/WAYPOINT/TRAFFIC은 GPS,
