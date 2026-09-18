@@ -179,7 +179,7 @@ def generate_launch_description(route_profile='halla'):
                               description=('PR117 obstacle course; fixed route 01' if obstacle else
                                            'Required each session; scripts/v2 prompts when omitted'),
                               choices=([f'{i:02}' for i in range(1,8)] if route_profile == 'halla' else [route_id]), **start_options),
-        DeclareLaunchArgument('end_waypoint', default_value=('07' if route_profile == 'halla' else route_id),
+        DeclareLaunchArgument('end_waypoint', default_value=('06' if route_profile == 'halla' else route_id),
                               choices=(['06','07'] if route_profile == 'halla' else [route_id])),
         DeclareLaunchArgument('run_log_dir', default_value='',
                               description='New session directory; empty uses workspace drive_logs'),

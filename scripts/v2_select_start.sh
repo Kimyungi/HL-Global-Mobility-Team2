@@ -52,8 +52,8 @@ v2_select_start() {
   esac
   if (( ! v2_end_seen )); then
     # Terminal branches are alternatives, not consecutive legs.
-    v2_end=07
-    if [[ "$v2_start" == 06 ]]; then v2_end=06; fi
+    v2_end=06
+    if [[ "$v2_start" == 07 ]]; then v2_end=07; fi
     V2_LAUNCH_ARGS+=("end_waypoint:=$v2_end")
   fi
   case "$v2_end" in
