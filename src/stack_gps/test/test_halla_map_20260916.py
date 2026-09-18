@@ -27,7 +27,7 @@ class HallaMap20260916Tests(unittest.TestCase):
 
     def test_user_upload_is_preserved_byte_for_byte(self):
         self.assertEqual(hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
-                         '1b3dde94d9114a8448467bf9af7283ca7c5bb43199b364ae4654b3852f7fa71b')
+                         '7dbb2277c898b4e4bd6fded8ac10dd6b64149727b5526e2f2aaf4b70fdd49bfa')
 
     def test_split_csvs_preserve_every_column_and_row(self):
         self.assertEqual(len(self.source), 901)

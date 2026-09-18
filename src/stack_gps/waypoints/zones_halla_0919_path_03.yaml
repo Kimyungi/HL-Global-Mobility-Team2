@@ -12,6 +12,6 @@ parking_points:
 turn_zones:
 - zone_id: 3
   index_range:
-  - 75
+  - 57
   - 116
 zones: []

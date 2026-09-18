@@ -38,9 +38,9 @@ def test_runtime_traffic_bounds_equal_csv_and_old_early_entry_is_gone():
                   for z, active in zones.snapshot(i))}
         assert actual == expected
         if route.id == '03':
-            assert expected == set(range(75, 117))
+            assert expected == set(range(57, 117))
             assert not any(z.zone_id == 3 and active for z, active in zones.snapshot(40, 50))
-            assert any(z.zone_id == 3 and active for z, active in zones.snapshot(65, 75))
+            assert any(z.zone_id == 3 and active for z, active in zones.snapshot(47, 57))
             assert engine.accel_ranges == [(117, 145)]
         assert [(a, b) for a, b in engine.physical_waypoint_ranges] == physical_ranges(rows)
 
