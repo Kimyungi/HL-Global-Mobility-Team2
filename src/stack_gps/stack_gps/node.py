@@ -40,7 +40,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import Imu, NavSatFix
 from tf2_ros import TransformBroadcaster
 
-from stack_gps.zones import ZoneMap, load_zone_definitions
+from stack_gps.zones import ZoneMap, ZoneType, load_zone_definitions
 from stack_gps.route_plan import RoutePlan, copy_geometry
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
@@ -739,10 +739,11 @@ class StackGpsNode(Node):
             msg.reference_stamp = self._reference_stamp
 
     def _fill_zone_context(self, msg, current_position_index, preview_position_index=None):
-        """Publish memberships; only GPS-only Zones may use preview OR station."""
+        """Publish station-first memberships and the matching GPS-only flag."""
         msg.zone_valid = True
         for definition, in_zone in self.zone_map.snapshot(
-                current_position_index, preview_position_index):
+                current_position_index, preview_position_index,
+                station_priority=bool(msg.stop_zone or msg.avoid_zone or msg.accel_zone)):
             context = ZoneContext()
             context.zone_valid = True
             context.zone_id = definition.zone_id
@@ -752,6 +753,8 @@ class StackGpsNode(Node):
             context.in_zone = in_zone
             context.raw_in_zone = in_zone
             msg.zones.append(context)
+        msg.gps_only_zone = any(context.in_zone and context.zone_type == int(ZoneType.GPS_ONLY_ZONE)
+                                for context in msg.zones)
 
     def _fill_zone_telemetry(self, msg, fix_t, east, north, yaw, heading_valid, local_position=None):
         """Record existing localization observations, without altering nearest/path selection."""

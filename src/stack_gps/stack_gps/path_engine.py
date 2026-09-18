@@ -423,11 +423,12 @@ class PathEngine:
         perpendicular = self._in_ranges(idx, self.parking_ranges)
         parallel = self._in_ranges(idx, self.parallel_parking_ranges)
         preview_idx = diagnostics['preview_index']
-        # Only GPS-only navigation is allowed to enter early from the preview.
-        # Parking and all other behaviour-changing ranges remain tied to the
-        # current station index below.
+        # Current station zones win over a different preview-only GPS zone.
+        station_zone = any(self._in_ranges(idx, ranges) for ranges in (
+            self.gps_only_ranges, self.parking_ranges, self.parallel_parking_ranges,
+            self.stop_ranges, self.avoid_ranges, self.accel_ranges))
         gps_only = (self._in_ranges(idx, self.gps_only_ranges) or
-                    self._in_ranges(preview_idx, self.gps_only_ranges))
+                    (not station_zone and self._in_ranges(preview_idx, self.gps_only_ranges)))
         waypoint_stations, waypoint_world = track.window()
         waypoint_points = [(c*(e-ev)+s*(n-nv), -s*(e-ev)+c*(n-nv),
                             wrap_angle(a-psi), k) for e, n, a, k in waypoint_world]

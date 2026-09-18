@@ -124,3 +124,25 @@ def test_id_allocation_reserves_explicit_mission_ids():
     definitions = ZoneMap.from_engine(eng, explicit).definitions
     assert definitions[0] == explicit[0]
     assert definitions[1].zone_id == 2 and definitions[1].mission_id == 1
+
+
+def test_station_zone_wins_over_different_preview_zone():
+    current = ZoneDefinition(9, ZoneType.MISSION_ZONE, 10, 20, 0, MissionType.T_PARKING)
+    ahead = ZoneDefinition(3, ZoneType.GPS_ONLY_ZONE, 21, 30)
+    zones = ZoneMap([ahead, current], 40)
+    assert dict(zones.snapshot(20, 23)) == {ahead:False, current:True}
+    assert dict(zones.snapshot(9, 23)) == {ahead:True, current:False}
+    assert dict(zones.snapshot(21, 23)) == {ahead:True, current:False}
+    assert dict(zones.snapshot(9, 23, station_priority=True)) == {ahead:False, current:False}
+
+
+def test_station_gps_zone_wins_regardless_of_zone_id_sort_order():
+    current = ZoneDefinition(9, ZoneType.GPS_ONLY_ZONE, 10, 20)
+    ahead = ZoneDefinition(3, ZoneType.GPS_ONLY_ZONE, 21, 30)
+    assert dict(ZoneMap([ahead,current],40).snapshot(20,23)) == {ahead:False,current:True}
+
+
+def test_true_station_overlap_keeps_both_current_memberships():
+    current = ZoneDefinition(9, ZoneType.MISSION_ZONE, 10, 20, 0, MissionType.T_PARKING)
+    gps = ZoneDefinition(3, ZoneType.GPS_ONLY_ZONE, 15, 25)
+    assert all(inside for _,inside in ZoneMap([current,gps],40).snapshot(17,27))

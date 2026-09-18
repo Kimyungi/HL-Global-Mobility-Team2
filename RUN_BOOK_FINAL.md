@@ -114,13 +114,18 @@ traffic_zone_active: false
 cd /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main
 scripts/v2 prepare \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-  start_waypoint:=01 end_waypoint:=07 \
   parking_enabled:=true parking_zone_entry_active:=true t_reference_enabled:=true \
   avoidance_enabled:=true avoid_zone_only:=true \
   waypoint_avoid:=true avoid_v2_enabled:=false \
   zone_enter_confirm_samples:=5 zone_exit_confirm_samples:=5 \
-  traffic_enabled:=true rviz:=true v_base:=0.5
+  traffic_enabled:=true rviz:=true
 ```
+
+위 명령을 실행하면 **시작 경로 번호 → 일반 주행 목표속도(m/s)** 순서로 질문합니다.
+예를 들어 `01`, `2.0`을 입력하면 해당 실행의 `v_base=2.0m/s`가 됩니다.
+빈 입력은 이전 값을 재사용하지 않습니다. 0·음수·NaN·무한대는 거부합니다.
+자동 실행에서는 `start_waypoint:=01 end_waypoint:=07 v_base:=2.0`을 명시해야 합니다.
+일반 주행 속도 입력은 회피 목표속도 1m/s나 주차 모듈의 자체 목표속도를 변경하지 않습니다.
 
 현재 `prepare/drive`는 PR #119의 `halla_0919` 경로를 사용합니다.
 
@@ -134,7 +139,7 @@ scripts/v2 prepare \
 시작 경로는 01~07 중 선택하며, 생략하면 터미널에서 질문합니다. 기본 종료는 07,
 06에서 시작하면 06입니다. 전체 순서는 `01 또는 02 → 03 → 04 → 05 → 06 또는 07`입니다.
 03에서 시작하면 `03 → 04 → 05 → 07`만 실행합니다. 06과 07은 대체 출구입니다.
-03 주차 완료·전진 복귀 후 04로 진행합니다. 현재 기본 속도 0.5m/s는 유지했습니다.
+03 주차 완료·전진 복귀 후 04로 진행합니다. 일반 주행 목표속도 `v_base`는 매 실행마다 직접 입력합니다. 숨은 0.5m/s 기본값은 없습니다.
 
 03 끝점과 주차 후보 시작점 차이는 약 0.080m입니다. CSV 좌표는 PR 원문을 유지하며,
 기존 전진 종점 도달 허용거리 0.14m 이내에서 경로 로딩을 허용합니다.
@@ -218,3 +223,11 @@ T 어댑터의 reference/preparation_stamp는 이 모드에서 입력 취득 시
 초기 선택·방향 전환 정차, 주차 완료 판정/10초 대기, 복귀 완료 정지는 유지한다.
 요청 목록에서 제거 대상이 아니었던 경로 끝의 `path_end_without_rear_wall`도 유지한다.
 변경은 런처 재실행부터 적용하며, 실행 중인 차량에 출발/해제 명령은 보내지 않는다.
+
+### Zone 판정 우선순위 — 2026-09-18
+
+현재 차량 station에 해당하는 zone이 있으면 preview에만 걸린 다른 GPS zone을
+추가 활성화하지 않는다. 정지·회피·가속 구간도 현재 station 판정을 우선한다.
+현재 station에 zone이 없을 때만 preview의 GPS zone 선행 진입을 허용한다.
+실제로 현재 station에서 겹치는 zone들은 그대로 전달하며, preview 제어점 위치는 바꾸지 않는다.
+동일 경로 설정 안에서 같은 zone_id를 중복 정의하는 것은 기존처럼 설정 오류로 처리한다.
