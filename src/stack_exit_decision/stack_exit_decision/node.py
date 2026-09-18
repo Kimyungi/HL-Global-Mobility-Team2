@@ -24,7 +24,7 @@ def best_detection(detections):
 def detector_requested(status, received_ns, now_ns):
     return (status is not None and 0 <= now_ns - received_ns <= 250_000_000
             and status.revised_v2 and status.go_authorized and not status.estop_active
-            and status.last_mission_phase in (status.LAST_STOPPING, status.LAST_JUDGING))
+            and status.last_mission_phase in (status.LAST_APPROACH, status.LAST_STOPPING, status.LAST_JUDGING))
 
 
 def main(args=None):
@@ -118,7 +118,7 @@ def main(args=None):
                         with self.lock:
                             status, received = self.status, self.received_ns
                         if (image is None or not detector_requested(status, received, time.monotonic_ns())
-                                or status.last_mission_phase != status.LAST_JUDGING
+                                or status.last_mission_phase not in (status.LAST_APPROACH, status.LAST_JUDGING)
                                 or not status.last_mission_detector_enabled):
                             continue
                         stamp, frame = image
@@ -139,7 +139,7 @@ def main(args=None):
                             camera = None
                         self.stopping.wait(.5)
             except Exception as error:
-                self.get_logger().error(f'Exit model unavailable; MGM will use its 10-second fallback: {error}')
+                self.get_logger().error(f'Exit model unavailable; MGM will use its 3-second fallback: {error}')
             finally:
                 if camera is not None:
                     camera.release()

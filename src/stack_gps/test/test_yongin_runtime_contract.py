@@ -47,3 +47,14 @@ def test_csv_zones_and_mission_modes():
     assert any(z.zone_id==1 and active for z,active in route3.snapshot(336,340))
     assert not any(z.zone_id==1 and active for z,active in route3.snapshot(450,452))
     assert any(z.zone_id==1 and active for z,active in route3.snapshot(462,463))
+
+
+def test_exit_stop_marker_uses_csv_current_station():
+    p=plan()
+    for route,engine in zip(p.files,p.engines):
+        assert engine.exit_stop_index == (92 if route.id == '05' else -1)
+    route5=next(z for r,z in zip(p.files,p.zone_maps) if r.id=='05')
+    assert any(z.zone_id==2 and active for z,active in route5.snapshot(84,92))
+    # The zone can be active before the independent stop marker is reached.
+    engine=next(e for r,e in zip(p.files,p.engines) if r.id=='05')
+    assert 84 < engine.exit_stop_index

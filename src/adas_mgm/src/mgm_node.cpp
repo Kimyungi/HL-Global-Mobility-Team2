@@ -135,6 +135,7 @@ CoreSnapshot toSnapshot(const LatestMsgs & m, bool single_point)
   s.gps_station_yaw_error = m.gps.station_yaw_error_rad;
   s.gps_station_error_valid = m.gps.station_error_valid && m.gps.vehicle_heading_valid;
   s.gps_stop_zone = m.gps.stop_zone;      // 0 = 아님, 1~ = 지정 정지 지점 번호
+  s.gps_exit_stop_reached = m.gps.exit_stop_reached;
   s.gps_avoid_zone = m.gps.avoid_zone;    // 회피 허용 구간 안인가
   s.gps_gps_only_zone = m.gps.gps_only_zone;  // legacy/generated only
   s.zones.zone_valid = m.gps.zone_valid;
@@ -1254,7 +1255,8 @@ private:
       status.last_mission_zone_id = last.source_zone_id;
       status.last_mission_left_votes = last.left_votes; status.last_mission_right_votes = last.right_votes;
       status.last_mission_route_id = last.route_id; status.last_mission_fallback = last.fallback;
-      status.last_mission_detector_enabled = revised_v2_ && last.phase == LastMissionPhase::JUDGING &&
+      status.last_mission_detector_enabled = revised_v2_ && (last.phase == LastMissionPhase::APPROACH ||
+        last.phase == LastMissionPhase::JUDGING) &&
         !out.estop_active && !s.external_stop && out.top == TopState::AUTONOMOUS_DRIVE;
       status.traffic_zone_active = revised_v2_ && in_traffic_zone(out.zones) && !last_active;
       if (traffic_zone_pub_) {

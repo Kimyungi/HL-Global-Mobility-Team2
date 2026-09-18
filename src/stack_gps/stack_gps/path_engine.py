@@ -143,6 +143,15 @@ def csv_zone_ranges(path, zone_id=None):
     return ranges
 
 
+def exit_stop_index(path):
+    """CSV state=3 in the same filtered waypoint index space as navigation."""
+    _, _, states = load_waypoints_csv(path, include_states=True)
+    indices = [i for i, state in enumerate(states) if state == 3]
+    if len(indices) > 1:
+        raise ValueError(f'{path}: expected at most one state=3 exit stop marker')
+    return indices[0] if indices else -1
+
+
 def avoidance_marker_range(path):
     """State 4 starts one avoidance episode per CSV; MGM owns its completion.
 

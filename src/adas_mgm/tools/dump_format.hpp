@@ -62,7 +62,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v36: Last mission state, exit observations and alternative terminal routes.
 // v37: suspend lane-confidence hysteresis through AVOID_ACTIVE/GPS_RETURN.
 // v38: upper ESTOP arms two seconds after authorized measured forward motion.
-constexpr uint32_t kDumpVersion = 38;
+// v39: exit detection on zone entry; stop only at CSV state=3.
+constexpr uint32_t kDumpVersion = 39;
 
 struct DumpHeader
 {

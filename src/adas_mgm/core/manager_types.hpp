@@ -158,7 +158,7 @@ struct MissionRequest
 
 enum class RoutePhase : uint8_t {DISABLED=0, RUNNING=1, WAIT_MISSION=2, WAIT_STOP=3, WAIT_ACK=4, FINISHED=5, FAULT=6};
 enum class RouteCompletion : uint8_t {ENDPOINT_AND_MISSIONS=0, MISSIONS_COMPLETE=1};
-enum class LastMissionPhase : uint8_t {IDLE, STOPPING, JUDGING, SELECTED, WAIT_ROUTE, DONE};
+enum class LastMissionPhase : uint8_t {IDLE, STOPPING, JUDGING, SELECTED, WAIT_ROUTE, DONE, APPROACH};
 struct LastMissionControl {
   LastMissionPhase phase;
   uint64_t request_id, last_frame;

@@ -11,6 +11,10 @@ import time
 from pathlib import Path
 
 
+def exit_camera_requested(msg):
+    return msg.last_mission_phase not in (msg.LAST_IDLE, msg.LAST_DONE)
+
+
 class ProcessGate:
     """Nonblocking process lifecycle; at most one detector process at a time."""
     def __init__(self, command, *, popen=subprocess.Popen, kill=os.killpg, clock=time.monotonic):
@@ -53,6 +57,7 @@ def main(args=None):
     # Importing the supervisor does not load a model or open an OAK camera.
     import rclpy
     import yaml
+    from fma_interfaces.msg import MgmState
     from rclpy.node import Node
     from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
     from std_msgs.msg import Bool
@@ -66,14 +71,18 @@ def main(args=None):
         yaml.safe_dump({'/**': {'ros__parameters': params}}, handle)
     gate = ProcessGate(['ros2', 'run', 'stack_traffic', 'stack_traffic_node',
                        '--ros-args', '--params-file', handle.name])
-    state = {'enabled': False}
+    state = {'enabled': False, 'exit_camera': False}
     qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                      durability=DurabilityPolicy.TRANSIENT_LOCAL)
     def received(msg):
         state['enabled'] = msg.data
-        gate.update(msg.data)
+        gate.update(msg.data and not state['exit_camera'])
     node.create_subscription(Bool, '/adas/traffic_zone_enabled', received, qos)
-    node.create_timer(.1, lambda: gate.update(state['enabled']))
+    def status(msg):
+        state['exit_camera'] = exit_camera_requested(msg)
+        gate.update(state['enabled'] and not state['exit_camera'])
+    node.create_subscription(MgmState, '/adas/mgm_state', status, 1)
+    node.create_timer(.1, lambda: gate.update(state['enabled'] and not state['exit_camera']))
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):

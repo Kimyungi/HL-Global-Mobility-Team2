@@ -59,14 +59,14 @@ def validate_model_classes(names):
 
 
 class LastMissionState:
-    """One mission per session, ten stationary seconds, one vote per frame.
+    """One mission per session, three stationary seconds, one vote per frame.
 
     ``in_zone`` must refer to the configured, confirmed mission zone. It is
     latched on entry: a later GPS outage/zone exit cannot release the stop.
     ``reset`` is for an explicit new driving session only.
     """
 
-    OBSERVATION_NS = 10_000_000_000
+    OBSERVATION_NS = 3_000_000_000
     STOPPED_SPEED_MPS = 0.001
 
     def __init__(self, confidence_threshold=0.5):

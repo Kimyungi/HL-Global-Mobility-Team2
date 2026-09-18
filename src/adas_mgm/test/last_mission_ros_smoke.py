@@ -131,14 +131,17 @@ def main():
                 go.publish(Bool(data=True))
                 expect(lambda s,r: s.go_authorized and r.v_ref > 0, 'normal navigation before exit zone')
                 position = 15; gps.engine.reset_station()
+                expect(lambda s,r: s.last_mission_phase == s.LAST_APPROACH and r.v_ref > 0,
+                       'zone entry starts perception while navigation continues')
+                position = gps.engine.exit_stop_index; gps.engine.reset_station()
                 expect(lambda s,r: s.last_mission_phase == s.LAST_JUDGING and r.v_ref == 0,
                        'production GPS zone enters MGM stationary judgment')
-                pump(8.)
+                pump(1.)
                 assert states[-1].last_mission_phase == MgmState.LAST_JUDGING
-                assert refs[-1].v_ref == 0, 'must not depart before ten seconds'
+                assert refs[-1].v_ref == 0, 'must not depart before three seconds'
                 expect(lambda s,r: s.last_mission_phase == s.LAST_DONE and r.v_ref > 0,
                        f'class {cls}: acknowledged route {expected} resumes navigation', timeout=6.)
-                assert time.monotonic() - first_judging >= 9.8
+                assert time.monotonic() - first_judging >= 2.8
                 assert gps._route_plan.files[gps._route_plan.index].id == expected
                 assert states[-1].last_mission_route_id == int(expected)
                 assert states[-1].last_mission_fallback == (cls == -1)

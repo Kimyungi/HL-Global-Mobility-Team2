@@ -800,7 +800,7 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
     out.immediate_stop = true;
     out.speed_owner = SpeedOwner::MISSION;
   }
-  if (last_mission_active(m.last_mission) ||
+  if ((last_mission_active(m.last_mission) && m.last_mission.phase != LastMissionPhase::APPROACH) ||
     (m.last_mission.phase == LastMissionPhase::DONE && m.route.changed)) {
     out.v_ref = 0; out.immediate_stop = true; out.speed_owner = SpeedOwner::MISSION;
   }

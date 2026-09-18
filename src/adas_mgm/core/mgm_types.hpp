@@ -142,6 +142,7 @@ struct CoreSnapshot
   // 지점별로 "이미 정지했다"를 기억해야 하기 때문 — bool이면 언덕에서 정지 중
   // 차가 밀려 구간을 벗어났다 다시 들어올 때 재정지 루프가 된다.
   uint8_t gps_stop_zone;
+  bool gps_exit_stop_reached;  // current station has reached CSV state=3
   bool gps_avoid_zone;       // 회피 시작 구간/CSV state=4 통과 여부 (base manager는 복귀 완료까지 유지)
   // GPS 전용 구간 안인가 (2026-08-18). true면 LANE 전이를 하지 않고 WAYPOINT로
   // 고정한다 — 차선을 믿기 어려운 구간을 **구간 단위로** 지정하기 위한 것.

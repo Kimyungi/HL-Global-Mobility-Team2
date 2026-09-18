@@ -14,13 +14,11 @@ The mission direction mapping was confirmed by the user on 2026-09-17 for
 `Last_mission_state`. The detector emits the signal class; application logic
 must translate that class into the mission direction.
 
-The user confirmed the mission policy on 2026-09-17: enter at the designated
-zone, stop and observe for ten seconds, then select route 06 for Left or route
-07 for Right. If no direction can be determined, select route 06.
-The Halla entry zone has not been created, so its current launch retains the
-configured end route (07 by default). Runtime integration is complete for plans
-with an explicit LAST_MISSION_ZONE: the detector publishes observations and MGM
-owns stopping, the ten-second window, selection and acknowledged GPS handoff.
+Current Yongin policy: entering route 05 zone [2] (indices 84–103) starts
+exit inference while navigation continues. Reaching CSV state=3 (index 92)
+requests a stop. After the vehicle stops, MGM observes for three seconds and
+selects route 06 for Left or route 07 for Right; no decision or a tie selects 06.
+Approach detections are not included in the stationary vote window.
 See [the mission contract](../../../docs/LAST_MISSION_STATE.md).
 
 ## Training summary

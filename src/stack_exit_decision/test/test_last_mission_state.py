@@ -26,7 +26,7 @@ def frame(state, seconds, *detections, received=None):
 @pytest.mark.parametrize('class_id,direction,route', [
     (0, Direction.RIGHT, '07'), (1, Direction.LEFT, '06'),
 ])
-def test_direction_waits_full_ten_seconds_after_actual_stop(class_id, direction, route):
+def test_direction_waits_full_three_seconds_after_actual_stop(class_id, direction, route):
     state = LastMissionState()
     tick(state, 0, zone=False)
     assert state.phase == Phase.IDLE
@@ -35,8 +35,8 @@ def test_direction_waits_full_ten_seconds_after_actual_stop(class_id, direction,
     assert not frame(state, 1, Detection(class_id, .9))
     tick(state, 3)
     frame(state, 4, Detection(class_id, .9))
-    assert tick(state, 12.999) is None
-    decision = tick(state, 13)
+    assert tick(state, 5.999) is None
+    decision = tick(state, 6)
     assert (decision.direction, decision.route_id, decision.fallback) == (direction, route, False)
     assert state.phase == Phase.DONE and not state.stop_required
     assert tick(state, 20) == decision
@@ -57,7 +57,7 @@ def test_each_frame_has_one_vote_and_window_uses_majority():
     tick(state, 0)
     frame(state, 1, Detection(0, .8), Detection(1, .7), Detection(1, .6))
     frame(state, 2, Detection(0, .8))
-    frame(state, 3, Detection(1, .99))
+    frame(state, 2.5, Detection(1, .99))
     decision = tick(state, 10)
     assert decision.route_id == '07'
     assert (decision.left_votes, decision.right_votes) == (1, 2)
@@ -93,8 +93,8 @@ def test_motion_or_speed_loss_restarts_stationary_observation(speed, valid):
     tick(state, 9, speed=speed, valid=valid)
     assert state.phase == Phase.STOPPING and state.stop_required
     tick(state, 10, zone=False)
-    assert tick(state, 19.999, zone=False) is None
-    assert tick(state, 20, zone=False).fallback
+    assert tick(state, 12.999, zone=False) is None
+    assert tick(state, 13, zone=False).fallback
 
 
 def test_zone_loss_does_not_cancel_and_new_session_clears_decision():
@@ -118,8 +118,8 @@ def test_clock_rollback_discards_window_and_keeps_stop():
     tick(state, 5)
     assert state.stop_required and state.phase == Phase.STOPPING
     tick(state, 6)
-    assert tick(state, 15) is None
-    assert tick(state, 16).fallback
+    assert tick(state, 8.999) is None
+    assert tick(state, 9).fallback
 
 
 def test_model_class_contract_and_results_adapter():

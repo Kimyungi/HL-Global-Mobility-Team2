@@ -12,9 +12,11 @@ def test_per_frame_selection_rejects_ambiguous_or_wrong_model_boxes():
 
 def test_camera_closes_without_recent_authorized_mgm_mission():
     status = SimpleNamespace(revised_v2=True, go_authorized=True, estop_active=False,
-                             last_mission_phase=2, LAST_STOPPING=1, LAST_JUDGING=2)
+                             last_mission_phase=2, LAST_STOPPING=1, LAST_JUDGING=2, LAST_APPROACH=6)
     assert detector_requested(status, 1, 2)
     assert not detector_requested(status, 1, 300_000_000)
+    status.last_mission_phase = status.LAST_APPROACH
+    assert detector_requested(status, 1, 2)
     status.estop_active = True
     assert not detector_requested(status, 1, 2)
     status.estop_active = False

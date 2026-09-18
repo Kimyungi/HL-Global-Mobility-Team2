@@ -35,10 +35,18 @@ inline bool last_mission_step(const CoreSnapshot & s, CoreState & st) {
   {
     for (const auto & zone : m.zones.contexts) {
       if (zone.zone_type != ZoneType::LAST_MISSION_ZONE || !zone.zone_valid || !zone.in_zone) {continue;}
-      last.phase = LastMissionPhase::STOPPING;
+      last.phase = LastMissionPhase::APPROACH;
       last.source_zone_id = zone.zone_id;
       break;
     }
+  }
+  if (last.phase == LastMissionPhase::APPROACH) {
+    // Zone [2] arms perception while navigation continues. Only the current
+    // waypoint station reaching CSV state=3 requests a stop (never preview).
+    if (!s.gps_position_valid || !s.gps_exit_stop_reached || !route.last_mission_enabled) {
+      return false;
+    }
+    last.phase = LastMissionPhase::STOPPING;
   }
   if (!last_mission_active(last)) {return false;}
   if (last.phase == LastMissionPhase::WAIT_ROUTE && route.changed &&
@@ -68,7 +76,7 @@ inline bool last_mission_step(const CoreSnapshot & s, CoreState & st) {
   }
   if (last.phase != LastMissionPhase::JUDGING) {return true;}
   if (s.monotonic_ns < last.started_ns) {last_mission_suspend(last); return true;}
-  if (s.monotonic_ns - last.started_ns >= 10'000'000'000LL) {
+  if (s.monotonic_ns - last.started_ns >= 3'000'000'000LL) {
     last.fallback = last.left_votes == last.right_votes;
     const bool right = last.right_votes > last.left_votes;
     last.route_id = right ? 7 : 6;

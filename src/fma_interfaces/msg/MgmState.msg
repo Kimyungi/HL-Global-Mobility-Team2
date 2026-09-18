@@ -153,6 +153,7 @@ uint8 LAST_JUDGING=2
 uint8 LAST_SELECTED=3
 uint8 LAST_WAIT_ROUTE=4
 uint8 LAST_DONE=5
+uint8 LAST_APPROACH=6
 uint8 last_mission_phase
 uint64 last_mission_request_id
 uint8 last_mission_zone_id

@@ -61,6 +61,7 @@ uint8 stop_zone
 # 회피 허용 구간 안인가. MGM의 avoid_zone_only 게이트 입력 — 켜면 이 구간
 # 밖에서는 AVOID 전이를 하지 않는다(장애물은 stack_estop 정지로만 대응).
 # fix 상실 시 false = 보수적(회피 금지) 쪽으로 떨어진다.
+bool exit_stop_reached  # current station >= CSV state=3; not preview
 bool avoid_zone
 
 # GPS 전용 구간 안인가 (2026-08-18). 현재 station 또는 station preview에 가장

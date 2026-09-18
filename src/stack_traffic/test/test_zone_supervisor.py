@@ -72,3 +72,11 @@ def test_main_initializes_real_ros_node_and_forwards_parameters(monkeypatch):
         assert captured['params'][key] == expected
     assert not captured['path'].exists()
     assert not rclpy.ok()
+
+
+def test_exit_mission_releases_shared_camera_from_approach_until_done():
+    from types import SimpleNamespace
+    from stack_traffic.zone_supervisor import exit_camera_requested
+    for phase in range(7):
+        status = SimpleNamespace(last_mission_phase=phase, LAST_IDLE=0, LAST_DONE=5)
+        assert exit_camera_requested(status) == (phase not in (0,5))

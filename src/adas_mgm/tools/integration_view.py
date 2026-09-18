@@ -350,7 +350,7 @@ class IntegrationView(Node):
             mission = 'SEARCH' if state.mission_request_active and not state.parking_ready else 'PARKING' if state.mission_request_active else 'NAVIGATION'
             last_phase = getattr(state, 'last_mission_phase', 0)
             if last_phase:
-                phase = {1:'STOP',2:'JUDGE',3:'SELECT',4:'WAIT ROUTE',5:'DONE'}.get(last_phase,'?')
+                phase = {1:'STOP',2:'JUDGE',3:'SELECT',4:'WAIT ROUTE',5:'DONE',6:'APPROACH'}.get(last_phase,'?')
                 mission = f'LAST {phase} / {state.last_mission_route_id:02d}'
             mgm_text = f'MGM: {top} | {source} | {mission}'
             if state.active_safe_stop_reasons:

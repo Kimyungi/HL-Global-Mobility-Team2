@@ -8,6 +8,7 @@ void setup(Run & r, bool zone=true) {
   r.st.params.zone_enter_confirm_samples = 2;
   r.s.gps_fix_quality = 4; r.s.revised_v2 = true; r.s.sensor_alive_mask = 0x41;
   r.s.route.enabled = true; r.s.route.sequence_id = 11; r.s.route.instance_id = 22;
+  r.s.gps_exit_stop_reached = true;  // existing scenarios start at the stop marker
   r.s.route.count = 3; r.s.route.last_mission_enabled = true;
   r.s.route.left_index = 1; r.s.route.right_index = 2;
   if (zone) {r.zone(20, ZoneType::LAST_MISSION_ZONE);}
@@ -19,19 +20,50 @@ void observe(Run & r, int cls, uint64_t request=0) {
   r.tick();
 }
 void finish_window(Run & r) {
-  r.s.monotonic_ns = r.st.managers.last_mission.started_ns + 10'000'000'000LL;
+  r.s.monotonic_ns = r.st.managers.last_mission.started_ns + 3'000'000'000LL;
   r.tick();
 }
 int main() {
+  {
+    Run r; setup(r); r.s.gps_exit_stop_reached = false;
+    r.s.vehicle_speed = .5f; r.s.gps_track_index = 84; r.tick(2);
+    check(r.out.last_mission.phase == LastMissionPhase::APPROACH && r.out.v_ref > 0,
+      "zone entry arms detector without requesting a stop");
+    observe(r, 0); r.tick(1100);
+    check(r.out.last_mission.phase == LastMissionPhase::APPROACH &&
+      r.out.last_mission.right_votes == 0 && r.out.last_mission.started_ns == 0 && r.out.v_ref > 0,
+      "approach observations cannot start or finish the stationary vote window");
+    r.s.vehicle_speed = 0; r.tick(1100);
+    check(r.out.last_mission.phase == LastMissionPhase::APPROACH,
+      "a stop before state=3 does not start judgment");
+    r.s.vehicle_speed = .5f; r.s.gps_exit_stop_reached = true;
+    r.s.gps_position_valid = false; r.tick();
+    check(r.out.last_mission.phase == LastMissionPhase::APPROACH,
+      "invalid GPS cannot certify reaching state=3");
+    r.s.gps_position_valid = true; r.s.gps_track_index = 92; r.tick();
+    check(r.out.last_mission.phase == LastMissionPhase::STOPPING && r.out.v_ref == 0,
+      "state=3 current station commands stop even while still moving");
+    r.tick(1100);
+    check(r.out.last_mission.phase == LastMissionPhase::STOPPING,
+      "three seconds of braking is not three seconds of judgment");
+    r.s.vehicle_speed = 0; r.tick(); observe(r, 1);
+    check(r.out.last_mission.phase == LastMissionPhase::JUDGING &&
+      r.out.last_mission.left_votes == 1 && r.out.last_mission.right_votes == 0,
+      "actual stop begins a fresh vote window");
+    finish_window(r);
+    check(r.out.last_mission.route_id == 6 && r.out.last_mission.phase == LastMissionPhase::WAIT_ROUTE,
+      "stationary three-second window selects and hands off the exit");
+  }
+
   for (int cls : {0, 1, -1}) {
     Run r; setup(r); r.s.vehicle_speed = .5f; r.tick(2);
     check(r.out.last_mission.phase == LastMissionPhase::STOPPING && r.out.v_ref == 0,
       "confirmed zone enters braking with immediate output stop");
     r.tick(1100);
-    check(r.out.last_mission.phase == LastMissionPhase::STOPPING, "moving is not ten stationary seconds");
+    check(r.out.last_mission.phase == LastMissionPhase::STOPPING, "moving is not three stationary seconds");
     r.s.vehicle_speed = 0; r.tick();
     check(r.out.last_mission.phase == LastMissionPhase::JUDGING, "actual stop begins observation");
-    observe(r, cls); r.tick(990);
+    observe(r, cls); r.tick(290);
     check(r.out.last_mission.phase == LastMissionPhase::JUDGING && r.out.v_ref == 0,
       "a detection never permits early departure");
     finish_window(r);
