@@ -1,4 +1,4 @@
-"""Halla full-stack + vehicle RTCM relay + unified RViz; explicit go stays separate."""
+"""Yongin full-stack + vehicle RTCM relay + unified RViz; explicit go stays separate."""
 import importlib.util
 import math
 import os
@@ -38,9 +38,9 @@ def selected_manifest(catalog_path, start, end):
 
 
 def validate_route_profile(route_profile):
-    if route_profile not in ('halla', 'obstacle'):
+    if route_profile not in ('yongin', 'obstacle'):
         raise ValueError('Retired or unsupported v2 route profile: ' + str(route_profile)
-                         + '. Use scripts/v2 drive with PR #120 parking references.')
+                         + '. Use scripts/v2 drive with the Yongin course catalog.')
 
 
 def check_lidar_devices():
@@ -66,7 +66,7 @@ def obstacle_test_manifest(root, start, end):
                             completion='endpoint_and_missions') for r in plan.files]}
 
 
-def start_stack(context, route_profile='halla'):
+def start_stack(context, route_profile='yongin'):
     validate_route_profile(route_profile)
     value = lambda name: LaunchConfiguration(name).perform(context)
     if value('REAL_VEHICLE_CONFIRM') != 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX':
@@ -87,8 +87,8 @@ def start_stack(context, route_profile='halla'):
     share = Path(get_package_share_directory('adas_mgm'))
     if not share.resolve().is_relative_to(root / 'install_v2'):
         raise RuntimeError('Use this workspace scripts/v2 drive and install_v2')
-    if route_profile == 'halla':
-        manifest = selected_manifest(root / 'src/stack_gps/waypoints/halla_route_sequence.yaml',
+    if route_profile == 'yongin':
+        manifest = selected_manifest(root / 'src/stack_gps/waypoints/yongin_route_sequence.yaml',
                                      value('start_waypoint'), value('end_waypoint'))
     else:
         manifest = obstacle_test_manifest(root, value('start_waypoint'), value('end_waypoint'))
@@ -98,10 +98,12 @@ def start_stack(context, route_profile='halla'):
         context.launch_configurations['t_reference_enabled'] = 'false'
     context.launch_configurations['t_reference_origin_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['t_reference_route_csv'] = str(
-        root / 'src/stack_gps/waypoints/halla_0919_path_03.csv')
+        root / 'src/stack_gps/waypoints/yongin_reference_path_03.csv')
     for i in (1, 2):
         context.launch_configurations[f't_reference_reverse_{i}_csv'] = str(
-            root / f'src/stack_parking/config/parking_ref_{i:02}.csv')
+            root / f'src/stack_parking/config/yongin_parking_ref_{i:02}.csv')
+    context.launch_configurations['parking_course_catalog'] = str(
+        root / 'src/stack_parking/config/yongin_parking_courses.yaml') if route_profile == 'yongin' else ''
     context.launch_configurations['avoid_waypoint_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['avoid_route_origin_csv'] = manifest['routes'][0]['file']
     # This entry owns route selection; avoid ambiguous overrides from the base launch.
@@ -146,7 +148,7 @@ def start_stack(context, route_profile='halla'):
     return actions
 
 
-def generate_launch_description(route_profile='halla'):
+def generate_launch_description(route_profile='yongin'):
     validate_route_profile(route_profile)
     # Match the integrated field session; normal safety/arbitration remains in the core.
     profile = dict(
@@ -164,7 +166,7 @@ def generate_launch_description(route_profile='halla'):
         profile['t_reference_enabled'] = 'false'
     else:
         profile['v_base'] = '0.5'
-    if route_profile == 'halla':
+    if route_profile == 'yongin':
         del profile['v_base']  # Explicit speed required for every full-course session.
     route_id = '01' if obstacle else '03'
     start_options = {'default_value': route_id} if obstacle else {}
@@ -173,9 +175,9 @@ def generate_launch_description(route_profile='halla'):
         DeclareLaunchArgument('start_waypoint',
                               description=('PR117 obstacle course; fixed route 01' if obstacle else
                                            'Required each session; scripts/v2 prompts when omitted'),
-                              choices=([f'{i:02}' for i in range(1,8)] if route_profile == 'halla' else [route_id]), **start_options),
-        DeclareLaunchArgument('end_waypoint', default_value=('06' if route_profile == 'halla' else route_id),
-                              choices=(['06','07'] if route_profile == 'halla' else [route_id])),
+                              choices=([f'{i:02}' for i in range(1,8)] if route_profile == 'yongin' else [route_id]), **start_options),
+        DeclareLaunchArgument('end_waypoint', default_value=('06' if route_profile == 'yongin' else route_id),
+                              choices=(['06','07'] if route_profile == 'yongin' else [route_id])),
         DeclareLaunchArgument('run_log_dir', default_value='',
                               description='New session directory; empty uses workspace drive_logs'),
         DeclareLaunchArgument('start_rtcm', default_value='true', choices=['true', 'false']),
@@ -183,7 +185,7 @@ def generate_launch_description(route_profile='halla'):
         DeclareLaunchArgument('rtcm_host', default_value='127.0.0.1'),
         DeclareLaunchArgument('rviz', default_value='true', choices=['true', 'false']),
         *([DeclareLaunchArgument('v_base', description='Required each session: positive general driving speed in m/s')]
-          if route_profile == 'halla' else []),
+          if route_profile == 'yongin' else []),
         *[DeclareLaunchArgument(k, default_value=v) for k, v in profile.items()],
         OpaqueFunction(function=start_stack, kwargs={'route_profile': route_profile}),
     ])

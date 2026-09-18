@@ -119,8 +119,7 @@ void route_step(const CoreSnapshot & s, CoreState & st) {
     if (!s.gps_at_end) {r.seen_nonterminal = true;}
     else if (r.seen_nonterminal) {r.end_reached = true;}
   }
-  // T Parking retains authority across this junction until forward exit done.
-  // Parallel parking keeps its existing mission_step endpoint cancellation.
+  // CSV parking retains authority across this junction until forward exit done.
   if (m.mission == MissionState::MISSION_ACTIVE) {return;}
   bool complete = !m.request.active;
   if (!r.connecting) {

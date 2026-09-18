@@ -40,6 +40,14 @@ class ZoneDefinition:
     mission_id: int = 0
     mission_type: MissionType = MissionType.NONE
     explicit_id: bool = False  # User-configured IDs survive route composition.
+    index_ranges: tuple = ()
+
+    @property
+    def ranges(self):
+        return self.index_ranges or ((self.start_index, self.end_index),)
+
+    def contains(self, index):
+        return any(first <= index <= last for first, last in self.ranges)
 
 
 class ZoneMap:
@@ -50,7 +58,7 @@ class ZoneMap:
         for zone in self.definitions:
             if not 0 < zone.zone_id < ID_CAPACITY or zone.zone_id in seen:
                 raise ValueError('zone_id must be unique and in 1..255')
-            if not 0 <= zone.start_index <= zone.end_index < track_size:
+            if not all(0 <= first <= last < track_size for first, last in zone.ranges):
                 raise ValueError(f'zone {zone.zone_id}: index_range is outside the configured track')
             if not isinstance(zone.zone_type, ZoneType):
                 raise ValueError(f'zone {zone.zone_id}: unsupported zone_type')
@@ -75,12 +83,12 @@ class ZoneMap:
         station_priority also covers stop/avoid ranges carried outside ZoneContext.
         """
         current = [zone for zone in self.definitions
-                   if zone.start_index <= current_position_index <= zone.end_index]
+                   if zone.contains(current_position_index)]
         candidates = current
         if not current and not station_priority and preview_position_index is not None:
             candidates = [zone for zone in self.definitions
                           if zone.zone_type == ZoneType.GPS_ONLY_ZONE
-                          and zone.start_index <= preview_position_index <= zone.end_index]
+                          and zone.contains(preview_position_index)]
         # Definitions are sorted by zone_id: one deterministic station winner.
         selected = candidates[0] if candidates else None
         return tuple((zone, zone == selected) for zone in self.definitions)
@@ -138,7 +146,15 @@ def load_zone_definitions(path, engine, snap_max_m, *, key="zones", turn_only=Fa
         try:
             zone_type = ZoneType.GPS_ONLY_ZONE if turn_only else ZoneType[entry['zone_type']]
             mission_type = MissionType[entry.get('mission_type', 'NONE')]
-            if 'index_range' in entry:
+            ranges = ()
+            if 'index_ranges' in entry:
+                if any(k in entry for k in ('index_range', 'start', 'end')):
+                    raise ValueError('choose one boundary representation')
+                ranges = tuple(tuple(pair) for pair in entry['index_ranges'])
+                if not ranges or any(len(pair) != 2 or any(type(i) is not int for i in pair) for pair in ranges):
+                    raise ValueError('index_ranges requires integer pairs')
+                first, last = min(a for a,b in ranges), max(b for a,b in ranges)
+            elif 'index_range' in entry:
                 if 'start' in entry or 'end' in entry:
                     raise ValueError('choose one boundary representation')
                 first, last = entry['index_range']
@@ -156,7 +172,7 @@ def load_zone_definitions(path, engine, snap_max_m, *, key="zones", turn_only=Fa
             if type(zone_id) is not int or type(mission_id) is not int:
                 raise ValueError('zone_id and mission_id must be integers')
             definitions.append(ZoneDefinition(
-                zone_id, zone_type, first, last, mission_id, mission_type, explicit_id=True))
+                zone_id, zone_type, first, last, mission_id, mission_type, explicit_id=True, index_ranges=ranges))
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError(f'invalid ZoneDefinition {entry!r}: {error}') from error
     # Validate explicit entries together before reserving IDs for legacy ranges.
@@ -172,5 +188,5 @@ def turn_zone_map(path, engine, snap_max_m, existing):
     turns = load_zone_definitions(path, engine, snap_max_m, key='turn_zones', turn_only=True)
     retained = [z for z in existing.definitions if z.zone_type != ZoneType.GPS_ONLY_ZONE]
     result = ZoneMap([*retained, *turns], len(engine.e))
-    engine.gps_only_ranges = [(z.start_index, z.end_index) for z in turns]
+    engine.gps_only_ranges = [bounds for z in turns for bounds in z.ranges]
     return result

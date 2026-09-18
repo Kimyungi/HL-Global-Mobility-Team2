@@ -776,7 +776,7 @@ class StackGpsNode(Node):
             zone = definitions[context.zone_id]
             context.boundary_distance_m = min(
                 math.hypot(local_e-self.engine.e[i], local_n-self.engine.n[i])
-                for i in (zone.start_index, zone.end_index))
+                for bounds in zone.ranges for i in bounds)
 
     def _setup_zones(self, p):
         """위경도로 준 지정 구간 → 웨이포인트 인덱스 구간 (2026-08-18).

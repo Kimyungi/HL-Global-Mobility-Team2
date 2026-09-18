@@ -1,0 +1,17 @@
+missions:
+  '1':
+    route_id: '03'
+    route_csv: ../../stack_gps/waypoints/yongin_reference_path_03.csv
+    entries:
+    - yongin_parking_ref_01.csv
+    - yongin_parking_ref_02.csv
+    exits:
+    - yongin_parking_ref_01_exit.csv
+    - yongin_parking_ref_02_exit.csv
+  '2':
+    route_id: '04'
+    route_csv: ../../stack_gps/waypoints/yongin_reference_path_04.csv
+    entries:
+    - yongin_parking_ref_03.csv
+    - yongin_parking_ref_04.csv
+    exits: []

@@ -56,6 +56,6 @@ def selection_markers(candidates, cfg, pose, scan, selected=None):
         label.pose.position.y = float(inspected[-1].y)
         label.pose.position.z = .7+i*.35
         state = 'NO SCAN' if not available else ('BLOCKED' if blocked else ('ELIGIBLE' if eligible else 'LOW COVERAGE'))
-        label.text = (f'REV {i+1:02d}: {state}' + (' [LOCKED]' if selected == i else '')
+        label.text = (f'{candidate.name}: {state}' + (' [LOCKED]' if selected == i else '')
                       + f'\nhits={int(hit.sum()) if available else 0} observed={observed:.0%}')
     return result

@@ -138,6 +138,23 @@ class AdapterTests(unittest.TestCase):
     def test_new_parallel_prepare_releases_to_original_pipeline(self):
         self.assertFalse(self.send(1,101,2));self.assertFalse(self.adapter.active)
 
+    def test_catalog_parallel_prepare_uses_route04_and_reports_mode2(self):
+        a=self.adapter
+        a.courses={1:NS(course=a.course,route_csv=a.route_csv,route_id='03',exits=None),
+                   2:NS(course=a.course,route_csv=Path('route04.csv').resolve(),route_id='04',exits=None)}
+        self.assertTrue(self.send(1,101,2))
+        self.assertEqual(a.route_id,'04')
+        for _ in range(15):
+            self.supply()
+            a.gps.route.route_id='04'
+            a.tick()
+        self.assertEqual(a.core.phase,'ADVANCE_3')
+        self.assertEqual(self.messages[-1].mission_mode,2)
+        self.send(2,101,1)
+        self.assertFalse(a.authorized)
+        self.send(2,101,2)
+        self.assertTrue(a.authorized)
+
     def test_tangent_heading_is_not_real_reverse_heading(self):
         for _ in range(15):
             self.supply();self.adapter.gps.heading_source=0;self.adapter.tick()

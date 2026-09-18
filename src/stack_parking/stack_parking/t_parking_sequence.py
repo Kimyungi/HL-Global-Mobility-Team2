@@ -57,13 +57,13 @@ def metric_path(rows, origin, reverse=False):
     return path, dense
 
 
-def load_course(origin_csv, route_csv, parking_csvs):
+def load_course(origin_csv, route_csv, parking_csvs, *, route_id=3, mission_state=1):
     first = csv_rows(origin_csv)[0]
     origin = float(first['lat']), float(first['lon'])
     route = csv_rows(route_csv)
-    trigger = [i for i,r in enumerate(route) if int(r['state']) == 1]
-    if len(trigger) != 1 or any(int(r['path_id']) != 3 for r in route):
-        raise ValueError('Expected route 03 with one state=1')
+    trigger = [i for i,r in enumerate(route) if int(r['state']) == mission_state]
+    if len(trigger) != 1 or any(int(r['path_id']) != route_id for r in route):
+        raise ValueError(f'Expected route {route_id:02} with one state={mission_state}')
     # Stable zone confirmation can arrive a few samples after the marker.
     # Zone span/stability can stop slightly before the exact state marker.
     # Keep the preceding CSV points as well; no invented connector segment.
@@ -81,15 +81,16 @@ def load_course(origin_csv, route_csv, parking_csvs):
         # halla_0919 straightening shifts the endpoint by 8 cm. Accept only
         # gaps within the existing 14 cm forward endpoint arrival tolerance.
         if math.hypot(c.path[0].x-approach[-1].x, c.path[0].y-approach[-1].y) > .14:
-            raise ValueError('Route 03 end and parking start do not match')
+            raise ValueError(f'Route {route_id:02} end and parking start do not match')
     return candidates, approach, station
 
 
 class TParkingSequence:
     WAIT_SECONDS = 10.
 
-    def __init__(self, candidates, approach, station, cfg=Config()):
+    def __init__(self, candidates, approach, station, cfg=Config(), *, exits=None):
         self.candidates, self.approach, self.station, self.cfg = candidates, approach, station, cfg
+        self.exits = exits
         self.phase = 'STOP_SELECT'
         self.reason = 'await_stop_and_left_scan'
         self.selected = None
@@ -194,10 +195,13 @@ class TParkingSequence:
             if result.parking_success:
                 # Exit precisely the driven prefix, not an unvisited CSV tail.
                 candidate = self.candidates[self.selected]
-                prefix = candidate.path[:self.reverse.index+1]
-                self.exit_path = tuple(replace(p,gear=1) for p in reversed(prefix))
-                distances = candidate.s[:self.reverse.index+1]
-                self.exit_station = distances[-1]-distances[::-1]
+                if self.exits is not None:
+                    self.exit_path, self.exit_station = self.exits[self.selected]
+                else:
+                    prefix = candidate.path[:self.reverse.index+1]
+                    self.exit_path = tuple(replace(p,gear=1) for p in reversed(prefix))
+                    distances = candidate.s[:self.reverse.index+1]
+                    self.exit_station = distances[-1]-distances[::-1]
                 self.phase, self.wait_since = 'WAIT_10', now
                 return self.out()
             return self.out(result.v_suggest,result.reference)

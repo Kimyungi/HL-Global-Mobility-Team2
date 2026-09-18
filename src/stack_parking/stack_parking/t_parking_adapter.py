@@ -24,12 +24,22 @@ class ReferenceParkingAdapter:
     def __init__(self, node):
         self.node = node
         share = Path(get_package_share_directory('stack_parking'))
-        self.route_csv = Path(node._p('t_reference_route_csv')).resolve()
-        self.course = load_course(node._p('t_reference_origin_csv'), self.route_csv,
-                                  [Path(node._p(f't_reference_reverse_{i}_csv'))
-                                   if node._p(f't_reference_reverse_{i}_csv')
-                                   else share/'config'/f'parking_ref_{i:02d}.csv'
-                                   for i in (1,2)])
+        self.mission_mode = 1
+        self.route_id = '03'
+        catalog = node._p('parking_course_catalog')
+        self.courses = {}
+        if catalog:
+            from .parking_courses import load_catalog
+            self.courses = load_catalog(catalog, node._p('t_reference_origin_csv'))
+            initial = self.courses[1]
+            self.course, self.route_csv = initial.course, initial.route_csv
+        else:
+            self.route_csv = Path(node._p('t_reference_route_csv')).resolve()
+            self.course = load_course(node._p('t_reference_origin_csv'), self.route_csv,
+                                      [Path(node._p(f't_reference_reverse_{i}_csv'))
+                                       if node._p(f't_reference_reverse_{i}_csv')
+                                       else share/'config'/f'parking_ref_{i:02d}.csv'
+                                       for i in (1,2)])
         geometry = Path(get_package_share_directory('lidar_fusion_v2'))/'config/fixed_geometry.yaml'
         self.sensors = yaml.safe_load(geometry.read_text(encoding='utf-8'))['/**']['ros__parameters']['sensors']
         self.gps = self.vehicle = self.mgm = None
@@ -111,7 +121,9 @@ class ReferenceParkingAdapter:
             status.request_id, status.mission_mode = request, int(msg.mission_mode)
             n.status_pub.publish(status)
             return True
-        if int(msg.mission_mode) != 1:
+        mode = int(msg.mission_mode)
+        courses = getattr(self, 'courses', {})
+        if mode not in (courses if courses else (1,)):
             if request > n.search_request_id and msg.action == ParkingCommand.PREPARE:
                 self.active = self.authorized = False
                 self.publish_selected_path()
@@ -120,16 +132,23 @@ class ReferenceParkingAdapter:
             if request == n.search_request_id:
                 return True
             n._cancel_search()
-            n.search_request_id, n.search_mission_mode = request, 1
+            n.search_request_id, n.search_mission_mode = request, mode
+            self.mission_mode = mode
             self.request_id = request
-            self.core = TParkingSequence(*self.course)
+            exits = None
+            if courses:
+                selected_course = courses[mode]
+                self.course = selected_course.course
+                self.route_csv, self.route_id = selected_course.route_csv, selected_course.route_id
+                exits = selected_course.exits
+            self.core = TParkingSequence(*self.course, exits=exits)
             self.publish_selected_path()
             self.active, self.authorized = True, False
             self.started = n._clock_s()
             self.route_identity = None
             self.last_phase = None
         elif (msg.action == ParkingCommand.ACTIVATE and self.active
-              and request == self.request_id and self.core.selected is not None
+              and request == self.request_id and mode == self.mission_mode and self.core.selected is not None
               and self.core.phase != 'FAULT'):
             self.authorized = True
         return True
@@ -159,7 +178,7 @@ class ReferenceParkingAdapter:
         speed_stamp = stamp_s(vehicle.header.stamp) if vehicle else -math.inf
         pose = Pose2(gps.position_x,gps.position_y,gps.vehicle_heading_rad) if gps else Pose2()
         route_ok = bool(gps and gps.route.enabled and not gps.route.connecting
-                        and gps.route.route_id == '03'
+                        and gps.route.route_id == getattr(self, 'route_id', '03')
                         and Path(gps.route.waypoint_csv).resolve() == self.route_csv)
         identity = ((gps.route.sequence_id,gps.route.instance_id,gps.route.index)
                     if route_ok else None)
@@ -191,7 +210,7 @@ class ReferenceParkingAdapter:
         status = ParkingStatus()
         status.header.stamp = n.get_clock().now().to_msg()
         status.header.frame_id = 'base_link'
-        status.request_id, status.mission_mode = self.request_id, 1
+        status.request_id, status.mission_mode = self.request_id, self.mission_mode
         status.search_active = True
         status.search_space_found = core.selected is not None
         status.wall_acquisition_complete = bool(ready)

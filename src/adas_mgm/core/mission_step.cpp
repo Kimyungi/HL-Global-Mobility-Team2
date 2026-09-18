@@ -99,10 +99,11 @@ bool active_parking_step(const CoreSnapshot & s, CoreState & st, bool matching)
     m.mission_events |= MISSION_EVENT_DONE;
     return true;
   }
-  // T parking uses this endpoint as its reverse-entry/forward-return junction.
+  // CSV parking uses the route endpoint as its entry/exit junction in revised v2.
   // Retain the request even with lost module feedback: only acknowledged done
   // AFTER forward exit or an explicit cancellation may release route 04.
-  if (current_route_ended(s, st) && r.mission_type != MissionType::T_PARKING) {
+  if (current_route_ended(s, st) && r.mission_type != MissionType::T_PARKING &&
+      !(s.revised_v2 && r.mission_type == MissionType::PARALLEL_PARKING)) {
     m.mission_failed[r.mission_id] = true;
     cancel_mission(st, MissionCancelReason::ROUTE_END);
     return true;

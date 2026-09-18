@@ -211,6 +211,7 @@ class StackParkingNode(Node):
     def _declare_parameters(self) -> None:
         values = {
             't_reference_enabled': False,
+            'parking_course_catalog': '',
             't_reference_origin_csv': '',
             't_reference_route_csv': '',
             't_reference_reverse_1_csv': '',

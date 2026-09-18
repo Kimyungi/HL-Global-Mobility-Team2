@@ -1,0 +1,9 @@
+track: yongin_reference_path_02.csv
+stop_points:
+- lat: 37.2890252
+  lon: 127.1073499
+avoid_zones: []
+gps_only_zones: []
+parking_points: []
+turn_zones: []
+zones: []

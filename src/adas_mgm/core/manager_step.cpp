@@ -640,7 +640,8 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
     request.vehicle_speed_valid = true;  // distance uses fallback; actual stopped proof remains separate
   }
   CoreOutput out = existing_source_request(request, st, source_state);
-  if (source_state == MGM_STATE_PARKING && m.mission_type == MissionType::T_PARKING) {
+  if (source_state == MGM_STATE_PARKING &&
+      (m.mission_type == MissionType::T_PARKING || s.revised_v2)) {
     if (std::isfinite(out.v_ref)) {
       out.v_ref = std::copysign(std::min(std::fabs(out.v_ref), std::fabs(st.params.v_base)), out.v_ref);
     }
@@ -760,9 +761,9 @@ CoreOutput manager_decision(const CoreSnapshot & s, const CoreState & st)
   }
   // Entry braking precedes the CAN-speed-gated five-frame wall acquisition.
   // Only fresh completion for this request releases normal GPS search speed.
-  const bool t_search_endpoint = m.mission_type == MissionType::T_PARKING &&
+  const bool csv_search_endpoint = (m.mission_type == MissionType::T_PARKING || s.revised_v2) &&
     (m.route.enabled ? m.route.end_reached : s.gps_at_end);
-  if (mission_searches_along_gps(st) && (t_search_endpoint || !(s.parking_valid &&
+  if (mission_searches_along_gps(st) && (csv_search_endpoint || !(s.parking_valid &&
     s.parking_request_id == m.request.request_id &&
     s.parking_mission_mode == static_cast<uint8_t>(m.mission_type) &&
     s.parking_wall_acquisition_complete)))

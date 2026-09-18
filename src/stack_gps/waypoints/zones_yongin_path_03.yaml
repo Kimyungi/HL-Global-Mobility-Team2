@@ -1,0 +1,16 @@
+track: yongin_reference_path_03.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points:
+- mode: perpendicular
+  lat: 37.2885398
+  lon: 127.1072633
+turn_zones:
+- zone_id: 3
+  index_ranges:
+  - - 160
+    - 177
+  - - 565
+    - 579
+zones: []

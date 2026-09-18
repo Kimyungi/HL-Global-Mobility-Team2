@@ -42,10 +42,10 @@ def test_start_csv_is_required_without_wrapper_prompt():
 def test_each_selected_start_resolves_to_its_registered_csv(start):
     end = '06' if start == '06' else '07'
     selected = module().selected_manifest(
-        ROOT / 'src/stack_gps/waypoints/halla_route_sequence.yaml', start, end)
+        ROOT / 'src/stack_gps/waypoints/yongin_route_sequence.yaml', start, end)
     routes = selected['routes']
     assert routes[0]['id'] == start
-    assert routes[0]['file'].endswith(f'halla_0919_path_{start}.csv')
+    assert routes[0]['file'].endswith(f'yongin_reference_path_{start}.csv')
     assert routes[-1]['id'] == end
 
 
@@ -136,7 +136,7 @@ def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkey
     assert 'stack_avoid_v2' not in nodes
     assert nodes['stack_avoid'].condition.evaluate(ctx)
     waypoint = evaluate_parameters(ctx, nodes['stack_avoid']._Node__parameters)[1]
-    assert waypoint['waypoint_csv'].endswith('halla_0919_path_03.csv')
+    assert waypoint['waypoint_csv'].endswith('yongin_reference_path_03.csv')
     assert waypoint['route_origin_csv'] == waypoint['waypoint_csv']
     assert waypoint['target_speed_mps'] == 1.0
     mgm = evaluate_parameters(ctx, nodes['adas_mgm']._Node__parameters)[1]
@@ -171,7 +171,7 @@ def test_exit_zone_preserves_branch_contract_for_partial_start(tmp_path, start):
     import yaml
     from stack_gps.route_plan import RoutePlan
     folder = ROOT / 'src/stack_gps/waypoints'
-    data = yaml.safe_load((folder / 'halla_route_sequence.yaml').read_text())
+    data = yaml.safe_load((folder / 'yongin_route_sequence.yaml').read_text())
     for route in data['routes']:
         route['file'] = str(folder / route['file'])
         route['zones_file'] = str(folder / route['zones_file'])
@@ -251,7 +251,7 @@ def test_pr117_obstacle_runtime_binding(monkeypatch, tmp_path):
         mod.obstacle_test_manifest(ROOT, '03', '03')
 
 
-def test_halla0919_default_runtime_and_parking_join(monkeypatch, tmp_path):
+def test_yongin_default_runtime_and_parking_join(monkeypatch, tmp_path):
     from stack_parking.t_parking_sequence import load_course
     import math
     mod = module()
@@ -265,15 +265,15 @@ def test_halla0919_default_runtime_and_parking_join(monkeypatch, tmp_path):
     import yaml
     data = yaml.safe_load((tmp_path/'run/route_selected.yaml').read_text())
     assert [r['id'] for r in data['routes']] == ['01','03','04','05','06','07']
-    assert all(Path(r['file']).name == f"halla_0919_path_{r['id']}.csv" for r in data['routes'])
+    assert all(Path(r['file']).name == f"yongin_reference_path_{r['id']}.csv" for r in data['routes'])
     cfg = ctx.launch_configurations
     assert cfg['avoid_route_origin_csv'] == data['routes'][0]['file']
     candidates, approach, _ = load_course(cfg['t_reference_origin_csv'],cfg['t_reference_route_csv'],
         [cfg[f't_reference_reverse_{i}_csv'] for i in (1,2)])
-    assert all(.07 < math.hypot(c.path[0].x-approach[-1].x,c.path[0].y-approach[-1].y) < .09 for c in candidates)
+    assert all(0 <= math.hypot(c.path[0].x-approach[-1].x,c.path[0].y-approach[-1].y) < .14 for c in candidates)
 
 
-def test_direct_halla_launch_requires_explicit_session_speed():
+def test_direct_yongin_launch_requires_explicit_session_speed():
     ctx=LaunchContext()
     ctx.launch_configurations['start_waypoint']='01'
     with pytest.raises(RuntimeError, match='v_base'):

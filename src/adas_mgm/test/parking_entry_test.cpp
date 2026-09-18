@@ -266,6 +266,29 @@ int main() {
     check(r.out.route.index==1 && r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0,
       "fresh route-04 acknowledgement resumes normal waypoint following");
   }
+  {
+    Run r; configure(r); start(r,MissionType::PARALLEL_PARKING); execute(r);
+    r.st.params.revised_v2_enabled=1; r.s.revised_v2=true;
+    r.s.sensor_alive_mask=0x7f; r.s.gps_fix_quality=4;
+    r.st.params.v_base=2.f; r.s.parking_v_suggest=-1.f;
+    endpoint(r);
+    check(r.out.mission_request.active && !r.out.mission_cancel && near(r.out.v_ref,-1.f),
+      "Yongin parallel entry retains CSV mission at route endpoint and module speed");
+    r.s.parking_v_suggest=1.f; r.tick();
+    check(r.out.mission_request.active && near(r.out.v_ref,1.f),
+      "Yongin parallel retrace keeps forward module speed");
+    r.s.parking_v_suggest=0; r.s.vehicle_speed=0; r.s.parking_done=true; r.tick();
+    check(r.out.active_mission_completed && r.out.route.phase==RoutePhase::WAIT_ACK,
+      "Yongin parallel releases next route only after acknowledged exit completion");
+  }
+  {
+    Run r; configure(r); start(r,MissionType::PARALLEL_PARKING);
+    r.st.params.revised_v2_enabled=1; r.s.revised_v2=true;
+    r.s.sensor_alive_mask=0x7f; r.s.gps_fix_quality=4;
+    endpoint(r);
+    check(r.out.mission_request.active && !r.out.mission_cancel && r.out.v_ref==0,
+      "Yongin parallel without ready stays stopped at route endpoint");
+  }
   std::printf("parking_entry_test: %d checks, %d failures\n",checks,failures);
   return failures?1:0;
 }

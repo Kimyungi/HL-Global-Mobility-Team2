@@ -664,6 +664,7 @@ def build_launch_description(
             launch_arguments={
                 'start_multi_lidar': 'true',
                 't_reference_enabled': LaunchConfiguration('t_reference_enabled', default='false'),
+                'parking_course_catalog': LaunchConfiguration('parking_course_catalog', default=''),
                 't_reference_origin_csv': LaunchConfiguration('t_reference_origin_csv', default=''),
                 't_reference_route_csv': LaunchConfiguration('t_reference_route_csv', default=''),
                 't_reference_reverse_1_csv': LaunchConfiguration('t_reference_reverse_1_csv', default=''),
