@@ -353,10 +353,10 @@ class TwoReferenceParking:
             return self._out()
         preview = min(int(np.searchsorted(candidate.s, candidate.s[self.index] + cfg.preview)), len(candidate.path)-1)
         self.reason = 'reverse_docking' if docking else 'reverse_tracking'
-        # Reverse references use a virtual origin 0.4 m behind the measured
+        # Reverse references use a virtual origin 0.5 m behind the measured
         # vehicle, along its own x axis. Shift in the shared metric frame first,
         # then rotate/translate the reference into that virtual local frame.
-        reference_pose = Pose2(pose.x - 0.4 * math.cos(pose.yaw),
-                               pose.y - 0.4 * math.sin(pose.yaw), pose.yaw)
+        reference_pose = Pose2(pose.x - 0.5 * math.cos(pose.yaw),
+                               pose.y - 0.5 * math.sin(pose.yaw), pose.yaw)
         return self._out(-cfg.dock_speed if docking else -cfg.reverse_speed,
                          local_reference(candidate.path[preview], reference_pose))

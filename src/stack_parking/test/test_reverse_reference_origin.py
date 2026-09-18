@@ -20,9 +20,9 @@ def test_reverse_origin_is_shifted_on_vehicle_x_before_local_conversion(yaw):
     core.phase, core.selected = 'REVERSE', 0
     out = core.tick(1., pose, 1., -.5, 1., None, None, parking_owned=True)
     assert out.v_suggest < 0
-    # The selected point is 2 m behind the measured vehicle, but 1.6 m
+    # The selected point is 2 m behind the measured vehicle, but 1.5 m
     # behind the virtual vehicle origin. Lateral position/heading are unchanged.
-    assert out.reference.x == pytest.approx(-1.6)
+    assert out.reference.x == pytest.approx(-1.5)
     assert out.reference.y == pytest.approx(.4)
     assert out.reference.yaw == pytest.approx(.1)
     assert out.reference.curvature == .02
