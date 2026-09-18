@@ -39,7 +39,7 @@
 변경	scripts/v2
 변경	scripts/v2_check.py
 추가	scripts/test_revised_v2_launch.py
-변경	RUN_BOOK_FINAL.md
+변경	RUN_BOOK_HALLA_FINAL.md
 변경	AGENTS.md
 변경	docs/MGM_STATE_MACHINE_CHANGE_NOTES.md
 변경	docs/MBD_KIT.md

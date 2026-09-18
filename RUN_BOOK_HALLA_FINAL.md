@@ -1,4 +1,4 @@
-# RUN_BOOK_FINAL
+# RUN_BOOK_HALLA_FINAL
 
 현재 상태 머신: **스테이트 v09.17** ([명세·상태 점검](docs/STATE_V09_17.md)).
 
@@ -108,24 +108,59 @@ traffic_zone_active: false
 실측 방위가 아니라 차량 배치에 대한 가정입니다. 주행 중 IMU 재연결이나 정렬
 손실이 발생하면 경로 방향으로 강제 복귀하지 않고 기존 COG 재정렬을 기다립니다.
 
-**터미널 1**에서 GPS 상태 표시만 Ctrl-C로 종료한 뒤 실행합니다.
+### 3-1. 실행 시점
+
+매번 새로운 주행을 시작할 때 실행합니다. 1번에서 GPS FIXED를 확인하고,
+2번의 장치 점검을 끝낸 뒤 **터미널 1**에서 GPS 상태 표시를 Ctrl+C로 종료합니다.
+GPS/RTCM 연결은 유지됩니다. 차량은 선택할 경로의 진행 방향으로 배치합니다.
+이미 주행 런처가 실행 중이면 아래 5번 순서로 종료한 뒤 실행합니다.
+
+### 3-2. 시작 경로와 속도를 질문받아 실행 — 기본 사용법
 
 ```bash
 cd /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main
-scripts/v2 prepare \
-  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-  parking_enabled:=true parking_zone_entry_active:=true t_reference_enabled:=true \
-  avoidance_enabled:=true avoid_zone_only:=true \
-  waypoint_avoid:=true avoid_v2_enabled:=false \
-  zone_enter_confirm_samples:=5 zone_exit_confirm_samples:=5 \
-  traffic_enabled:=true rviz:=true
+scripts/v2 prepare REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
 ```
 
-위 명령을 실행하면 **시작 경로 번호 → 일반 주행 목표속도(m/s)** 순서로 질문합니다.
-예를 들어 `01`, `2.0`을 입력하면 해당 실행의 `v_base=2.0m/s`가 됩니다.
-빈 입력은 이전 값을 재사용하지 않습니다. 0·음수·NaN·무한대는 거부합니다.
-자동 실행에서는 `start_waypoint:=01 end_waypoint:=07 v_base:=2.0`을 명시해야 합니다.
-일반 주행 속도 입력은 회피 목표속도 1m/s나 주차 모듈의 자체 목표속도를 변경하지 않습니다.
+명령 실행 후 같은 터미널에 **시작 경로 번호 → 일반 주행 목표속도(m/s)** 순서로 입력합니다.
+각 값을 입력하고 Enter를 누릅니다. 다음은 경로 01, 일반 주행 2m/s를 선택한 예시입니다.
+
+```text
+시작 CSV 선택: halla_0919_path_01.csv ~ 07.csv
+시작 경로 번호 (기본값 없음): 01
+일반 주행 목표속도 v_base [m/s] (기본값 없음): 2.0
+[v2] 일반 주행 목표속도: 2.0 m/s
+[v2] 시작 경로: 01 / 종료 경로: 07
+[v2 drive] general driving v_base: 2 m/s
+```
+
+입력한 값은 **이번 런처 실행에만 적용**됩니다. 다음 실행에서는 다시 질문하며,
+빈 입력으로 이전 속도나 0.5m/s를 재사용하지 않습니다. 0·음수·NaN·무한대는 거부합니다.
+`v_base`는 출발 순간의 속도가 아니라 **일반 주행 구간의 목표속도**입니다.
+회피 목표속도는 별도 설정인 1m/s이며, T 주차는 주차 모듈의 목표속도를 사용하되
+절댓값이 `v_base`를 넘지 않도록 제한됩니다.
+
+입력을 마치면 센서·CAN·RViz가 실행됩니다. **이 명령만으로 출발 인가가 나가지는 않습니다.**
+터미널 1은 켜 두고, 터미널 2의 `scripts/v2 state`에서 준비 상태를 확인한 뒤
+4번의 `scripts/v2 go`를 실행합니다.
+
+### 3-3. 질문 없이 경로와 속도를 직접 지정하는 방법
+
+값을 미리 정했거나 자동 실행할 때는 아래처럼 두 값을 명시합니다.
+`01`과 `2.0`을 이번 주행에 사용할 경로와 속도로 바꿉니다.
+
+```bash
+scripts/v2 prepare \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  start_waypoint:=01 end_waypoint:=07 v_base:=2.0
+```
+
+경로만 지정하면 속도를 묻고, 속도만 지정하면 경로를 묻습니다.
+터미널 입력이 없는 자동 실행에서는 `start_waypoint`와 `v_base`를 둘 다 지정해야 합니다.
+종료 경로를 06으로 선택하려면 `end_waypoint:=06`을 추가합니다.
+`prepare`와 `drive`에는 같은 입력 절차가 적용됩니다.
+
+### 3-4. 실제 적용되는 CSV와 주행 순서
 
 현재 `prepare/drive`는 PR #119의 `halla_0919` 경로를 사용합니다.
 
@@ -186,6 +221,18 @@ scripts/v2 go
 ```
 
 마지막 메시지가 MGM의 인가 확인입니다. 실제 이동은 현재 상태와 유효한 주행 경로에 따라 결정됩니다.
+
+## 5. 주행 종료 및 다음 주행의 경로·속도 변경
+
+1. **터미널 2**에서 `scripts/v2 stop`을 실행해 출발 인가를 해제하고 차량 정차를 확인합니다.
+2. **터미널 1**에서 Ctrl+C로 주행 런처를 종료하고 종료 메시지를 확인합니다.
+3. 다음 주행은 3-2의 `scripts/v2 prepare ...` 명령을 다시 실행해 경로와 속도를 새로 입력합니다.
+4. 센서 준비 확인 후 4번의 `scripts/v2 go`로 새 주행을 인가합니다.
+
+`go`를 다시 보내는 것만으로 경로·속도가 바뀌지는 않습니다. 실행 중인 런처의
+경로·속도를 바꾸려면 위 순서로 재시작합니다. **Ctrl+Z는 종료가 아니라 일시정지**이므로
+런처 종료에 사용하지 않습니다. 이전 프로세스가 남아 통신 자원을 점유할 수 있습니다.
+GPS 연결도 완전히 종료하려면 주행 런처 종료 후 `scripts/v2 gps-off`를 실행합니다.
 
 ## PR #117 장애물 회피 전용 런처
 

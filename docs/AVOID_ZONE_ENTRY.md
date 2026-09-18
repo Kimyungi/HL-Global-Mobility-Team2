@@ -71,7 +71,7 @@ Zone 정책 런처는 회피 노드에 `avoid.require_mgm_active=true`도 전달
   실제 기동 후 복귀, 완료 표식 재진입 차단, 주차/disable/독립 후진 우선권.
 - `test_v2_launch.py`: 기본 Zone 정책이 MGM 파라미터까지 전달되는지 확인.
 
-실행 순서는 저장소 루트의 `RUN_BOOK_FINAL.md`를 따른다.
+실행 순서는 저장소 루트의 `RUN_BOOK_HALLA_FINAL.md`를 따른다.
 
 검증 결과: MGM 빌드와 CTest 26/26 통과, GPS·런처·주행 준비 Python 검사 통과,
 회피 노드·활성화 피드백·경로별 표식 전달 Python 검사 통과.

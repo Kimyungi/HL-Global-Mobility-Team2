@@ -4,7 +4,7 @@
 
 사용자가 2026-09-16 확정 상태 머신의 명칭을 **스테이트 v09.16**으로 지정했다.
 기준은 `integration/v2_main`의 PR #109 구현과 후속 구형·미사용 상태 제외 변경이다.
-대상 실행 경로는 RUN_BOOK_FINAL.md의 `scripts/v2 prepare/drive`, `revised_v2_enabled=true`다.
+대상 실행 경로는 RUN_BOOK_HALLA_FINAL.md의 `scripts/v2 prepare/drive`, `revised_v2_enabled=true`다.
 소스에 남은 과거 프로파일과 실험 모드는 이 명칭의 실행 범위에 포함하지 않는다.
 이 이름은 상태 머신 명세 버전이다. raw dump 형식 버전 v35와는 별개다.
 

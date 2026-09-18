@@ -27,5 +27,5 @@ scripts/v2 check 및 git diff --check 통과.
 lidar_only_estop_test가 짧은 TTC/avoidable=false의 주행, 독립 E-stop 발동/해제,
 빈 참조와 E-stop 구분, 무장애물·무차선의 GPS 대체, GPS까지 없을 때 보류,
 신호 해제 중 독립 E-stop 유지, CSV 전환을 검증한다.
-RUN_BOOK_FINAL.md 및 HTML의 TTC 표시도 현재 정책으로 정정했다.
+RUN_BOOK_HALLA_FINAL.md 및 HTML의 TTC 표시도 현재 정책으로 정정했다.
 실차 실행/인가 없이 오프라인 검증했다. 기존 통합 런처 재시작부터 적용된다.

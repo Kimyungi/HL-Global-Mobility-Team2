@@ -30,7 +30,7 @@
 > HTML 실험실 및 관련 도구는 로컬 전용으로 이번 PR에서 제외한다.
 
 > 2026-09-14 검출 거리: 앞범퍼 전방 3.5m 미만, 좌우 ±0.5m. 검출 유지 +0.4m(3.9m).
-> 속도 2m/s, 회피점 station+2.7m 복귀, 기존 TTC 기준 유지. 상세 RUN_BOOK_FINAL.md.
+> 속도 2m/s, 회피점 station+2.7m 복귀, 기존 TTC 기준 유지. 상세 RUN_BOOK_HALLA_FINAL.md.
 
 > 2026-09-14 회피 목표점: 최근접 거리는 검출·TTC 전용. 관련 연결 면의 앞뒤 범위와
 > 원래 끝점·극점에서 후보 단면을 잡고, 선분+여유 원의 합집합으로 실제 점유 구간을
@@ -42,7 +42,7 @@
 > 센서별 freshness를 독립 판정하며, `MgmState.sensor_alive_mask`로 보고한다.
 > 운영자/CAN 정지, AUTO_ESTOP 및 제어점 부재 출력 대기(`reference_motion_blocked`)는 별도.
 > dump v29. 아래 과거 개별 입력 상실 SAFE_STOP 규칙보다 이 설정이 우선한다.
-> 기존 출발 인가 조건은 유지. 상세 `RUN_BOOK_FINAL.md`.
+> 기존 출발 인가 조건은 유지. 상세 `RUN_BOOK_HALLA_FINAL.md`.
 
 > 2026-09-14 주행 준비 변경: `scripts/v2 prepare`는 전체 스택을 준비하고,
 > GPS/RTCM은 별도 상주 서비스로 유지한다. `go`는 카메라 프레임 **또는**

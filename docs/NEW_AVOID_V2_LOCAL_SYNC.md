@@ -6,7 +6,7 @@
 - `integration/v2_main`을 PR #102 머지 커밋 `432ab19`까지 fast-forward했다.
 - 기존 로컬 수정은 stash 및 별도 압축 백업 후 재적용했다. Path 04 단독 선택,
   GPS map 시각화, GPS 복귀 중 1m/s 상한과 이전 회피 시험 코드를 보존했다.
-- 사용자 RUN_BOOK_FINAL 3번 명령은 기본 `avoid_v2_enabled=true`로
+- 사용자 RUN_BOOK_HALLA_FINAL 3번 명령은 기본 `avoid_v2_enabled=true`로
   `stack_avoid_v2/avoid_v2_node`와 MGM의 `/avoid_v2/plan` 입력을 선택한다.
   기존 회피 노드는 실행 조건이 false다. `avoid_compute_backend:=native`는
   이 새 C++ 플래너를 이전 fixed_goals로 바꾸지 않는다.
@@ -45,7 +45,7 @@ Zone 이탈 후 회피 유지, 스캔 소실/HOLD 및 복구를 확인했다. �
 확인 당시 `/dev/lidar_front`, `/dev/lidar_rear`, `/dev/lidar_left`, `/dev/lidar_right`,
 `can0`와 USB serial 장치가 없었으며, GPS 상주 서비스는 유지 중이나 FIX=0이었다.
 따라서 실제 센서/MGM/CAN 스택 재기동 확인은 완료하지 못했다. 출발 인가는 보내지 않았다.
-장치 연결 후 RUN_BOOK_FINAL 1~3번 절차와 동일한 prepare 명령을 사용한다.
+장치 연결 후 RUN_BOOK_HALLA_FINAL 1~3번 절차와 동일한 prepare 명령을 사용한다.
 
 ## 백업과 원시 로그
 
