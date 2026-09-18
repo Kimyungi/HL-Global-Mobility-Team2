@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-echo "Retired avoidance entry excluded. Use scripts/v2 prepare; see RUN_BOOK_FINAL.md." >&2
+echo "Retired avoidance entry excluded. Use scripts/v2 prepare; see RUN_BOOK_HALLA_FINAL.md." >&2
 exit 2
 
 # Historical implementation below is intentionally unreachable.

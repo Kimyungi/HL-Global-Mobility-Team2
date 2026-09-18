@@ -1,7 +1,7 @@
 # 주행 분석 기록
 
 각 날짜별 문서는 당시 코드와 로그를 분석한 역사적 기록이다. 현재 운용 정책은
-`RUN_BOOK_FINAL.md`와 `docs/AVOID_STATION_PATH.md`를 따른다.
+`RUN_BOOK_HALLA_FINAL.md`와 `docs/AVOID_STATION_PATH.md`를 따른다.
 
 이번 PR에는 분석 보고서와 경로 문서의 예시 그림만 포함한다. 보고서에서 언급하는
 원시 주행 로그, 대용량 CSV/바이너리, 임시 재생 실행 파일 및 HTML 실험 도구는

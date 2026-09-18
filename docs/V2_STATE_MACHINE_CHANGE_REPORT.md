@@ -91,7 +91,7 @@ MGM이 `MgmState.estop_request_id`를 발행합니다. 향후 회복주행 실�
 
 ## 관련 파일
 
-- [실행용 런북](../RUN_BOOK_FINAL.md)
+- [실행용 런북](../RUN_BOOK_HALLA_FINAL.md)
 - [인터뷰 ESTOP 메모](MGM_STATE_MACHINE_CHANGE_NOTES.md)
 - [HTML 보고서](V2_STATE_MACHINE_CHANGE_REPORT.html)
 - [변경 전 상태 표 — 비교용 보관본](V2_MAIN_STATE_TRANSITIONS.html)

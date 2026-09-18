@@ -3,7 +3,7 @@
 2026-09-17 사용자 지시에 따라 마지막 미션을 전체 상태 머신에 통합하고
 현재 명칭을 **스테이트 v09.17**로 변경했다. 기존 v09.16에 MGM 마지막 미션 전이,
 YOLO 관측 노드, GPS 분기 인계와 종료 처리를 추가한 버전이다.
-대상 실행 경로는 RUN_BOOK_FINAL.md의 `scripts/v2 prepare/drive`, `revised_v2_enabled=true`다.
+대상 실행 경로는 RUN_BOOK_HALLA_FINAL.md의 `scripts/v2 prepare/drive`, `revised_v2_enabled=true`다.
 소스에 남은 과거 프로파일과 실험 모드는 이 명칭의 실행 범위에 포함하지 않는다.
 이 이름은 상태 머신 명세 버전이다. raw dump 형식 버전 v38과는 별개다.
 
