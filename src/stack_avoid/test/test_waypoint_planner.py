@@ -272,7 +272,7 @@ class WaypointTests(unittest.TestCase):
             self.assertFalse(r.avoid_event(2))
 
     def test_selected_user_route_contains_state_four_marker(self):
-        path = SRC/'stack_gps/waypoints/waypoints_halla_20260916_path_04.csv'
+        path = SRC/'stack_gps/waypoints/halla_0919_path_04.csv'
         with path.open(encoding='utf-8') as f:
             rows = list(csv.DictReader(f))
         self.assertEqual(list(dict.fromkeys(r['path_id'] for r in rows)), ['4'])

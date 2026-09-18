@@ -6,7 +6,7 @@ from stack_gps.path_engine import PathEngine,load_waypoints_csv
 out=[]
 for hz in (5,10):
  for phase in (0.,.25,.5,.75):
-  e=PathEngine(load_waypoints_csv(root/'src/stack_gps/waypoints/waypoints_halla_20260916_path_03.csv'),station_tracking=True)
+  e=PathEngine(load_waypoints_csv(root/'src/stack_gps/waypoints/halla_0919_path_03.csv'),station_tracking=True)
   hits=[]
   for n,t in enumerate(np.arange(phase/hz,e.station[-1]/2,1/hz)):
    station=2*t;x=np.interp(station,e.station,e.e);y=np.interp(station,e.station,e.n)

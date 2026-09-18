@@ -50,7 +50,7 @@ def test_halla_shared_zone_matches_csv_zone_3_and_keeps_missions():
     from pathlib import Path
     root = Path(__file__).parents[1] / 'waypoints'
     for number in range(1, 8):
-        csv_path = root / f'waypoints_halla_20260916_path_{number:02d}.csv'
+        csv_path = root / f'halla_0919_path_{number:02d}.csv'
         rows = list(csv.DictReader(csv_path.open()))
         engine = PathEngine([(float(r['lat']), float(r['lon'])) for r in rows])
         zone_path = root / f'zones_halla_20260916_path_{number:02d}.yaml'

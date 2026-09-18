@@ -44,7 +44,7 @@ def test_each_selected_start_resolves_to_its_registered_csv(start):
         ROOT / 'src/stack_gps/waypoints/halla_route_sequence.yaml', start, end)
     routes = selected['routes']
     assert routes[0]['id'] == start
-    assert routes[0]['file'].endswith(f'waypoints_halla_20260916_path_{start}.csv')
+    assert routes[0]['file'].endswith(f'halla_0919_path_{start}.csv')
     assert routes[-1]['id'] == end
 
 

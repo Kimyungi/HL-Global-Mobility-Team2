@@ -12,7 +12,7 @@ from stack_gps.route_plan import RoutePlan
 from stack_gps.zones import ZoneMap
 
 DATA = Path(__file__).parents[1] / 'waypoints'
-SOURCE = DATA / 'reference_paths_01_to_07_split_parking_20260916.csv'
+SOURCE = DATA / 'halla_0919.csv'
 
 
 def read_csv(file):
@@ -32,7 +32,7 @@ class HallaMap20260916Tests(unittest.TestCase):
     def test_split_csvs_preserve_every_column_and_row(self):
         self.assertEqual(len(self.source), 901)
         for i, rows in self.groups.items():
-            self.assertEqual(read_csv(DATA / f'waypoints_halla_20260916_path_{i:02d}.csv'), rows)
+            self.assertEqual(read_csv(DATA / f'halla_0919_path_{i:02d}.csv'), rows)
             self.assertEqual([int(r['idx']) for r in rows], list(range(len(rows))))
 
     def test_boundary_3_4_preserved_and_4_5_tail_trimmed(self):
@@ -98,7 +98,7 @@ class HallaMap20260916Tests(unittest.TestCase):
             for end in ('06','07'):
                 plan=RoutePlan(DATA / 'halla_route_sequence.yaml',start,end)
                 self.assertEqual([r.id for r in plan.files],[start,'03','04','05',end])
-                self.assertTrue(all('20260916' in r.csv.name and '20260916' in r.zones.name for r in plan.files))
+                self.assertTrue(all('halla_0919' in r.csv.name and '20260916' in r.zones.name for r in plan.files))
                 self.assertTrue(all(not r.entry_connection and r.completion == 0 for r in plan.files))
                 for previous,current in zip(plan.files,plan.files[1:]):
                     a,b=previous.points[-1],current.points[0]
@@ -114,13 +114,13 @@ class HallaMap20260916Tests(unittest.TestCase):
             row=self.groups[i][index]
             self.assertEqual(point['mode'],mode)
             self.assertEqual((point['lat'],point['lon']),(float(row['lat']),float(row['lon'])))
-        self.assertEqual(avoidance_marker_range(DATA / 'waypoints_halla_20260916_path_04.csv'),[(77,205)])
+        self.assertEqual(avoidance_marker_range(DATA / 'halla_0919_path_04.csv'),[(77,205)])
 
     def test_zone_endpoints_use_retained_coordinates(self):
         for i,rows in self.groups.items():
             available={(float(r['lat']),float(r['lon'])) for r in rows}
             zones=yaml.safe_load((DATA / f'zones_halla_20260916_path_{i:02d}.yaml').read_text(encoding='utf-8'))
-            self.assertEqual(zones['track'],f'waypoints_halla_20260916_path_{i:02d}.csv')
+            self.assertEqual(zones['track'],f'halla_0919_path_{i:02d}.csv')
             for key in ('gps_only_zones','avoid_zones','turn_zones'):
                 for interval in zones[key]:
                     for end in ('start','end'):
