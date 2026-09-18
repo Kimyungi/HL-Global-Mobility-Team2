@@ -95,6 +95,27 @@ class SequenceTests(unittest.TestCase):
                 self.assertTrue(out.done)
                 self.assertEqual(self.history,['STOP_SELECT','ADVANCE_3','STOP_REVERSE','REVERSE','WAIT_10','EXIT','EXIT_STOP','DONE'])
 
+    def test_endpoint_without_wall_continues_through_wait_and_forward_exit(self):
+        self.to_reverse()
+        for p in self.paths[self.free].path:
+            self.pose = Pose2(p.x, p.y, p.yaw)
+            out = self.tick(rear=rear(self.now+.1, 2.))
+            self.assertNotEqual(out.phase, 'FAULT', out.reason)
+        for _ in range(8):
+            out = self.tick(rear=rear(self.now+.1, 2.))
+            if out.phase == 'WAIT_10': break
+        self.assertEqual(out.phase, 'WAIT_10')
+        for _ in range(99):
+            self.assertEqual(self.tick().phase, 'WAIT_10')
+        while self.core.phase == 'WAIT_10': self.tick()
+        for p in self.core.exit_path:
+            self.pose = Pose2(p.x, p.y, p.yaw)
+            out = self.tick()
+            self.assertIn(out.speed, (0., .5))
+        self.assertEqual(out.phase, 'EXIT_STOP')
+        for _ in range(7): out = self.tick()
+        self.assertTrue(out.done)
+
     def test_selection_is_at_state_trigger_not_reverse_start(self):
         self.select()
         self.assertGreater(math.hypot(self.pose.x,self.pose.y),1)

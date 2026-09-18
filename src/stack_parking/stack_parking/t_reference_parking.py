@@ -288,6 +288,12 @@ class TwoReferenceParking:
         else:
             self.stopped_since = None
         stationary = self.stopped_since is not None and now - self.stopped_since >= cfg.stop_hold
+        if self.phase == 'END_STOP':
+            if not fresh(speed_stamp, now, cfg.feedback_timeout):
+                self.stopped_since = None
+            elif stationary:
+                self.phase, self.reason = 'SUCCESS', 'path_end_and_stationary'
+            return self._out()
         if self.phase == 'STOPPING':
             if not stationary:
                 return self._out()
@@ -342,7 +348,8 @@ class TwoReferenceParking:
             self.stopped_since = None
             return self._out()
         if remaining <= 0.01:
-            self.phase, self.reason = 'FAULT', 'path_end_without_rear_wall'
+            self.phase, self.reason = 'END_STOP', 'path_end_stop'
+            self.stopped_since = None
             return self._out()
         preview = min(int(np.searchsorted(candidate.s, candidate.s[self.index] + cfg.preview)), len(candidate.path)-1)
         self.reason = 'reverse_docking' if docking else 'reverse_tracking'

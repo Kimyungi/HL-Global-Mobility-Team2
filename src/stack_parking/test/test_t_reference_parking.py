@@ -189,12 +189,23 @@ class ReferenceParkingTests(unittest.TestCase):
         self.assertLess(out.v_suggest, 0)
         self.assertFalse(out.parking_success)
 
-    def test_no_wall_at_csv_end_is_not_success(self):
-        pose = self.near_end()
+    def test_csv_end_succeeds_after_fresh_stationary_confirmation_without_wall(self):
+        self.near_end()
         p = self.paths[0].path[-1]
+        pose = Pose2(p.x, p.y, p.yaw)
         self.core.index = len(self.paths[0].path)-1
-        out = self.tick(.9, pose=Pose2(p.x, p.y, p.yaw))
-        self.assertEqual(out.reason, 'path_end_without_rear_wall')
+        out = self.tick(.9, pose=pose, rear=None, speed=-.5)
+        self.assertEqual(out.phase, 'END_STOP')
+        self.assertEqual(out.v_suggest, 0.)
+        self.assertFalse(out.parking_success)
+        self.assertFalse(self.tick(1.5, pose=pose, rear=None, speed=-.1).parking_success)
+        self.assertFalse(self.tick(1.6, pose=pose, rear=None).parking_success)
+        self.assertFalse(self.tick(2.2, pose=pose, rear=None, speed_stamp=1.6).parking_success)
+        self.assertFalse(self.tick(2.3, pose=pose, rear=None).parking_success)
+        out = self.tick(2.9, pose=pose, rear=None)
+        self.assertTrue(out.parking_success)
+        self.assertEqual(out.reason, 'path_end_and_stationary')
+        self.assertEqual(out.v_suggest, 0.)
 
     def test_estop_holds_without_changing_selected_path(self):
         self.select()
