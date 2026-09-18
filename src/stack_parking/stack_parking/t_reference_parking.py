@@ -43,7 +43,7 @@ class Config:
     reverse_speed: float = 0.7
     dock_speed: float = 0.7
     forward_speed: float = 0.7
-    preview: float = 1.5
+    preview: float = 1.0
     dock_remaining: float = 2.0
     start_tolerance: float = 0.30
     yaw_tolerance: float = math.radians(20)
