@@ -813,7 +813,7 @@ class StackTrafficNode(Node):
         # 하단 RGB 정지선 + OAK 정렬 depth 진단. 정지 임계값 0은 출력만 한다.
         self.declare_parameter("stopline_detection_enabled", False)
         self.declare_parameter("stopline_model_path", "")
-        self.declare_parameter("stopline_yolo_confidence_threshold", 0.35)
+        self.declare_parameter("stopline_yolo_confidence_threshold", 0.30)
         self.declare_parameter("stopline_yolo_image_size", 640)
         self.declare_parameter("stopline_roi_x_min", 0.08)
         self.declare_parameter("stopline_roi_y_min", 0.48)

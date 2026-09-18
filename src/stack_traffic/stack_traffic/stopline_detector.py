@@ -128,7 +128,7 @@ def detect_stop_line_from_yolo_result(
     result,
     frame_shape: Tuple[int, ...],
     roi_bbox: BBox,
-    confidence_threshold: float = 0.35,
+    confidence_threshold: float = 0.30,
     class_name: str = "stop_line",
 ) -> StopLineDetection:
     """YOLO segmentation 결과를 기존 거리 판단용 형식으로 변환한다.
