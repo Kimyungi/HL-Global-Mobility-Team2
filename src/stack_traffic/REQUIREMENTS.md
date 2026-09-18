@@ -51,6 +51,16 @@
 
 ## 정지선 판정
 
+- 신규 정지선 검출은 `stopline_yolo_confidence_threshold=0.35` 이상이다.
+  한 번 검출한 뒤 위치·크기가 이어지는 후보는
+  `stopline_tracking_confidence_threshold=0.20` 이상까지 유지한다.
+  낮은 신뢰도 후보는 이전 bbox와 가로·세로 크기 유사도가 각각 0.5 이상이며,
+  IoU가 0.1 이상이거나 중심 이동이 이전 bbox 대각선의 0.1 이내여야 한다.
+- 실제 정지선 추론에서 `stopline_tracking_max_missed_frames=3`회 연속
+  놓치면 추적을 해제한다. 신호등만 추론한 프레임은 miss로 세지 않는다.
+  정지선 검출 페이즈 종료 시에도 추적을 초기화한다.
+  추적 해제 후에는 다시 신규 검출 문턱을 넘어야 하며, 기존 3/5 안정화는 유지한다.
+
 - `models/stopline_yolov8s_seg.pt`의 `stop_line` segmentation만 사용한다.
   삭제된 색상·CLAHE·Canny/Hough 검출 경로로 폴백하지 않는다.
 - 전체 프레임 문맥으로 추론한 뒤 하단 search ROI와 겹치는 정지선 mask만 사용한다.

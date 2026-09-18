@@ -47,6 +47,48 @@ class FakeOakCamera:
 
 
 class TestNodeInitialization(unittest.TestCase):
+    def test_stopline_tracking_threshold_and_miss_reset(self):
+        from types import SimpleNamespace
+        rclpy.init(args=['--ros-args', '-p', 'camera_backend:=oak',
+                        '-p', 'stopline_detection_enabled:=true'])
+        node = None
+        try:
+            with patch('stack_traffic.node.YOLO',
+                       side_effect=[FakeYolo('traffic'), FakeStopLineYolo('stopline')]), \
+                 patch('stack_traffic.node.OakRgbdCamera', FakeOakCamera):
+                node = StackTrafficNode()
+            frame = np.zeros((360, 640, 3), dtype=np.uint8)
+            def result(score):
+                return SimpleNamespace(
+                    orig_shape=(360, 640), names={0: 'stop_line'},
+                    boxes=SimpleNamespace(cls=[0], conf=[score]),
+                    masks=SimpleNamespace(xy=[np.asarray(
+                        [[100, 250], [500, 250], [500, 270], [100, 270]], dtype=np.float32)]))
+            with patch.object(node.stopline_model, 'predict') as predict:
+                predict.return_value = [result(.2)]
+                self.assertFalse(node._process_stopline(frame, None).detection.detected)
+                self.assertEqual(predict.call_args.kwargs['conf'], .35)
+                predict.return_value = [result(.35)]
+                self.assertTrue(node._process_stopline(frame, None).detection.detected)
+                predict.return_value = [result(.2)]
+                node._process_stopline(frame, None)
+                runtime = node._process_stopline(frame, None)
+                self.assertTrue(runtime.stable)
+                self.assertEqual(predict.call_args.kwargs['conf'], .2)
+                predict.return_value = []
+                for _ in range(3):
+                    node._process_stopline(frame, None)
+                self.assertIsNone(node.stopline_tracked_bbox)
+                predict.return_value = [result(.2)]
+                self.assertFalse(node._process_stopline(frame, None).detection.detected)
+                self.assertEqual(predict.call_args.kwargs['conf'], .35)
+                predict.return_value = [result(.4)]
+                node._process_stopline(frame, None)
+        finally:
+            if node is not None:
+                node.destroy_node()
+            rclpy.shutdown()
+
     def test_yolo_import_failure_preserves_original_error(self):
         os.environ["ROS_LOG_DIR"] = "/tmp/stack_traffic_test_ros_logs"
         original_error = RuntimeError(
