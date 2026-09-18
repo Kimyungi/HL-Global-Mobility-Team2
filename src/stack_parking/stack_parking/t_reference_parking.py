@@ -40,10 +40,10 @@ class Config:
     wall_min_points: int = 6
     wall_min_width: float = 0.25
     wall_residual: float = 0.025
-    reverse_speed: float = 2.0
-    dock_speed: float = 2.0
-    forward_speed: float = 2.0
-    preview: float = 2.5
+    reverse_speed: float = 1.5
+    dock_speed: float = 1.5
+    forward_speed: float = 1.5
+    preview: float = 1.8
     dock_remaining: float = 2.0
     start_tolerance: float = 0.30
     yaw_tolerance: float = math.radians(20)
