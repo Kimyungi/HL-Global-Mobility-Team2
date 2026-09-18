@@ -149,6 +149,10 @@ if(BUILD_TESTING)
   target_link_libraries(parking_entry_test mgm_core)
   add_test(NAME parking_entry_test COMMAND parking_entry_test)
 
+  add_executable(traffic_zone_speed_test test/traffic_zone_speed_test.cpp)
+  target_link_libraries(traffic_zone_speed_test mgm_core)
+  add_test(NAME traffic_zone_speed_test COMMAND traffic_zone_speed_test)
+
   add_executable(fixed_speed_test test/fixed_speed_test.cpp)
   target_link_libraries(fixed_speed_test mgm_core)
   add_test(NAME fixed_speed_test COMMAND fixed_speed_test)
