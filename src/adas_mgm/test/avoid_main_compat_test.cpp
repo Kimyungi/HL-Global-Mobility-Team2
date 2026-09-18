@@ -93,7 +93,7 @@ void completion_and_return()
   r.tick(400);
   check(near(r.out.v_ref,1.f) && r.out.avoid==AvoidState::GPS_RETURN,
     "GPS return reaches navigation speed but elapsed time cannot release AVOID");
-  r.s.gps_cross_track=.1f; r.s.gps_station_yaw_error=0; r.tick();
+  r.s.gps_cross_track=.3f; r.s.gps_station_yaw_error=0; r.tick();
   check(r.out.avoid==AvoidState::INACTIVE && r.out.nav==NavState::LINE,
     "aligned station releases avoidance and reselects navigation without another hold");
   Run limited; configure(limited); limited.st.params.avoid_max_cycles=3;
@@ -112,7 +112,7 @@ void gps_return_guards_and_reverse_entry()
   r.s.avoid_obstacle_detected=false; r.s.avoid_maneuver_done=true; r.tick();
   r.s.avoid_maneuver_done=false;
   r.s.gps_heading_valid=r.s.gps_station_error_valid=true;
-  r.s.gps_cross_track=.1001f; r.s.gps_station_yaw_error=0;
+  r.s.gps_cross_track=.3001f; r.s.gps_station_yaw_error=0;
   r.tick(); check(r.out.avoid==AvoidState::GPS_RETURN,"lateral threshold must also pass");
   r.s.gps_cross_track=0; r.s.gps_station_yaw_error=20.001f*3.14159265358979323846f/180.f;
   r.s.gps_path.pts[0].yaw=0;
@@ -138,7 +138,7 @@ void gps_return_guards_and_reverse_entry()
   r.s.external_stop=true; r.tick();
   check(r.out.avoid==AvoidState::GPS_RETURN && r.out.v_ref==0,"external stop retains unaligned return");
   r.s.external_stop=false;
-  r.s.gps_cross_track=-.1f; r.s.gps_station_yaw_error=-20.f*3.14159265358979323846f/180.f;
+  r.s.gps_cross_track=-.3f; r.s.gps_station_yaw_error=-20.f*3.14159265358979323846f/180.f;
   r.s.gps_path.pts[0].yaw=1.f; r.tick();
   check(r.out.avoid==AvoidState::INACTIVE,
     "inclusive absolute error boundaries release return independently of preview yaw");

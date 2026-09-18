@@ -297,7 +297,7 @@ class FixedPlanner:
         """Measured pose aligned with the waypoint at the projected station."""
         station, _, _, distance = self.route.project_station(*pose[:2])
         yaw = self.route.at_station(station)[2]
-        return (distance <= .10 + 1e-9 and
+        return (distance <= .30 + 1e-9 and
                 abs(wrap_angle(pose[2]-yaw)) <= math.radians(20) + 1e-9)
 
     def preview(self, pose):

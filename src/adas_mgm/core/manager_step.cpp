@@ -47,7 +47,7 @@ bool gps_return_aligned(const CoreSnapshot & s)
   constexpr float kYawLimit = 20.0f * 3.14159265358979323846f / 180.0f;
   return gps_valid(s) && s.gps_heading_valid && s.gps_station_error_valid &&
     std::isfinite(s.gps_cross_track) && std::isfinite(s.gps_station_yaw_error) &&
-    std::fabs(s.gps_cross_track) <= 0.1f && std::fabs(s.gps_station_yaw_error) <= kYawLimit;
+    std::fabs(s.gps_cross_track) <= 0.3f && std::fabs(s.gps_station_yaw_error) <= kYawLimit;
 }
 void update_avoid_zone(const CoreSnapshot & s, CoreState & st)
 {

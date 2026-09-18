@@ -34,7 +34,7 @@ int main()
   check(r.out.avoid == AvoidState::AVOID_ACTIVE, "geographic exit cannot substitute for waypoint return");
   r.s.gps_avoid_zone = true; r.obstacle(); r.s.avoid_obstacle_detected = false; r.tick();
   check(r.out.avoid == AvoidState::GPS_RETURN, "completed maneuver begins GPS alignment even inside marker region");
-  r.s.gps_cross_track = .2f; r.tick(20);
+  r.s.gps_cross_track = .31f; r.tick(20);
   check(r.out.avoid == AvoidState::GPS_RETURN, "zone exit still requires GPS alignment");
   r.s.gps_cross_track = 0; r.tick();
   check(r.out.avoid == AvoidState::INACTIVE, "alignment releases zone episode");
@@ -118,7 +118,7 @@ int main()
   check(lane.st.lane_high_cnt == 0 && lane.st.lane_low_cnt == 0,
     "high lane confidence is also ignored throughout avoidance");
   lane.obstacle(); lane.s.avoid_obstacle_detected = false;
-  lane.s.avoid_maneuver_done = true; lane.s.gps_cross_track = .2f; lane.tick(100);
+  lane.s.avoid_maneuver_done = true; lane.s.gps_cross_track = .31f; lane.tick(100);
   check(lane.out.avoid == AvoidState::GPS_RETURN && lane.st.lane_high_cnt == 0 &&
     lane.st.lane_low_cnt == 0, "GPS return still suppresses lane confidence evaluation");
   lane.s.gps_cross_track = 0; lane.tick();

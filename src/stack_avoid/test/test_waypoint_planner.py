@@ -209,16 +209,16 @@ class WaypointTests(unittest.TestCase):
         self.assertEqual(late.samples, p.samples)
         self.assertIsNotNone(late.preview((6.0, 0., 0.)))
 
-    def test_return_requires_ten_cm_and_twenty_degrees(self):
+    def test_return_requires_thirty_cm_and_twenty_degrees(self):
         for curved in (False, True):
             p = FixedPlanner(route(curved, heading=3.0))
-            for lateral, angle, expected in ((.09, 19, True), (.11, 0, False),
+            for lateral, angle, expected in ((.29, 19, True), (.30, 0, True), (-.30, 0, True), (.31, 0, False),
                                               (0, 21, False), (0, -21, False)):
                 cp = p.point(12, lateral)
                 pose = (cp.x, cp.y, wrap_angle(cp.yaw+math.radians(angle)))
                 self.assertEqual(p.rejoined(pose), expected)
             p.accept(obstacle(p, 8, 1), 5)
-            cp = p.point(11.5, .3)
+            cp = p.point(11.5, .31)
             pose = (cp.x, cp.y, cp.yaw)
             self.assertTrue(p.advance(pose))
             self.assertFalse(p.samples)
@@ -244,10 +244,10 @@ class WaypointTests(unittest.TestCase):
         self.assertFalse(session.finish(p, (8, 0, 0)))  # still on fixed path
         self.assertTrue(p.advance((11.5, .3, 0)))
         session.passed_path()
-        self.assertFalse(session.finish(p, (11.5, .3, 0)))
+        self.assertFalse(session.finish(p, (11.5, .31, 0)))
         self.assertFalse(session.finish(p, (11.5, .09, math.radians(21))))
         session.observe_zone(True)
-        self.assertTrue(session.finish(p, (11.5, .10, math.radians(20))))
+        self.assertTrue(session.finish(p, (11.5, .30, math.radians(20))))
         self.assertTrue(session.done)
         session.observe_zone(True)
         self.assertFalse(session.active)
