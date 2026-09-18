@@ -78,7 +78,9 @@ def load_course(origin_csv, route_csv, parking_csvs):
         candidates.append(Candidate(Path(p).stem, path, candidate_station, csv_turn_end(rows, raw_s)))
     candidates = tuple(candidates)
     for c in candidates:
-        if math.hypot(c.path[0].x-approach[-1].x, c.path[0].y-approach[-1].y) > .03:
+        # halla_0919 straightening shifts the endpoint by 8 cm. Accept only
+        # gaps within the existing 14 cm forward endpoint arrival tolerance.
+        if math.hypot(c.path[0].x-approach[-1].x, c.path[0].y-approach[-1].y) > .14:
             raise ValueError('Route 03 end and parking start do not match')
     return candidates, approach, station
 

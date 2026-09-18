@@ -95,9 +95,9 @@ def main():
             messages[scans[0]].ranges=[.2]*10
             vehicle.v=0.
             expect(lambda s,r:s.estop_active and r.state==5 and r.v_ref==0,'upper ESTOP state 5')
-            pump(9.)
+            pump(5.)
             assert refs[-1].v_ref==0 and states[-1].estop_active
-            expect(lambda s,r:r.v_ref<0 and r.state==5,'10 second hold then reverse')
+            expect(lambda s,r:r.v_ref<0 and r.state==5,'6 second hold then reverse')
             assert refs[-1].ref_points[0].x<0
             started=time.monotonic()
             while time.monotonic()-started<6.:

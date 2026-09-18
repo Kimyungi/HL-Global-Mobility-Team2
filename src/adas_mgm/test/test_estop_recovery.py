@@ -13,13 +13,13 @@ class RecoveryTest(unittest.TestCase):
         return self.r.step(**args)
     def reverse(self):
         self.assertEqual(self.call(1),(0.,False))
-        self.assertEqual(self.call(10.99),(0.,False))
-        self.assertEqual(self.call(11),(-.3,False))
+        self.assertEqual(self.call(6.99),(0.,False))
+        self.assertEqual(self.call(7),(-.3,False))
     def test_full_sequence_and_actual_stop(self):
         self.reverse()
-        for n in range(1,36): self.call(11+n*.1,speed=-.3)
+        for n in range(1,36): self.call(7+n*.1,speed=-.3)
         self.assertEqual(self.r.phase,'SETTLE')
-        self.assertEqual(self.call(14.6),(0.,True))
+        self.assertEqual(self.call(10.6),(0.,True))
     def test_restart_inside_estop_does_not_repeat_reverse(self):
         self.r=Recovery();self.call(1);self.call(12)
         self.assertEqual(self.r.phase,'HOLD')
@@ -28,8 +28,8 @@ class RecoveryTest(unittest.TestCase):
         self.assertFalse(self.r.armed)
         self.assertEqual(self.call(1),(0.,False))
         self.assertTrue(self.r.armed)
-        self.assertEqual(self.call(10.99),(0.,False))
-        self.assertEqual(self.call(11),(-.3,False))
+        self.assertEqual(self.call(6.99),(0.,False))
+        self.assertEqual(self.call(7),(-.3,False))
     def test_missing_mgm_at_start_is_not_an_inactive_observation(self):
         self.r=Recovery()
         self.call(0,active=False,authorized=False,state_valid=False)
@@ -42,32 +42,33 @@ class RecoveryTest(unittest.TestCase):
         self.assertEqual(self.call(12,authorized=False),(0.,False))
         self.assertEqual(self.call(13,speed_stamp=1),(0.,False))
         self.assertEqual(self.call(14),(0.,False))
-        self.assertEqual(self.call(23.99),(0.,False))
-        self.assertEqual(self.call(24),(-.3,False))
+        self.assertEqual(self.call(19.99),(0.,False))
+        self.assertEqual(self.call(20),(-.3,False))
     def test_movement_resets_hold(self):
-        self.call(1);self.call(10,speed=.1);self.call(11)
-        self.assertEqual(self.call(20),(0.,False))
+        self.call(1); self.call(6.9, speed=.1); self.call(7)
+        self.assertEqual(self.call(12.99),(0.,False))
+        self.assertEqual(self.call(13),(-.3,False))
     def test_duplicate_speed_does_not_integrate(self):
-        self.reverse();self.call(11.1,speed=-.3,speed_stamp=11)
+        self.reverse();self.call(7.1,speed=-.3,speed_stamp=7)
         self.assertEqual(self.r.distance,0)
-        self.call(11.3,speed=-.3,speed_stamp=11)
+        self.call(7.3,speed=-.3,speed_stamp=7)
         self.assertEqual(self.r.phase,'FAULT')
     def test_rear_loss_sticky(self):
-        self.reverse();self.call(11.1,rear_clear=False)
-        self.assertEqual(self.call(11.2), (0.,False))
+        self.reverse();self.call(7.1,rear_clear=False)
+        self.assertEqual(self.call(7.2), (0.,False))
         self.assertEqual(self.r.phase,'FAULT')
     def test_authority_loss(self):
-        self.reverse();self.call(11.1,authorized=False)
+        self.reverse();self.call(7.1,authorized=False)
         self.assertEqual(self.r.phase,'FAULT')
     def test_five_second_timeout(self):
         self.reverse()
-        for n in range(1,51):self.call(11+n*.1)
+        for n in range(1,51):self.call(7+n*.1)
         self.assertEqual(self.r.phase,'FAULT')
     def test_wrong_direction(self):
-        self.reverse();self.call(11.1,speed=.1)
+        self.reverse();self.call(7.1,speed=.1)
         self.assertEqual(self.r.phase,'FAULT')
     def test_backward_clock(self):
-        self.reverse();self.call(10.9)
+        self.reverse();self.call(6.9)
         self.assertEqual(self.r.phase,'FAULT')
     def test_rear_required_to_start(self):
         self.call(1);self.call(12,rear_clear=False)

@@ -47,7 +47,7 @@ def test_waypoint_provider_is_exclusive_and_uses_selected_origin():
     context=LaunchContext()
     for item in description.entities:
         if isinstance(item,DeclareLaunchArgument): item.execute(context)
-    origin=str(ROOT/'src/stack_gps/waypoints/waypoints_halla_20260916_path_01.csv')
+    origin=str(ROOT/'src/stack_gps/waypoints/halla_0919_path_01.csv')
     context.launch_configurations.update(waypoint_avoid='true',avoid_v2_enabled='false',
         avoid_waypoint_csv=origin,avoid_route_origin_csv=origin,route_sequence_enabled_resolved='true',zones_file_resolved='')
     providers=[n for n in description.entities if isinstance(n,Node) and n.node_package in ('stack_avoid','stack_avoid_v2') and n.node_executable != 'can_zero']

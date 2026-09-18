@@ -25,34 +25,38 @@ v2_select_start() {
   done
   if (( ! v2_start_seen )); then
     if [[ ! -t 0 ]]; then
-      echo '시작 CSV를 선택해야 합니다. start_waypoint:=03으로 주차 시험 경로를 지정하세요.' >&2
+      echo '시작 CSV를 선택해야 합니다. start_waypoint:=01 등 01~07 경로를 지정하세요.' >&2
       return 2
     fi
-    echo '시작 CSV 선택: PR #116 경로 03 (parking_waypoint.csv)' >&2
+    echo '시작 CSV 선택: halla_0919_path_01.csv ~ 07.csv' >&2
     while :; do
       if ! read -r -p '시작 경로 번호 (기본값 없음): ' v2_start; then
         echo '시작 경로 입력이 종료되어 실행을 취소합니다.' >&2; return 2
       fi
       case "$v2_start" in
-        3) v2_start="0$v2_start"; break ;;
-        03) break ;;
-        *) echo '주차 시험 경로 03을 입력하세요.' >&2 ;;
+        [1-7]) v2_start="0$v2_start"; break ;;
+        0[1-7]) break ;;
+        *) echo '01~07 경로를 입력하세요.' >&2 ;;
       esac
     done
     V2_LAUNCH_ARGS+=("start_waypoint:=$v2_start")
   fi
   case "$v2_start" in
-    03) ;;
-    *) echo 'start_waypoint는 주차 시험 경로 03이어야 합니다.' >&2; return 2 ;;
+    0[1-7]) ;;
+    *) echo 'start_waypoint는 01~07이어야 합니다.' >&2; return 2 ;;
   esac
   if (( ! v2_end_seen )); then
-    # PR #116 ends on its only GPS route.
-    v2_end=03
+    # Terminal branches are alternatives, not consecutive legs.
+    v2_end=07
+    if [[ "$v2_start" == 06 ]]; then v2_end=06; fi
     V2_LAUNCH_ARGS+=("end_waypoint:=$v2_end")
   fi
   case "$v2_end" in
-    03) ;;
-    *) echo 'end_waypoint는 03이어야 합니다.' >&2; return 2 ;;
+    06|07) ;;
+    *) echo 'end_waypoint는 06 또는 07이어야 합니다.' >&2; return 2 ;;
   esac
+  if [[ "$v2_start" == 06 || "$v2_start" == 07 ]] && [[ "$v2_start" != "$v2_end" ]]; then
+    echo "종료 경로에서 시작하면 start/end가 같아야 합니다." >&2; return 2
+  fi
   echo "[v2] 시작 경로: $v2_start / 종료 경로: $v2_end" >&2
 }

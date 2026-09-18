@@ -31,7 +31,7 @@ RTCM    580 B/s | FIXED (FIX=4) | 누적 11780 B | GPS PID=12345
 
 현재 구조에서는 **3번 런처가 라이다 4대·차선 카메라 등 주행 센서를 초기화**하고,
 1번에서 연결한 GPS를 재사용합니다. 별도의 전체 센서 초기화 명령은 없습니다.
-현재 PR #116 경로에는 신호등 구간이 없으므로 신호등 감지 모듈 OFF가 정상입니다.
+현재 halla_0919 코스에서는 zone [3]의 신호등/GPS 구간 진입에 따라 감지 모듈이 활성화됩니다.
 
 **터미널 2 — 런처 실행 전 장치 연결·접근 권한 확인:**
 
@@ -98,7 +98,7 @@ traffic_zone_active: false
 차선 검출·실제 이동 가능 여부는 별도로 판단합니다.
 확인 후 터미널 2에서 Ctrl-C를 누르면 상태 표시만 종료됩니다.
 
-## 3. 주행 런쳐 코드 — PR #116 단일 경로 03
+## 3. 주행 런쳐 코드 — halla_0919 전체 코스 (PR #119)
 
 초기 차량 전방을 선택한 경로의 진행 방향에 맞춥니다. v2는 첫 유효한 RTK FIXED
 위치에서 가장 가까운 웨이포인트의 진행 방향과 신선한 IMU yaw로 초기 헤딩을
@@ -114,28 +114,35 @@ traffic_zone_active: false
 cd /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main
 scripts/v2 prepare \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-  start_waypoint:=03 end_waypoint:=03 \
+  start_waypoint:=01 end_waypoint:=07 \
   parking_enabled:=true parking_zone_entry_active:=true t_reference_enabled:=true \
   avoidance_enabled:=true avoid_zone_only:=true \
   waypoint_avoid:=true avoid_v2_enabled:=false \
   zone_enter_confirm_samples:=5 zone_exit_confirm_samples:=5 \
-  traffic_enabled:=true rviz:=true v_base:=2.0
+  traffic_enabled:=true rviz:=true v_base:=0.5
 ```
 
-현재 런처는 PR #116의 CSV 3개를 사용합니다.
+현재 `prepare/drive`는 PR #119의 `halla_0919` 경로를 사용합니다.
 
-- `parking_waypoint.csv`: 진입 경로 03, 49점, 약 11.77m.
-- `parking_waypoint_rev1.csv`: 후진 후보 1, 33점, 약 7.68m.
-- `parking_waypoint_rev2.csv`: 후진 후보 2, 39점, 약 9.17m.
+- 통합 원본: `src/stack_gps/waypoints/halla_0919.csv` (901점, 확인용)
+- 실행 CSV: `halla_0919_path_01.csv`, `halla_0919_path_02.csv`,
+  `halla_0919_path_03.csv`, `halla_0919_path_04.csv`, `halla_0919_path_05.csv`,
+  `halla_0919_path_06.csv`, `halla_0919_path_07.csv` (모두 같은 waypoints 폴더)
+- 주차 후진 후보: `src/stack_parking/config/parking_ref_01.csv`, `parking_ref_02.csv`.
+  PR #116의 별도 시험장 좌표 `parking_waypoint_rev*.csv`는 전체 코스에 연결하지 않습니다.
 
-진입 CSV의 `state=1`인 35번 점에 주차 진입점을 연결했습니다.
-후진 후보 두 개는 주차 모듈이 하나를 선택합니다. CSV 3개를 차례로 주행하지 않습니다.
-기존 주차 절차인 후진 주차·10초 정차·전진 복귀를 마친 뒤 경로 끝에서 정차·종료하며,
-기존 전체 코스로 넘어가지 않습니다.
+시작 경로는 01~07 중 선택하며, 생략하면 터미널에서 질문합니다. 기본 종료는 07,
+06에서 시작하면 06입니다. 전체 순서는 `01 또는 02 → 03 → 04 → 05 → 06 또는 07`입니다.
+03에서 시작하면 `03 → 04 → 05 → 07`만 실행합니다. 06과 07은 대체 출구입니다.
+03 주차 완료·전진 복귀 후 04로 진행합니다. 현재 기본 속도 0.5m/s는 유지했습니다.
 
-시작·종료는 03만 허용합니다. 시작 번호를 생략하면 터미널에서 03을 입력해야 하고,
-종료 번호 기본값은 03입니다. 예전 `start_waypoint:=01 end_waypoint:=07` 명령은 거부됩니다.
-이미 실행 중인 런처에는 변경이 소급 적용되지 않으므로 종료 후 위 명령으로 다시 실행합니다.
+03 끝점과 주차 후보 시작점 차이는 약 0.080m입니다. CSV 좌표는 PR 원문을 유지하며,
+기존 전진 종점 도달 허용거리 0.14m 이내에서 경로 로딩을 허용합니다.
+turn zone [3]은 PR #119의 기존 YAML 동작 범위를 유지합니다. CSV의 zone_id/inside_zone과
+실행 중 신호등·GPS 전용 구역은 동일 개념이 아닙니다. 03은 YAML 기준 idx 28~116이며
+CSV 표기는 idx 75~116입니다. 05(idx 276~316), 06(idx 0~25), 07(idx 0~36)의 YAML 신호등 구역도 유지합니다.
+커브 끝 +1.5m까지의 주차 후보 검사/RViz 표시는 유지합니다.
+변경 사항은 런처를 Ctrl+C로 종료 후 다시 실행해야 적용됩니다.
 
 센서·상위 제어·RViz와 실제 CAN 송신을 시작하고, 4번 출발 인가를 기다립니다.
 **이 터미널은 실행 상태로 둡니다.**
@@ -143,17 +150,17 @@ scripts/v2 prepare \
 정상 런처 시작 예시:
 
 ```text
-[v2 drive] route: 03
+[v2 drive] route: 01 -> 03 -> 04 -> 05 -> 07
 [v2 drive] avoid planner: Waypoint_Avoid_PR103; backend=stack_avoid.waypoint_planner; zone_only=true
 [v2 drive] logs: /home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main/drive_logs/v2_20260916_150000_123456; waiting for explicit go
 ```
 
 이 메시지는 런처 시작을 뜻합니다. 센서 준비 완료는 **2번의 상태 화면**에서 확인합니다.
-GPS 시작 CSV는 `parking_waypoint.csv`이며 원점은 `(37.3041743, 127.9075328)`입니다.
-경로 CSV와 Zone은 이 PC의 `src/stack_gps/waypoints/parking_test_route.yaml`을 기준으로 읽습니다.
+GPS 좌표 원점은 선택한 시작 CSV의 첫 위도·경도이며 주차·회피도 같은 원점을 사용합니다.
+경로 CSV와 Zone은 이 PC의 `src/stack_gps/waypoints/halla_route_sequence.yaml`을 기준으로 읽습니다.
 세션별 경로 목록 `route_selected.yaml`과 로그는 위 작업 폴더의 `drive_logs/v2_날짜_시간/` 아래에 생성됩니다.
 
-ESTOP은 상위 제어에서 진입하고 실제 정차 10초 후 후방이 확인되면 1m 후진합니다.
+ESTOP은 상위 제어에서 진입하고 실제 정차가 연속 6초 유지된 후 후방이 확인되면 1m 후진합니다.
 후진 후 실제 정차를 확인해야 복귀하며, 회복 입력 이상 시 정지를 유지합니다.
 
 ## 4. 주행 인가 코드
@@ -193,7 +200,7 @@ scripts/v2 obstacle REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
 경로 01은 자동 선택된다. 준비 확인 후 `scripts/v2 go`로 출발 인가하며,
 `scripts/v2 stop`으로 인가를 해제한다. 초기 헤딩은 웨이포인트 방향을 사용하므로
 차량을 경로 진행 방향(-135도)에 맞춰 놓고 시작한다.
-기존 `scripts/v2 prepare`는 PR #116 주차 시험 경로 03을 유지한다.
+`scripts/v2 prepare`는 halla_0919 전체 코스를 사용한다. `scripts/v2 obstacle`만 PR #117 단일 회피 시험 경로를 유지한다.
 새 런처도 차량 마커 TF/갱신 수정과 누적 SLAM 지도 제외가 적용된 통합 RViz를 쓴다.
 
 2026-09-17 회피 preview는 1.5m로 설정한다. 생성된 경로와 전방 1.5m 원의

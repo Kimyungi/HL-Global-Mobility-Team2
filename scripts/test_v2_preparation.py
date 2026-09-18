@@ -44,7 +44,7 @@ def test_each_selected_start_resolves_to_its_registered_csv(start):
         ROOT / 'src/stack_gps/waypoints/halla_route_sequence.yaml', start, end)
     routes = selected['routes']
     assert routes[0]['id'] == start
-    assert routes[0]['file'].endswith(f'waypoints_halla_20260916_path_{start}.csv')
+    assert routes[0]['file'].endswith(f'halla_0919_path_{start}.csv')
     assert routes[-1]['id'] == end
 
 
@@ -113,7 +113,7 @@ def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkey
     ctx = context(mod, tmp_path)
     ctx.launch_configurations.update(
         REAL_VEHICLE_CONFIRM='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX',
-        start_waypoint='03', end_waypoint='03', parking_enabled='true',
+        start_waypoint='03', end_waypoint='07', parking_enabled='true',
         parking_zone_entry_active='true', avoidance_enabled='true', avoid_zone_only='true',
         zone_enter_confirm_samples='5',
         zone_exit_confirm_samples='5', traffic_enabled='true', v_base='2.0')
@@ -134,7 +134,7 @@ def test_runbook_prepare_selects_waypoint_provider_without_legacy_backend(monkey
     assert 'stack_avoid_v2' not in nodes
     assert nodes['stack_avoid'].condition.evaluate(ctx)
     waypoint = evaluate_parameters(ctx, nodes['stack_avoid']._Node__parameters)[1]
-    assert waypoint['waypoint_csv'].endswith('parking_waypoint.csv')
+    assert waypoint['waypoint_csv'].endswith('halla_0919_path_03.csv')
     assert waypoint['route_origin_csv'] == waypoint['waypoint_csv']
     assert waypoint['target_speed_mps'] == 1.0
     mgm = evaluate_parameters(ctx, nodes['adas_mgm']._Node__parameters)[1]
@@ -206,7 +206,8 @@ def test_pr116_runtime_manifest_and_reverse_candidates(monkeypatch, tmp_path):
     monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
     monkeypatch.setattr(mod, 'check_lidar_devices', lambda: None)
     monkeypatch.setattr(persistent_service, 'ensure_running', lambda *a: None)
-    mod.start_stack(ctx)
+    ctx.launch_configurations['end_waypoint'] = '03'
+    mod.start_stack(ctx, route_profile='parking')
     plan = RoutePlan(tmp_path / 'run/route_selected.yaml')
     assert [r.id for r in plan.files] == ['03']
     assert plan.files[0].csv.name == 'parking_waypoint.csv'
@@ -287,3 +288,25 @@ def test_pr117_obstacle_runtime_binding(monkeypatch, tmp_path):
     assert not plan.next_connecting
     with pytest.raises(ValueError, match='PR #117'):
         mod.obstacle_test_manifest(ROOT, '03', '03')
+
+
+def test_halla0919_default_runtime_and_parking_join(monkeypatch, tmp_path):
+    from stack_parking.t_parking_sequence import load_course
+    import math
+    mod = module()
+    ctx = context(mod, tmp_path)
+    ctx.launch_configurations.update(REAL_VEHICLE_CONFIRM='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX',
+                                     start_waypoint='01', end_waypoint='07')
+    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
+    monkeypatch.setattr(mod, 'check_lidar_devices', lambda: None)
+    monkeypatch.setattr(persistent_service, 'ensure_running', lambda *a: None)
+    mod.start_stack(ctx)
+    import yaml
+    data = yaml.safe_load((tmp_path/'run/route_selected.yaml').read_text())
+    assert [r['id'] for r in data['routes']] == ['01','03','04','05','07']
+    assert all(Path(r['file']).name == f"halla_0919_path_{r['id']}.csv" for r in data['routes'])
+    cfg = ctx.launch_configurations
+    assert cfg['avoid_route_origin_csv'] == data['routes'][0]['file']
+    candidates, approach, _ = load_course(cfg['t_reference_origin_csv'],cfg['t_reference_route_csv'],
+        [cfg[f't_reference_reverse_{i}_csv'] for i in (1,2)])
+    assert all(.07 < math.hypot(c.path[0].x-approach[-1].x,c.path[0].y-approach[-1].y) < .09 for c in candidates)

@@ -27,7 +27,7 @@ YOLO 관측 노드, GPS 분기 인계와 종료 처리를 추가한 버전이다
 | 안전 | AUTO_ESTOP / REVERSE_RECOVERY | **현재 enum에서 제외**. 과거 재생용 식별자는 legacy_state_ids.hpp에 격리. v09.17에서는 진입하지 않음 |
 | 경로 | DISABLED / RUNNING / WAIT_MISSION / WAIT_STOP / WAIT_ACK / FINISHED / FAULT | 초기화, 미션/종점/실제 정차/새 경로 응답, 완료·고장 처리 있음 |
 | T 주차 실행기 | STOP_SELECT / ADVANCE_3 / STOP_REVERSE / REVERSE / WAIT_10 / EXIT / EXIT_STOP / DONE / FAULT | 선택→03 종점→후진→후방 벽 정차→10초→전진 복귀→정차 완료. 모든 단계 처리 있음 |
-| ESTOP 실행기 | IDLE / HOLD / REVERSE / SETTLE / DONE / FAULT | 대기·10초 정차·1m 실측 후진·정차 확인·완료·고장 처리 있음 |
+| ESTOP 실행기 | IDLE / HOLD / REVERSE / SETTLE / DONE / FAULT | 대기·6초 정차·1m 실측 후진·정차 확인·완료·고장 처리 있음 |
 
 T 주차는 PR #106 기반 어댑터, 평행 주차는 기존 ParkingMission 연결을 사용한다.
 평행 주차를 새 T 주차 알고리즘으로 교체한 것은 아니다.
