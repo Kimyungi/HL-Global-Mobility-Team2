@@ -1,3 +1,5 @@
+> **현재 용인 전체 주행:** [RUN_BOOK_YONGIN_FINAL.md](RUN_BOOK_YONGIN_FINAL.md) — 시작 경로·속도 입력, GPS, 주차, 출구 판단, 종료 절차.
+
 > **Integration v2_main 브랜치** — 기존 main과 별도 관리하는 실차 검증 전 통합 후보입니다.
 > 빌드/검사/실행은 [docs/INTEGRATION_V2.md](docs/INTEGRATION_V2.md),
 > 반영 목록은 [docs/INTEGRATION_V2_SCOPE.md](docs/INTEGRATION_V2_SCOPE.md)를 따릅니다.

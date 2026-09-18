@@ -1,3 +1,5 @@
+> 2026-09-19: 현재 용인 실행 절차는 [RUN_BOOK_YONGIN_FINAL.md](../RUN_BOOK_YONGIN_FINAL.md)가 기준입니다. 아래 한라·단일 CSV·옛 상태 설명은 과거 기록입니다.
+
 > 2026-09-18 갱신: 현재 지도는 [0919 실행 지도](../src/stack_gps/waypoints/HALLA_MAP_0919.md)를 따른다. 아래 옛 자료의 zone 경계·평행주차·고정 출구 설명은 현재 설정이 아니다.
 
 # Integration v2_main — 실차 검증 전 통합 기준

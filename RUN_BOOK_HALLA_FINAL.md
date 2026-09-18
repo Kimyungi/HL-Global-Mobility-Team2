@@ -1,3 +1,5 @@
+> 현재 기본 `scripts/v2 prepare/drive`는 용인 코스입니다. 최신 실행 절차는 [RUN_BOOK_YONGIN_FINAL.md](RUN_BOOK_YONGIN_FINAL.md)를 사용하세요. 아래 한라 내용은 과거 운용 기록입니다.
+
 # RUN_BOOK_HALLA_FINAL
 
 현재 상태 머신: **스테이트 v09.17** ([명세·상태 점검](docs/STATE_V09_17.md)).
