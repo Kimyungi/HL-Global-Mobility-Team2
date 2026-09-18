@@ -169,7 +169,9 @@ scripts/v2 prepare \
   `halla_0919_path_03.csv`, `halla_0919_path_04.csv`, `halla_0919_path_05.csv`,
   `halla_0919_path_06.csv`, `halla_0919_path_07.csv` (모두 같은 waypoints 폴더)
 - 주차 후진 후보: `src/stack_parking/config/parking_ref_01.csv`, `parking_ref_02.csv`.
-  PR #116의 별도 시험장 좌표 `parking_waypoint_rev*.csv`는 전체 코스에 연결하지 않습니다.
+  PR #120의 최신 `parking_ref_01.csv`, `parking_ref_02.csv`만 주차 후보로 사용합니다.
+  PR #116의 `parking_waypoint*.csv`는 보관용이며 v2 실행에서 제외합니다.
+  별도 `parking` 프로파일은 실행 전에 거부됩니다.
 
 시작 경로는 01~07 중 선택하며, 생략하면 터미널에서 질문합니다. 기본 종료는 07,
 06에서 시작하면 06입니다. 전체 순서는 `01 또는 02 → 03 → 04 → 05 → 06 또는 07`입니다.

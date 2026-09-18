@@ -37,14 +37,10 @@ def selected_manifest(catalog_path, start, end):
     return result
 
 
-def parking_test_manifest(root, start, end):
-    """A terminal approach route; reverse candidates are not GPS sequence legs."""
-    if start != '03' or end != '03':
-        raise ValueError('PR #116 requires start_waypoint=03 and end_waypoint=03')
-    from stack_gps.route_plan import RoutePlan
-    plan = RoutePlan(root / 'src/stack_gps/waypoints/parking_test_route.yaml')
-    return {'routes': [dict(id=r.id, file=str(r.csv), zones_file=str(r.zones),
-                            completion='endpoint_and_missions') for r in plan.files]}
+def validate_route_profile(route_profile):
+    if route_profile not in ('halla', 'obstacle'):
+        raise ValueError('Retired or unsupported v2 route profile: ' + str(route_profile)
+                         + '. Use scripts/v2 drive with PR #120 parking references.')
 
 
 def check_lidar_devices():
@@ -71,6 +67,7 @@ def obstacle_test_manifest(root, start, end):
 
 
 def start_stack(context, route_profile='halla'):
+    validate_route_profile(route_profile)
     value = lambda name: LaunchConfiguration(name).perform(context)
     if value('REAL_VEHICLE_CONFIRM') != 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX':
         raise RuntimeError('REAL_VEHICLE_CONFIRM token required before starting hardware')
@@ -94,20 +91,17 @@ def start_stack(context, route_profile='halla'):
         manifest = selected_manifest(root / 'src/stack_gps/waypoints/halla_route_sequence.yaml',
                                      value('start_waypoint'), value('end_waypoint'))
     else:
-        builder = obstacle_test_manifest if route_profile == 'obstacle' else parking_test_manifest
-        manifest = builder(root, value('start_waypoint'), value('end_waypoint'))
+        manifest = obstacle_test_manifest(root, value('start_waypoint'), value('end_waypoint'))
     print(f'[v2 drive] general driving v_base: {speed:g} m/s', flush=True)
     print('[v2 drive] selected start CSV: ' + manifest['routes'][0]['file'], flush=True)
     if route_profile == 'obstacle':
         context.launch_configurations['t_reference_enabled'] = 'false'
     context.launch_configurations['t_reference_origin_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['t_reference_route_csv'] = str(
-        root / ('src/stack_gps/waypoints/halla_0919_path_03.csv' if route_profile == 'halla'
-                else 'src/stack_gps/waypoints/parking_waypoint.csv'))
+        root / 'src/stack_gps/waypoints/halla_0919_path_03.csv')
     for i in (1, 2):
         context.launch_configurations[f't_reference_reverse_{i}_csv'] = str(
-            root / (f'src/stack_parking/config/parking_ref_{i:02}.csv' if route_profile == 'halla'
-                    else f'src/stack_gps/waypoints/parking_waypoint_rev{i}.csv'))
+            root / f'src/stack_parking/config/parking_ref_{i:02}.csv')
     context.launch_configurations['avoid_waypoint_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['avoid_route_origin_csv'] = manifest['routes'][0]['file']
     # This entry owns route selection; avoid ambiguous overrides from the base launch.
@@ -153,6 +147,7 @@ def start_stack(context, route_profile='halla'):
 
 
 def generate_launch_description(route_profile='halla'):
+    validate_route_profile(route_profile)
     # Match the integrated field session; normal safety/arbitration remains in the core.
     profile = dict(
         parking_enabled='true', t_reference_enabled='true', t_parking_zone_ranges='[0]', parallel_parking_zone_ranges='[0]',

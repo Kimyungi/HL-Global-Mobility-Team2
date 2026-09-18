@@ -195,57 +195,16 @@ def test_exit_zone_preserves_branch_contract_for_partial_start(tmp_path, start):
         assert plan.exit_branches == {'source':'05','left':'06','right':'07'}
 
 
-def test_pr116_runtime_manifest_and_reverse_candidates(monkeypatch, tmp_path):
-    from types import SimpleNamespace as NS
-    import math
-    from stack_gps.node import StackGpsNode
-    from stack_gps.path_engine import PathEngine
-    from stack_gps.route_plan import RoutePlan
-    from stack_parking.t_parking_sequence import load_course
+@pytest.mark.parametrize('profile', ['parking', 'unknown'])
+def test_retired_route_profiles_rejected_before_hardware(monkeypatch, tmp_path, profile):
     mod = module()
-    ctx = context(mod, tmp_path)
-    ctx.launch_configurations['REAL_VEHICLE_CONFIRM'] = 'I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX'
-    monkeypatch.setenv('FMA_V2_WORKSPACE', str(ROOT))
-    monkeypatch.setattr(mod, 'check_lidar_devices', lambda: None)
-    monkeypatch.setattr(persistent_service, 'ensure_running', lambda *a: None)
-    ctx.launch_configurations['end_waypoint'] = '03'
-    mod.start_stack(ctx, route_profile='parking')
-    plan = RoutePlan(tmp_path / 'run/route_selected.yaml')
-    assert [r.id for r in plan.files] == ['03']
-    assert plan.files[0].csv.name == 'parking_waypoint.csv'
-    assert len(plan.files[0].points) == 49
-    assert plan.exit_branches is None
-    config = ctx.launch_configurations
-    reverse = [config[f't_reference_reverse_{i}_csv'] for i in (1, 2)]
-    assert [Path(p).name for p in reverse] == ['parking_waypoint_rev1.csv', 'parking_waypoint_rev2.csv']
-    candidates, approach, _ = load_course(config['t_reference_origin_csv'],
-                                         config['t_reference_route_csv'], reverse)
-    assert len(candidates) == 2
-    for c in candidates:
-        assert math.hypot(c.path[0].x-approach[-1].x, c.path[0].y-approach[-1].y) < .03
-
-    def factory(route):
-        values = dict(waypoint_csv=str(route.csv), zones_file=str(route.zones),
-                      stop_zone_snap_max_m=3., stop_zone_span_m=1., parking_zone_span_m=1.,
-                      stop_points_latlon='', avoid_zone_latlon='', gps_only_zone_latlon='',
-                      avoid_zone_lead_m=5.)
-        log = NS(info=lambda msg: None, warn=lambda msg: None, error=lambda msg: pytest.fail(msg))
-        node = NS(engine=PathEngine(route.points), turn_zone_policy=True, get_logger=lambda: log)
-        StackGpsNode._setup_zones(node, lambda key: NS(value=values[key]))
-        return node.engine, node.zone_map
-
-    plan.bind(factory)
-    assert len(plan.required[0]) == 1
-    first, last = plan.engines[0].parking_ranges[0]
-    assert first <= 35 <= last
-    assert not plan.next_connecting
-    assert not plan.apply(plan.sequence_id, 1, 1, 1, 1)
-
-
-@pytest.mark.parametrize('start,end', [('01', '07'), ('03', '07'), ('04', '03')])
-def test_pr116_rejects_old_route_selection(start, end):
-    with pytest.raises(ValueError, match='PR #116 requires'):
-        module().parking_test_manifest(ROOT, start, end)
+    monkeypatch.setattr(mod, 'check_lidar_devices', lambda: pytest.fail('hardware touched'))
+    monkeypatch.setattr(persistent_service, 'ensure_running', lambda *a: pytest.fail('receiver started'))
+    with pytest.raises(ValueError, match='Retired or unsupported'):
+        mod.generate_launch_description(route_profile=profile)
+    with pytest.raises(ValueError, match='Retired or unsupported'):
+        mod.start_stack(LaunchContext(), route_profile=profile)
+    assert not (tmp_path / 'run').exists()
 
 
 def test_pr117_obstacle_runtime_binding(monkeypatch, tmp_path):
