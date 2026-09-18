@@ -96,3 +96,32 @@ def test_route_changes_reset_planner_and_preserve_session_origin(adapter):
     assert not adapter.session.active and not adapter.planner.samples
     assert adapter.cloud_stamp is None
     assert (adapter.route._lat0,adapter.route._lon0)==(lat0,lon0)
+
+
+def test_next_zone_release_clears_producer_detection(adapter):
+    assert adapter._supply().obstacle_detected
+    msg=adapter._supply(active=False)
+    assert not msg.obstacle_detected and not adapter.session.active
+    assert adapter.session.done
+    adapter.session.observe_zone(True)
+    assert not adapter.session.active  # consumed marker cannot restart this episode
+
+
+def test_finished_path_reports_done_before_alignment(adapter):
+    adapter._supply()
+    adapter.session.passed_path()
+    adapter.planner.samples=[]
+    adapter.planner.rejoined=lambda pose:False
+    msg=adapter._supply()
+    assert msg.maneuver_done and msg.obstacle_detected
+    adapter.session.accepted()
+    msg=adapter._supply()
+    assert not msg.maneuver_done and msg.obstacle_detected
+
+
+def test_safety_pause_preserves_producer_episode(adapter):
+    adapter._supply()
+    mgm=MgmState();mgm.header.stamp=adapter.get_clock().now().to_msg()
+    mgm.go_authorized=True;mgm.top=1;mgm.avoidance=0;mgm.estop_active=True
+    adapter.on_mgm(mgm)
+    assert adapter.session.active and not adapter.session.done

@@ -55,6 +55,7 @@ void update_avoid_zone(const CoreSnapshot & s, CoreState & st)
   if (st.params.avoid_zone_only && m.route.changed) {
     // The new CSV has its own start marker and the producer resets its frame.
     m.avoid = AvoidState::INACTIVE;
+    m.avoid_next_zone_armed = false;
     m.avoid_fallback_only = false;
     m.clear_count = st.avoid_ticks = st.return_hold_left = 0;
   }
@@ -329,6 +330,14 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
   const bool avoid_entry = (s.avoid_obstacle_detected &&
     (st.params.avoid_zone_only == 0 || s.gps_avoid_zone)) || fallback;
   const bool was_avoiding = m.avoid != AvoidState::INACTIVE;
+  const auto & return_zone = m.zones.contexts[1];
+  const bool next_return_zone = was_avoiding && s.lidar_valid && s.avoid_maneuver_done &&
+    m.avoid_next_zone_armed &&
+    !m.route.changed && zone_source_confirmed && gps_valid(s) && return_zone.zone_valid &&
+    return_zone.zone_type == ZoneType::GPS_ONLY_ZONE &&
+    return_zone.in_zone && return_zone.raw_in_zone &&
+    s.gps_track_index > m.avoid_entry_track_index;
+
   if (!st.params.avoidance_enabled || mission || m.top != TopState::AUTONOMOUS_DRIVE) {
     m.avoid = AvoidState::INACTIVE;
     m.clear_count = 0;
@@ -337,11 +346,19 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
       st.return_hold_left = 0;
       if (was_avoiding) {nav_reselect(s, st);}
     }
+  } else if (next_return_zone && !s.auto_estop && st.escape_phase == MGM_ESCAPE_NONE) {
+    // A later physical CSV zone [1] is an alternative to the geometric rejoin.
+    m.avoid = AvoidState::INACTIVE;
+    m.avoid_zone_completed = true;
+    m.avoid_zone_maneuver_seen = false;
+    m.avoid_fallback_only = false;
+    m.clear_count = st.avoid_ticks = st.return_hold_left = 0;
+    nav_reselect(s, st);
   } else if (st.params.avoid_zone_only) {
     // Zone entry itself claims AVOID, even before an obstacle is detected.
     // Empty/stale references stop through the final gate without falling back
-    // to LINE. The CSV marker starts an episode; only a completed waypoint
-    // return ends it. The consumed marker cannot repeatedly start that episode.
+    // to LINE. The CSV marker starts an episode; waypoint alignment or
+    // the next physical zone [1] ends it. The consumed marker cannot repeatedly start that episode.
     if (m.avoid_zone_inside && !m.avoid_zone_completed) {
       if (m.avoid == AvoidState::INACTIVE) {m.avoid_zone_maneuver_seen = false;}
       m.avoid = AvoidState::AVOID_ACTIVE;
@@ -420,6 +437,17 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.avoid = AvoidState::AVOID_ACTIVE;
     m.clear_count = 0;
     if (s.avoid_obstacle_detected) {m.avoid_fallback_only = false;}
+  }
+  if (m.avoid == AvoidState::INACTIVE) {
+    m.avoid_next_zone_armed = false;
+  } else if (!was_avoiding) {
+    m.avoid_entry_track_index = s.gps_track_index;
+    // Starting inside [1] must not finish this episode in the same interval.
+    m.avoid_next_zone_armed = !return_zone.in_zone && !return_zone.raw_in_zone;
+  } else if (zone_source_confirmed && gps_valid(s) && return_zone.zone_valid &&
+    !return_zone.in_zone && !return_zone.raw_in_zone)
+  {
+    m.avoid_next_zone_armed = true;
   }
   if (m.avoid == AvoidState::GPS_RETURN) {nav_reselect(s, st);}
   // Preserve any hold established by other existing transitions.

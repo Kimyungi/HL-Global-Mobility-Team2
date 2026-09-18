@@ -3,5 +3,9 @@ stop_points: []
 avoid_zones: []
 gps_only_zones: []
 parking_points: []
-turn_zones: []
+turn_zones:
+- zone_id: 1
+  index_ranges:
+  - - 0
+    - 24
 zones: []

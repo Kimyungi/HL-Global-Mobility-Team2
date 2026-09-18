@@ -418,9 +418,13 @@ class AvoidSession:
     def passed_path(self):
         self.returning = True
 
+    def complete(self):
+        self.active = self.returning = False
+        self.done = True
+        self.zone_consumed = True
+
     def finish(self, planner, pose):
         if self.active and self.returning and not planner.samples and planner.rejoined(pose):
-            self.active = self.returning = False
-            self.done = True
+            self.complete()
             return True
         return False

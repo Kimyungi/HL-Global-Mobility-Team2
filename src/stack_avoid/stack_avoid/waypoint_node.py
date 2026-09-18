@@ -101,6 +101,12 @@ class WaypointAvoidNode(Node):
         self.published_revision = -1
 
     def on_mgm(self, msg):
+        # MGM may finish at the next zone [1] before geometric rejoin.
+        # Release the producer latch too, while preserving it across safety pauses.
+        if (self.session.active and self.fresh_stamp(msg.header.stamp) and
+                msg.go_authorized and msg.top == 1 and msg.avoidance == 0 and
+                not msg.estop_active and msg.mission != MgmState.MISSION_ACTIVE):
+            self.session.complete()
         self.mgm = msg
 
     def on_gps(self, msg):
@@ -253,7 +259,10 @@ class WaypointAvoidNode(Node):
         msg.obstacle_detected = self.session.active
         msg.avoidable = msg.obstacle_detected and not reason and bool(msg.points)
         msg.narrow_gap = msg.obstacle_detected and bool(reason)
-        msg.maneuver_done = self.session.done and gps_ok and pose is not None and not reason
+        # Path completion permits MGM's alternative zone exit. obstacle_detected
+        # stays latched until alignment or MGM explicitly releases the episode.
+        path_finished = self.session.returning and not self.planner.samples
+        msg.maneuver_done = (self.session.done or path_finished) and gps_ok and pose is not None and not reason
         msg.v_suggest = self.target_speed if msg.avoidable else 0.0
         if msg.obstacle_detected and reason:
             # MGM owns stop decisions; an invalid active corridor supplies its

@@ -128,6 +128,43 @@ int main()
   check(lane.out.nav == NavState::GPS_BACKUP, "lane return waits for a fresh post-avoidance confirmation window");
   lane.tick();
   check(lane.out.nav == NavState::LINE, "normal lane confidence confirmation resumes after avoidance");
+  Run next; configure(next);
+  next.gps_zone(true); next.s.gps_track_index = 336;
+  next.s.gps_avoid_zone = true; next.obstacle();
+  next.s.avoid_maneuver_done = true;
+  next.s.gps_cross_track = 1.f; next.s.gps_station_yaw_error = .8f;
+  next.tick(3);
+  check(next.out.avoid == AvoidState::AVOID_ACTIVE, "starting zone [1] cannot finish avoidance");
+  next.gps_zone(false); next.s.gps_avoid_zone = false;
+  next.s.gps_track_index = 400; next.tick();
+  next.st.params.zone_enter_confirm_samples = 3;
+  next.gps_zone(true); next.s.gps_track_index = 463;
+  next.s.avoid_maneuver_done = false; next.tick(3);
+  check(next.out.avoid == AvoidState::AVOID_ACTIVE,
+    "next zone [1] cannot truncate the active avoidance path");
+  next.s.avoid_maneuver_done = true; next.s.gps_valid = false; next.tick();
+  check(next.out.avoid == AvoidState::AVOID_ACTIVE, "zone return needs a usable GPS reference");
+  next.s.gps_valid = true; next.tick();
+  check(next.out.avoid == AvoidState::INACTIVE && next.out.path_source == MGM_SRC_GPS,
+    "completed path and next zone [1] release even with large cross track and heading errors");
+  next.tick(5);
+  check(next.out.avoid == AvoidState::INACTIVE, "producer detection latch cannot reactivate completed zone");
+
+  Run debounced; configure(debounced);
+  debounced.s.gps_avoid_zone = true; debounced.obstacle();
+  debounced.s.avoid_maneuver_done = true;
+  debounced.s.gps_track_index += 10;
+  debounced.st.params.zone_enter_confirm_samples = 3;
+  debounced.zone(3, ZoneType::GPS_ONLY_ZONE); debounced.tick(3);
+  check(debounced.out.avoid == AvoidState::AVOID_ACTIVE, "zone [3] is not an avoidance exit");
+  debounced.gps_zone(true); debounced.tick();
+  for (int i=0; i<20; ++i) {debounced.out = mgm_step(debounced.s, debounced.st);}
+  check(debounced.out.avoid == AvoidState::AVOID_ACTIVE, "duplicate fix cannot confirm next [1]");
+  debounced.tick();
+  check(debounced.out.avoid == AvoidState::AVOID_ACTIVE, "next [1] obeys entry debounce");
+  debounced.tick();
+  check(debounced.out.avoid == AvoidState::INACTIVE, "three fresh fixes confirm next [1]");
+
   std::printf("avoid_zone_entry_test: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

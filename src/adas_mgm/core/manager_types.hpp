@@ -210,6 +210,8 @@ struct ManagerState
   bool avoid_zone_completed;
   int32_t avoid_zone_enter_count, avoid_zone_exit_count;
   uint64_t avoid_zone_generation;
+  bool avoid_next_zone_armed;
+  int32_t avoid_entry_track_index;
   bool mission_completed[MGM_MISSION_CAPACITY];
   bool mission_failed[MGM_MISSION_CAPACITY];  // terminal zone-exit failure, distinct from success
   uint8_t active_mission;

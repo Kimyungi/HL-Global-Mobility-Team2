@@ -31,9 +31,10 @@ def test_csv_zones_and_mission_modes():
     assert p.exit_branches == {'source':'05','left':'06','right':'07'}
     for route,engine,zones in zip(p.files,p.engines,p.zone_maps):
         rows=list(csv.DictReader(route.csv.open()))
-        expected={i for i,r in enumerate(rows) if int(r['zone_id'])==3 and int(r['inside_zone'])}
-        actual={i for i in range(len(rows)) if any(z.zone_id==3 and active for z,active in zones.snapshot(i))}
-        assert expected==actual
+        for zone_id in (1,3):
+            expected={i for i,r in enumerate(rows) if int(r['zone_id'])==zone_id and int(r['inside_zone'])}
+            actual={i for i in range(len(rows)) if any(z.zone_id==zone_id and active for z,active in zones.snapshot(i))}
+            assert expected==actual
         for state,mode in [(1,MissionType.T_PARKING),(2,MissionType.PARALLEL_PARKING)]:
             markers=[i for i,r in enumerate(rows) if int(r['state'])==state]
             configured=[z for z in zones.definitions if z.mission_type==mode]
@@ -42,3 +43,7 @@ def test_csv_zones_and_mission_modes():
     route3=next(z for r,z in zip(p.files,p.zone_maps) if r.id=='03')
     assert not any(z.zone_id==3 and active for z,active in route3.snapshot(300,302))
     assert any(z.zone_id==3 and active for z,active in route3.snapshot(564,565))
+
+    assert any(z.zone_id==1 and active for z,active in route3.snapshot(336,340))
+    assert not any(z.zone_id==1 and active for z,active in route3.snapshot(450,452))
+    assert any(z.zone_id==1 and active for z,active in route3.snapshot(462,463))

@@ -887,6 +887,10 @@ class StackGpsNode(Node):
                      f"(스냅 {d1:.2f}/{d2:.2f}m) — 이 구간에서는 차선 전이 없음")
         self.engine.gps_only_ranges = gps_only_ranges
         explicit_zones = load_zone_definitions(p('zones_file').value, self.engine, snap_max)
+        if getattr(self, 'turn_zone_policy', False):
+            # Reserve physical IDs before allocating generated parking IDs.
+            explicit_zones = (*explicit_zones, *load_zone_definitions(
+                p('zones_file').value, self.engine, snap_max, key='turn_zones', turn_only=True))
         self.zone_map = ZoneMap.from_engine(self.engine, explicit_zones)
         if getattr(self, 'turn_zone_policy', False):
             # Every physical CSV zone uses waypoints; only zone [4] also slows down.

@@ -7,6 +7,14 @@ parking_points:
   lat: 37.288667
   lon: 127.1074694
 turn_zones:
+- zone_id: 1
+  index_ranges:
+  - - 0
+    - 39
+  - - 315
+    - 362
+  - - 959
+    - 979
 - zone_id: 3
   index_ranges:
   - - 298
