@@ -400,3 +400,21 @@ def robust_nonnegative_median(
     if len(valid) < minimum_samples:
         return math.nan, len(valid)
     return float(statistics.median(valid)), len(valid)
+
+
+def update_confidence_red(
+    previous: bool, *, yolo_ran: bool, detection_fresh: bool,
+    confidence: float, bbox_source: str, hsv_green: bool,
+    threshold: float = 0.7,
+) -> bool:
+    """High-confidence housing is red evidence; carry only across YOLO skips.
+
+    This is a deployment heuristic, not a learned red-class probability.
+    A new YOLO result replaces the evidence, including misses. A bounded
+    template track may bridge skipped inference, but its score is never used.
+    Fresh HSV green cancels carried evidence (fresh high-confidence YOLO wins).
+    """
+    if detection_fresh and bbox_source.startswith("yolo"):
+        return math.isfinite(confidence) and confidence >= threshold
+    return bool(previous and not yolo_ran and bbox_source == "template"
+                and not hsv_green)
