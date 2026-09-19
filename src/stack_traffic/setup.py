@@ -17,6 +17,7 @@ setup(
                 'models/yolov8n.pt',
                 'models/stopline_yolov8s_seg.pt',
                 'models/README.md',
+                'models/traffic_deployment_20260919.json',
             ],
         ),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
