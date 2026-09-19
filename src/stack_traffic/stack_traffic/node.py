@@ -5,7 +5,7 @@
 
 신호등 판정 로직은 가벼운 HSV 색상 판정을 사용한다.
 - YOLOv8n으로 traffic light 위치 검출
-- HSV로 red_raw/green_raw 판정
+- HSV 또는 YOLO 신호등 신뢰도 0.7 이상으로 red_raw 판정
 - 최근 5프레임 중 빨간불 3프레임 이상이면 red_active
 - 하단 RGB의 학습형 segmentation(또는 기존 색상 방식)으로 정지선을 찾고
   정렬 depth로 차량 쪽 경계 거리를 직접 측정
@@ -62,6 +62,7 @@ from stack_traffic.logic import (
     should_clear_visual_track,
     should_accept_anchored_green,
     should_record_color_vote,
+    update_confidence_red,
     update_red_phase_latch,
     update_stop_latch,
 )
@@ -2309,8 +2310,16 @@ class StackTrafficNode(Node):
             minimum_color_saturation=self.minimum_color_saturation,
             minimum_color_value=self.minimum_color_value,
         )
-        red_raw = int(bool(hsv_red_raw))
-        green_raw = int(bool(hsv_green_raw))
+        self.confidence_red = update_confidence_red(
+            self.confidence_red,
+            yolo_ran=yolo_ran,
+            detection_fresh=detection_fresh,
+            confidence=confidence,
+            bbox_source=bbox_source,
+            hsv_green=bool(hsv_green_raw),
+        )
+        red_raw = int(bool(hsv_red_raw) or self.confidence_red)
+        green_raw = int(bool(hsv_green_raw) and not self.confidence_red)
         anchored_green_fresh = should_accept_anchored_green(
             red_phase_latched=self.red_phase_latched,
             anchor_available=anchored_color,
@@ -2324,6 +2333,11 @@ class StackTrafficNode(Node):
             else "hsv" if color_bbox is not None
             else "none"
         )
+        if self.confidence_red:
+            color_source = (
+                "yolo_confidence_red" if detection_fresh
+                else "yolo_confidence_red_tracked"
+            )
         # 미검출/unknown을 0표로 넣으면 간헐적인 YOLO miss마다 투표가
         # 씻긴다. 유효 색 관측만 누적하고 target을 잃을 때 전체를 비운다.
         # template 적색은 같은 target에서 fresh YOLO 적색을 최소 한 번
@@ -2536,6 +2550,7 @@ class StackTrafficNode(Node):
             maxlen=self.vote_window
         )
         self.red_fresh_seeded = False
+        self.confidence_red = False
         self.stopline_y_history: Deque[float] = deque(
             [math.nan] * self.stopline_detection_window,
             maxlen=self.stopline_detection_window,
@@ -2614,6 +2629,7 @@ class StackTrafficNode(Node):
         self.green_history.clear()
         self.bbox_observed_history.clear()
         self.red_fresh_seeded = False
+        self.confidence_red = False
 
     def _publish(
         self,

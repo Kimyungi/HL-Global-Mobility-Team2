@@ -18,12 +18,53 @@ from stack_traffic.logic import (
     should_accept_anchored_green,
     should_clear_visual_track,
     should_record_color_vote,
+    update_confidence_red,
     update_red_phase_latch,
     update_stop_latch,
 )
 
 
 class TestTrafficStopLogic(unittest.TestCase):
+    def test_confidence_red_boundary_and_green_conflict(self):
+        for confidence, expected in [(0.6999, False), (0.7, True),
+                                     (0.9, True), (math.nan, False)]:
+            for source in ("yolo", "yolo_recovered", "yolo_reacquired"):
+                with self.subTest(confidence=confidence, source=source):
+                    self.assertEqual(update_confidence_red(
+                        False, yolo_ran=True, detection_fresh=True,
+                        confidence=confidence, bbox_source=source,
+                        hsv_green=True), expected)
+
+    def test_confidence_red_does_not_use_template_score_or_stale_detection(self):
+        for previous, ran, source, green, expected in [
+            (False, False, "template", False, False),
+            (True, False, "template", False, True),
+            (True, True, "template", False, False),
+            (True, False, "none", False, False),
+            (True, False, "template", True, False),
+        ]:
+            with self.subTest(previous=previous, ran=ran, source=source, green=green):
+                self.assertEqual(update_confidence_red(
+                    previous, yolo_ran=ran, detection_fresh=False,
+                    confidence=0.99, bbox_source=source, hsv_green=green), expected)
+        self.assertFalse(update_confidence_red(
+            True, yolo_ran=True, detection_fresh=True, confidence=0.69,
+            bbox_source="yolo", hsv_green=False))
+
+    def test_confidence_red_bridges_three_frame_inference_interval(self):
+        from collections import deque
+        evidence = False
+        votes = deque(maxlen=5)
+        for frame in range(9):
+            fresh = frame % 3 == 0
+            evidence = update_confidence_red(
+                evidence, yolo_ran=fresh, detection_fresh=fresh,
+                confidence=0.75 if fresh else 0.0,
+                bbox_source="yolo" if fresh else "template", hsv_green=False)
+            votes.append(int(evidence))
+            if frame >= 2:
+                self.assertGreaterEqual(sum(votes), 3)
+
     def test_visual_track_survives_yolo_misses_with_valid_template(self):
         self.assertFalse(
             should_clear_visual_track(
