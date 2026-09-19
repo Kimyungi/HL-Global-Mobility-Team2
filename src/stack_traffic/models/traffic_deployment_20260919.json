@@ -1,0 +1,19 @@
+{
+  "deployed": "src/stack_traffic/models/yolov8n.pt",
+  "sha256": "0e60f7f6996132fcced5f40d54e2311bf4cc63c6e54341d8921ecb0bb930a2e5",
+  "previous_sha256": "e6a6b87485f7e5ff86d58cb9d8c6d9cac8382f93c65c9402fec1bece41c46f38",
+  "classes": {
+    "0": "traffic light"
+  },
+  "training_images": 307,
+  "validation_images": 89,
+  "total_labels": 396,
+  "selected_epoch": 5,
+  "epochs_completed": 15,
+  "validation": {
+    "precision": 0.9498125349440305,
+    "recall": 0.8846153846153846,
+    "mAP50": 0.976998862945946,
+    "mAP50_95": 0.6391747855372073
+  }
+}
