@@ -5,7 +5,7 @@
 
 신호등 판정 로직은 가벼운 HSV 색상 판정을 사용한다.
 - YOLOv8n으로 traffic light 위치 검출
-- HSV 또는 YOLO 신호등 신뢰도 0.7 이상으로 red_raw 판정
+- HSV, YOLO 신뢰도 0.7 이상 또는 template 표시 점수 1.00으로 red_raw 판정
 - 최근 5프레임 중 빨간불 3프레임 이상이면 red_active
 - 하단 RGB의 학습형 segmentation(또는 기존 색상 방식)으로 정지선을 찾고
   정렬 depth로 차량 쪽 경계 거리를 직접 측정
@@ -52,6 +52,7 @@ from stack_traffic.logic import (
     combine_stopline_proximity,
     frame_bbox_to_roi,
     is_red_clear_confirmed,
+    is_template_red,
     is_stopline_approaching,
     is_stopline_y_approaching,
     normalized_roi_to_bbox,
@@ -2318,8 +2319,11 @@ class StackTrafficNode(Node):
             bbox_source=bbox_source,
             hsv_green=bool(hsv_green_raw),
         )
-        red_raw = int(bool(hsv_red_raw) or self.confidence_red)
-        green_raw = int(bool(hsv_green_raw) and not self.confidence_red)
+        template_red = is_template_red(bbox_source, bbox, template_score)
+        red_raw = int(bool(hsv_red_raw) or self.confidence_red or template_red)
+        green_raw = int(
+            bool(hsv_green_raw) and not self.confidence_red and not template_red
+        )
         anchored_green_fresh = should_accept_anchored_green(
             red_phase_latched=self.red_phase_latched,
             anchor_available=anchored_color,
@@ -2338,11 +2342,14 @@ class StackTrafficNode(Node):
                 "yolo_confidence_red" if detection_fresh
                 else "yolo_confidence_red_tracked"
             )
+        if template_red:
+            color_source = "template_1.00_red"
         # 미검출/unknown을 0표로 넣으면 간헐적인 YOLO miss마다 투표가
         # 씻긴다. 유효 색 관측만 누적하고 target을 잃을 때 전체를 비운다.
-        # template 적색은 같은 target에서 fresh YOLO 적색을 최소 한 번
-        # 확인한 뒤에만 투표한다. 초록은 fresh YOLO 또는 확정 적색 anchor의
-        # 최신 영상에서만, clear는 항상 fresh YOLO에서만 진행한다.
+        # HSV 기반 template 적색은 fresh YOLO 적색 확인 뒤에만 투표한다.
+        # template 표시 점수 1.00은 이와 별개로 유효한 적색 관측이다.
+        # 초록은 fresh YOLO 또는 확정 적색 anchor의 최신 영상에서만,
+        # clear는 항상 fresh YOLO에서만 진행한다.
         if detection_fresh and red_raw:
             self.red_fresh_seeded = True
         elif green_observation_fresh and green_raw:
@@ -2362,6 +2369,8 @@ class StackTrafficNode(Node):
         # In the v2 absence policy, every successfully received image advances
         # the vote window. Unknown/no target is a zero vote, not old red held
         # forever. Failed camera reads return earlier and do not reach this code.
+        if template_red:
+            vote_observation_valid = True
         if vote_observation_valid or self.resume_on_red_absence:
             self.red_history.append(red_raw if vote_observation_valid else 0)
             self.green_history.append(

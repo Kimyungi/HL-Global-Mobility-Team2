@@ -421,3 +421,15 @@ def update_confidence_red(
         return math.isfinite(confidence) and confidence >= threshold
     return bool(previous and not yolo_ran and bbox_source == "template"
                 and not hsv_green)
+
+
+def is_template_red(bbox_source: str, bbox: BBox | None, score: float) -> bool:
+    """Accept a valid template track whose displayed score rounds to 1.00.
+
+    Match the reviewed two-decimal overlay, including scores such as 0.999.
+    The score is image similarity, not a learned red probability.
+    """
+    return bool(
+        bbox is not None and bbox_source == "template"
+        and math.isfinite(score) and f"{score:.2f}" == "1.00"
+    )

@@ -8,6 +8,7 @@ from stack_traffic.logic import (
     combine_stopline_proximity,
     frame_bbox_to_roi,
     is_red_clear_confirmed,
+    is_template_red,
     is_stopline_approaching,
     is_stopline_y_approaching,
     normalized_roi_to_bbox,
@@ -25,6 +26,19 @@ from stack_traffic.logic import (
 
 
 class TestTrafficStopLogic(unittest.TestCase):
+    def test_template_red_matches_reviewed_display_precision(self):
+        bbox = (10, 10, 80, 30)
+        for score, expected in [(0.9949, False), (0.9951, True),
+                                (0.999, True), (1.0, True),
+                                (math.nan, False), (math.inf, False)]:
+            with self.subTest(score=score):
+                self.assertEqual(is_template_red("template", bbox, score), expected)
+
+    def test_template_red_requires_current_template_box(self):
+        self.assertFalse(is_template_red("template", None, 1.0))
+        for source in ("none", "yolo", "yolo_recovered", "yolo_reacquired"):
+            self.assertFalse(is_template_red(source, (10, 10, 80, 30), 1.0))
+
     def test_confidence_red_boundary_and_green_conflict(self):
         for confidence, expected in [(0.6999, False), (0.7, True),
                                      (0.9, True), (math.nan, False)]:
