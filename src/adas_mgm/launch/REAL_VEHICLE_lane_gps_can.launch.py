@@ -907,8 +907,8 @@ def build_launch_description(
                 'revised_v2_enabled': revised_v2_enabled,
                 'halla_stopline_test_enabled': halla_stopline_test_enabled,
                 **estop_mount_params,
-                # TODO: connect tomorrow's CSV ESTOP station; no station means disabled.
-                'estop_station_zone_id': 0,
+                # Only actual CSV state=6 memberships arm ESTOP; no marker stays inactive.
+                'estop_station_zone_id': -1 if revised_v2_enabled else 0,
                 **({'traffic_stop_offset_m': 1.1} if revised_v2_enabled else {}),
                 # run별 진단 산출물 — back-to-back 재현(§5.5)과 지터 판정(§7)
                 'snapshot_dump_path': os.path.join(log_dir, 'mgm_snapshots.bin'),

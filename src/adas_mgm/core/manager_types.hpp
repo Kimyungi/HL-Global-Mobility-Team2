@@ -14,7 +14,7 @@ enum class SafetyState : uint8_t {NORMAL=0, SAFE_STOP=3, ESTOP=4};
 enum class MissionState : uint8_t {MISSION_IDLE=0, MISSION_ACTIVE=1};
 enum class MissionType : uint8_t {NONE, T_PARKING, PARALLEL_PARKING};
 enum class SpeedOwner : uint8_t {NAVIGATION, AVOIDANCE, TRAFFIC, MISSION, SAFETY, FINISH};
-enum class ZoneType : uint8_t {NORMAL_ZONE, GPS_ONLY_ZONE, MISSION_ZONE, LAST_MISSION_ZONE};
+enum class ZoneType : uint8_t {NORMAL_ZONE, GPS_ONLY_ZONE, MISSION_ZONE, LAST_MISSION_ZONE, ESTOP_ZONE};
 
 enum class CalibrationState : uint8_t {UNCALIBRATED=0, CALIBRATED=1, INVALID_CONFIG=2, NOT_REQUIRED=3};
 enum class RearCorridorState : uint8_t {UNKNOWN=0, CLEAR=1, BLOCKED=2};
@@ -239,6 +239,7 @@ struct ManagerState
   bool halla_stopline_wait_clear;
   bool estop_active;
   bool estop_station_completed;
+  uint8_t estop_station_id;
   int32_t estop_clear_count;
   bool estop_detection_enabled;
   bool estop_motion_seen;

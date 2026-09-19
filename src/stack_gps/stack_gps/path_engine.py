@@ -77,7 +77,7 @@ class PoseDeltaTracker:
         return self.delta, self.update
 
 
-def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, include_states=False, zone_indices=None):
+def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, include_states=False, zone_indices=None, path_ids=None):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 
     east_m/north_m 열은 기록 세션의 기준점에 묶여 있어 쓰지 않고,
@@ -105,8 +105,12 @@ def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, inc
                     raise ValueError('CSV yaw must be finite')
                 yaws.append(yaw)
                 states.append(int(row.get('state') or 0))
-            elif str(row.get('state', '')).strip() == '4':
-                states[-1] = 4
+                if path_ids is not None:
+                    path_ids.append(str(row.get('path_id') or ''))
+            elif str(row.get('state', '')).strip() in ('4', '6'):
+                states[-1] = int(row['state'])
+                if path_ids is not None:
+                    path_ids[-1] = str(row.get('path_id') or '')
             if zone_indices is not None:
                 zone_id = int(row.get('zone_id') or 0)
                 if zone_id > 0 and int(row.get('inside_zone') or (1 if 'inside_zone' not in row else 0)):
@@ -755,3 +759,22 @@ class PathEngine:
             "cross_track_m": dist,
             "at_end": idx >= len(self.e) - 2,
         }
+
+
+def estop_station_ranges(path):
+    """State 6 arms from the current waypoint to its contiguous path_id end.
+
+    Indices follow the same quality filtering and deduplication as navigation.
+    For single-path CSVs without path_id, the file end is the station end.
+    """
+    path_ids = []
+    _, _, states = load_waypoints_csv(path, include_states=True, path_ids=path_ids)
+    ranges = []
+    for index, state in enumerate(states):
+        if state != 6 or (ranges and index <= ranges[-1][1]):
+            continue
+        end = index
+        while end + 1 < len(states) and path_ids[end + 1] == path_ids[index]:
+            end += 1
+        ranges.append((index, end))
+    return ranges

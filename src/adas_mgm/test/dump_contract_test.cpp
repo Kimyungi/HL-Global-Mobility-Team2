@@ -14,7 +14,7 @@ int main() {
     std::istringstream input(bytes,std::ios::binary); DumpHeader parsed{};
     if(read_dump_header(input,parsed)!=expected) {std::cerr<<name<<'\n'; ++failures;}
   };
-  check(good,true,"v41 round trip");
+  check(good,true,"v42 round trip");
   auto field=[&](unsigned index,uint32_t value) {
     auto bytes=good; bytes.replace(index*4,4,reinterpret_cast<const char *>(&value),4); return bytes;
   };
@@ -25,6 +25,7 @@ int main() {
   check(field(1,36),false,"old v36 avoidance confidence semantics");
   check(field(1,39),false,"old v39 params layout");
   check(field(1,40),false,"old v40 reverse recovery contract");
+  check(field(1,41),false,"old v41 station contract");
   check(field(1,kDumpVersion+1),false,"future version");
   check(field(2,sizeof(CoreSnapshot)-1),false,"snapshot ABI mismatch");
   check(field(3,sizeof(CoreParams)-4),false,"missing params cannot be zero filled");

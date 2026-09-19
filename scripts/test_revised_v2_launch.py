@@ -36,7 +36,7 @@ def test_runbook_profile_excludes_legacy_estop_and_starts_traffic_supervisor():
     assert params['revised_v2_enabled'] and not params['lidar_estop_enabled']
     assert params['escape_after_cycles']==0 and params['traffic_stop_offset_m']==1.1
     assert len(params['estop_mount.front'])==8
-    assert params['estop_station_zone_id']==0
+    assert params['estop_station_zone_id']==-1
     assert not any(isinstance(n,Node) and n.node_executable=='estop_recovery_node.py' for n in description.entities)
     gps=next(n for n in nodes if n.node_package=='stack_gps')
     assert evaluate_parameters(context,gps._Node__parameters)[0]['turn_zone_policy']

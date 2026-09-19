@@ -27,3 +27,4 @@ float32 boundary_distance_m -1.0
 bool mission_entry_suppressed
 
 uint8 LAST_MISSION_ZONE=3
+# zone_type=4: ESTOP station from CSV state=6 (numeric wire value).

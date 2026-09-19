@@ -47,7 +47,7 @@ def main():
     params = dict(revised_v2_enabled=True, wait_go=True, lidar_estop_enabled=False,
         escape_after_cycles=0, v_base=2., required_lidar_topics=scans,
         zone_enter_confirm_samples=3,zone_exit_confirm_samples=3, avoid_zone_only=True,
-        estop_station_zone_id=9)
+        estop_station_zone_id=-1)
     # Test-only aligned mounts, explicit frame; production launch reads calibration YAML.
     for direction in ['front','left','right']:
         params['estop_mount.'+direction]=[.76,0.,0.,-180.,180.,0.,.1,12.]
@@ -82,7 +82,7 @@ def main():
             front.ranges=[float('inf')]*1441
             gps.fix_quality=4
             messages['/bridge/can_health'].tx_ok=True
-            zone=ZoneContext(zone_id=9,zone_type=0,zone_valid=True,in_zone=False)
+            zone=ZoneContext(zone_id=9,zone_type=4,zone_valid=True,in_zone=False)
             gps.zones=[zone]
             expect(lambda s,r:s.start_ready,'synthetic inputs ready')
             go.publish(Bool(data=True))
