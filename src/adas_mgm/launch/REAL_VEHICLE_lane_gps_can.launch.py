@@ -907,6 +907,8 @@ def build_launch_description(
                 'revised_v2_enabled': revised_v2_enabled,
                 'halla_stopline_test_enabled': halla_stopline_test_enabled,
                 **estop_mount_params,
+                # TODO: connect tomorrow's CSV ESTOP station; no station means disabled.
+                'estop_station_zone_id': 0,
                 **({'traffic_stop_offset_m': 1.1} if revised_v2_enabled else {}),
                 # run별 진단 산출물 — back-to-back 재현(§5.5)과 지터 판정(§7)
                 'snapshot_dump_path': os.path.join(log_dir, 'mgm_snapshots.bin'),
@@ -982,8 +984,8 @@ def build_launch_description(
                              '목표값 송신 중단 — can_zero로 0 복귀 후 전체 종료'),
         ),
 
-        Node(package='adas_mgm', executable='estop_recovery_node.py', name='estop_recovery',
-             condition=IfCondition(str(revised_v2_enabled).lower()), output='screen'),
+        # Upper ESTOP now holds zero until the front corridor clears.
+        # The former reverse recovery executor must not run in this profile.
 
         # ── rosbag — 버그 사후 분석·재생용. 토픽 명시 목록(RECORD_TOPICS)만 기록
         # 평상시 — 명시 토픽 목록만

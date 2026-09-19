@@ -1,5 +1,6 @@
-"""Revised v2 wiring with synthetic inputs, never CAN/camera/GPS hardware."""
+"""Stop-only ESTOP station wiring with isolated synthetic inputs; no hardware."""
 import os
+import math
 import subprocess
 import sys
 import tempfile
@@ -45,7 +46,8 @@ def main():
     recovery=node.create_publisher(EstopRecovery,'/planning/estop_recovery',1)
     params = dict(revised_v2_enabled=True, wait_go=True, lidar_estop_enabled=False,
         escape_after_cycles=0, v_base=2., required_lidar_topics=scans,
-        zone_enter_confirm_samples=5,zone_exit_confirm_samples=5, avoid_zone_only=True)
+        zone_enter_confirm_samples=3,zone_exit_confirm_samples=3, avoid_zone_only=True,
+        estop_station_zone_id=9)
     # Test-only aligned mounts, explicit frame; production launch reads calibration YAML.
     for direction in ['front','left','right']:
         params['estop_mount.'+direction]=[.76,0.,0.,-180.,180.,0.,.1,12.]
@@ -63,7 +65,6 @@ def main():
                     if isinstance(msg,Header): msg.stamp=stamp
                     else: msg.header.stamp=stamp
                     if hasattr(msg,'reference_stamp'): msg.reference_stamp=stamp
-                    if isinstance(msg,VehicleVector): msg.counter=(msg.counter+1)%65536
                     pubs[topic].publish(msg)
                 rclpy.spin_once(node,timeout_sec=.025)
                 if proc.poll() is not None:
@@ -75,43 +76,50 @@ def main():
                 if states and refs and condition(states[-1],refs[-1]):
                     print('PASS:',label); return
             raise AssertionError(label+f' state={states[-1:]} target={refs[-1:]}')
-        executor=subprocess.Popen([sys.executable,sys.argv[2]],stdout=log,stderr=subprocess.STDOUT)
         try:
-            rear=messages[scans[1]]
-            rear.header.frame_id='lidar_a2_link'
-            rear.angle_increment=6.283185307179586/1000
-            rear.ranges=[10.]*1000
-            messages[scans[0]].header.frame_id='lidar_a1_link'
+            front=messages[scans[0]]
+            front.angle_min=-math.pi;front.angle_increment=math.pi/720
+            front.ranges=[float('inf')]*1441
+            gps.fix_quality=4
             messages['/bridge/can_health'].tx_ok=True
-            vehicle=messages['/vehicle/vector']
-            expect(lambda s,r:s.start_ready,'ready')
+            zone=ZoneContext(zone_id=9,zone_type=0,zone_valid=True,in_zone=False)
+            gps.zones=[zone]
+            expect(lambda s,r:s.start_ready,'synthetic inputs ready')
             go.publish(Bool(data=True))
-            expect(lambda s,r:s.go_authorized and r.v_ref>0,'authorized normal driving')
-            vehicle.v=0.; messages[scans[0]].ranges=[.2]*10; pump(.5)
-            assert not states[-1].estop_active, 'stationary departure must not enter ESTOP'
-            vehicle.v=.03; pump(1.)
-            assert not states[-1].estop_active, 'motion alone cannot bypass two second delay'
-            messages[scans[0]].ranges=[10.]*10; pump(1.2)
-            messages[scans[0]].ranges=[.2]*10
-            vehicle.v=0.
-            expect(lambda s,r:s.estop_active and r.state==5 and r.v_ref==0,'upper ESTOP state 5')
-            pump(5.)
-            assert refs[-1].v_ref==0 and states[-1].estop_active
-            expect(lambda s,r:r.v_ref<0 and r.state==5,'6 second hold then reverse')
-            assert refs[-1].ref_points[0].x<0
-            started=time.monotonic()
-            while time.monotonic()-started<6.:
-                vehicle.v=-.3 if refs[-1].v_ref<0 else 0.
-                pump(.05)
-                if not states[-1].estop_active:break
-            assert not states[-1].estop_active, 'recovery must complete after measured metre and stop'
-            assert time.monotonic()-started>3.2, 'cannot finish reverse prematurely'
-            pump(.3)
-            assert not states[-1].estop_active,'uncleared front must not retrigger'
-            assert executor.poll() is None
-            print('PASS: real executor + MGM hold/reverse/measured stop/completion and no retrigger')
+            expect(lambda s,r:s.go_authorized and r.v_ref>0,'GPS driving outside station')
+            def obstacle(lo=-.12,hi=.12):
+                values=[float('inf')]*1441
+                for i in range(1441):
+                    a=front.angle_min+i*front.angle_increment
+                    if math.cos(a)<=0:continue
+                    distance=1.0/math.cos(a)
+                    if lo<=distance*math.sin(a)<=hi:values[i]=distance
+                front.ranges=values
+            obstacle();pump(.5)
+            assert not states[-1].estop_active, 'outside station must ignore obstacle'
+            zone.in_zone=True
+            expect(lambda s,r:s.estop_active and r.state==5 and r.v_ref==0,'station front width enters ESTOP')
+            episode=states[-1].estop_request_id
+            old=EstopRecovery(request_id=episode,done=True,v_suggest=-.3)
+            old.header.stamp=old.reference_stamp=node.get_clock().now().to_msg()
+            recovery.publish(old);pump(.4)
+            assert states[-1].estop_active and refs[-1].v_ref==0,'old reverse/done ignored'
+            muted.add(scans[0]);pump(.6)
+            assert states[-1].estop_active and refs[-1].v_ref==0,'front sensor loss cannot release'
+            muted.clear();front.ranges=[float('nan')]*1441;pump(.4)
+            assert states[-1].estop_active,'invalid scan cannot release'
+            obstacle(-.05,.05);pump(.4)
+            assert states[-1].estop_active,'narrow remnant keeps stop'
+            front.ranges=[float('inf')]*1441
+            expect(lambda s,r:not s.estop_active and r.v_ref>0,'new clear scans restore GPS')
+            obstacle();pump(.5)
+            assert not states[-1].estop_active,'same station cannot retrigger'
+            zone.in_zone=False;pump(.5)
+            zone.in_zone=True
+            expect(lambda s,r:s.estop_active and r.v_ref==0,'confirmed station exit rearms')
+            assert all(ref.v_ref>=0 for ref in refs),'stop-only ESTOP never reverses'
+            print('PASS: stop-only station ESTOP ROS wiring')
         finally:
-            executor.terminate();executor.wait(timeout=5)
             proc.terminate(); proc.wait(timeout=5); log.close()
             node.destroy_node(); rclpy.try_shutdown()
 

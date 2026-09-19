@@ -238,6 +238,8 @@ struct ManagerState
   int64_t halla_stopline_start_ns;
   bool halla_stopline_wait_clear;
   bool estop_active;
+  bool estop_station_completed;
+  int32_t estop_clear_count;
   bool estop_detection_enabled;
   bool estop_motion_seen;
   int64_t estop_motion_start_ns;
