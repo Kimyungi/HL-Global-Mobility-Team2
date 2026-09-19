@@ -583,8 +583,8 @@ class StackTrafficNode(Node):
             f"speckle{int(self.oak_depth_speckle_filter)}/"
             f"spatial{int(self.oak_depth_spatial_filter)}/"
             f"temporal{int(self.oak_depth_temporal_filter)} "
-            f"detect_conf={self.confidence_threshold:.2f} "
-            f"track_conf={self.tracking_confidence_threshold:.2f} "
+            f"detect_conf={self.confidence_threshold:.3f} "
+            f"track_conf={self.tracking_confidence_threshold:.3f} "
             f"track_miss_max={self.tracking_max_missed_frames} "
             f"bbox_ema={self.bbox_smoothing_current_weight:.2f} "
             f"template_track={int(self.template_tracking_enabled)}/"
@@ -724,8 +724,8 @@ class StackTrafficNode(Node):
         self.declare_parameter("detection_tile_width_ratio", 1.00)
         self.declare_parameter("process_period_sec", 0.10)
         self.declare_parameter("camera_timeout_sec", 0.50)
-        self.declare_parameter("confidence_threshold", 0.185)
-        self.declare_parameter("tracking_confidence_threshold", 0.10)
+        self.declare_parameter("confidence_threshold", 0.09)
+        self.declare_parameter("tracking_confidence_threshold", 0.045)
         self.declare_parameter("tracking_max_missed_frames", 5)
         self.declare_parameter("tracking_minimum_iou", 0.10)
         self.declare_parameter("tracking_maximum_center_shift_ratio", 0.50)

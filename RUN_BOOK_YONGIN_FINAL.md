@@ -200,6 +200,8 @@ zone [1]·[3]은 현재 station 또는 허용된 preview로 진입을 관측합�
 
 신호등 카메라 노출 보정은 `traffic_exposure_compensation=-9`입니다. 변경은 런처 재시작 후 적용되며 라인 카메라는 그대로입니다.
 
+일반 신호등 박스 검출 기준은 최초 `confidence_threshold=0.09`, 추적 유지 `tracking_confidence_threshold=0.045`입니다. 빨간색 판별 조건과 정지선 검출 기준은 별도입니다.
+
 - zone [3]에서 검출·최대 1m/s 제한을 적용합니다. 이탈 후 다른 제한이 없으면 `v_base`로 복귀합니다.
 - 신호등 bbox YOLO와 HSV 색상 판단, 정지선 segmentation을 사용합니다.
 - 정지선 신규 검출 신뢰도는 0.30, 연속 추적 후보는 0.20입니다.
