@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+echo "Retired avoidance entry excluded. Use scripts/v2 prepare; see RUN_BOOK_HALLA_FINAL.md." >&2
+exit 2
+
+# Historical implementation below is intentionally unreachable.
+set -eo pipefail
+AVOID_LAB_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+source /opt/ros/humble/setup.bash
+source "$AVOID_LAB_ROOT/install_v2/local_setup.bash"
+exec /usr/bin/python3 "$AVOID_LAB_ROOT/tools/avoid_reference_lab/lidar_lab.py" "$@"

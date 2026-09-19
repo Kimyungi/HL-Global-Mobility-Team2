@@ -16,6 +16,7 @@ from stack_traffic.oak_camera import (
     normalize_oak_usb_speed,
     open_oak_device,
     validate_depthai_version,
+    validate_exposure_compensation,
     validate_oak_usb_bandwidth,
 )
 
@@ -821,6 +822,24 @@ class TestOakConfiguration(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_oak_usb_speed("auto")
 
+    def test_exposure_compensation_rejects_invalid_sensor_commands(self):
+        for value in (-9, -1, 0, 9):
+            self.assertEqual(validate_exposure_compensation(value), value)
+        for value in (-10, 10, 0.5, True, "-1"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_exposure_compensation(value)
+
+    def test_v2_rgb_exposure_is_sent_to_sensor(self):
+        fake_dai = Mock()
+        pipeline = fake_dai.Pipeline.return_value
+        camera, output = Mock(), Mock()
+        pipeline.create.side_effect = [camera, output]
+        with patch("stack_traffic.oak_camera.dai", fake_dai):
+            build_oak_pipeline(640, 360, 10.0, depth_enabled=False,
+                               exposure_compensation=-1)
+        camera.initialControl.setAutoExposureEnable.assert_called_once_with()
+        camera.initialControl.setAutoExposureCompensation.assert_called_once_with(-1)
+
     def test_usb2_bandwidth_accepts_vehicle_rgb_profile(self):
         validate_oak_usb_bandwidth(
             width=1280,
@@ -878,9 +897,12 @@ class TestOakConfiguration(unittest.TestCase):
                 minimum_depth_m=0.3,
                 maximum_depth_m=10.0,
                 depth_enabled=False,
+                exposure_compensation=-1,
             )
 
         self.assertIs(result, queue)
+        camera.initialControl.setAutoExposureEnable.assert_called_once_with()
+        camera.initialControl.setAutoExposureCompensation.assert_called_once_with(-1)
         pipeline.create.assert_called_once_with(fake_dai.node.Camera)
         camera_builder.build.assert_called_once_with(
             fake_dai.CameraBoardSocket.CAM_A
@@ -1091,3 +1113,23 @@ class TestOakPipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_rgb_acquisition_time_preserves_queued_frame_age():
+    from datetime import timedelta
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    frame = np.zeros((2, 2, 3), dtype=np.uint8)
+    packet = FakeRgbMessage(frame)
+    packet.getTimestamp = lambda: timedelta(seconds=9.6)
+    camera = make_camera(packet)
+    camera.depth_enabled = False
+    clock = SimpleNamespace(Clock=SimpleNamespace(now=lambda: timedelta(seconds=10)))
+    with patch('stack_traffic.oak_camera.dai', clock), \
+         patch('stack_traffic.oak_camera.time.monotonic', return_value=100.):
+        assert camera.read()[0]
+    assert abs(camera.last_capture_monotonic - 99.6) < 1e-6
+    # A subsequent frame without metadata cannot reuse the previous timestamp.
+    camera.queue = FakeQueue(FakeRgbMessage(frame))
+    assert camera.read()[0]
+    assert camera.last_capture_monotonic is None

@@ -99,13 +99,20 @@ class FusionNode(Node):
             return
 
         points = np.concatenate(clouds, axis=0)
-        stamp = self.get_clock().now().to_msg()
+        # Metadata only: a timer republish cannot turn cached scans into fresh
+        # measurements. Any new contributing input advances the generation;
+        # this also preserves new front-scan processing in estop's stamp dedupe.
+        # Per-sensor max_age/coverage policy remains unchanged.
+        stamp = max((self.latest[sid].header.stamp for sid in active),
+                    key=lambda value: (value.sec, value.nanosec))
         header = Header(stamp=stamp, frame_id=self.base_frame)
         for sid, cloud in sensor_clouds:
             raw_xyz = np.column_stack(
                 (cloud, np.zeros(cloud.shape[0], dtype=np.float32)))
             self.raw_pubs[sid].publish(
-                point_cloud2.create_cloud(header, self.fields, raw_xyz.tolist()))
+                point_cloud2.create_cloud(
+                    Header(stamp=self.latest[sid].header.stamp, frame_id=self.base_frame),
+                    self.fields, raw_xyz.tolist()))
         xyz = np.column_stack((points, np.zeros(points.shape[0], dtype=np.float32)))
         self.cloud_pub.publish(point_cloud2.create_cloud(header, self.fields, xyz.tolist()))
 

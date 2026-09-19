@@ -30,6 +30,7 @@ def graph(monkeypatch, relative, overrides=None):
     for action in description.entities:
         if isinstance(action, DeclareLaunchArgument):
             action.execute(context)
+    context.launch_configurations.update(route_sequence_enabled_resolved='false', zones_file_resolved='')
     # Never execute Node, IncludeLaunchDescription, OpaqueFunction or CAN guards.
     return context, description.entities
 
@@ -57,8 +58,8 @@ def test_default_profile_keeps_main_speed_and_requires_go(monkeypatch):
         assert params[name] == baseline['mgm_node']['ros__parameters'][name]
     assert params['wait_go'] is True
     assert context.launch_configurations['lane_csv'] == 'false'
-    assert 'zone_enter_confirm_samples' not in params
-    assert 'parking_search_timeout' not in params
+    assert params['zone_enter_confirm_samples'] == int(context.launch_configurations['zone_enter_confirm_samples'])
+    assert params['parking_search_timeout'] == float(context.launch_configurations['parking_search_timeout'])
 
 
 def test_trial_overrides_reach_speed_and_obstacle_consumers(monkeypatch):

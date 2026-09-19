@@ -187,3 +187,38 @@ def test_stale_pivot_cog_not_reconsumed_at_standstill():
         f.update_imu(2.0, t=3.1 + 0.02 * k, gyro_z=0.0)
         f.update_cog(2.0 + 1.0 + math.pi / 2, t=2.9, speed=0.3)
     assert f.offset == pytest.approx(1.0)  # 오염 없음 (진정 시간 + dedupe)
+
+
+def test_waypoint_initialization_tracks_imu_and_accepts_cog_correction():
+    f = HeadingFusion(alpha=.5)
+    f.update_imu(.7, 1.)
+    assert f.initialize_from_waypoint(-2.3, 1.)
+    assert f.heading(1.) == pytest.approx(-2.3)
+    f.update_imu(.9, 2.)
+    assert not f.initialize_from_waypoint(0., 2.)
+    assert f.heading(2.) == pytest.approx(-2.1)
+    f.update_cog(-1.9, 2., speed=.5)
+    assert f.heading(2.) == pytest.approx(-2.)
+    f.reset_alignment()
+    assert not f.initialize_from_waypoint(0., 2.)
+    assert f.heading(2.) is None
+
+
+def test_waypoint_initialization_requires_fresh_finite_imu():
+    f = HeadingFusion(sign=-1.)
+    assert not f.initialize_from_waypoint(0., 1.)
+    f.update_imu(.5, 1.)
+    assert not f.initialize_from_waypoint(0., 2.)
+    assert not f.initialize_from_waypoint(0., .9)
+    assert not f.initialize_from_waypoint(float('nan'), 1.)
+    assert f.initialize_from_waypoint(1., 1.)
+    f.update_imu(.7, 1.1)
+    assert f.heading(1.1) == pytest.approx(.8)
+
+
+def test_cog_alignment_prevents_later_waypoint_reinitialization():
+    f = HeadingFusion(seed_n=1)
+    f.update_imu(0., 1.)
+    f.update_cog(.2, 1., speed=.5)
+    f.reset_alignment()
+    assert not f.initialize_from_waypoint(1., 1.)

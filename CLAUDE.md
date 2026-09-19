@@ -1,5 +1,254 @@
 # CLAUDE.md — 자율주행 시스템 프로젝트 컨텍스트
 
+> 구형·미사용 상태와 별도 MISSION_PREPARE를 현재 정의에서 제외했다. raw dump는 v35다.
+> 현재 확정 상태 머신: **스테이트 v09.16**. [명칭·빈 상태 점검](docs/STATE_V09_16.md)을 현재 명세로 사용한다.
+
+> 2026-09-16 PR #108 후속: 상위 ESTOP에 실제 정차 10초 → 실측 후진 1m → 정차 완료 실행기 연결.
+> 독립 EstopRequest/장애물 소실 조기 해제 제외. CAN state=5, raw dump v34.
+> [현재 ESTOP 계약](docs/V2_PR108_INTEGRATION.md)이 아래 과거 설명보다 우선한다.
+
+> 2026-09-16 후속 회피 교체: `prepare/drive`는 PR #103의 `waypoint_avoid_node`를 사용한다.
+> `waypoint_avoid=true`, `avoid_v2_enabled=false`만 허용한다. 구형 선택 분기·v2 런처·회피 시험 진입점은 제외했다.
+> 이전 New_Avoid_v2/legacy 소스는 기록 비교용이며 현재 v2 실행 그래프에는 포함하지 않는다.
+> PR #105 분리 CSV와 공통 GPS 원점을 사용하고, 09.16 상위 AVOID 전이 조건은 유지한다.
+> 무효 곡률/경로는 points를 비워 정차하며 1m preview를 변경 없이 전달한다.
+> [회피 교체 보고서](docs/V2_PR103_INTEGRATION.md)가 아래 과거 회피 설명보다 우선한다.
+
+> 2026-09-16 T 주차 참조경로 통합: 일반 drive 런처는 좌측 LiDAR 판별 후 03 끝까지 전진,
+> 선택 경로 후진, 후방 벽 0.50m 정차/10초 대기, 같은 경로 전진 복귀 후에만 done을 보낸다.
+> T Mission은 03 종점에서 자동 취소하지 않으며 주차 모듈이 복귀 정차를 확인한 뒤 MGM ACK로 04에 전환한다.
+> T 속도는 provider 권장값을 v_base 이하로 보존한다. 평행 주차 기존 정책은 유지한다.
+> raw dump v33. [연결·검증 범위](src/stack_parking/docs/T_REFERENCE_SEQUENCE.md).
+> 오프라인 검증이며 실차·ROS graph·MPC 폐루프 검증을 뜻하지 않는다.
+
+> 2026-09-15: v2 기본 회피 provider는 전방·좌우 3개 LiDAR를 사용하는 `stack_avoid_v2`다. 기존 zone 진입·GPS_RETURN·완료 표식 조건은 유지한다. 운영 연결은 [벽 중앙 회피 MGM 연결](docs/AVOID_V2_MGM_INTEGRATION.md)을 따른다. 아래 기존 `stack_avoid` 경로 생성/그림자 전용 설명보다 이 연결 계약이 우선한다.
+
+> 2026-09-14 최종 v2 정책: MGM 자체 회피 TTC/경로 실패 AUTO_ESTOP은 사용하지 않는다.
+> 독립 LiDAR 요청만 AUTO_ESTOP의 입력이며, CAN/운전자/신호/미션 정지는 별도다.
+> 장애물이 없고 회피 제어점이 비거나 오래됐으면 유효 GPS로 즉시 복귀한다.
+> 신호 해제는 `!red`이며 GPS 주행 상태로 전환한다. 아래 과거 정책보다 우선한다.
+> HTML 실험실 및 관련 도구는 로컬 전용으로 이번 PR에서 제외한다.
+
+> 2026-09-14 검출 거리: 앞범퍼 전방 3.5m 미만, 좌우 ±0.5m. 검출 유지 +0.4m(3.9m).
+> 속도 2m/s, 회피점 station+2.7m 복귀, 기존 TTC 기준 유지. 상세 RUN_BOOK_HALLA_FINAL.md.
+
+> 2026-09-14 회피 목표점: 최근접 거리는 검출·TTC 전용. 관련 연결 면의 앞뒤 범위와
+> 원래 끝점·극점에서 후보 단면을 잡고, 선분+여유 원의 합집합으로 실제 점유 구간을
+> 계산한다. 면 기준 생성과 GPS station+1 → 회피점 → station+2.7m 연결 계약은
+> [현재 경로 문서](docs/AVOID_STATION_PATH.md)가 아래 과거 설명보다 우선한다.
+
+> 2026-09-14 사용자 지정 SAFE_STOP: v2 `safe_stop_all_sensors_only=true`.
+> 차선/신호 카메라 2대, raw LiDAR 4대, GPS가 전부 무효일 때만 사유 2로 SAFE_STOP.
+> 센서별 freshness를 독립 판정하며, `MgmState.sensor_alive_mask`로 보고한다.
+> 운영자/CAN 정지, AUTO_ESTOP 및 제어점 부재 출력 대기(`reference_motion_blocked`)는 별도.
+> dump v29. 아래 과거 개별 입력 상실 SAFE_STOP 규칙보다 이 설정이 우선한다.
+> 기존 출발 인가 조건은 유지. 상세 `RUN_BOOK_HALLA_FINAL.md`.
+
+> 2026-09-14 주행 준비 변경: `scripts/v2 prepare`는 전체 스택을 준비하고,
+> GPS/RTCM은 별도 상주 서비스로 유지한다. `go`는 카메라 프레임 **또는**
+> GPS FIXED(4)로 인가하고, `stop → go`는 GPS를 재시작하지 않는다.
+> 일반 CSV 구간은 GPS 상실 시 유효한 카메라 경로로 주행한다. raw dump v26.
+> 상세: [주행 준비](docs/DRIVE_PREPARATION.md). 아래 과거 전체 센서 필수 출발 조건보다 우선한다.
+
+> **2026-09-14 회피 station 경로:** 회피는 내부 다점 경로를 유지하고 매 새 스캔에서
+> 이전 station ±`(abs(v_ref) * sample_time + 0.5m)` 안으로 투영한다. 출력은 경로
+> 누적거리 station+1m의 점 1개이며 MGM은 xy/yaw/curvature를 축소 없이 전달한다.
+> 장애물 뒤쪽이 불명확하면 회피 후 직선 꼬리를 유지하고, 신선한 GPS 기준점까지
+> 차량 폭·길이를 고려한 연결 경로가 관측상 비어 있을 때만 복귀 경로를 만든다.
+> 경로는 신선한 GPS 위치/헤딩 또는 VehicleVector pose에 고정하며, 동일 episode
+> 중 좌표 소스를 바꾸지 않는다. 자세 상실 시 경로를 전진시키거나 완료하지 않는다.
+> 상세: `docs/AVOID_STATION_PATH.md`. 아래 과거 회피점 1/20 축소 규칙보다 우선한다.
+
+> **2026-09-13 무인 RC 시험 후진:** [현재 설정](docs/RC_REVERSE_RECOVERY.md)이 아래 과거 Recovery OFF/필수 CLEAR/고정속도 설명보다 우선한다.
+> 일반 v2 설정은 `escape_after_cycles=1000`, `v_escape=-0.8`, `escape_max_cycles=162`,
+> `escape_require_rear_clear=false`. 주차·외부·CAN 정지는 유지하며 no-estop/MBD/bench는 복구 OFF다. raw dump v22.
+
+> **2026-09-13 회피 장애물 표면 모델:** `stack_avoid`는 매 스캔의 인접 반사점을
+> 연결된 2D 윤곽(선분)으로 구성한다. 감지·TTC는 윤곽과 전방 통로의 교차로,
+> 회피 공간은 깊이 밴드에 걸친 **윤곽 전체**의 측방 점유 구간에 차폭/여유를
+> 반영해 계산한다. 깊이·측방 컷으로 벽의 가짜 끝을 만들지 않는다.
+> 무효 빔/거리 불연속은 연결하지 않고 고립점도 보존한다. 목표와 rate limit
+> 중간점은 연속 선분의 거리·가림을 검사한다. 3D 면 복원이나 가려진 물체의
+> 체적 추정은 아니며, 실제 제어 궤적 전체의 충돌 검증은 별도다.
+> 단일 목표점/MGM/CAN/완료 계약은 유지한다. 상세: `docs/AVOID_SURFACES.md`.
+
+> **2026-09-13 GPS-only Zone 선행 진입:** 일반 `GPS_ONLY_ZONE` membership은
+> 현재 station 최근접 웨이포인트와 station+2.5m preview에 가장 가까운 CSV
+> 웨이포인트 중 하나라도 Zone 범위 안이면 true다. preview의 주행 기준점 보간은
+> 유지하되 Zone 판정에는 보간 비율이 아니라 가장 가까운 한쪽 웨이포인트 index를 쓴다.
+> `MISSION_ZONE`과 주차·정지·회피·가속처럼 동작/state를 바꾸는 나머지 판정은
+> preview를 사용하지 않고 현재 station index만 사용한다.
+
+> **2026-09-13 주차 맵 재관측 반경:** 기존 맵 점의 재관측 일치 반경은
+> `0.02m`다. 같은 voxel이 아닌 점은 2cm 이내에서만 기존 셀의 hit로 인정한다.
+> 4m freespace 삭제 범위와 tentative/confirmed miss 횟수, 빈 bin을 unknown으로
+> 취급하는 정책은 변경하지 않는다.
+
+> **2026-09-13 주차 측면 탐색 거리:** 사용자 지정으로 주차공간 검출의 측면 경계
+> 최대거리는 T자·평행 모두 `3.0m`다. 통합 `SpaceDetector`뿐 아니라 별도
+> `parallel_parking_node`가 상속하는 `WallGapDetector`의 초기 벽 탐색에도 같은
+> 기본값을 적용한다. T자 주차의 후면 벽 판정은 이 상한과 분리해
+> `perpendicular_min_depth_m` 이후의 지지점을 사용한다. 측면 탐색 상한을 늘려도
+> 후면 벽이 반드시 3m보다 멀어야 하는 조건으로 바뀌지 않는다.
+
+> **2026-09-13 회피 수정:** [main 동작 복원 메모](docs/AVOIDANCE_MAIN_RESTORE.md)가 아래 과거 회피 고정속도/소실 200틱 종료 설명보다 우선한다.
+> AVOID 첫 CAN 기준점·yaw, .6/.2 m/s 상한, 가감속, 완료/최대 시간 종료 및 종료 후 GPS hold를 복원했다.
+> v2 단일점 계약과 병행 Manager는 유지한다. CTest 21/21 통과; 실차 확인은 남아 있다.
+
+
+> **2026-09-13 현재 통합 설정:** 일반 주행은 회피와 LiDAR E-stop 모두 ON이다.
+> Mission ACTIVE에서는 준비·실행 전체에서 둘 다 제외하며 종료 후 다시 적용한다.
+> 신호등 OAK 자동 노출 보정 기본값은 `-2`다(차선 카메라와 별도).
+> 아래 과거 OFF/노출 설정 기록보다 이 기준을 우선한다.
+
+> 2026-09-13 정면 라이다 좌표 수정: `parking_enabled=true`인 공유 통합 launch는
+> E-stop yaw를 `lidar_fusion_v2/config/fixed_geometry.yaml`의 a1 -87도에서 읽고,
+> 회피 전방 각도를 동일 yaw에서 +87도로 계산한다. 기존 +90도/270도 해석으로
+> 뒤쪽 반사점을 전방 장애물로 오인하던 문제를 합성 스캔으로 재현·수정했다.
+> 일반/no-estop에 공통 적용하며 단일 /scan 방향과 거리 문턱은 유지한다.
+> 현장 검증은 남아 있다. [재현·검증 기록](docs/FRONT_LIDAR_ALIGNMENT.md).
+
+> **2026-09-13 PR 검토 상태:** [현재 범위·검증 결과](docs/INTEGRATION_V2_PR_STATUS_20260913.md). 이번 MGM 격리 빌드 성공, Python 432 통과/3 skip.
+> 전체 CTest는 11/20 통과이며 회귀 정리가 남아 있다. 아래 과거 미빌드/전체 통과 표기보다 이 결과를 우선한다.
+
+> 2026-09-13 주차 제어권 변경: v2 `parking_zone_entry_active=true`는 stable Mission Zone
+> 진입(기존 5회 확인) 즉시 MISSION_ACTIVE/PARKING으로 전환한다. 탐색 중에는 현재 CSV의
+> GPS 목표점 1개를 v_base로 추종하며 PREPARE 명령으로 SLAM/검출/계획을 준비한다.
+> 현재 요청의 fresh ready 틱에 Parking 제어로 인계하고 ACTIVATE를 보낸다.
+> 이때부터 실행 ack/유효 Parking reference까지 정지한다. mission_start/handoff도 ready에 기록한다.
+> Zone 이탈/시간/탐색 거리로 복귀하지 않는다. 정상 복귀는 현재 요청의 실행 ack 이후 done,
+> 또는 유효한 현재 CSV 종점 도달이다. 종점에서 미완료 요청은 ROUTE_END=10으로 CANCEL,
+> 실패 기억을 기록하고 기존 실제 정지/새 CSV ack 인계 절차를 따른다. 03 종점까지 미준비이면
+> 04 요청·적용·재출발이 자동으로 이어지며 추가 go가 필요 없다. done과 종점 동시면 성공 우선.
+> 탐색 중 GPS 상실은 정지이며 높은 LINE 신뢰도로 대체하지 않는다. 일반 신호/외부/CAN
+> 정지는 탐색에도 적용한다. 일반 LiDAR E-stop과 회피는 ACTIVE 준비·실행 전체에서 제외한다.
+> Parking status 부재 자체는 GPS 탐색을 막지 않는다.
+> ready 이후 모듈 응답/경로 상실은 Parking 제어를 유지한 정지다. 명시 취소/새 session/최종 FINISH,
+> 운전자·CAN 정지는 유지한다. 이 설정은 과거 parking_search_zone_only/수명 제한보다 우선한다.
+> 현행 기본은 즉시 진입 true / 과거 Zone 탐색 false. 과거 시험은 즉시 진입 false를 명시한다.
+> 탐색의 TargetRef delta는 GPS, 기동의 delta는 Parking SLAM이다. state byte만으로 고르지 않는다.
+> 신호 정지 초기 거리 1.5m는 그대로다. raw dump v20이며 v18/v19 run은 당시 빌드로 재생한다.
+> 세부 기준: [MGM_PARKING_ENTRY.md](docs/MGM_PARKING_ENTRY.md).
+
+> 2026-09-13 GPS station 변경: 최초 유효 fix에서만 전역 최근접 index를 찾는다. 이후에는 저장한
+> 연속 station ± `(abs(v_ref) * sample_time * 1.5 + 0.5m)` 안의 경로 선분에서만 다음 station/index를 찾는다.
+> 거리 기준은 경로 누적 길이다. 연속 station을 함께 저장해 CSV 간격보다 작은 이동도 누적한다.
+> sample_time은 GPS `publish_period`(현재 0.1s), v_ref는 `/adas/target_ref`의 최종 명령이다.
+> 같은/역행 fix에는 갱신하지 않는다. 명령 미수신·비유한·기존 GPS stale_timeout 초과는 v_ref=0으로
+> 탐색 반경을 0.5m로 한다. 정지 중에도 새 fix로 이 범위의 station/index를 갱신한다.
+> GPS 공백으로 window를 늘리거나 전역 재탐색하지 않는다.
+> CSV 전환/명시적 새 session에서만 station을 초기화한다. GPS-only Zone은 현재 위치의
+> 저장 index와 preview 최근접 index의 OR를 사용하고, 그 밖의 Zone은 현재 위치 index만 사용한다.
+> preview는 station +2.5m(종점 클램프). 두 점 중 한쪽 가중치가 90% 이상이면 해당 점을 사용하고,
+> 나머지는 xy/곡률을 선형 보간하고 yaw는 짧은 각도 방향으로 보간한다. 반환/발행은 1점이다.
+> endpoint snap일 때는 +2.5m에서 최대 선분 길이의 10%만큼 달라질 수 있다.
+> 기존 GPS 재합류 합성·1.8m 거리·25도 제한은 v2 station 경로에서 사용하지 않는다.
+> 과거 PathEngine snapshot은 legacy 비교용이며 ROS 운용은 station 경로를 고정 사용한다.
+
+> 2026-09-12 카메라 목표점: 차량 원점의 차로 중심선 최근접 투영을 현재 station으로 삼고,
+> 중심선을 따라 +2.5m 지점의 xy/yaw/curvature **1개만 반환/발행**한다.
+> 중심선 피팅·내부 20점 타당성 검사·계수 smoothing은 유지한다. x 고정/원점 직선거리 고정이 아니다.
+> 신뢰도·곡률에 따라 preview 거리를 바꾸는 기존 REF_POINT_00 치환은 제거한다.
+> 검출 실패/HELD/SEARCH의 기존 유효성·generation 정책은 유지한다. GPS 기하는 이번 변경 범위 밖이다.
+> 가시 범위 밖 station은 기존 피팅 곡선의 외삽이며 새로운 실측으로 간주하지 않는다.
+
+> **아래 전체 provider 1점 계약은 진행 중인 설계다.** MGM 소스만 일부 반영된 미빌드 상태이며,
+> GPS/LINE 생산부는 1점을 반환하도록 수정·오프라인 검증했다. 나머지 생산부 및 MGM 설치본의 통합은 미완료다.
+
+> 2026-09-12 사용자 요청 단일 목표점: v2 GPS/LINE/Avoid/Parking→MGM→TargetRef→CAN은
+> 유효한 제어 목표점 1개를 전달하는 것이 목표다. GPS n_points=1이며 LINE n_points는 내부 검사 표본 수다.
+> CSV 원본/Zone/주차 계획은 다점 경로 그대로 보존한다. MGM은 1→20 보간을 하지 않고
+> 선택점의 xy/yaw/curvature를 보존한다(기존 소스 전환 블렌드는 1점에 적용).
+> 비어 있거나 1개 초과/비유한/기본 원점인 입력은 기존 Reference 정지로 처리한다.
+> legacy/generated 재생용 배열 용량 20은 보존하되 병행 Manager 유효 n은 1이다.
+> 승인된 Recovery는 기존 1.5m 직선 목표 1개, 활성 설정은 계속 OFF다. dump v18.
+> 기존 1→20 기하 보상 지침은 legacy 전용이다. 실제 주행 없이 CSV 전환까지 mock으로 확인한다.
+
+> 2026-09-12 사용자 요청 임시 회피 OFF: v2 YAML/통합 launch의 `avoidance_enabled=false`.
+> 병행 Manager는 일반 AVOID 진입·CLEAR_CONFIRM·LiDAR-only fallback과 회피 전용 TTC 정지를 사용하지 않는다.
+> LINE/GPS reference가 모두 없으면 정지한다. 인지 노드는 관측/로그용으로 유지하며 별도 LiDAR E-stop,
+> 외부/CAN/Reference/Signal/Mission 정지는 각각 기존 설정을 따른다. no_estop 런처의 E-stop 제외는 그대로다.
+> 파라미터는 startup-only, 재활성화는 `avoidance_enabled:=true`. CoreParams 추가로 dump는 v17이다.
+
+> 2026-09-12 사용자 요청: v2 병행 Manager의 비정지 목표속도 크기는 `v_base` 하나로 고정한다.
+> 현재 YAML은 1.0m/s이며 주차/승인된 Recovery 후진은 -v_base다. provider의 0 정지 요구는 보존한다.
+> 가속 Zone, 회피 권장속도 크기/v_avoid/v_narrow 및 일반 주행 가감속 ramp는 적용하지 않는다.
+> Signal 정지 profile/정지 감속, TTC·외부·CAN·Reference 정지 및 제어권 인계의 0은 유지한다.
+> legacy/generated 경로는 기존 속도 정책이다. Bus layout은 같지만 재생 속도 계약 구분을 위해 dump는 v16이다.
+> 차량 실행 없이 core 회귀로 확인한다. 과거 run은 해당 빌드로 재생한다.
+
+> 2026-09-12 사용자 요청 시험 구성: `REAL_VEHICLE_integration_v2_no_estop.launch.py`는
+> `stack_estop` 노드와 해당 LiDAR E-stop 입력/미수신 보정만 제외한다.
+> MGM의 startup-only `lidar_estop_enabled=false`는 병행 core, wait_go=true,
+> escape_after_cycles=0에서만 허용한다. 일반 런처와 MGM 기본값은 true다.
+> 운전자 정지, CAN fault/latch, Reference final gate, Signal, Mission, 회피 TTC 정지는 유지한다.
+> 이는 전방 좌표 불일치 수정이나 실차 안전 검증을 뜻하지 않는다. 생성 backend/core bus를 바꾸지 않으며,
+> dump에는 선택한 시험 모드로 conditioning된 입력을 기록한다. 작성·검증 중 실제 차량 런처/go는 실행하지 않는다.
+> 실행과 제외 범위: [docs/INTEGRATION_V2_NO_ESTOP.md](docs/INTEGRATION_V2_NO_ESTOP.md).
+
+> 2026-09-12 현장 라이다 복구: v2의 통합 Parking launch는 `lidar_fusion_v2/drivers.launch.py`를 사용한다.
+> 기존 multi_lidar 드라이버 런처를 경유하면 a1에 9K/16bit가 전달된다. v2에 이미 검증된
+> 네 대의 공통 4K/8bit 프로필을 단일 기준으로 연결한다. 장착 변환·FOV·차량 제어는 변경하지 않는다.
+
+> 2026-09-12 주차 탐색 정책 변경: v2 `parking_search_zone_only=true`.
+> PREPARE는 요청을 시작한 stable Mission Zone 안에서만 ready→ACTIVE를 허가한다.
+> 확정 이탈(현재 5회)은 ZONE_EXIT=9로 실패 기록·CANCEL하며 현재 CSV의 다음 점부터 일반 주행을 계속한다.
+> 실패는 성공 완료와 별도 Mission ID 기억이다. 같은 session에 재시도하지 않으며 CSV 종점에서는
+> 해당 실패를 종료된 Mission으로 취급한다. 실패 순간 다음 CSV로 건너뛰지 않는다.
+> 시간/거리 제한은 사용하지 않는다. elapsed/travel은 관측 기록만 유지한다. GPS/Zone 불명은 PREPARE 정지 대기다.
+> ACTIVE 주차는 기존 제어권·완료 조건을 유지한다. 기존 외부 정지·명시 취소·입력 오류 처리는 유지한다.
+> false는 이전 시간/거리 제한 회귀용이다. 새 실패 기억/정책 bus로 raw dump는 v15다.
+
+> 2026-09-12 사용자 설정: v2 Zone 진입/이탈 확인은 각각 독립 GNSS **5회/5회**다.
+> params.yaml을 통합 launch 기본값의 기준으로 사용한다. 실측 인증값이라는 뜻은 아니다.
+> Zone 기준 탐색에서는 Parking 시간/거리 제한을 쓰지 않는다. 설정 파일 없이 MGM 단독 기동 시 Zone 확인 0=미설정 계약은 유지한다.
+
+> 2026-09-12 순서 정정: 한라대는 **(01 또는 02)→03→04→05→(06 또는 07)**이다.
+> `route_start_id`/`route_end_id`는 기본 미설정이며 실행 전에 사용자가 둘 다 명시한다.
+> 시작 때 선택한 5개 CSV로 순서를 확정하고 run 중 변경하지 않는다. 01→02/06→07 연결은 사용하지 않는다.
+> 출구 모델의 인식 결과를 경로 선택에 연결하는 runtime은 현재 v2에 없으며 임의 class→경로 매핑을 만들지 않는다.
+> Mission 완료·실제 정지·새 reference 응답 조건은 유지한다. 선택 순서도 sequence hash에 포함한다.
+> 이번 선택은 GPS manifest 해석 단계이며 선택과 탐색 정책의 현재 bus/raw dump는 v15다.
+> 현재 사용자가 지정한 실차 run은 `route_start_id=01`, `route_end_id=07`이다.
+
+> 2026-09-14 한라대 데이터: 손상민 PR #98 / `8796cdd`의 Path 4 state=4(idx 55),
+> 1m 단축 종점 `(-63.042107,-71.940893)`과 GPS-only 구간 끝점을 사용한다.
+> CSV state 1/2 주차점과 state 3 신호 예상 위치의 기존 역할은 유지한다.
+> v2 기본 `avoid_zone_only=true`: state=4/GPS 회피 시작 구간 확인으로 AVOID_ACTIVE 진입,
+> 실제 회피 후 waypoint 복귀 완료 및 GPS 0.1m/20° 정렬로 종료한다.
+> 무검출·타이머·신호 해제로 회피를 끝내지 않으며 같은 표식은 재실행하지 않는다.
+> [회피 Zone 상태 전이](docs/AVOID_ZONE_ENTRY.md)가 이전 회피 시작·종료 정책보다 우선한다.
+
+> Integration v2 분리 기준: [docs/INTEGRATION_V2.md](docs/INTEGRATION_V2.md). 기존 main은 보존하며 v2 전용 소스/build/install에서만 통합한다.
+
+> 2026-09-12 연속 경로: [docs/MGM_ROUTE_SEQUENCE.md](docs/MGM_ROUTE_SEQUENCE.md).
+> 한라대는 사용자 지정 시작/종료 경로와 공통 03→04→05 순서다.
+> 명시적 manifest의 순서와 endpoint_and_missions/missions_complete 조건을 MGM 순수 core가 관리한다. 중간 종점 정지 + 해당 경로 Mission 완료 +
+> 다음 경로/새 GNSS reference 응답 후 자동 재개하며 마지막 경로만 FINISH다. GPS는 검증·선로딩과
+> 명령 적용을 맡는다. 단일 CSV 동작과 경로 생성식은 유지한다. 새 bus/dump는 v15이다.
+
+> **6차 기준:** [MGM_MBD_STATE_MACHINE_SPEC.md](docs/MGM_MBD_STATE_MACHINE_SPEC.md)가 현재 C++ 병행 Manager와 향후 MBD의 단일 명세다. 아래 3/4/5차와 legacy 설명은 이 명세에 종속한다.
+> Zone은 독립 GNSS generation으로 확인하며 확인 표본 수는 0=미설정이다. 정의된 Zone의 확인 기준 미설정은 ZONE_CONTEXT_UNAVAILABLE 정지로 노출한다.
+> Parking 제한 -1 및 Recovery OFF 유지. Traffic은 앞범퍼 잔여거리 1.5m 최초 seed, 실측 속도 절댓값 적분, 목표 1.0m다.
+
+> 2026-09-11 5차: Mission Zone entry는 제어권 획득이 아닌 탐색 요청이다.
+> [MGM_MISSION_PREPARATION.md](docs/MGM_MISSION_PREPARATION.md)를 우선한다.
+> IDLE → PREPARE(일반 병행 주행 유지) → 현재 요청의 Parking ready → ACTIVE.
+> Zone exit는 요청을 취소하지 않는다. 시간/거리 제한은 실차 calibration 전 미설정이며,
+> 미설정 요청은 명시적으로 취소하여 무제한 탐색을 허용하지 않는다.
+
+> 2026-09-11: `feat/state-machine`의 C++ MGM 공통 베이스 재구성은
+> 4차 안전 계층 [MGM_REFERENCE_SAFETY.md](docs/MGM_REFERENCE_SAFETY.md)를 함께 적용한다.
+> 실제 센서 입력에 근거한 Reference 생성 시각과 발행 시각을 분리한다. 기존
+> provider별 timeout을 재사용하며 invalid/stale 선택 경로는 SAFE_STOP reason으로 정지한다.
+> Mission/Avoidance 제어권을 유지하고 최종 송신 전 유효성을 다시 검사한다.
+> Recovery OFF와 rear_clear 미연결 상태는 임의 변경하지 않는다.
+> [MGM_BASE_STATE_MACHINE.md](docs/MGM_BASE_STATE_MACHINE.md)를 우선한다.
+> 3차 수정: Mission은 MISSION_ZONE의 실제 포함 여부 edge로 시작한다.
+> waypoint reached 토픽/ID trigger는 제거한다. GPS/주차 구간 정의는 stack_gps 설정을 재사용한다.
+> Navigation/Avoidance/Traffic/Safety/Mission을 병행 관리한다. 아래 단일 5상태·
+> 회피 중 신호 무시·estop에 의한 종점 해제 규칙은 legacy/generated v1.88 경로에만 해당한다.
+
 > 이 파일은 팀의 아키텍처 설계 결론을 담는다. Claude Code는 모든 세션에서 이 문서를 프로젝트의 기준으로 삼을 것.
 > 설계 변경은 반드시 이 문서를 갱신한 뒤 코드에 반영한다.
 

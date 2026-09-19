@@ -1,5 +1,8 @@
 """IMU yaw × GPS COG 상보 융합 → ENU 절대 헤딩 (ROS 무의존).
 
+v2 초기화: 차량을 경로 진행 방향에 맞춰 놓았다는 전제하에 최초 경로
+접선으로 offset을 한 번 설정할 수 있다. 이후 IMU 추적과 COG 보정은 동일하다.
+
 문제: 단일 안테나 GPS의 COG는 이동 중에만 유효하다 — 정지·출발 직후에는
 "경로 접선 = 차량 헤딩" 가정으로 폴백해야 했고, 이 가정이 깨지면 발산한다
 (2026-08-01 첫 주행). IMU yaw는 항상 나오고 단기 안정(자이로)이지만
@@ -71,6 +74,8 @@ class HeadingFusion:
         self._imu = None           # (yaw_signed, t)
         self._gyro_z = 0.0         # 최신 선회율 — 게이트용 (없으면 0 = 통과)
         self._offset = None
+        self._waypoint_seed_available = True
+        self.cog_hold = False  # Parking COG is travel direction, not body heading.
         self._seed_buf = []        # [(target, t)] — 정렬 전 COG 표본
         self._reject_streak = 0
         self.last_innovation = None  # 최근 COG−융합 잔차 [rad] — 진단용
@@ -96,6 +101,21 @@ class HeadingFusion:
         self._reject_streak = 0
         self.last_innovation = None
 
+    def initialize_from_waypoint(self, yaw, t):
+        """Seed once assuming the vehicle faces the initial course tangent.
+
+        Reconnects and COG reseeds must not snap a turned vehicle to the path.
+        """
+        if (not self._waypoint_seed_available or self.aligned or self.cog_hold
+                or self._imu is None or not math.isfinite(yaw)
+                or not math.isfinite(t) or not math.isfinite(self._imu[0])
+                or not 0 <= t - self._imu[1] <= self._imu_timeout):
+            return False
+        self._offset = wrap_angle(yaw - self._imu[0])
+        self._waypoint_seed_available = False
+        self._seed_buf.clear()
+        return True
+
     def _try_seed(self, target, t):
         """정렬 전 COG 표본 합의 — seed_width 이상에 걸친 seed_n개가
         seed_spread 안에 모이면 순환 평균으로 offset 확정."""
@@ -111,6 +131,7 @@ class HeadingFusion:
         if max(abs(wrap_angle(a - mean)) for a, _ in buf) > self._seed_spread:
             return  # 표본이 흩어짐 (뒤로 밀림·저속 노이즈 혼재) — 대기
         self._offset = wrap_angle(mean)
+        self._waypoint_seed_available = False
         self.last_innovation = 0.0
         buf.clear()
 
@@ -124,6 +145,8 @@ class HeadingFusion:
     def update_cog(self, cog_yaw, t, speed=None):
         """이동 중 유효한 COG(ENU rad)로 offset 추정. 유효성(속도·나이)
         판정은 호출자 몫. t는 COG '측정 시각' — 같은 표본은 1회만 소비."""
+        if self.cog_hold:
+            return  # Keep the calibrated IMU datum; never reseed from reverse COG.
         if self._last_cog_t is not None and abs(t - self._last_cog_t) < 1e-3:
             return                  # 같은 측정 재소비 금지 (50Hz 루프 × 낡은 표본)
         self._last_cog_t = t

@@ -1,8 +1,8 @@
-"""Small 2-D ICP SLAM core for the fused four-LiDAR endpoint cloud.
+"""2-D endpoint mapping with optional scan-to-map ICP pose correction.
 
 The fused cloud no longer carries a per-point sensor origin.  This module
-therefore treats it as an endpoint scan for scan-to-local-map ICP; it does not
-invent free-space rays from ``base_link``.
+therefore offers measured-ray clearing or explicit endpoint-absence expiry.
+With map correction disabled, the vehicle/GPS pose is used directly.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from .geometry import Pose2, between, compose, transform_points, wrap_angle
 
 @dataclass
 class IcpConfig:
+    # Disable scan-to-map correction when the pose comes from vehicle + GPS.
+    map_correction_enabled: bool = True
     scan_voxel_m: float = 0.06
     max_scan_points: int = 900
     map_voxel_m: float = 0.08
@@ -44,10 +46,13 @@ class IcpConfig:
     freespace_bin_width_rad: float = math.radians(1.0)
     freespace_margin_m: float = 0.02
     freespace_occlusion_padding_rad: float = math.radians(1.5)
-    observation_match_radius_m: float = 0.06
+    observation_match_radius_m: float = 0.02
     tentative_confirm_hits: int = 3
     tentative_delete_misses: int = 1
     confirmed_delete_misses: int = 3
+    # Positive values replace ray-based clearing with consecutive absence
+    # within observation_match_radius_m, equally for all occupancy states.
+    unobserved_delete_misses: int = 0
     # Point-to-point ICP under-constrains yaw when the matched points only
     # span a narrow bearing arc (e.g. one nearby wall segment while turning):
     # translation along that wall is still well fit, but rotation can drift
@@ -243,6 +248,7 @@ class VoxelPointMap:
         tentative_confirm_hits: int = 3,
         tentative_delete_misses: int = 1,
         confirmed_delete_misses: int = 3,
+        unobserved_delete_misses: int = 0,
     ) -> int:
         """Drop map points the current scan shows are no longer there.
 
@@ -262,6 +268,10 @@ class VoxelPointMap:
         by something nearer now) receives no miss. ``occlusion_padding_rad``
         extends nearer returns to neighboring bins to cover thin-object and
         voxel/bin-boundary sampling differences.
+
+        With ``unobserved_delete_misses > 0``, every candidate without a
+        nearby endpoint receives a miss, including empty/occluded bearings.
+        This uses one threshold for both tentative and confirmed cells.
         """
         if not self._cells or clear_radius_m <= 0.0:
             return 0
@@ -317,7 +327,7 @@ class VoxelPointMap:
             if radius <= 0.0:
                 return False
             base = self._key(point)
-            if scan_bins.get(base):
+            if unobserved_delete_misses <= 0 and scan_bins.get(base):
                 return True
             cell_radius = max(1, int(math.ceil(radius / self.voxel_m)))
             radius2 = radius * radius
@@ -345,17 +355,18 @@ class VoxelPointMap:
                 if cell[5] >= max(1, int(tentative_confirm_hits)):
                     cell[4] = self._CONFIRMED
                 continue
-            # No endpoint is not itself a miss: only a measured farther return
-            # proves that the ray passed through this old occupied location.
-            # A nearer return means occluded, and an empty bin means unknown.
-            if not confirmed_free[local_pos]:
+            # Legacy ray clearing requires measured free space. Absence
+            # expiry deliberately counts occluded and empty bearings too.
+            if unobserved_delete_misses <= 0 and not confirmed_free[local_pos]:
                 continue
             cell[6] += 1.0
-            delete_after = (
-                confirmed_delete_misses
-                if cell[4] == self._CONFIRMED
-                else tentative_delete_misses
-            )
+            delete_after = unobserved_delete_misses
+            if delete_after <= 0:
+                delete_after = (
+                    confirmed_delete_misses
+                    if cell[4] == self._CONFIRMED
+                    else tentative_delete_misses
+                )
             if cell[6] >= max(1, int(delete_after)):
                 del self._cells[key]
                 removed += 1
@@ -405,7 +416,7 @@ def best_fit_transform(source: np.ndarray, target: np.ndarray) -> Pose2:
 
 
 class IcpSlam:
-    """Incremental scan-to-voxel-map ICP with an optional odometry prior."""
+    """Incremental mapping from a supplied pose or scan-to-voxel-map ICP."""
 
     def __init__(self, config: Optional[IcpConfig] = None):
         self.config = config or IcpConfig()
@@ -420,7 +431,7 @@ class IcpSlam:
         self.last_odom = None
         self.initialized = False
 
-    def _prepare_scan(self, points: np.ndarray) -> np.ndarray:
+    def _filter_scan(self, points: np.ndarray) -> np.ndarray:
         points = np.asarray(points, dtype=np.float64)
         if points.ndim != 2 or points.shape[1] < 2:
             return np.empty((0, 2), dtype=np.float64)
@@ -432,7 +443,10 @@ class IcpSlam:
         ) & (
             radius2 <= self.config.max_scan_range_m ** 2
         )
-        points = voxel_downsample(points[valid], self.config.scan_voxel_m)
+        return points[valid]
+
+    def _prepare_scan(self, points: np.ndarray) -> np.ndarray:
+        points = voxel_downsample(self._filter_scan(points), self.config.scan_voxel_m)
         if len(points) > self.config.max_scan_points > 0:
             # The merged cloud is concatenated sensor-by-sensor. Polar sorting
             # before deterministic subsampling preserves all four directions
@@ -444,6 +458,27 @@ class IcpSlam:
             points = points[order[selected]]
         return points
 
+    def _update_map(self, scan: np.ndarray, observations: np.ndarray) -> None:
+        if self.config.freespace_clear_enabled:
+            self.map.clear_freespace(
+                self.pose, observations,
+                self.config.freespace_clear_radius_m,
+                self.config.freespace_bin_width_rad,
+                self.config.freespace_margin_m,
+                self.config.freespace_occlusion_padding_rad,
+                self.config.observation_match_radius_m,
+                self.config.tentative_confirm_hits,
+                self.config.tentative_delete_misses,
+                self.config.confirmed_delete_misses,
+                self.config.unobserved_delete_misses,
+            )
+        self.map.add(
+            transform_points(scan, self.pose),
+            self.config.observation_match_radius_m,
+            record_hits=False,
+            confirm_hits=self.config.tentative_confirm_hits,
+        )
+
     def update(
         self,
         scan_points: np.ndarray,
@@ -453,10 +488,28 @@ class IcpSlam:
         """Register one scan and optionally add accepted endpoints to the map.
 
         ``update_map=False`` is localization-only mode.  It updates the pose
-        against the frozen map but never lets parked vehicles or other dynamic
-        objects contaminate the static mapping snapshot.
+        against the frozen map when map correction is enabled. Otherwise the
+        vehicle/GPS prior supplies the pose and the map is only an output.
         """
         scan = self._prepare_scan(scan_points)
+        if not self.config.map_correction_enabled:
+            if odom_pose is None or not all(math.isfinite(value) for value in (
+                odom_pose.x, odom_pose.y, odom_pose.yaw
+            )):
+                return IcpResult(
+                    self.pose, False, self.initialized, 0, math.inf, 0,
+                    False, 'missing_motion_prior')
+            # Both producers use the same parking-local origin. Taking the
+            # pose directly also preserves motion before the first scan.
+            self.pose = odom_pose
+            self.last_odom = odom_pose
+            self.initialized = True
+            if update_map:
+                self._update_map(scan, self._filter_scan(scan_points))
+            return IcpResult(
+                self.pose, True, True, 0, math.inf, 0,
+                True, 'vehicle_gps_prior')
+
         if len(scan) < self.config.min_correspondences:
             return IcpResult(
                 self.pose, False, self.initialized, 0, math.inf, 0,
@@ -542,26 +595,11 @@ class IcpSlam:
         if accepted:
             self.pose = estimate
             if update_map:
-                if self.config.freespace_clear_enabled:
-                    self.map.clear_freespace(
-                        self.pose, scan,
-                        self.config.freespace_clear_radius_m,
-                        self.config.freespace_bin_width_rad,
-                        self.config.freespace_margin_m,
-                        self.config.freespace_occlusion_padding_rad,
-                        self.config.observation_match_radius_m,
-                        self.config.tentative_confirm_hits,
-                        self.config.tentative_delete_misses,
-                        self.config.confirmed_delete_misses,
-                    )
-                # clear_freespace() already records this frame's hits. add()
-                # only updates centroids and creates unmatched tentative cells.
-                self.map.add(
-                    transform_points(scan, self.pose),
-                    self.config.observation_match_radius_m,
-                    record_hits=False,
-                    confirm_hits=self.config.tentative_confirm_hits,
-                )
+                # Unobserved-point clearing must see the full filtered cloud:
+                # ICP downsampling is not evidence that a surface disappeared.
+                observations = (self._filter_scan(scan_points)
+                                if self.config.unobserved_delete_misses > 0 else scan)
+                self._update_map(scan, observations)
         else:
             # Odometry is only a prediction.  A rejected ICP result must not
             # contaminate the point map; pose can follow a valid prior so the

@@ -1,0 +1,82 @@
+{
+  "run_id": "v2_no_estop_20260912_223321_282247",
+  "source_directory": "/home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main/drive_logs/v2_no_estop_20260912_223321_282247",
+  "created_at": "2026-09-13T02:05:39.737079+00:00",
+  "files": [
+    {
+      "path": "lane_frames.csv",
+      "bytes": 2672234,
+      "sha256": "728ac5056590ae0739404240c1f7bc2be35f7257b471d6e8457d7920e4f49185",
+      "included_in_git": true
+    },
+    {
+      "path": "lateral.csv",
+      "bytes": 2145121,
+      "sha256": "3f2e47d6d1a4fefe81cb540271701b1196ec53e9382e828e37b1c3011edc10a7",
+      "included_in_git": true
+    },
+    {
+      "path": "mgm_jitter.csv",
+      "bytes": 6766,
+      "sha256": "65925cb12838a8b4e29c1d2bcdd8d15b1f4649283e38fe7f039c0b54d6a5ca8c",
+      "included_in_git": true
+    },
+    {
+      "path": "mgm_snapshots.bin",
+      "bytes": 609063072,
+      "sha256": "bf8b017758223606ff18abc3db71c37532804dd204b1a3a3b81aaabcab14a86d",
+      "included_in_git": false
+    },
+    {
+      "path": "mission_events.csv",
+      "bytes": 1083,
+      "sha256": "c8ff8b3b1c675639c1fe38c3ea8085f4cce39d1858525a5bf4d23eded4746022",
+      "included_in_git": true
+    },
+    {
+      "path": "rosbag/metadata.yaml",
+      "bytes": 10079,
+      "sha256": "069fcaecce8b965b6a448c1e3cdd866c992621f59a41e5c725d0cbb067428cdd",
+      "included_in_git": true
+    },
+    {
+      "path": "rosbag/rosbag_0.db3",
+      "bytes": 49195806720,
+      "sha256": "10b6c39c5eb50b9c16a5eb2bf2e38dea41df8d58180cd5b31a05fa480ca58aa9",
+      "included_in_git": false
+    },
+    {
+      "path": "transitions.csv",
+      "bytes": 3317,
+      "sha256": "24c3467e1c80aedb3f546d5dcff4cef41f70c5c5d9318438f9668b3b4c13d507",
+      "included_in_git": true
+    },
+    {
+      "path": "vehicle_vector.csv",
+      "bytes": 7864732,
+      "sha256": "003acd21f104d0d4773c76516475e2fe77e200d4a371e6ac8322c21a23cce14d",
+      "included_in_git": true
+    },
+    {
+      "path": "zone_observations.csv",
+      "bytes": 2333683,
+      "sha256": "4b7f4de667e616a716b69265751331bcb9c67cf43f52cfec8d9527fef4198fb7",
+      "included_in_git": true
+    },
+    {
+      "path": "README.md",
+      "bytes": 2305,
+      "sha256": "696c2060fcdcb693bb47de577e66abad3dac6bf1104114a611bdca34006cbd01",
+      "included_in_git": true,
+      "kind": "archival_metadata"
+    },
+    {
+      "path": "session.json",
+      "bytes": 1713,
+      "sha256": "17d3b848360ab8fdb28cefadd061d2965cae64a834cb17715d6bd5cbafcbbf96",
+      "included_in_git": true,
+      "kind": "archival_metadata"
+    }
+  ],
+  "git_scope": "CSV and metadata only; binary originals retained locally"
+}

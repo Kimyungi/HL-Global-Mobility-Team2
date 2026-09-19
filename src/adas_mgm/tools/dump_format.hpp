@@ -29,7 +29,42 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // 레이아웃이 달라 재생 불가(snapshot_size 검사가 잡는다). 같이 들어간 CoreParams
 // 4개(escape_*)는 구조체 뒤에 붙였으므로 옛 params_size 로도 기본값으로 채워진다.
 // v7 (2026-08-31): TRAFFIC 상태의 적색/초록/정지선 거리와 dSPACE 실차속도 입력 추가.
-constexpr uint32_t kDumpVersion = 7;
+// v8 (2026-09-11): parallel manager validity/session/mission event inputs.
+// Older raw snapshots require their matching historical build (no guessed validity).
+// v9: Zone membership inputs replace waypoint-trigger inputs/parameters.
+// v10: actual reference generation/age/timeout inputs.
+// v11: mission preparation session, clocks, telemetry and calibrated limits.
+// v12: GNSS Zone stability, rear corridor validity, calibration parameters.
+// v13: sequenced route feedback/control and opt-in parameter.
+// v14: explicit connection segment and CSV stage handshakes.
+// v15: source-Zone search policy and separate failed-Mission memory.
+// v16: fixed non-stop speed in parallel Manager; unchanged layout, new replay semantics.
+// v17: explicit ordinary-avoidance enable parameter.
+// v18: one-point control input/output contract; legacy bus capacity is unchanged.
+// v19: immediate Zone-entry Parking authority and current-route endpoint cancellation.
+// v20: PARKING search follows GPS until ready; unchanged layout, new authority semantics.
+// v21: main-compatible AVOID wire target, speed ramp and completion; unchanged snapshot layout.
+// v22: independent recovery speed and explicit optional rear requirement in parallel Manager.
+// v23: AVOID carries a station+1m reference without the old /20 transformation.
+// v24: GPS station heading/return and request-matched parking wall acquisition (parallel branch).
+// v25: combine station-preview avoidance with the v24 snapshot layout and return policy.
+// v26: independent camera/GPS start readiness and camera fallback on ordinary route legs.
+// v27: mandatory live LiDAR for start and runtime, including parking; same layout.
+// v28: obstacle ownership independent of path availability; same snapshot layout.
+// v29: physical seven-sensor availability and sensor-only SAFE_STOP policy.
+// v30: v2 speed pass-through and measured-speed stop-zone dwell; same snapshot layout.
+// v31: wall planner unblended reference handoff parameter.
+// v32: interview policy, body-clearance ESTOP observations and recovery contract.
+// v33: unified interview policy + PR106 T parking endpoint/return/speed semantics.
+// v32 was independently used by two incompatible branches; never guess which one.
+// v34: upper ESTOP projects CAN state=5; PR108 measured recovery executor.
+// v35: State v09.16 removes obsolete public states; active-only Mission entry is fixed.
+// v36: Last mission state, exit observations and alternative terminal routes.
+// v37: suspend lane-confidence hysteresis through AVOID_ACTIVE/GPS_RETURN.
+// v38: upper ESTOP arms two seconds after authorized measured forward motion.
+// v39: exit detection on zone entry; stop only at CSV state=3.
+// v40: persist the optional, default-off Halla stopline test parameter.
+constexpr uint32_t kDumpVersion = 40;
 
 struct DumpHeader
 {

@@ -133,10 +133,14 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 | 24 | f64 | curvature | 1/m |
 | 32 | f64 | dx | 직전 유효 localization pose 기준 전방 이동량 [m] |
 | 40 | f64 | dy | 직전 유효 localization pose 기준 좌측 이동량 [m] |
-| 48 | f64 | dyaw | 직전→현재 localization yaw 변화량, `[-π,π)` [rad] |
+| 48 | f64 | dyaw | 직전→현재 localization yaw 변화량의 부호 반전, 시계 방향 양수, `(-π,π]` [rad] |
 | 56 | u64 | update | 새 유효 localization sample마다 +1 (wrap) |
 
 - vehicle frame (생성 시점 차량 = 0,0,0). **양자화 없음** — v3 의 int16 스케일은 v5 에서 안 쓴다.
+- CAN `dyaw = -TargetRef.dyaw`: 내부 ROS localization delta는 반시계 방향 양수를
+  유지하고, CAN 송신부에서 모든 유효 상태에 한 번만 부호 반전을 적용한다.
+  주차 목표 yaw의 반전 규칙에 맞춘 계약이며 `dx` 전방 양수·`dy` 좌측 양수는 유지한다.
+  하위 제어는 수신 `dyaw`를 시계 방향 양수로 해석해야 한다.
 - `dx`/`dy`는 두 연속 localization pose의 이동량을 **이전 pose의 vehicle frame**으로
   회전한 값이다. 첫 유효 sample은 `dx=dy=dyaw=0`, `update=1`이다. source sample 사이의
   10ms CAN 주기에는 네 필드를 직전 값으로 유지한다. LANE/WAYPOINT/TRAFFIC은 GPS,
@@ -156,7 +160,7 @@ MGM 이 20점을 만들어도 브리지는 **첫 점**만 싣는다 (v3 의 REF_
 | offset | 형식 | 필드 | 설명 |
 |---|---|---|---|
 | 0 | u16 | counter | 송신마다 +1 (wrap). **watchdog 판정 입력** — 30ms(3주기) 미갱신 시 v_ref=0, 조향 유지 |
-| 2 | u8 | state | 0=lane, 1=waypoint, 2=avoid, 3=parking, 4=traffic |
+| 2 | u8 | state | 0=lane, 1=waypoint, 2=avoid, 3=parking, 4=traffic, 5=estop |
 | 3 | u8 | n_points | 유효 포인트 수 (1~20) — 이번 주기에 송신된 REF_POINT 프레임 수 |
 | 4 | i16 | v_ref | 1 mm/s LSB. [±32.767 m/s] 최종 목표 속도. 정지 = 0. **음수 = 후진** (2026-08-24: MGM §4 후진 탈출이 처음으로 음수를 낸다 — 그전까지 PC는 0 이상만 보냈다. dSPACE MPC·하위 PI 가 음수 목표속도를 그대로 후진으로 처리한다는 팀 확인을 받았으나 **실차 재확인 권장**) |
 | 6 | u16 | reserved | 0 |

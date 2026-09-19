@@ -7,7 +7,7 @@
 // 사용법: core_replay <dump.bin> <out.csv> [key=value ...]
 //   파라미터 오버라이드로 같은 run을 다른 임계에 재생해 튜닝을 비교할 수 있다:
 //     core_replay run/mgm_snapshots.bin new.csv lane_conf_return=0.7 n_cycles=50
-//   옛 덤프(작은 CoreParams)도 재생 가능 — 뒤에 추가된 필드는 0으로 채운다.
+//   기록기와 동일한 v35/ABI/파라미터 크기만 재생한다. 과거 로그는 당시 도구를 사용한다.
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -16,7 +16,7 @@
 #include <string>
 
 #include "core/mgm_step.hpp"
-#include "tools/dump_format.hpp"
+#include "tools/dump_reader.hpp"
 
 using namespace adas_mgm;
 
@@ -36,31 +36,8 @@ int main(int argc, char ** argv)
     std::fprintf(stderr, "cannot open dump: %s\n", argv[1]);
     return 1;
   }
-  // 헤더는 고정부(uint32 4개) + CoreParams 로 나눠 읽는다. CoreParams가 커져도
-  // 옛 덤프를 재생할 수 있어야 하기 때문 — 통째로 읽으면 늘어난 크기만큼
-  // 앞당겨 읽어 뒤따르는 스냅샷 레코드가 어긋난다 (2026-08-14).
-  uint32_t fixed[4]{};
-  in.read(reinterpret_cast<char *>(fixed), sizeof(fixed));
   DumpHeader h{};
-  h.magic = fixed[0]; h.version = fixed[1]; h.snapshot_size = fixed[2]; h.params_size = fixed[3];
-  if (!in || h.magic != kDumpMagic || h.version != kDumpVersion ||
-    h.snapshot_size != sizeof(CoreSnapshot))
-  {
-    std::fprintf(stderr,
-      "dump header mismatch (magic/version/layout) — 기록한 빌드와 같은 ABI로 재생할 것\n");
-    return 1;
-  }
-  if (h.params_size > sizeof(CoreParams)) {
-    std::fprintf(stderr, "dump params(%u B)가 현재 CoreParams(%zu B)보다 큼 — 재생 불가\n",
-      h.params_size, sizeof(CoreParams));
-    return 1;
-  }
-  in.read(reinterpret_cast<char *>(&h.params), h.params_size);   // 나머지는 0(기본값)
-  if (h.params_size < sizeof(CoreParams)) {
-    std::fprintf(stderr,
-      "주의: 옛 덤프(params %u B < %zu B) — 뒤에 추가된 파라미터는 0으로 재생됩니다\n",
-      h.params_size, sizeof(CoreParams));
-  }
+  if (!read_dump_header(in, h)) {return 1;}
 
   // 파라미터 오버라이드 — 같은 run을 다른 임계로 재생해 튜닝 비교 (2026-08-14)
   for (int i = 3; i < argc; ++i) {
@@ -82,6 +59,8 @@ int main(int argc, char ** argv)
       h.params.stop_zone_hold_cycles = static_cast<int32_t>(val);
     } else if (key == "avoid_zone_only") {
       h.params.avoid_zone_only = static_cast<int32_t>(val);
+    } else if (key == "avoidance_enabled") {
+      h.params.avoidance_enabled = static_cast<int32_t>(val);
     } else {
       std::fprintf(stderr, "무시: 알 수 없는 파라미터 %s\n", key.c_str());
       continue;
@@ -98,7 +77,13 @@ int main(int argc, char ** argv)
   for (int i = 0; i < MGM_NUM_POINTS; ++i) {
     out << ",x" << i << ",y" << i << ",yaw" << i << ",k" << i;
   }
-  out << "\n";
+  if (h.params.base_state_machine_enabled) {
+    out << ",top,navigation,avoidance,signal,safety,mission,mission_type,speed_owner,reference_available,ref_valid,ref_fresh,ref_age_s,ref_generation,stop_reasons,parking_calibration,zone_calibration,zone_generation,recovery_configured,rear_sensor_valid,rear_corridor_state,recovery_eligible,recovery_block_reason,recovery_attempts,reverse_command_time_s,reverse_measured_distance_m,reverse_distance_complete,last_recovery_reason,traffic_remaining_m,traffic_stop_success";
+  }
+  if (h.params.base_state_machine_enabled) {
+    out << ",route_phase,route_index,route_count,route_sequence_id,route_instance_id,route_request_id,route_requested_index,route_end_reached,route_completion,route_connecting,route_requested_connecting,mission_failed,mission_cancel_reason,parking_search_zone_only,parking_zone_entry_active";
+  }
+  out << ",sensor_alive_mask,reference_motion_blocked,dump_version,revised_v2,estop_active,estop_request_id,last_mission_phase,last_mission_request_id,last_mission_route_id,last_mission_fallback,last_mission_left_votes,last_mission_right_votes\n";
 
   CoreState st;
   mgm_init(st, h.params);  // 기록 당시 파라미터로 동일 조건 재생
@@ -118,7 +103,32 @@ int main(int argc, char ** argv)
         static_cast<double>(o.ref_points[i].yaw), static_cast<double>(o.ref_points[i].curvature));
       out << buf;
     }
-    out << '\n';
+    if (h.params.base_state_machine_enabled) {
+      out << ',' << static_cast<int>(o.top) << ',' << static_cast<int>(o.nav)
+          << ',' << static_cast<int>(o.avoid) << ',' << static_cast<int>(o.signal)
+          << ',' << static_cast<int>(o.safety) << ',' << static_cast<int>(o.mission)
+          << ',' << static_cast<int>(o.mission_type) << ',' << static_cast<int>(o.speed_owner)
+          << ',' << o.reference_available << ',' << o.selected_reference.valid
+          << ',' << o.selected_reference.fresh << ',' << o.selected_reference.age_s
+          << ',' << o.selected_reference.generation << ',' << o.safe_stop_reasons
+          << ',' << static_cast<int>(o.parking_calibration) << ',' << static_cast<int>(o.zones.calibration)
+          << ',' << o.zones.last_generation << ',' << o.recovery.configured << ',' << o.recovery.rear_sensor_valid
+          << ',' << static_cast<int>(o.recovery.rear_corridor_state) << ',' << o.recovery.eligible
+          << ',' << static_cast<int>(o.recovery.block_reason) << ',' << o.recovery.attempt_count
+          << ',' << o.recovery.command_time_s << ',' << o.recovery.measured_distance_m
+          << ',' << o.recovery.measured_distance_complete << ',' << static_cast<int>(o.recovery.last_reason)
+          << ',' << o.traffic_remaining_m << ',' << o.traffic_stop_in_success_region;
+      out << ',' << static_cast<int>(o.route.phase) << ',' << o.route.index << ',' << o.route.count
+          << ',' << o.route.sequence_id << ',' << o.route.instance_id << ',' << o.route.request_id
+          << ',' << o.route.requested_index << ',' << o.route.end_reached << ',' << static_cast<int>(o.route.completion) << ',' << o.route.connecting << ',' << o.route.requested_connecting
+          << ',' << o.active_mission_failed << ',' << static_cast<int>(o.mission_request.cancel_reason)
+          << ',' << h.params.parking_search_zone_only << ',' << h.params.parking_zone_entry_active;
+    }
+    out << ',' << +s.sensor_alive_mask << ',' << o.reference_motion_blocked << ',' << h.version << ',' << s.revised_v2
+        << ',' << o.estop_active << ',' << o.estop_request_id
+        << ',' << static_cast<int>(o.last_mission.phase) << ',' << o.last_mission.request_id
+        << ',' << +o.last_mission.route_id << ',' << o.last_mission.fallback
+        << ',' << o.last_mission.left_votes << ',' << o.last_mission.right_votes << '\n';
     ++tick;
   }
 

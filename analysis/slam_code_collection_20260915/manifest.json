@@ -1,0 +1,2984 @@
+{
+  "created_at": "2026-09-15T06:47:57.613071+00:00",
+  "root": "/home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main",
+  "git_head": "39db83068f0ecd685ada1915716d48edbb0c5250",
+  "source_state": "current working tree, including uncommitted changes",
+  "file_count": 425,
+  "files": [
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/MEASUREMENTS.md",
+      "bytes": 12431,
+      "lines": 221,
+      "sha256": "4202d514f59fff57bd129677aa98e1baf556b3527f0b5b882e75a4dc21ba00b0"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/README.md",
+      "bytes": 11169,
+      "lines": 187,
+      "sha256": "77b9018d163f4975827b9415621167cf1941da39ca3738ef48d85521cd7a1754"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/REQUIREMENTS.md",
+      "bytes": 3280,
+      "lines": 44,
+      "sha256": "801bacdee5407c2d3920252ef77dfcdb9135d0296bd6786fefda58821d6ade2f"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/dual_lidar_view.rviz",
+      "bytes": 2668,
+      "lines": 109,
+      "sha256": "fd775c28e72650df8c1fce34bf08e174a5d8fb40f144ecb7be1e32b39f3aa4fb"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/fov_view.rviz",
+      "bytes": 2178,
+      "lines": 90,
+      "sha256": "eb0c0ae2fca5b24e3dccdb6e3f464a1d2480f34ad12d1d47443667d055f93baa"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/lidar_mounts.yaml",
+      "bytes": 6348,
+      "lines": 108,
+      "sha256": "bbfa1279e2b392d48352695d2c97132d567d1b8b13b1ef521de56fa321ec08e6"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/parallel_parking.rviz",
+      "bytes": 1280,
+      "lines": 49,
+      "sha256": "eab95bd99b219bd912ffc1ec0a19dbb869ddd9db179cb2e3ceda4c72ecf7e4d5"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/parking_1_slam.rviz",
+      "bytes": 1834,
+      "lines": 72,
+      "sha256": "2cf0a8e5988c0fd13da85227124c23ab5c19fd1e5842e71ce6dca5e1e9b710ff"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/parking_2_mapping.rviz",
+      "bytes": 1510,
+      "lines": 59,
+      "sha256": "1bbcb5b544fb992b5bb553e9eaa809ce48f5f1458d4ed725b0414dcf7277f8f0"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/parking_3_localization.rviz",
+      "bytes": 2104,
+      "lines": 81,
+      "sha256": "7b10a0df0972b67c881f1da13b9b1f0a942f41d6523e504f73670a6a3eba12ae"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/parking_3_reference_path.rviz",
+      "bytes": 2001,
+      "lines": 78,
+      "sha256": "e6d214ae3bf5b88363b62998c6a9b17e33af60077961a21181ceb348cdeb5918"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/parking_4_parking.rviz",
+      "bytes": 2181,
+      "lines": 84,
+      "sha256": "36b43ba397ad76d4b592ed7dc6c39b2ec320ade3a8d4c1cb9fc657e467816946"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/parking_params.yaml",
+      "bytes": 7056,
+      "lines": 184,
+      "sha256": "15529bf7699c93d5571adfcc1aeabc1e39b6364509e1f05e415652f547873b2e"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/config/wall_gap.rviz",
+      "bytes": 1264,
+      "lines": 49,
+      "sha256": "b6e7103d63fe75de96cecc9ee03a0894ae2ca094a9d8d14d8ed566de358cb6e1"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/launch/dual_lidar_test.launch.py",
+      "bytes": 5429,
+      "lines": 108,
+      "sha256": "edb845f1331aff9844098449172c593fc1ecabc64039af61569eb34b23e2be41"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/launch/parallel_parking_test.launch.py",
+      "bytes": 11269,
+      "lines": 224,
+      "sha256": "a582d4438f92faf53eee5ff37de0900516626eedf6f4f6888260719ad27b9f10"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/launch/parking.launch.py",
+      "bytes": 2572,
+      "lines": 65,
+      "sha256": "ec9f47c1a223a9849bc8de7845148740f0703876098dcd19541c09d68c51db9e"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/launch/parking_mapping_bench.launch.py",
+      "bytes": 6983,
+      "lines": 146,
+      "sha256": "ab2cdeabda4ce9a9096d5e8f2f8c45b341272c146cece6765d126195c7477d05"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/launch/parking_standalone.launch.py",
+      "bytes": 1961,
+      "lines": 44,
+      "sha256": "dccb52371d74f1cacb59d030bdb66367b3c2a2907c948bcf206530f365279984"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/launch/wall_gap_test.launch.py",
+      "bytes": 11596,
+      "lines": 229,
+      "sha256": "0d1c2f77ebee0fe4224c2a744cc79ef4252a5fbfb7e9c010364a058fd896daab"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/package.xml",
+      "bytes": 1646,
+      "lines": 40,
+      "sha256": "20f003f5a65cfbd14c09f227b06f8fe22cb0e796ee338ff05103a108af477510"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/resource/stack_parking",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/setup.cfg",
+      "bytes": 95,
+      "lines": 4,
+      "sha256": "64a23aad64d1e6b51d984db5fbf9ba062129cca173c3d50865da2d5cb859e2d2"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/setup.py",
+      "bytes": 1423,
+      "lines": 37,
+      "sha256": "fdaed91f72bb2e4637f108eecae3a4b4e120169b0637dd4aa6096f2f48a13704"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/geometry.py",
+      "bytes": 7938,
+      "lines": 252,
+      "sha256": "915ea00ab922fa0d66bc292fa6ce82f00d9f2132dba0fb353162497570c639eb"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/icp_slam.py",
+      "bytes": 26390,
+      "lines": 622,
+      "sha256": "5a47100d7f526b281ade4f39a6a933f5fc9ecf039cc2fcb6d1ba8cd829a876fa"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/lateral_wall.py",
+      "bytes": 6071,
+      "lines": 131,
+      "sha256": "60d61621801b630fbc1c9ea9b7857f146abb0e0cc424ea762e5f86aae37766c0"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/lateral_wall_node.py",
+      "bytes": 11733,
+      "lines": 208,
+      "sha256": "41ac12a4e75833206a3e35ddc2e205affa0d4494f8aff3d5ad50ac4b83064326"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/localization.py",
+      "bytes": 19628,
+      "lines": 500,
+      "sha256": "6d99e191d0d6db81cc491fbc395ca66822a81ea307bee6e1578deaa59862eb67"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/mission.py",
+      "bytes": 16054,
+      "lines": 432,
+      "sha256": "21716f9167088c1566f6e0a661d2906088ae6345c7b7957ed2d04fd8d57fb8f0"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/node.py",
+      "bytes": 60684,
+      "lines": 1294,
+      "sha256": "689d1d43b48d3fe3a971fd4466ff442739f469e60e03cb01637e41ce576291c5"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/parallel_parking.py",
+      "bytes": 29584,
+      "lines": 771,
+      "sha256": "6f087451deecdf0d390b18c09183354c02e28489b20d4517742bb48c75b99787"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/parallel_parking_logger.py",
+      "bytes": 11647,
+      "lines": 294,
+      "sha256": "bb4f3bbc390e620468c75c366eed33376716e4a8d1b32d0549f4d2bf0d04cc5a"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/parallel_parking_node.py",
+      "bytes": 25989,
+      "lines": 580,
+      "sha256": "b1ae9047f826877caa68f64d05137f7c907a2a9a9e57b6aa6cc1dc3133d84895"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/path_planner.py",
+      "bytes": 9332,
+      "lines": 267,
+      "sha256": "ba31141b86a568bb740f378c1d942fc17a266496fb954525f52a04b7ac6cbf8d"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/reference_path.py",
+      "bytes": 5137,
+      "lines": 139,
+      "sha256": "ded10e033767cc1d34e79ef8bf1f6591b924a2fda798ba6423f1e997d47c622e"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/scan_to_cloud.py",
+      "bytes": 2221,
+      "lines": 59,
+      "sha256": "0b437d21306a19ed01f2ee7020727c47797f92bd19bd512770a7b0e475a31924"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/simple_entry_path.py",
+      "bytes": 5072,
+      "lines": 126,
+      "sha256": "6f7473fde9586ae707103294261b730a5cde028ad8040169539667765963f784"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/simulation.py",
+      "bytes": 8898,
+      "lines": 243,
+      "sha256": "52a9691017e4f62672d9548a0b8f3e0c22842dbdaf29aedcb15355aebbc796b2"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/slam_only.py",
+      "bytes": 6267,
+      "lines": 146,
+      "sha256": "1cec19117da4d5056c2d87889983ddd6bbdd2b4af830daec1385054356beaea5"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/space_detector.py",
+      "bytes": 23485,
+      "lines": 556,
+      "sha256": "4ac29c91ce68b660e2c0c8065c8d4ea6920ff7407281a720fc0fb9365bfee3c2"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/wall_gap_controller.py",
+      "bytes": 15667,
+      "lines": 422,
+      "sha256": "bcbc976d0f3d9ddc0536ad8578585f64a036e5433dc959a527c344de0b8c6169"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/wall_gap_detector.py",
+      "bytes": 16478,
+      "lines": 448,
+      "sha256": "43e9f8c637941439fe108e2b0847774725260f2550bfc2b9528181a10a5413c2"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/stack_parking/wall_gap_node.py",
+      "bytes": 36682,
+      "lines": 775,
+      "sha256": "39f4f78fc91e8a69c4b538d8c777519ff164cdf5722b0ded83198ba5dba51d3e"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_gps_frame_alignment.py",
+      "bytes": 7214,
+      "lines": 167,
+      "sha256": "bb8c213733f679cc8096df6e7e820de879de4cccfa833b03ffcfb15a46812ce7"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_gps_mapping.py",
+      "bytes": 6454,
+      "lines": 141,
+      "sha256": "b7a8d5edc486199ddd0ca0dc905c662ead9584cb63ceb3bf48e1ccdea2afab8b"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_lateral_wall.py",
+      "bytes": 3387,
+      "lines": 98,
+      "sha256": "6d24c8b8e9629f8c624390ca4b92dd402df402a1b8eb4fa1ba800263f23a73d3"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_lateral_wall_stop.py",
+      "bytes": 3832,
+      "lines": 96,
+      "sha256": "aaba2633102a1ab03eb879414de067376612e859e9c005647aa7276b893018a2"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_mission_preparation.py",
+      "bytes": 9227,
+      "lines": 218,
+      "sha256": "d7f0741d5dfffc5e10d969f04c63f7e647388dce2372640e86aaf73d2f953374"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_parallel_parking.py",
+      "bytes": 14440,
+      "lines": 356,
+      "sha256": "59895e0140e0a39f57ab0f4f3701ef4fc755950cc338aa68104a690b9b66fece"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_parking_core.py",
+      "bytes": 22047,
+      "lines": 533,
+      "sha256": "d256de058a845570e4490c0ea6d0b562a0bbb93c8a88919b425fbcd636f1e468"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_wall_gap_controller.py",
+      "bytes": 7392,
+      "lines": 180,
+      "sha256": "b95b4245593a84a273109d6fd598277caf2cdc7190258db17cc2c9fc22b4e48f"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/test/test_wall_gap_detector.py",
+      "bytes": 8222,
+      "lines": 196,
+      "sha256": "336505002d86f86591adf572d693cc6a53431c87834b4985fe089b89f3107a98"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/Parallel_Parking.py",
+      "bytes": 499,
+      "lines": 21,
+      "sha256": "a7bb2f1ee0a348547fd942146e239690735f2fa0e96a0a91d1671e89a6eef96d"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/T_Parking.py",
+      "bytes": 3915,
+      "lines": 107,
+      "sha256": "54b1ca0f4f6309edb494aac81eb8a57dd5d0fef66ffc43e21f1876b93f73c2bc"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/lidar_fov.py",
+      "bytes": 22986,
+      "lines": 495,
+      "sha256": "bc45570c86a5d6fed831f7a0a9b4119c8e990e8c76fcdd5db50753166f4cd0c3"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/lidar_overlap.py",
+      "bytes": 9793,
+      "lines": 233,
+      "sha256": "c3c3feb25ea981cfcc99719f26ffce031270db3917fa820e210d2d924685a408"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/live_perception_debug.py",
+      "bytes": 12445,
+      "lines": 217,
+      "sha256": "1bd901db73680e04ea397337ad45bdb328a43efb9075c44f7af6871c70629122"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/plot_entry_path.py",
+      "bytes": 4177,
+      "lines": 103,
+      "sha256": "c13f33d2268019a3449b5298a2ef2d05d31da27a74d0f2ff7d2b7f355e621b34"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/plot_parallel_parking_path.py",
+      "bytes": 12189,
+      "lines": 315,
+      "sha256": "4039176e7a923681ef0fbabf37744360dd83ea2a773d4a6e529791a0849c3372"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/plot_reverse_entry_path.py",
+      "bytes": 11566,
+      "lines": 302,
+      "sha256": "e22298ff5a7933479391c63d6914f527abe2b1703f908e857132787508e906c2"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/plot_wall_gap_bag.py",
+      "bytes": 5714,
+      "lines": 132,
+      "sha256": "3ada8ebfad2104538fde5984bd9d888c1bb8e74b0a4165a1ac1c8fd6c4cc4e10"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/record_map.py",
+      "bytes": 2845,
+      "lines": 77,
+      "sha256": "3026377fd0d510e1a9d16c6283201d989f5dd3319225d5fca1c35cceb1c18bfc"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/slam_load_probe.py",
+      "bytes": 14558,
+      "lines": 342,
+      "sha256": "19d23558108c39047a9b2ce631dab9538d53b650c1fe8099d9ccdedaa0c6bd1a"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/test_wall_gap_offline.py",
+      "bytes": 3162,
+      "lines": 87,
+      "sha256": "39a135cde64abc1165b176096cdf9eb9d719c6bc76255852266cd745c3d43643"
+    },
+    {
+      "group": "01_parking_slam",
+      "path": "src/stack_parking/tools/wall_gap_logger.py",
+      "bytes": 13699,
+      "lines": 329,
+      "sha256": "73fb893debc6013a20fcc9c9c9611277813f9bf60bff39c8c8a570115063074a"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/README.md",
+      "bytes": 9099,
+      "lines": 190,
+      "sha256": "1299015ef087a5930aba69aaa788029c2e6e4102bd71c76ed6dba585419c0529"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/config/fixed_geometry.yaml",
+      "bytes": 1783,
+      "lines": 59,
+      "sha256": "7e20ac77e48fc5afe3409d9d637595fa8603e0d371b77ab27c91b9a09c9e665e"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/launch/bringup.launch.py",
+      "bytes": 1867,
+      "lines": 48,
+      "sha256": "70c5c8fa3a0e1dcc2b565b2259614f33daad84a15640acc61f44fba375408216"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/launch/drivers.launch.py",
+      "bytes": 1456,
+      "lines": 39,
+      "sha256": "d12ef16ea46cc95b1a61f6780baa5a198cd2eb9f543710ca334d47b016114897"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/launch/fusion_v2.launch.py",
+      "bytes": 1059,
+      "lines": 24,
+      "sha256": "596154cb245bc008c3cda35aa34d974a5101d56997d7cfc642e6754c4bb66796"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/lidar_fusion_v2/__init__.py",
+      "bytes": 45,
+      "lines": 1,
+      "sha256": "60ff8b7e19fb13a3d238a9e1ee2e83464aaa5d4c22f475f1d04c75b390deb310"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/lidar_fusion_v2/calibration.py",
+      "bytes": 6792,
+      "lines": 161,
+      "sha256": "cbee9dc65c4072facd93f0eb0a303a92224ecb5e7b98fbc4c7d7247a91b28440"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/lidar_fusion_v2/driver_profiles.py",
+      "bytes": 1311,
+      "lines": 45,
+      "sha256": "aff3b74350e33902498e174f3b8acf7d1634325e9f0921be0d9ee50fdf56b3cc"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/lidar_fusion_v2/fusion_node.py",
+      "bytes": 6823,
+      "lines": 153,
+      "sha256": "9c721acff574580311ef03cf16bfc5572d22d6d6a596b933984a2be3db34c2e5"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/lidar_fusion_v2/geometry.py",
+      "bytes": 4306,
+      "lines": 113,
+      "sha256": "54df4ba140894f8e4d8d03632ca1d9b4bbace1e9c0c223c1fcbafeda9dee1fbf"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/lidar_fusion_v2/wall_calibrator.py",
+      "bytes": 9323,
+      "lines": 215,
+      "sha256": "a44b1b3c86d7e326e24a9be36665c11ea16c64dda69f95bab84e891a6bb8ea3e"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/package.xml",
+      "bytes": 961,
+      "lines": 25,
+      "sha256": "4f58247b044134f4a785535984f6595acdfb2d5b9ead01e67a551a5a18b37cf9"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/resource/lidar_fusion_v2",
+      "bytes": 1,
+      "lines": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/rviz/fusion_v2.rviz",
+      "bytes": 3781,
+      "lines": 145,
+      "sha256": "d127bfd5a8cd6a1fd08eff58e7d78ba88779d9f43881e4ee0c512c8183facd68"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/setup.cfg",
+      "bytes": 99,
+      "lines": 4,
+      "sha256": "0af37ab689aff3d6a4624ef0be3bb0149d5114ccade0acaf4b63798e7f73883b"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/setup.py",
+      "bytes": 1038,
+      "lines": 29,
+      "sha256": "5ddf3764bcbd0ef8f56cfaeaf5dd8e36eecffb2de7400059e09a43d6920555dc"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/test/test_calibration.py",
+      "bytes": 4210,
+      "lines": 105,
+      "sha256": "554b163a6414920d72c61cfbdce3845ab7d1a0e25cf4f95980ce1a21e2f52222"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/test/test_driver_profiles.py",
+      "bytes": 1160,
+      "lines": 33,
+      "sha256": "7b55033176a55130c53afaab687a6719aee04ae4c007b89aadcafab108565b38"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/test/test_geometry.py",
+      "bytes": 1106,
+      "lines": 35,
+      "sha256": "5741e083813793932128d4f9741346ea20802c723f494670f13ac889dcc597cf"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/tools/99-fma-lidars.rules",
+      "bytes": 1157,
+      "lines": 14,
+      "sha256": "7614ae516d2d7badd59712c7716493c4d71b93477bda4c10e1470c5a1ed73d8a"
+    },
+    {
+      "group": "02_current_lidar_fusion",
+      "path": "src/lidar_fusion_v2/tools/run_4lidar_v2.sh",
+      "bytes": 1682,
+      "lines": 57,
+      "sha256": "60e061ac1097bf87de153ee934472709f7df0dcd97836e83202de9ee3d2360ed"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/CMakeLists.txt",
+      "bytes": 3536,
+      "lines": 112,
+      "sha256": "1288d73397eb44dd87309cff40e186e46dab3fbd17d658fc87a8f8a79c4e0f24"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/README.md",
+      "bytes": 23149,
+      "lines": 485,
+      "sha256": "42d9a3f81cdd6a3df6c715e5f48fb5be762fda54b772b73235b1966eedb41d4c"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/config/fusion_params.yaml",
+      "bytes": 8819,
+      "lines": 149,
+      "sha256": "daea8038d5b58b38e8680f56a2d84596020cdad809efbeaf409937c962af5b04"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/config/lidar_extrinsics.yaml",
+      "bytes": 10845,
+      "lines": 208,
+      "sha256": "d2a619db2456a2c45bfe14b79220d3653fbfff7388e4701a7054314f32bc98dd"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/config/sim_lidars.yaml",
+      "bytes": 2692,
+      "lines": 84,
+      "sha256": "b3b54aa7b0480263592a5c558d912b2f95cebfa4450c65247ae46c383a28a088"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/cloud_filter.hpp",
+      "bytes": 3839,
+      "lines": 97,
+      "sha256": "3af4f725de7c265c025c76eb43afc8758af0aaf967b6847c28fa49a413be0ab7"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/cloud_merger.hpp",
+      "bytes": 2457,
+      "lines": 64,
+      "sha256": "16e0ac95d3a888386d83c15802f1d80d6c7ec0dedc3481492a328b72820bc7e8"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/cloud_synchronizer.hpp",
+      "bytes": 4949,
+      "lines": 117,
+      "sha256": "ab0bb40bbf41fdde8b49c85101e7df88989c7cc7ad68b33aa707249bac89f57e"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/cloud_transformer.hpp",
+      "bytes": 2032,
+      "lines": 54,
+      "sha256": "0f7037e697eeb0436371bf4d1861a794d35382c408a9053e2a6d5943a9091113"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/diagnostics.hpp",
+      "bytes": 5031,
+      "lines": 153,
+      "sha256": "1120da19b49ae42319efc8f959c1b4649827d5be17dfa23e266df29f336e4450"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/lidar_converter.hpp",
+      "bytes": 3040,
+      "lines": 69,
+      "sha256": "c07e91d162dcd1c12267d2f2ca40f1ba78e653e3e6de21fd9fa6841ee283c764"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/motion_compensator.hpp",
+      "bytes": 3549,
+      "lines": 81,
+      "sha256": "6894cca0b9b2ec8c30bd3dc202ea103b31e053abed7b5ed9317f46bc6b813bb8"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/types.hpp",
+      "bytes": 8654,
+      "lines": 210,
+      "sha256": "384f8de1ab41b68f2ca30c8c0fdf24ade8323b70e3d2bd6439b78b31c223d6ff"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/include/multi_lidar_fusion/virtual_laserscan.hpp",
+      "bytes": 3800,
+      "lines": 101,
+      "sha256": "a79b641b43ea08087ecf0b78be31ad10d96c535f1b3d6ab9688de8caa0dc2c83"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/launch/identify_positions.launch.py",
+      "bytes": 3879,
+      "lines": 105,
+      "sha256": "36cc5fa515b9dd42ff34e2c19c17c7b0cd188a343894a903a044c4476a898704"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/launch/multi_lidar_drivers.launch.py",
+      "bytes": 7320,
+      "lines": 164,
+      "sha256": "5c19e1f04985bd706e6714acc8e2fe9c03da1f33d0fb8879fdc675b4241383be"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/launch/multi_lidar_fusion.launch.py",
+      "bytes": 11312,
+      "lines": 240,
+      "sha256": "6bec7e1eee717f900c93d0c519089e20e9aed57b65f70fc4935c4914b340ef0f"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/launch/view_one_lidar.launch.py",
+      "bytes": 11709,
+      "lines": 262,
+      "sha256": "9d40b4716cf9c847ede33fd7cbee1509f0e5becaefc073620412d0766591d3e7"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/package.xml",
+      "bytes": 1454,
+      "lines": 39,
+      "sha256": "e9be05e9528c6b5d620531d54179f0a64841ad20c4dc173373f6a4a8b042c05a"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/rviz/multi_lidar.rviz",
+      "bytes": 9741,
+      "lines": 369,
+      "sha256": "b89b001d6a628f5c3d06f6963f9e0fc35c52921ec7fdfe8125aa5d793a058582"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/rviz/one_lidar.rviz",
+      "bytes": 3076,
+      "lines": 119,
+      "sha256": "cdc8ee9f7d4f5f1e747fabda176c1db0051c80908c6b79643e668dec316b7f89"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/cloud_filter.cpp",
+      "bytes": 3879,
+      "lines": 126,
+      "sha256": "961fc4c5e266b6aabb50802baf961a12c522a0b4b9506321205e1e2ddc0eaa0a"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/cloud_merger.cpp",
+      "bytes": 3367,
+      "lines": 116,
+      "sha256": "fbcb8800a03517cc948430a5b1ad363d44fb41ea304dabadd5262a2e8b02cbbf"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/cloud_synchronizer.cpp",
+      "bytes": 5604,
+      "lines": 190,
+      "sha256": "68b6fd93b69d80fac704f3907964bf7f9c59495ec10c0af98344c5de81f35955"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/cloud_transformer.cpp",
+      "bytes": 2761,
+      "lines": 87,
+      "sha256": "ce5a70f84a80b5b3b84cf7f58c881377d413b094ef94495727ebf60140f87710"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/diagnostics.cpp",
+      "bytes": 9296,
+      "lines": 302,
+      "sha256": "7c5ff2d23fba8ab89d1323b66c6fe8ca29e234f099760853a92e17a602f8ed15"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/lidar_converter.cpp",
+      "bytes": 7505,
+      "lines": 211,
+      "sha256": "700bfc8e3e45644d4e6158665244fe95635590573fb7ce8a287f90a22b6bfc37"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/motion_compensator.cpp",
+      "bytes": 3363,
+      "lines": 114,
+      "sha256": "b81e8f5d724c53d4e918269f80f86c3f236da06ff9f9385a4b891a2e997b425d"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/multi_lidar_fusion_node.cpp",
+      "bytes": 27225,
+      "lines": 635,
+      "sha256": "c78e8f543b24719e6df5ebba00d81a36a41b815d89c0ba5a25c35a376c775bf7"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/test_scan_publisher.cpp",
+      "bytes": 11357,
+      "lines": 297,
+      "sha256": "244d43bdabb58c69c427e2ab7d3831f4b66d07084e4b021a53179d213dd5de99"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/src/virtual_laserscan.cpp",
+      "bytes": 3813,
+      "lines": 121,
+      "sha256": "71b1a935e9a81e7c008e0b576be4d7331b3cd8a2ccb1258c70bf1b47b198de63"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/test/test_fusion_core.cpp",
+      "bytes": 19372,
+      "lines": 601,
+      "sha256": "a22bbf6dfeb8812dab4303e7d8bba6aed90eb1b27f7fa597af773af8482259e4"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/60-ros-humble-rplidar-ros.rules",
+      "bytes": 485,
+      "lines": 8,
+      "sha256": "95ee16d2c615854e299bd4306a6b7840de465462d30dd12deef89a5711dfdae6"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/99-fma-lidars.rules",
+      "bytes": 6427,
+      "lines": 88,
+      "sha256": "4d6a370b29b8ef51b47a0c1f505513893a1f743901079a2a5865670cee57f5c0"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/99-ydlidar.rules",
+      "bytes": 449,
+      "lines": 7,
+      "sha256": "42430e9090a3d302b463a93a9259e7bacff20f2e39eef2409ecb0737d546ee45"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/check_sensors.py",
+      "bytes": 12462,
+      "lines": 337,
+      "sha256": "194215359459ef81ea639523ff197981adfdff8ad35830c8d31afed0c70c814f"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/identify_lidar_positions.py",
+      "bytes": 14517,
+      "lines": 333,
+      "sha256": "620237aa52a735b2ab13f6b662dbfe195d6c17539aaecaf6550b5919bfc74e8e"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/identify_lidars.sh",
+      "bytes": 2714,
+      "lines": 71,
+      "sha256": "870ad8f205954d276d6247065ccc2a1f740e9628098eb57716f988e464532e25"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/layout_markers.py",
+      "bytes": 11413,
+      "lines": 268,
+      "sha256": "f3dc91c0d70edd8439d3416cfb563a290e1129dd4083bddd8a7da1d004491184"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/pair_calibrate.py",
+      "bytes": 23699,
+      "lines": 503,
+      "sha256": "22a59274f328cac32a45d98b6339aec309f5b62bb0106e914804589145ea97db"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/pair_wall.py",
+      "bytes": 17591,
+      "lines": 401,
+      "sha256": "9da78e7e7db7939888eea2c056c326c3a57a8d9cf2ff4e23ae0d7c4e5ebd8131"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/run_4lidar.sh",
+      "bytes": 4473,
+      "lines": 131,
+      "sha256": "26f61d7a67beb665528168030c3285325acb2f80ca08a84e47ca1a6d3f1a8db8"
+    },
+    {
+      "group": "03_legacy_lidar_fusion",
+      "path": "src/multi_lidar_fusion/tools/wall_calibrate.py",
+      "bytes": 22481,
+      "lines": 480,
+      "sha256": "fc7fca744c25c6703c9e4dfa70e819357258efeb0573296b0885b8051572c436"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/COMMANDS.md",
+      "bytes": 5475,
+      "lines": 139,
+      "sha256": "19632103295fbb01b8f98b6170073a9351aa44b7cb3dbc1a80ac4f8c5f2ce0bc"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/DRIVE_GUIDE.md",
+      "bytes": 10151,
+      "lines": 189,
+      "sha256": "82903fd2b88f9528d70218a9e8034ec8144da1537e3aa91aa3e24058f507837e"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/HEADING_CHECK_GUIDE.md",
+      "bytes": 4865,
+      "lines": 94,
+      "sha256": "ecf249cd109c50087d263d15989e788b9396cf6ae8fa4f886ab57418b441eb98"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/REQUIREMENTS.md",
+      "bytes": 4221,
+      "lines": 54,
+      "sha256": "ea1409a4a6ae89760764fbf8d5e13441e3716794b22736d3b25da13da46ab275"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/config/mission_zones.example.yaml",
+      "bytes": 1510,
+      "lines": 25,
+      "sha256": "cd952f5cf088a797da72047cf20fe196de28966221075089f7ecb32602251e01"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/config/persistent_gps.yaml",
+      "bytes": 253,
+      "lines": 10,
+      "sha256": "268d7222645fd0a10d0d993b910af417832174cd99abaa0546e04a380bf4d2ba"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/launch/walk_test.launch.py",
+      "bytes": 2618,
+      "lines": 55,
+      "sha256": "cdd0bc1425b0e62a64965fb575d03316e0e1855264fbf5d3c86d00952397fb2e"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/package.xml",
+      "bytes": 925,
+      "lines": 26,
+      "sha256": "04f2a925802c0f70dae0585be7156f7910087ae6c470c5f42f18db190d362fa3"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/resource/stack_gps",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/setup.cfg",
+      "bytes": 87,
+      "lines": 4,
+      "sha256": "a7a042ae0d348a9e991db3634550b569b3f782f4562f1ebcbd09cb95d5c23131"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/setup.py",
+      "bytes": 1134,
+      "lines": 30,
+      "sha256": "81f2b6ab8cecc6bb50aeaf127ab879ce8b2904a83a71c3b6f3adf10849b193b9"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/__init__.py",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/gga_link.py",
+      "bytes": 11514,
+      "lines": 270,
+      "sha256": "f2356c0f3be3ec89de2f5cf9205baf5700c5309a9ef42534f278dd6a39077018"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/heading_fusion.py",
+      "bytes": 9233,
+      "lines": 167,
+      "sha256": "d44c1cebdf78b6d717c506075240d43891166ceb97135bd605a3d31b17e79a4e"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/imu_link.py",
+      "bytes": 7450,
+      "lines": 187,
+      "sha256": "6974bb86d84fc22f47e02679a7c80458b44361cafcb6f198e193ea694ffeedb4"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/mark_zone.py",
+      "bytes": 12273,
+      "lines": 260,
+      "sha256": "446e6d39f0f7cd049bcf8b5f9abdfa6042dad3b22c160c7945cfa35141aba794"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/node.py",
+      "bytes": 49245,
+      "lines": 928,
+      "sha256": "5915912b7faffb8a134cead43a5ef3c020390c2329c9c4f75e6a66bba5aa31ca"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/path_engine.py",
+      "bytes": 37926,
+      "lines": 649,
+      "sha256": "8d3a1a2f4257bbcb2417762172599ac3d5d0d920ebbca0479b8d546b09a72204"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/persistent_link.py",
+      "bytes": 2520,
+      "lines": 82,
+      "sha256": "0cf3769d10eae756eaf00ae44c08c000402d42a6653a64654a41952f0917efc8"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/persistent_service.py",
+      "bytes": 8958,
+      "lines": 213,
+      "sha256": "88a81d59f659cd1bb68e85e4ddc90cb40a569c3e440faa7f2a33ef6291f2548f"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/route_plan.py",
+      "bytes": 12321,
+      "lines": 242,
+      "sha256": "a72e96d8ea3e6fa309d4a300e484e4e6c27822148fc10bbe991d17fc93af6b9b"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/station_path.py",
+      "bytes": 7545,
+      "lines": 146,
+      "sha256": "29102e7623183686dcf04d0752bce4fb60d92df94f9ce0ae9a71e2de2969658a"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/usb_reset.py",
+      "bytes": 5169,
+      "lines": 108,
+      "sha256": "6eed868d8d63e3a3f948c8634b4453a7a9a64359ead5ac896ebb85e7befc5da2"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/stack_gps/zones.py",
+      "bytes": 7253,
+      "lines": 157,
+      "sha256": "bb57cb54f5b8797a7623b74aaaf4f6231a080ede5274aeb4b353c1345b153bd6"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/conftest.py",
+      "bytes": 171,
+      "lines": 5,
+      "sha256": "0301646541c4bafa121cfcd64bcd12df5eea84b14a87bc8da4727e66ced4b5d7"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_avoidance_marker.py",
+      "bytes": 1617,
+      "lines": 41,
+      "sha256": "baf01ca6af8010b17d98c324f0f5b1804e8d8eb3db72c94bfdee676550f258f6"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_avoidance_marker_node.py",
+      "bytes": 1105,
+      "lines": 20,
+      "sha256": "b3f05f5e51aea71531a862b42ca1d1b2ea2b03d2c40e33d7a851204ac4007dd2"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_halla_reference_mission.py",
+      "bytes": 7951,
+      "lines": 209,
+      "sha256": "0af4ec7885b2925b98a064e0d4762d6969046e5a4e118a562fb6a690becf907f"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_heading_fusion.py",
+      "bytes": 8278,
+      "lines": 189,
+      "sha256": "79a05c5efbe212bf85560881dc86f31e0b74687a0f9a01a6fba0c5f8622caa9a"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_imu_link.py",
+      "bytes": 2824,
+      "lines": 72,
+      "sha256": "e6ce190f40c8f278c9663b1e86e3425c4f2fb007f577307d1193ddd0a1968b75"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_path_engine.py",
+      "bytes": 24451,
+      "lines": 502,
+      "sha256": "36de85a462c47590259e29f5ad2ee38f4e0f47b29f92c5d4e4eb1dd89744beeb"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_persistent_link.py",
+      "bytes": 7663,
+      "lines": 166,
+      "sha256": "621d45f36868805e32d69fea5436bb0e8606677cdb902f580ee7e68fbafe95f4"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_route_plan.py",
+      "bytes": 8561,
+      "lines": 182,
+      "sha256": "6efb1f5f8f69799c7f691a8d5ccef20a7e1bd11916403118e0c2d2b597c7d0b9"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_station_path.py",
+      "bytes": 10254,
+      "lines": 233,
+      "sha256": "2c1f960375325259aa567a4e052c55a21d3062caaaf27b479e7157af419f2ac0"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_usb_recovery.py",
+      "bytes": 2899,
+      "lines": 77,
+      "sha256": "bd0628b133a3d2d9e7e05b3056c828450b083aacb4d8072244e6f1e8bcdd9298"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_waypoint_window.py",
+      "bytes": 1761,
+      "lines": 41,
+      "sha256": "82423448de3289d2254a40cd731d0cec4646fc935c14962f648c58d367f3d45c"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_zone_chatter.py",
+      "bytes": 2409,
+      "lines": 59,
+      "sha256": "f66207e4f064ffeb9b5ad19917d63d4c1359130a36b0bde3b03f56782f33ac98"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_zone_file_parking.py",
+      "bytes": 1541,
+      "lines": 55,
+      "sha256": "e6d3d405d2d180b5192195b5666970a3bc199994c6951bea4a761d89b86c38cb"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_zone_stability_integration.py",
+      "bytes": 5015,
+      "lines": 98,
+      "sha256": "87b3259ea46e079f287dfb393f1be4f734e60073355939cd15a9472faaf0116e"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/test/test_zones.py",
+      "bytes": 5630,
+      "lines": 126,
+      "sha256": "ad19bf495acde2fb1d8420e1ab43af238dcc919c13a14c8d5991fcd110ec4553"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/tools/drive_log/record_drive.sh",
+      "bytes": 3197,
+      "lines": 72,
+      "sha256": "397409248e6e0ea47c42424d207c136fde03642b95957d2d2c6f10c177d7543a"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/tools/heading_debug_capture.py",
+      "bytes": 4034,
+      "lines": 111,
+      "sha256": "a778ffeb7ad8d39587c9407bccf91c59bf24fe8c590071b581b346839b4cf4b5"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/tools/heading_truth_check.py",
+      "bytes": 10464,
+      "lines": 238,
+      "sha256": "88e8bfa1d387d55eb572c67413954f62a7d835e1cd349a1b9b8bf656fec1d678"
+    },
+    {
+      "group": "04_gps_localization_input",
+      "path": "src/stack_gps/tools/imu_sign_check.py",
+      "bytes": 5038,
+      "lines": 128,
+      "sha256": "7a3716b737408c6fb9cd684692f1ed900d35e9f4419ce190ef0c4e545333fc16"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/CAN_BRINGUP.md",
+      "bytes": 19277,
+      "lines": 432,
+      "sha256": "e0c919f1083377bb8c877756e75b28481abfc52422efb4a915729b9d1eb11f24"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/CMakeLists.txt",
+      "bytes": 1694,
+      "lines": 42,
+      "sha256": "1900d4d95bed065cf15eb523366768473c1af89edf473a0d617cf3cfbf711f14"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/DSPACE_LOGGING.md",
+      "bytes": 8129,
+      "lines": 128,
+      "sha256": "85bc8bdd2cb03253c4c1f4e01b53369d9a8c9d9489a270f3df05f1c437bc8a68"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/PROTOCOL.md",
+      "bytes": 21567,
+      "lines": 319,
+      "sha256": "5bc29505b4abed387376a708f6b40d3926b2786c13c39dedc60a1b271e0af86a"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/dbc/HL_Global_Mobility_CAN_FD_64B_Bidirectional.dbc",
+      "bytes": 3913,
+      "lines": 91,
+      "sha256": "853e73d995d84804229991d56b0df7b293ce2cf537405423be21a6dee0367e1b"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/launch/bridge.launch.py",
+      "bytes": 1967,
+      "lines": 40,
+      "sha256": "176de09d379303d7bc8d702bace419e3c9e394c7b1ac2b610b870ec1344252c1"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/launch/loopback_test.launch.py",
+      "bytes": 2750,
+      "lines": 55,
+      "sha256": "3d0e30aec739d6b49c8fd149e10d5b411b1d2c44ce6c121a1adb789b7fd8de94"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/package.xml",
+      "bytes": 673,
+      "lines": 20,
+      "sha256": "b9ee1b428583642dbc7a3308de89a096d648160d64e2985e548807480b0b1fd3"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/src/can_bridge_node.cpp",
+      "bytes": 23344,
+      "lines": 537,
+      "sha256": "4575f61c0af025310987f8881e2f23f44e12600ef624f245738a1295e091ab78"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/src/can_protocol.hpp",
+      "bytes": 6069,
+      "lines": 167,
+      "sha256": "749c8137d5fd50baccae8dc1f2435c56fb30e88b957bc8f8282eb182fe8adb8e"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/src/dspace_sim_node.cpp",
+      "bytes": 6338,
+      "lines": 157,
+      "sha256": "c5bf0ce87d66c006252ae5540ee6f512c54c2850de4d3fb1480020cdf1a9fe09"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/src/dummy_ref_publisher.cpp",
+      "bytes": 2473,
+      "lines": 75,
+      "sha256": "b409196fe58523cabadd5482e2f55e19a38b083c09af1128bbe1877b94b90baf"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/src/socketcan.hpp",
+      "bytes": 9478,
+      "lines": 226,
+      "sha256": "a2a0f5a5211919354bded89e63db999bc54c66c0e959768f18ae4b218170e92b"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/src/vehicle_csv.hpp",
+      "bytes": 1555,
+      "lines": 42,
+      "sha256": "332b357184ee78bc5a0eb83fa68fb17287061c9ef6c56705482575311ffe724e"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/test/socketcan_fd_test.cpp",
+      "bytes": 8428,
+      "lines": 185,
+      "sha256": "691b49cee2eac3fc22c19730c7926a2a7ae5cc3d95226044288aabacfa18b994"
+    },
+    {
+      "group": "05_vehicle_feedback",
+      "path": "src/bridge_dspace/test/vehicle_csv_test.cpp",
+      "bytes": 3161,
+      "lines": 82,
+      "sha256": "fd7f261de8b765945a09e6fc12c4f895d143e31f226728492041a681538e8445"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/CMakeLists.txt",
+      "bytes": 761,
+      "lines": 31,
+      "sha256": "f7c37d47cdf544268a2a50beed54578ca2df6caf175065daf4f320335623f014"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/AvoidStatus.msg",
+      "bytes": 1037,
+      "lines": 16,
+      "sha256": "dc211e7406a9f329b6c1289fd16cba13b87a549396d2308a65fd21de2c082f46"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/CanHealth.msg",
+      "bytes": 1962,
+      "lines": 36,
+      "sha256": "342d3b5aa97ac64cea066fde3ec0dbc92809d39123957993320f9862075327e5"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/EstopRequest.msg",
+      "bytes": 1243,
+      "lines": 24,
+      "sha256": "7466fc39e20e211a04732911d70df8ff9304966b9a5648bb823d2278a1cb2013"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/GpsPath.msg",
+      "bytes": 6128,
+      "lines": 105,
+      "sha256": "59af7ffe77b4c2ddbd1e6cdcb0ef145e3d52230734e75eabb89dad6dbeb7e4f9"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/LanePath.msg",
+      "bytes": 485,
+      "lines": 9,
+      "sha256": "53993ae4a263cfc14b682d327506f3d0630dae77e85efc0de769d0813bc96f53"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/MgmState.msg",
+      "bytes": 4652,
+      "lines": 142,
+      "sha256": "1f4d5f67471773054daa675c8f47c615b507f89e8bbffd4e3429bfa0940232b2"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/MissionObservation.msg",
+      "bytes": 178,
+      "lines": 10,
+      "sha256": "89b79f2d2bd0a2257bf7e1c40561058e18658526e8f54292556c57995c0d126e"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/ParkingCommand.msg",
+      "bytes": 181,
+      "lines": 7,
+      "sha256": "75e1ec5a7242732c5474ffc7a56c3c575ae202097c3f26081baea0620cfa75e4"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/ParkingStatus.msg",
+      "bytes": 1869,
+      "lines": 39,
+      "sha256": "e46e58e3d17dd0693081d047dce2fe8a806359a81c3fc3268cadade9d25766e1"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/ParkingWallStatus.msg",
+      "bytes": 224,
+      "lines": 10,
+      "sha256": "96e41f7794e745d11f26621df6d06c1e9645f1ad78592cf5bf3ac3446d884507"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/RefPoint.msg",
+      "bytes": 212,
+      "lines": 5,
+      "sha256": "03104b218ae45450a4aa08c9041b7103b5c12aabae0306eefea4dff08ceedef5"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/RouteControl.msg",
+      "bytes": 422,
+      "lines": 23,
+      "sha256": "e683e0a31c2c1ddff7ed5aad1b0c98cff88484fea11f30386708260bcb8cc546"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/RouteFeedback.msg",
+      "bytes": 377,
+      "lines": 16,
+      "sha256": "38cb27951d913c6e2d2d7fa00991867b80ae45e2721728f6a4a3c1b9a88893fa"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/StopLine.msg",
+      "bytes": 528,
+      "lines": 7,
+      "sha256": "a5192c0ffaf21be122a815701e90337896e355bb0a0b450514f4ae72216ba1b1"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/TargetRef.msg",
+      "bytes": 816,
+      "lines": 20,
+      "sha256": "9de3f23f1d1d18e7d7c2dc23f8529ce32d3eabb400a8e4de06dd3e7ce11b5fc9"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/TrafficStop.msg",
+      "bytes": 1372,
+      "lines": 21,
+      "sha256": "1c1dd3130c62bbe9dc7f850e8744c06492a30e74d76a4203f441f9923d04cdca"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/VehicleVector.msg",
+      "bytes": 378,
+      "lines": 9,
+      "sha256": "c0f1571b36e8d5a5977d42ae47673e7db9c4d14c285019f8386b7cfaae003537"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/msg/ZoneContext.msg",
+      "bytes": 931,
+      "lines": 27,
+      "sha256": "d9a55d2fd32dff0b23a56b69f0d481bff0ad93fb74c725c3040cc1c79511599a"
+    },
+    {
+      "group": "06_message_contracts",
+      "path": "src/fma_interfaces/package.xml",
+      "bytes": 798,
+      "lines": 22,
+      "sha256": "34f6c3e37b807399199243a5266e11f7df39b5cb208eea49693d617a24d30de8"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/CMakeLists.txt",
+      "bytes": 11204,
+      "lines": 249,
+      "sha256": "e9617145cfe43c92c9ad46d44fffa244982c9bfcb33dab0f05903b89ac8f57a6"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/README.md",
+      "bytes": 12908,
+      "lines": 215,
+      "sha256": "5d7ba012b0380a56ad64d97045baae8a366b7b599cd5c9fcae02ee9b88913b27"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/RUNBOOK_avoid_field_test.md",
+      "bytes": 44296,
+      "lines": 636,
+      "sha256": "a11b908e95cba384ef22cc8a07b254e07fc970592c807b9876d91b04102e17ae"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/RUNBOOK_full_measurement_20260830.md",
+      "bytes": 26550,
+      "lines": 525,
+      "sha256": "c1178b6e7170bab34e5415041ccd44bd89685835b16ec9d5780c17cd10986ce3"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/RUNBOOK_full_operation_20260904.md",
+      "bytes": 18707,
+      "lines": 460,
+      "sha256": "f7e3a4fc4fb95064df23a146adeb72b5008ca0bd9668f2df205297a61deeefe3"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/RUNBOOK_integration_v2_halla.md",
+      "bytes": 35475,
+      "lines": 564,
+      "sha256": "baa2b36fa35d6e1da1ea79dfc83445c275131c24dc53ba91ae19ebf6e6a0db34"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/RUNBOOK_integration_v2_yongin.md",
+      "bytes": 28869,
+      "lines": 497,
+      "sha256": "f892752a7672d9ccab840b0a8253a7a8f6f8da3742bde9e5601f19d819c6bba4"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/RUNBOOK_lane_gps.md",
+      "bytes": 10292,
+      "lines": 176,
+      "sha256": "0503122205f1285acb6eab714cce819341c8c6afdbcef4e7f5ea581803b565de"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/RUNBOOK_mbd_lane_gps.md",
+      "bytes": 26764,
+      "lines": 515,
+      "sha256": "78267aedad11db58ccb347e56efd2a3f450b09413375be1d551b6321e069c73e"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/RUNBOOK_traffic_stopline_3kmh_test.md",
+      "bytes": 6422,
+      "lines": 129,
+      "sha256": "2548241fa6024bba60d7276b0dd8ec2f60862ce6573c3de7102df30e8e38c084"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/config/integration_v2.rviz",
+      "bytes": 6770,
+      "lines": 263,
+      "sha256": "bc458914bfe3a8a6a5ee68b70c29cf42b1aac3cbef3166e1c726fcfa3589d345"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/config/params.yaml",
+      "bytes": 10923,
+      "lines": 165,
+      "sha256": "17ad12a5abce4aea36db93312ab55f02c193fae054b237307e58fa5fc35ca8a3"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/manager_step.cpp",
+      "bytes": 33754,
+      "lines": 692,
+      "sha256": "09448ca2c53779d85e9688ef79876da37f597af97bb433bcbb81094ecf67dd85"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/manager_step.hpp",
+      "bytes": 588,
+      "lines": 14,
+      "sha256": "f6d4d984777bc2006fc8bd247f2932a1d162ca9804c2b6e3adbdaee3bb1b1810"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/manager_types.hpp",
+      "bytes": 7504,
+      "lines": 218,
+      "sha256": "50717d04cb0522d4d78d4abf06c2a5738e7012a749cc78678dc6e1366f0ae669"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/mgm_step.cpp",
+      "bytes": 42084,
+      "lines": 833,
+      "sha256": "d367f3bc0c601ae8bf15071fd30cd21e2f9a9f789a5cd0827fe00fcc77be9e6c"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/mgm_step.hpp",
+      "bytes": 933,
+      "lines": 24,
+      "sha256": "1dba03f3439ce446cb12bd0926a9b263dbb44523a1625624c9a6ccdd34f0c6fa"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/mgm_types.hpp",
+      "bytes": 24340,
+      "lines": 417,
+      "sha256": "121bf39d3b60a58172d07b73d9a77d31b8a5473d55b5f1034cd9ce1b71b80efc"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/mission_step.cpp",
+      "bytes": 11737,
+      "lines": 267,
+      "sha256": "e3860b4c8dd768a7bbd88ccd5471a74512d5bbf2fdf584e86a6e1f3257fb419f"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/mission_step.hpp",
+      "bytes": 661,
+      "lines": 15,
+      "sha256": "935b3eb140fc32aee7926133417affca2af70a8b915832cab9d9428a7db9a63b"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/reference_safety.cpp",
+      "bytes": 2929,
+      "lines": 67,
+      "sha256": "72cb23c7547ef5df93be879b3c44befece46b666357faacf80e557012c0d3234"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/reference_safety.hpp",
+      "bytes": 434,
+      "lines": 11,
+      "sha256": "8a6704761dd9fb860aca73e531e806d6953ff6117860de71228019a5b35b7dc8"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/route_step.cpp",
+      "bytes": 7509,
+      "lines": 138,
+      "sha256": "2f714a75f280e36a3bb0d400aadea9e1afb88d5f1493eca6b7c6cd16cde2ece6"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/route_step.hpp",
+      "bytes": 384,
+      "lines": 10,
+      "sha256": "88908d6214bcb21bdc07f39e028b25187b97e9dead20d8fb1a7f762d5ff892c7"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/zone_step.cpp",
+      "bytes": 4308,
+      "lines": 96,
+      "sha256": "147d8d763000a0ed91cf7dfa03c03e205d88b2509b633ad0e6f49d59164691bd"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/core/zone_step.hpp",
+      "bytes": 420,
+      "lines": 11,
+      "sha256": "c8f73c60262124c86ed63c8fc911cd1c9b9e67b6f735fb34ffe018ed8d316f4f"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/MBD_lane_gps_can.launch.py",
+      "bytes": 27309,
+      "lines": 493,
+      "sha256": "350e9277dc4c5d3885852373ed9c7ba1d8fd5949fd281bbc99fc746359c730e2"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/REAL_VEHICLE_indoor_traffic_stop.launch.py",
+      "bytes": 7371,
+      "lines": 148,
+      "sha256": "3ae6bb4825fa3426048ca2381d92ea93b8047bb3111cfcaf4c86cc30d5785e54"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/REAL_VEHICLE_integration_v2.launch.py",
+      "bytes": 1586,
+      "lines": 33,
+      "sha256": "f7d2e5964f932dace11675faef2e2b344b36f36f3b5df8abac138ca30a447274"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py",
+      "bytes": 8347,
+      "lines": 142,
+      "sha256": "8ce0bc37c900ed4518494d9d4cb311b3ddbed6827d9727068431f96afad7a4db"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/REAL_VEHICLE_integration_v2_no_estop.launch.py",
+      "bytes": 483,
+      "lines": 11,
+      "sha256": "086d53c9244ccf4363504c6c4bd79dae4cd33f11bbe72e417fca887490e162b1"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/REAL_VEHICLE_lane_gps_can.launch.py",
+      "bytes": 59767,
+      "lines": 922,
+      "sha256": "f57ba150839c11b3a85ae51c8e8ecb0fd00fcae990a91ae3668cea05caa5c5e6"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/generated_backend_bench.launch.py",
+      "bytes": 1665,
+      "lines": 45,
+      "sha256": "8b72ed96b0b41e354f6c57175b64ae1f2dedca1988c3307c4f350af8e263415a"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/integration_v2_bench.launch.py",
+      "bytes": 1217,
+      "lines": 27,
+      "sha256": "4f7f82781c02af1eef70d4d444f6a99aa19459c188ed407856a1a6ee7ba8202b"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/integration_v2_view.launch.py",
+      "bytes": 1564,
+      "lines": 27,
+      "sha256": "fa0aa82fab66ea9391ec3a9a1512d52181e7720fa6722ee460b387a214bfac31"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/launch/mgm.launch.py",
+      "bytes": 586,
+      "lines": 19,
+      "sha256": "02268bed6efd66f0f9194f44aa4df631e68b5a6bde1f8cfe962259d83dd0cce0"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/package.xml",
+      "bytes": 1953,
+      "lines": 48,
+      "sha256": "a9e03455758252a3ef737416e810dbd2a6c98e696e660b4794be4bb2eddff082"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/decision_backend.cpp",
+      "bytes": 11956,
+      "lines": 403,
+      "sha256": "27bbfda50bd746a2d147eef65fd6596198bf1c56bd8caf3062b6d381710de6cc"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/decision_backend.hpp",
+      "bytes": 3422,
+      "lines": 98,
+      "sha256": "2d6dfc01188189751a8e7e1581b65575a5c308f182b06bb4c8ef96af9b2950ec"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/ADAS_MGR2.c",
+      "bytes": 39897,
+      "lines": 1036,
+      "sha256": "6e26c495c39cd9def0c491af1f1a2a4f4c18907b9e4b81bedbe6e418358c54b7"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/ADAS_MGR2.h",
+      "bytes": 11061,
+      "lines": 241,
+      "sha256": "2f0dcbca30b65caade35d068e7b00eddbc5ebb2742dfb312bdf9ccf47ee6fc61"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/ADAS_MGR2_private.h",
+      "bytes": 913,
+      "lines": 33,
+      "sha256": "cdde01fbf17aab356be081cf4659cd5d7f88d8accc13765ff5909b86de4e6146"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/ADAS_MGR2_types.h",
+      "bytes": 2493,
+      "lines": 105,
+      "sha256": "a8201ac5f69f08ec9903fd60f3059994047712e67b75c39e291b8f1aa630ad1f"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/README.md",
+      "bytes": 3592,
+      "lines": 68,
+      "sha256": "9ff9403c8a7a35cd0bf44dcfa2a8ef7e01b7b38367bd9c8b4656e858fda03717"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/rtGetInf.c",
+      "bytes": 2288,
+      "lines": 100,
+      "sha256": "26dfca788407cdae68c9dddb6f3cc3be09fd2a6b1a561c2c31faae51a9532f43"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/rtGetInf.h",
+      "bytes": 953,
+      "lines": 36,
+      "sha256": "8a044405b5ab4773b14272ee517460d7a6dffd9c774b92f558b4648799bb5f59"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/rtGetNaN.c",
+      "bytes": 1545,
+      "lines": 66,
+      "sha256": "3b00ce6afe878fc801267631db1b06d45dfa531ae83ac9f3259e1486fbd8f3fc"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/rtGetNaN.h",
+      "bytes": 880,
+      "lines": 34,
+      "sha256": "bdd6ef13799c28b86194685ae53afc3c08978040e7bbb2e2321895f0e6f6e7ba"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/rt_defines.h",
+      "bytes": 1723,
+      "lines": 58,
+      "sha256": "7b996a51aa9d87486a9b228d7f5d3ec309239c6f216c17ec44cedf14cccb7e32"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/rt_nonfinite.c",
+      "bytes": 2477,
+      "lines": 96,
+      "sha256": "14d0ca000f2021813ac04b99f550a4a9dac69a5ea28701c59a931a34ab71c1d6"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/rt_nonfinite.h",
+      "bytes": 1535,
+      "lines": 64,
+      "sha256": "afac14f1bfd02bc09045c7edbcea0489f98669e4354d63d1364c1fb262fb1e3f"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated/adas_mgr2/rtwtypes.h",
+      "bytes": 5050,
+      "lines": 180,
+      "sha256": "9ab1c2f584b4ff413121114c2dd9c26beeedba292ccacadda83da0c8aeb5edc2"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated_adapter.cpp",
+      "bytes": 15833,
+      "lines": 474,
+      "sha256": "339c1cce58df5b0b88d6477c0c55cc72e905c7562d51d62172199e8c962b2791"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/generated_adapter.hpp",
+      "bytes": 2069,
+      "lines": 57,
+      "sha256": "55d60677006a8148473db030f7de5b7ce867e3aba04ceb9a3854c7ec73215a3a"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/mgm_node.cpp",
+      "bytes": 78205,
+      "lines": 1425,
+      "sha256": "480ec65e0817a6719832d0cfbcb5b589e9df4b8f6414f313584d03fdba2ca31c"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/reference_clock.hpp",
+      "bytes": 1222,
+      "lines": 35,
+      "sha256": "880e2d8e96d29bd4a23688aae545584294f6a75464a3ebdd7e708c529ce00be4"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/transition_log.cpp",
+      "bytes": 7795,
+      "lines": 192,
+      "sha256": "0db5e04a8dc7855ab581b77b03ba2084f17409a4b8a70cba45192b5e97873ac1"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/src/transition_log.hpp",
+      "bytes": 1886,
+      "lines": 46,
+      "sha256": "5a0861d16eb8decb5f957f48ecfb19da2828b60ec2cbfb9a5db3f8e12eecaf40"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/test/mission_preparation_test.cpp",
+      "bytes": 12045,
+      "lines": 175,
+      "sha256": "97df44c5b46ffd84c6a17268d2263618692cbdcce0b1a2f92bcf25995e83217f"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/test/parking_entry_ros_smoke.py",
+      "bytes": 8343,
+      "lines": 132,
+      "sha256": "6e04f1a9ce9113c90df26901d93bcd42ae69889ad9b6f733fa832efb7fddccb8"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/test/parking_entry_test.cpp",
+      "bytes": 14858,
+      "lines": 236,
+      "sha256": "5283eb678779812c6f7b3694a83d26b09c65954836aef3474c1e11188d15edbf"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/test/parking_return_state_test.cpp",
+      "bytes": 2428,
+      "lines": 101,
+      "sha256": "36dac365475966eb6c4783ebe13335ac2b615cfe72f50e7374191bc2e047a5b9"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/test/parking_search_route_ros_smoke.py",
+      "bytes": 8455,
+      "lines": 152,
+      "sha256": "09ded42f6f6396b0e1020c1e8b2d150e6c581e591de547e33a7ac3882c50dfe2"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/test/test_integration_view.py",
+      "bytes": 6015,
+      "lines": 126,
+      "sha256": "54cc5b9e49b45edf73991edcce53fe9064ac824d6f3c99ac886009c405e283f6"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/tools/dump_format.hpp",
+      "bytes": 4472,
+      "lines": 73,
+      "sha256": "be98a9bfe1cb0111c7049912e574d7769b48a03f3c4c46e03215e2faa97ee2e2"
+    },
+    {
+      "group": "07_consumers_and_integration",
+      "path": "src/adas_mgm/tools/integration_view.py",
+      "bytes": 20128,
+      "lines": 350,
+      "sha256": "03bc895f8b42dd2f5aba1cfbcf8abb271a2b198675a2f6038e8c81fae80d7bff"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/CMakeLists.txt",
+      "bytes": 3368,
+      "lines": 95,
+      "sha256": "7b1bdf83cddcc15edc9bd06196ef4c16d36851a489ec03ff4e8cdb0698fd7dae"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/LICENSE.txt",
+      "bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/README.md",
+      "bytes": 8790,
+      "lines": 208,
+      "sha256": "4775abba41b278a4c381d02ce8713428232c9a45f4366034ae1dc6ca95aaf2b1"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/config/ydlidar.rviz",
+      "bytes": 5800,
+      "lines": 177,
+      "sha256": "916e56313c5232f515cad3f45e710c23276dc3a017fbc5ee4e4981c1d783c05b"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/details.md",
+      "bytes": 8203,
+      "lines": 133,
+      "sha256": "f6ba18c1b417d2018811545663ef6c503736289eaeaece79be97afa05e492f2c"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/launch/ydlidar.py",
+      "bytes": 1051,
+      "lines": 29,
+      "sha256": "30794c3f82d6cb31b36785aeddf0c8c743736dd291ba244b622e52a31572fa35"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/launch/ydlidar_launch.py",
+      "bytes": 2276,
+      "lines": 56,
+      "sha256": "634090b1803799002a55a4c0a4531c0803f5abd7f984de186c001f9f530d1728"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/launch/ydlidar_launch_view.py",
+      "bytes": 2559,
+      "lines": 63,
+      "sha256": "df9b3fcd224513a1ae5a83b82831472a3acb317fee581401a0a4c5b9d29c610a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/package.xml",
+      "bytes": 1215,
+      "lines": 35,
+      "sha256": "62cccb19a1977bd5138a0107e36eeee2afe3de0680ddb9f676521d1204a67cd1"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/G1.yaml",
+      "bytes": 522,
+      "lines": 23,
+      "sha256": "ebf583014e38bf34f9ffbf9f579260e30d07486364fdffed4f15d96e80757965"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/G2.yaml",
+      "bytes": 543,
+      "lines": 24,
+      "sha256": "2c7f1c76ff5bec7f098ec9519e87ca6faa9bd03dd3d33d64676dd3b9cf112cf9"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/G4.yaml",
+      "bytes": 563,
+      "lines": 25,
+      "sha256": "1a7cde36594db9a59be629784b7190dcc156b937e51e4adaa1868055fb44671e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/G6.yaml",
+      "bytes": 523,
+      "lines": 23,
+      "sha256": "bc424055a17ce46d632e13b06e760d22dca4829386887ced8194f785b1d2c142"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/GS2.yaml",
+      "bytes": 612,
+      "lines": 29,
+      "sha256": "1143aad287c29f965de49ea5b8cb95cee027334b66ec77b13427dd1cca211681"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/GS5.yaml",
+      "bytes": 609,
+      "lines": 29,
+      "sha256": "e956d1b5bae2782fe7b7a98604c19ebe1ec10815493f4457a0c8aaaf64b3271c"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/TEA.yaml",
+      "bytes": 538,
+      "lines": 24,
+      "sha256": "e7dd32380ec77fdded9b94677c6575d8456a4f38d0996f59dcdff298a41902a5"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/TG.yaml",
+      "bytes": 524,
+      "lines": 23,
+      "sha256": "4096c2becb573ade970bb3c3c3ca53379f0449ed5a557363118c96ed84f939aa"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/Tmini-Plus-SH.yaml",
+      "bytes": 561,
+      "lines": 25,
+      "sha256": "bd0ce7acaefd23ed39762460dbea736ae4a8cb9333d3ef224c685d2cd8ec7bc8"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/Tmini.yaml",
+      "bytes": 560,
+      "lines": 25,
+      "sha256": "e91dda53ed2fa0fbc2469592554e5dac00befa71e6714e4d81199fac7f717df0"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/X2.yaml",
+      "bytes": 560,
+      "lines": 25,
+      "sha256": "043e513cb7e38b91b315270471ab2846766da2ce32e094e745f3b3ae44c5a5fd"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/X3.yaml",
+      "bytes": 560,
+      "lines": 25,
+      "sha256": "f2b42ad5b68b776a7c6d039e0c5ea90fedc0607f629215a42eb1c57702087542"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/X4-Pro.yaml",
+      "bytes": 561,
+      "lines": 25,
+      "sha256": "09d721c90c5ac141062ca550b14e19da1de4cdd41de3e4cbde76310909b2872d"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/X4.yaml",
+      "bytes": 521,
+      "lines": 23,
+      "sha256": "ed4f4527eb80aa57d77f5cec3f04d5f28c806df3e7001b7029c1927b4156d0bf"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/sdm15.yaml",
+      "bytes": 564,
+      "lines": 25,
+      "sha256": "f936793cef662f36120e75a1f738acb9dcb06888eff4a3e06aee622f86ce2aa2"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/params/ydlidar.yaml",
+      "bytes": 563,
+      "lines": 25,
+      "sha256": "1a7cde36594db9a59be629784b7190dcc156b937e51e4adaa1868055fb44671e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_client.cpp",
+      "bytes": 1127,
+      "lines": 42,
+      "sha256": "56cb0f5c4106a8a5e04cc828977717aea49a6d70d1e96e2893adf21c709b6cfb"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp",
+      "bytes": 10070,
+      "lines": 285,
+      "sha256": "69c5fe06f56a698a4b756f58cef1a51c501863dd6b0344de6b4251d4c71bca69"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_ros2_driver/startup/initenv.sh",
+      "bytes": 562,
+      "lines": 11,
+      "sha256": "e018aa70e8ffe3cc8fedf935e5223517498a73a2beb63c29b947014780a7545a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/CMakeLists.txt",
+      "bytes": 8637,
+      "lines": 239,
+      "sha256": "024dcbc944a5c7112b4825c72da2ddd57f6f82d828b7e610961dbdac589f183e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/Doxyfile",
+      "bytes": 108061,
+      "lines": 2479,
+      "sha256": "0c71fa310df62aa134a32566e31a7d7eafc6a22cc012519577429db35767229c"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/LICENSE.txt",
+      "bytes": 11056,
+      "lines": 250,
+      "sha256": "b2fdea07aa91e86111f65ce603856051c8eee9a802385e3c41bc6f01c80bf64a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/README.md",
+      "bytes": 3719,
+      "lines": 75,
+      "sha256": "41b476dfc393ea2b17e3f924f8a306e60fe5c529d4bf09c0ba77127f8f3825d5"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/FindPackage.cmake.in",
+      "bytes": 512,
+      "lines": 10,
+      "sha256": "aef858595ef831d06d2219b8533d042c4c56dde2e85ea6944531663a8283eaa6"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/PackageConfig.cmake.in",
+      "bytes": 1217,
+      "lines": 24,
+      "sha256": "1499844f4de0f74354df335dc9c54b830dea845a644f102de4cc2782bb45cdbe"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/PackageConfigVersion.cmake.in",
+      "bytes": 636,
+      "lines": 17,
+      "sha256": "a9814ecf1048421d2b4249c81d1f7fbd818f2e4819737dad21cd3bc97eb2999d"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/PkgConfig.pc.in",
+      "bytes": 273,
+      "lines": 11,
+      "sha256": "31f82bfc490eb9a2aba673b0d83c82a1b21c2d39b7b0ce0b38b9cfc5255c5904"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/cmake_uninstall.cmake.in",
+      "bytes": 1596,
+      "lines": 26,
+      "sha256": "f2b6d4651a3e9bfd638b21c0b9eaa8da910279584d310e2a3dbbc8adc2a9eaac"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/common/ydlidar_base.cmake",
+      "bytes": 12177,
+      "lines": 388,
+      "sha256": "2b59760e51dadcb90606691525cdfda50364c15795341a60843c9aa55c183248"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/common/ydlidar_parse.cmake",
+      "bytes": 2277,
+      "lines": 71,
+      "sha256": "e94993e3342d4fd58a4e0da832e4f9134e75c835f82d08ce1efed331cf58a209"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/install_package.cmake",
+      "bytes": 12171,
+      "lines": 296,
+      "sha256": "1294f7cb7601306ebb2a7ab2fbd0c6872efef45dc53face8ab0411e820726709"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/cmake/script_show_final_summary.cmake",
+      "bytes": 4835,
+      "lines": 94,
+      "sha256": "6cc4b296e9764b7773b323f098f07ef3da6aa13176d027665c9de82995362380"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/CMakeLists.txt",
+      "bytes": 294,
+      "lines": 8,
+      "sha256": "d97c3c60852b96b1dbac29317436a86d20b1b8cf49949b17c5e1470e60e4fd5b"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/CMakeLists.txt",
+      "bytes": 324,
+      "lines": 11,
+      "sha256": "6505cb146eb39f89353ac1ae9c5396707617f28256630e5f27bcbf9353ce694e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/datatype.h",
+      "bytes": 3113,
+      "lines": 148,
+      "sha256": "0e9d8f47d3ded16ec4c5e005c0eff6cda4cf20b19a5d93f02c16a1a0b27d4dd1"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/locker.h",
+      "bytes": 6556,
+      "lines": 359,
+      "sha256": "b1d0b9eba92cf663438e9a724365bbef6efe360bbe315edf838bbfcf8bd4f91f"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/thread.h",
+      "bytes": 4524,
+      "lines": 179,
+      "sha256": "358fc7be2ada0de4d6d51471131b84009631aef37d787704d0876d27793fd58a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/timer.cpp",
+      "bytes": 1323,
+      "lines": 57,
+      "sha256": "9c967553c6107296a849ddb57775c1c628ef3bc5795ecbbac255219b751a70fe"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/timer.h",
+      "bytes": 905,
+      "lines": 52,
+      "sha256": "6f3a668ecdf36f9cf0efe8f777eea4039d83abf8da747d6cb6e2bd0bfd994a15"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/typedef.h",
+      "bytes": 403,
+      "lines": 17,
+      "sha256": "cbd91503b776153bd7752f20bc1be986673f8989e1b58be64d4690f21306ea74"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/utils.h",
+      "bytes": 304,
+      "lines": 18,
+      "sha256": "2f692e1ec2dd384872977752a1834bcc7966604a9cc8b891e88751afb5eda18f"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/v8stdint.h",
+      "bytes": 5397,
+      "lines": 144,
+      "sha256": "d012c95faadc22442d20b6379bbad02e8d94c4223250c2d2872d09f3b30bb7b6"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/base/ydlidar.h",
+      "bytes": 4739,
+      "lines": 194,
+      "sha256": "775781d2b5952f05310140fc2c8908c1f9e6ed34892044d45ffd1f582357c6f5"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/CMakeLists.txt",
+      "bytes": 124,
+      "lines": 5,
+      "sha256": "ceabe150d34fc715a145a9316d2615a6d9aa0c9067b285587a536d5f6458f40a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/ChannelDevice.h",
+      "bytes": 4403,
+      "lines": 134,
+      "sha256": "00f052c8742d51d2cc560ec3df5f37354540e9ee47e0df93e65ed475ec5f2b3b"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/DriverInterface.h",
+      "bytes": 21130,
+      "lines": 637,
+      "sha256": "e8442ea9357e307fea918d8ab16845dd5e5e708e4da3d0044e57d2f735f11239"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/YdDataStream.cpp",
+      "bytes": 4521,
+      "lines": 187,
+      "sha256": "4d549a6f900f0c21b4d820f1f7777dbf86a3a7cdc531c76bfc94fccbe4c8a2c5"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/YdDataStream.h",
+      "bytes": 3111,
+      "lines": 103,
+      "sha256": "b718dca7c0a33515ca3abebe91df99cef57c2388a133fe9f8c4a3a0eb2c4902d"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/ydlidar_datatype.h",
+      "bytes": 4597,
+      "lines": 123,
+      "sha256": "8ef378b12b2b1d7456626c563e18a8a3bc69513c43561c5eacb519fbf767ff0d"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/ydlidar_def.cpp",
+      "bytes": 1478,
+      "lines": 39,
+      "sha256": "2f977b7f1e68ef894445ce8ff3e6fe8aa398874aabbfabf07d3310dc95bcde4d"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/ydlidar_def.h",
+      "bytes": 7394,
+      "lines": 246,
+      "sha256": "7565e77a109830261b3daa772d6a8c887364d01244f99305e5dda787672129d3"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/ydlidar_help.h",
+      "bytes": 29588,
+      "lines": 1185,
+      "sha256": "7516a1c78939840dd4de81b75fef0734b67cbfc61d839c8baf9d4f542a781837"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/common/ydlidar_protocol.h",
+      "bytes": 15218,
+      "lines": 546,
+      "sha256": "2336cd03bb5b5eeb88fa6c277e01805486f75bfde2771c67b37cb4dcbdc6a3a9"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/json/CMakeLists.txt",
+      "bytes": 124,
+      "lines": 5,
+      "sha256": "ceabe150d34fc715a145a9316d2615a6d9aa0c9067b285587a536d5f6458f40a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/json/cJSON.c",
+      "bytes": 77932,
+      "lines": 3119,
+      "sha256": "d0b57cd375105cc81a78e64d12c147ff7a0a9697b2d8598eec327ebe1726951c"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/json/cJSON.h",
+      "bytes": 16493,
+      "lines": 300,
+      "sha256": "6fdbda3b180088601e466650064c6d7ec9d8cee6e2198a0aafbd36a56f4e1eb3"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/math/CMakeLists.txt",
+      "bytes": 124,
+      "lines": 5,
+      "sha256": "ceabe150d34fc715a145a9316d2615a6d9aa0c9067b285587a536d5f6458f40a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/math/angles.h",
+      "bytes": 10024,
+      "lines": 297,
+      "sha256": "50a31ab9a04c05d3cea1a53598bd89749817200d39c6bee87d62517812a95dcb"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/network/ActiveSocket.cpp",
+      "bytes": 10045,
+      "lines": 302,
+      "sha256": "267a645749f1cdaa67ad49558b0a0f91f1a34ffaf479cd8ea184f6e67b33be88"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/network/ActiveSocket.h",
+      "bytes": 4284,
+      "lines": 100,
+      "sha256": "a121e497675108caa5ad8d60ee833cd2f032469f0543d11cbff60da3f6e3fd0d"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/network/CMakeLists.txt",
+      "bytes": 265,
+      "lines": 10,
+      "sha256": "9d54cab7c8dd87646b6f3aee62789790f8da13b5c13f7b8c3ab959aaae78ba6e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/network/PassiveSocket.cpp",
+      "bytes": 11380,
+      "lines": 315,
+      "sha256": "26b8f1b23254353b9abca1d8bc395df4b70a602e37d3c68daa609e951522156c"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/network/PassiveSocket.h",
+      "bytes": 6801,
+      "lines": 128,
+      "sha256": "92a4a5359b253f39030eb78387d9fd50d7f47802e218b92f56c346e2862a588e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/network/SimpleSocket.cpp",
+      "bytes": 44003,
+      "lines": 1514,
+      "sha256": "09948180949588cdaa054f32afb8ef4544a18edc0a1ef2724c9dc289fec407d5"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/network/SimpleSocket.h",
+      "bytes": 27416,
+      "lines": 691,
+      "sha256": "cf1f6f63f3e57333dbc60de4e611f6525f3642f63bdddf710e5216a575be0eb0"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/network/StatTimer.h",
+      "bytes": 4722,
+      "lines": 150,
+      "sha256": "6ac14e58c29b0fa314669594b4380274c324609b802ff7efc22a8f03a3b36542"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/CMakeLists.txt",
+      "bytes": 306,
+      "lines": 10,
+      "sha256": "6a4fac12be7d63d14999446fd02edb0f6308433c7e2b9f7ea263909b195d0877"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/common.h",
+      "bytes": 2130,
+      "lines": 48,
+      "sha256": "9400bba61599ff69f2d0eac88dbbc5a85038b6c50ed0268bfa553bf726abb8c3"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/CMakeLists.txt",
+      "bytes": 189,
+      "lines": 8,
+      "sha256": "529ad3781e7bb299803b924f6d30aa6507a9a4ab01455912925a42ee3e0de79d"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/unix/CMakeLists.txt",
+      "bytes": 120,
+      "lines": 4,
+      "sha256": "610acf306103a95915cdeebf5116c52efb18c9093ff0d06be586a97048bb5579"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/unix/list_ports_linux.cpp",
+      "bytes": 7635,
+      "lines": 331,
+      "sha256": "7e3942dbda6db80b0d145f35860196a3ae3d1bfed2c782f3e5b5b8aa5d221d04"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/unix/lock.c",
+      "bytes": 21801,
+      "lines": 796,
+      "sha256": "9088daab22d18afacd2305e9cd5477d394962bc7727f8aa66982bea3344c7bc0"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/unix/lock.h",
+      "bytes": 6961,
+      "lines": 241,
+      "sha256": "26dc878967751962721398d226288adbcf9b3b3b3ff656f65910bbdbf5d6a234"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/unix/unix.h",
+      "bytes": 491,
+      "lines": 27,
+      "sha256": "3070bb5d727bdf7b9dd52b5509072178b730985709b17ad4b01a1e5f6cd154e4"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/unix/unix_serial.cpp",
+      "bytes": 37984,
+      "lines": 1727,
+      "sha256": "28085dd1603f1bc24e7902a8b6474dd484368531ac53f7e8c938fecf4dec94a5"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/unix/unix_serial.h",
+      "bytes": 3251,
+      "lines": 162,
+      "sha256": "0764401c632ec47802918ee570c04193f8ad02e99a8de25f98b2d50c20de7e8e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/windows/CMakeLists.txt",
+      "bytes": 121,
+      "lines": 5,
+      "sha256": "28f5959724c52cde5996614a41cd3c93b29e8a703939b0d27d9a324d5cf5a013"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/windows/list_ports_win.cpp",
+      "bytes": 5971,
+      "lines": 196,
+      "sha256": "c7d3d84e312e00122dcdf3700fea318deb41b2109dd6359042bc2a4677f5a1c5"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/windows/win.h",
+      "bytes": 147,
+      "lines": 10,
+      "sha256": "578b9dd6f507d50eb129d68364c941504c56bd053c13367da3474bd5990ccf1f"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/windows/win_serial.cpp",
+      "bytes": 22270,
+      "lines": 1077,
+      "sha256": "997f2273f87ddb01e545f97ea3c9a4c93b92bc6c4722a58e07683c5ad7573697"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/impl/windows/win_serial.h",
+      "bytes": 3398,
+      "lines": 175,
+      "sha256": "5fa09f867049cb85c82db3500e3da81216f340320885c16ff836ed0cecaef6fc"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/serial.cpp",
+      "bytes": 9544,
+      "lines": 409,
+      "sha256": "30466d993a0ff6155486d279a6d6ed3b6b72b29f55d2e646910dbd5c0333f07c"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/core/serial/serial.h",
+      "bytes": 23044,
+      "lines": 710,
+      "sha256": "9d456f8240399720545b7883b4e2fa46ed8d0fdaa568abd80463587b365fd7dd"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/package.xml",
+      "bytes": 818,
+      "lines": 18,
+      "sha256": "fbcb828559a07c6cd9d7a362c4d3cd3cfee3f4dd7e58a1bab28a8f38756361fe"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/setup.py",
+      "bytes": 3006,
+      "lines": 82,
+      "sha256": "ad11287c1b864572da43e70bd6f6d9ed210492215261d58cb35fa59b9001ed7b"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/CMakeLists.txt",
+      "bytes": 406,
+      "lines": 13,
+      "sha256": "cd288dd12f7f6e576d5e3839239cc415b7ae8c457fa3b5f0f9019453478e6970"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/CYdLidar.cpp",
+      "bytes": 44389,
+      "lines": 1778,
+      "sha256": "719672b0cc88c8247758f6f486fed5bca6239fb12a45a3dc8f6dec8c9679c0c7"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/CYdLidar.h",
+      "bytes": 13573,
+      "lines": 406,
+      "sha256": "4e9b4d5dfdf1fa21ec035fbd39639394cd80d6ab15b8822f6bd60bd4dbc68d3a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/DTSLidarDriver.cpp",
+      "bytes": 25427,
+      "lines": 995,
+      "sha256": "78a977e44e79f9765b7df326d1515927b71bbf82eead1c8b350a1a4c17427223"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/DTSLidarDriver.h",
+      "bytes": 6581,
+      "lines": 208,
+      "sha256": "5ca81b0b03f438b797a851432d0cc0926ec3f8e54caab9d1da7e77ed4417ded1"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/ETLidarDriver.cpp",
+      "bytes": 29124,
+      "lines": 1278,
+      "sha256": "8f3b999fe8a0fa83fa7dcb3d84f2ee29034bc5af7a92b988cedabc649f6204bb"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/ETLidarDriver.h",
+      "bytes": 14145,
+      "lines": 454,
+      "sha256": "0e3bd57ae4e8b629b803e53c23ec00f568be07af4d9d960654599ecb842b5c46"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/GSLidarDriver.cpp",
+      "bytes": 58772,
+      "lines": 2035,
+      "sha256": "fa55ff3ec7ecceab358f9aef6180ae6c1671e8b6247aec7ec234b1d3fcdc998e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/GSLidarDriver.h",
+      "bytes": 18143,
+      "lines": 514,
+      "sha256": "61eb210f6fcc27a0c75fb36aa63b4f73eb95440e3bc0de25d582c8f4e4fab8c1"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/SDMLidarDriver.cpp",
+      "bytes": 23572,
+      "lines": 999,
+      "sha256": "2d16fde6e82a0dccde1b954f6560212644ec0a2eb0e6913fbd3714056800f33a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/SDMLidarDriver.h",
+      "bytes": 14067,
+      "lines": 447,
+      "sha256": "7f3f00e95f19dd7ee4b8c79b635f943827b7d1ae18af62ca82dfd9ddb44a193a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/TiaLidarDriver.cpp",
+      "bytes": 25507,
+      "lines": 954,
+      "sha256": "5216b306142baff96e0fefdf3ec2744434f887797c496cc4e7419c1d6bd9e1ba"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/TiaLidarDriver.h",
+      "bytes": 8260,
+      "lines": 255,
+      "sha256": "a66f63fc3872a53099fa4a01a3dab8657210ea0ffa37f769fcb6928e4f6a9a2e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/YDlidarDriver.cpp",
+      "bytes": 38636,
+      "lines": 1661,
+      "sha256": "94cf668ae429dea2e23a0b4e68ca32d383444610a19e309c71f05e20a5b0148e"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/YDlidarDriver.h",
+      "bytes": 14957,
+      "lines": 486,
+      "sha256": "ef7c5802b8319e325bb94e1de1950b105da7e3d52af9b7ddd69d78722e6a654c"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/filters/CMakeLists.txt",
+      "bytes": 120,
+      "lines": 4,
+      "sha256": "610acf306103a95915cdeebf5116c52efb18c9093ff0d06be586a97048bb5579"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/filters/FilterInterface.h",
+      "bytes": 802,
+      "lines": 35,
+      "sha256": "4b1aa0ed20f5de611f5a00b979e209fa8d7999e832f786ecdb0206ca0cfc34b7"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/filters/NoiseFilter.cpp",
+      "bytes": 20178,
+      "lines": 596,
+      "sha256": "0cbc0f267dd787982e6d7410eeeb7d4524c51c0c6b7ce65a818c82b3ad9e4065"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/filters/NoiseFilter.h",
+      "bytes": 2516,
+      "lines": 101,
+      "sha256": "e6e79bcee464433ac25b064f545371aa8689b2f5a068d398758ee8f52be06420"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/filters/StrongLightFilter.cpp",
+      "bytes": 9133,
+      "lines": 288,
+      "sha256": "c0e00c04ae8b8a0595749aa52883b3469d3b7a71e5cbb7cd2d6e0da8f07f540c"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/filters/StrongLightFilter.h",
+      "bytes": 2212,
+      "lines": 71,
+      "sha256": "f5e9e6d71f8098aa9df7957485eb017e3cc65600be22384e99f5fe696d391074"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/ydlidar_sdk.cpp",
+      "bytes": 5151,
+      "lines": 232,
+      "sha256": "989980b26b436d898498f65ac9da8c1a8f711e89681709df577ea1c5916494fd"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/src/ydlidar_sdk.h",
+      "bytes": 7827,
+      "lines": 265,
+      "sha256": "6798b85485c435691b0a91ca3ba8bf2bbb82615d6c581ec7ccfa5876a2b0c087"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/startup/initenv.sh",
+      "bytes": 562,
+      "lines": 11,
+      "sha256": "e018aa70e8ffe3cc8fedf935e5223517498a73a2beb63c29b947014780a7545a"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/test/CMakeLists.txt",
+      "bytes": 353,
+      "lines": 10,
+      "sha256": "4cccf77d62980a7a6b66fb766c2946812572c7dd598c701cca107a31d9bf2fe3"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/test/lidar_test.cpp",
+      "bytes": 1924,
+      "lines": 78,
+      "sha256": "c478e477fbbaf52af6533650fb5392998078e1b59f4c2f0fa64092d2e3334206"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/test/lidar_test.h",
+      "bytes": 844,
+      "lines": 33,
+      "sha256": "47d20adb77d761a0f39e77a361c6291fe1996479d05ba0f470d6c1c9bd95746d"
+    },
+    {
+      "group": "08_sensor_driver_and_sdk",
+      "path": "src/ydlidar_sdk/ydlidar_config.h.in",
+      "bytes": 1281,
+      "lines": 28,
+      "sha256": "c5110fdd28cc9ae33b9c3ad4f4a2148374eb014d05485100ef3bae829cab1d2f"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "CLAUDE.md",
+      "bytes": 77194,
+      "lines": 521,
+      "sha256": "a251314a74355fdd95b54bb4d58f34757e9a026b1b5289648a4632a40af34b5c"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "HANDOVER.md",
+      "bytes": 24998,
+      "lines": 479,
+      "sha256": "efea0c9d131e6e8d3461fb43ca0ba678a444736373b47818de70709e2865fe61"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "README.md",
+      "bytes": 5463,
+      "lines": 111,
+      "sha256": "46cc5ee68a095b4a44f9a5fc874ae88da0cf80b1f173933d9fbcd8e38a50266b"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "RUN_BOOK_FINAL.md",
+      "bytes": 30705,
+      "lines": 476,
+      "sha256": "b593e5fdf1cea06d351b6cd7d436405a3b868df6db400160d5bd1b91e96a2f87"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/FRONT_LIDAR_ALIGNMENT.md",
+      "bytes": 3309,
+      "lines": 47,
+      "sha256": "7df01d60a23dde76e0e95e657ce73e7fb0ceca13344c37bf9ca7fea3728065ca"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/INTEGRATION_V2.md",
+      "bytes": 14037,
+      "lines": 179,
+      "sha256": "dd6d4f1bb3b906d464361cc2442ef475bfc4506c33380e394142df9068c18425"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/INTEGRATION_V2_DRIVE_QUICKSTART.md",
+      "bytes": 10338,
+      "lines": 171,
+      "sha256": "87ad4c1cc907cf797de0a2f2e3a450a558ba95c114be2515c9de667cf4820b70"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/INTEGRATION_V2_NO_ESTOP.md",
+      "bytes": 3760,
+      "lines": 63,
+      "sha256": "724a020d04e1bd2f6a62b708a4d7277acbd501bee4832618a5cf7bb7f3cdc426"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/INTEGRATION_V2_PR_STATUS_20260913.md",
+      "bytes": 5303,
+      "lines": 71,
+      "sha256": "1a598104b9aac1e486cd5251e80fae5247d0cfcba56e924d5b0057d954ef105d"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/INTEGRATION_V2_SCOPE.md",
+      "bytes": 6550,
+      "lines": 142,
+      "sha256": "50f6a0fa7a8d3513315dcb63b8d9e5cc691b382e514e4f5f020b121f09486a81"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/INTEGRATION_V2_VIEW.md",
+      "bytes": 3330,
+      "lines": 42,
+      "sha256": "7b823099c7b3376b11453bafe0147f595c8ed71e955a1d57541ef495fb7249dc"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/LIDAR_PREPARATION.md",
+      "bytes": 2006,
+      "lines": 42,
+      "sha256": "f7efb672a453c4bd7153a23ae8bc09ce0195451d0410ae676b1b5bf745fb460d"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/MAIN_V2_FRONT_LIDAR_ROOT_CAUSE.md",
+      "bytes": 6669,
+      "lines": 88,
+      "sha256": "5d8c2a2d1daf877ceea550cd99736d26ae87563db1edff84321cf985ad8b4948"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/MGM_MISSION_PREPARATION.md",
+      "bytes": 3269,
+      "lines": 44,
+      "sha256": "1e2fba8ec0d2105c3bc7eabc51c01f7a4097b8a82110d89ad5acdf3c61698df9"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/MGM_PARKING_ENTRY.md",
+      "bytes": 6867,
+      "lines": 78,
+      "sha256": "4aece9647d24b824a38b373358f63a7fbde4d3cfe6756d4273860f9b34952ed2"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/PARKING_LEFT_WALL_ACQUISITION.md",
+      "bytes": 5486,
+      "lines": 71,
+      "sha256": "e3300e2998d195d88b9a83e43f1e259128dd4507b73e376cd301c80118c9411a"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "docs/history/MGM_MISSION_PREPARATION_REV5.md",
+      "bytes": 18689,
+      "lines": 176,
+      "sha256": "6ac0e45bc04a3e2704c0a2abeaec5fd757d0b366acc3089c92d4e6ae9319b6c6"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "scripts/test_v2_front_lidar.py",
+      "bytes": 6594,
+      "lines": 143,
+      "sha256": "9e70f1a4f49358deb455bede4a157bf24f250fe451a1527eb5fbdf7b6f19cd00"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "scripts/test_v2_launch.py",
+      "bytes": 10856,
+      "lines": 220,
+      "sha256": "3c4bf335a74da86f9077292ba6157f013eda611984922da65504882131ab4428"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "scripts/test_v2_preparation.py",
+      "bytes": 9466,
+      "lines": 185,
+      "sha256": "a3987bccae232dd0eb7f06aba025dc9d35470e56ee6a82cc20fba5b3aacf8468"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "scripts/test_v2_recover_lidars.py",
+      "bytes": 6252,
+      "lines": 156,
+      "sha256": "14f0e987073644640db9c1c44c14d79f4f8b1eed6f500fd815577ce2751900cc"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "scripts/v2",
+      "bytes": 5656,
+      "lines": 119,
+      "sha256": "0ed265a754b0e036c7ab45905005aae57b0421ef6479dafcf87d4489f9d56c90"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "scripts/v2_capture_nmea.py",
+      "bytes": 7280,
+      "lines": 170,
+      "sha256": "8f29aef3baffe7e41fc63d391fdfd5f2be70759d85b865efab7b73b3d4323469"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "scripts/v2_check.py",
+      "bytes": 2914,
+      "lines": 51,
+      "sha256": "2396ab3c9a35ce703a80be3eceffaed0c17b457270fba30c4941d019aeaf37ff"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "scripts/v2_recover_lidars.py",
+      "bytes": 9960,
+      "lines": 222,
+      "sha256": "71c23b077721ed479861bf0cb54fc2737ced562b3c0b014cb93d1e11078f76be"
+    },
+    {
+      "group": "09_operation_and_reference",
+      "path": "src/stack_avoid/config/params.yaml",
+      "bytes": 5443,
+      "lines": 72,
+      "sha256": "83edef6aa765a18105e846a5591f8e525f9a84c67b423c155e495688fba75a45"
+    }
+  ]
+}

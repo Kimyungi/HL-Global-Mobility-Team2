@@ -1,4 +1,4 @@
-"""Run the parking stack, optionally bringing up the existing four-LiDAR stack.
+"""Run the parking stack, optionally bringing up the v2 four-LiDAR stack.
 
 Examples:
   ros2 launch stack_parking parking.launch.py
@@ -12,24 +12,29 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
     params = PathJoinSubstitution([
         FindPackageShare('stack_parking'), 'config', 'parking_params.yaml'])
-    multi_share = FindPackageShare('multi_lidar_fusion')
     fusion_share = FindPackageShare('lidar_fusion_v2')
     merged_cloud_topic = '/parking/nearest_merged_cloud'
     start_multi = LaunchConfiguration('start_multi_lidar')
     return LaunchDescription([
+        DeclareLaunchArgument('t_reference_enabled', default_value='false'),
+        DeclareLaunchArgument('t_reference_origin_csv', default_value=''),
+        DeclareLaunchArgument('t_reference_route_csv', default_value=''),
+        DeclareLaunchArgument('t_reference_reverse_1_csv', default_value=''),
+        DeclareLaunchArgument('t_reference_reverse_2_csv', default_value=''),
         DeclareLaunchArgument(
             'start_multi_lidar', default_value='false',
             description=(
-                'Start existing four drivers and multi_lidar_fusion; '
+                'Start the v2 four-driver profiles and lidar_fusion_v2; '
                 'false if already running')),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
-                multi_share, 'launch', 'multi_lidar_drivers.launch.py'])),
+                fusion_share, 'launch', 'drivers.launch.py'])),
             condition=IfCondition(start_multi)),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
@@ -53,8 +58,19 @@ def generate_launch_description():
             output='screen',
             parameters=[params, {
                 'merged_cloud_topic': merged_cloud_topic,
-                'auto_trigger_gps_zone': True,
+                'auto_trigger_gps_zone': False,
                 'manual_test_publish_gps_gate': False,
+                't_reference_enabled': ParameterValue(LaunchConfiguration('t_reference_enabled'), value_type=bool),
+                't_reference_origin_csv': ParameterValue(LaunchConfiguration('t_reference_origin_csv'), value_type=str),
+                't_reference_route_csv': ParameterValue(LaunchConfiguration('t_reference_route_csv'), value_type=str),
+                't_reference_reverse_1_csv': ParameterValue(LaunchConfiguration('t_reference_reverse_1_csv'), value_type=str),
+                't_reference_reverse_2_csv': ParameterValue(LaunchConfiguration('t_reference_reverse_2_csv'), value_type=str),
             }],
+        ),
+        Node(
+            package='stack_parking',
+            executable='parking_lateral_wall',
+            name='parking_lateral_wall',
+            output='screen',
         ),
     ])

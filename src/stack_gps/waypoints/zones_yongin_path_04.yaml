@@ -1,0 +1,22 @@
+track: yongin_reference_path_04.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points:
+- mode: parallel
+  lat: 37.288667
+  lon: 127.1074694
+turn_zones:
+- zone_id: 1
+  index_ranges:
+  - - 0
+    - 39
+  - - 315
+    - 362
+  - - 959
+    - 979
+- zone_id: 3
+  index_ranges:
+  - - 298
+    - 314
+zones: []

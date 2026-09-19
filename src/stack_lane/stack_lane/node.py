@@ -3,7 +3,7 @@
 
 파이프라인: OAK-D 라이브 프레임 -> YOLOPv2 추론(stack_lane.yolopv2_infer) ->
 BEV 워프(stack_lane.bev) -> 슬라이딩 윈도우+중심선(stack_lane.lane_fit) ->
-lookahead(기본 3m) 지점 {x,y,yaw,curvature} + confidence(stack_lane.lane_path).
+현재 차량 station +2.5m의 목표점 1개 {x,y,yaw,curvature} + confidence.
 전 과정 개발/검증 이력은 PROJECT_BRIEF.md §9~§14 참조.
 
 호모그래피: `homography_path` 파라미터(기본값 = config/homography.json)가 있으면
@@ -30,6 +30,8 @@ x,y의 절대 거리 정확도는 보장되지 않으니 실측 캘리브레이�
 """
 from __future__ import annotations
 
+import math
+
 import time
 from dataclasses import replace
 
@@ -41,11 +43,13 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
-from fma_interfaces.msg import LanePath, RefPoint
+from fma_interfaces.msg import GpsPath, LanePath, MgmState, RefPoint
+from std_msgs.msg import Header
 
 from stack_lane.bev import BevGrid, DEFAULT_HOMOGRAPHY_PATH, load_homography
 from stack_lane.debug_draw import build_debug_frame
 from stack_lane.lane_path import estimate_lane_path
+from stack_lane.station_preview import CAMERA_PREVIEW_STATION_M
 from stack_lane.logging_utils import CsvFrameLogger
 from stack_lane.yolopv2_infer import DEFAULT_WEIGHTS, infer, load_model, preprocess, resolve_device
 
@@ -58,33 +62,11 @@ class StackLaneNode(Node):
         self.declare_parameter('weights', str(DEFAULT_WEIGHTS))
         self.declare_parameter('device', '0')  # 'cpu' 또는 cuda 인덱스
         self.declare_parameter('img_size', 640)
-        self.declare_parameter('lookahead_m', 3.0)
-        # 다점 출력 (2026-08-08 조향 진단 결과 반영 — lane_path.py 모듈 docstring 참조)
+        self.declare_parameter('lookahead_m', 3.0)  # raw 연속성 검사의 x 기준
+        # 내부 타당성 검사 표본 수/범위. 반환 목표점은 station +2.5m의 1개다.
         self.declare_parameter('n_points', 20)
         self.declare_parameter('points_x_start', 2.5)
         self.declare_parameter('points_x_end', 6.0)
-        # REF_POINT_00 근거리 치환 (2026-08-08 도입, 2026-08-16 동적화 — lane_path.py
-        # estimate_lane_path()/_dynamic_ref_point0_lookahead() docstring 참조).
-        # 기본값(0.0)은 비활성 = 기존 동작 그대로. 켜면 이 값은 "차가 차선 중심에
-        # 잘 있을 때(c0 작을 때) 쓰는 가장 공격적인 기준 거리"가 된다 — 실제 매
-        # 프레임 거리는 c0(드리프트)·c2(도로 곡률)에 따라 이 값~points_x_start
-        # 사이에서 동적으로 정해짐. 1.15m = stack_avoid/avoid_to_ref.py가 GPS
-        # candump 실측(run1_20260803/0806)으로 확인한 REF_POINT_00 규약 거리
-        # 중앙값(0.25~0.97m) 근처, 카메라 최소 가시거리(2.5m) 제약 하에서
-        # 시도해볼 첫 값 (2026-08-16 결정, 실차 미검증).
-        self.declare_parameter('ref_point0_lookahead_m', 1.15)
-        self.declare_parameter('ref_point0_extrap_mode', 'quadratic')  # 'linear' | 'quadratic'
-        self.declare_parameter('ref_point0_min_confidence', 0.5)
-        # c0(다항식 상수항 = x=0에서의 y) 기반 드리프트 판정 구간 — 이 이하면
-        # base_lookahead_m 그대로(공격적), 이 이상이면 points_x_start까지 물러섬
-        # (보수적), 사이는 선형보간. c2(도로 곡률)와 분리된 신호라 S자·급커브에서
-        # 곡률 때문에 y가 커지는 것과 실제 이탈을 구분하기 위함.
-        self.declare_parameter('ref_point0_c0_safe_m', 0.3)
-        self.declare_parameter('ref_point0_c0_unsafe_m', 1.0)
-        # 최소 회전반경 [m] — WHEELTEC 실측치, stack_gps PathEngine.MIN_TURN_RADIUS_M과
-        # 동일 물리 상수. 실제로 고른 거리의 요구 곡률이 이걸 넘으면(|2y|·R_min>d²)
-        # 이유 불문 더 먼 쪽으로 밀어낸다(하드 안전장치).
-        self.declare_parameter('ref_point0_min_turn_radius_m', 1.5)
         # 프레임 간 연속성 체크 (2026-08-08, 편측 오검출 진단 — lane_path.py
         # estimate_lane_path()의 prev_y/max_y_jump_m 참조).
         self.declare_parameter('max_y_jump_m', 1.0)
@@ -126,6 +108,9 @@ class StackLaneNode(Node):
         self.declare_parameter('usb_speed', 'high')
         self.declare_parameter('warmup_frames', 30)
         self.declare_parameter('poll_period_sec', 0.02)
+        self.declare_parameter('zone_gated', False)
+        self.declare_parameter('camera_only', False)
+        self._camera_only = bool(self.get_parameter('camera_only').value)
         self.declare_parameter('publish_debug_image', False)
         self.declare_parameter('log_csv', '')
 
@@ -134,13 +119,6 @@ class StackLaneNode(Node):
         self.n_points = int(self.get_parameter('n_points').value)
         self.points_x_start = float(self.get_parameter('points_x_start').value)
         self.points_x_end = float(self.get_parameter('points_x_end').value)
-        ref_point0_lookahead_m = float(self.get_parameter('ref_point0_lookahead_m').value)
-        self.ref_point0_lookahead_m = ref_point0_lookahead_m if ref_point0_lookahead_m > 0.0 else None
-        self.ref_point0_extrap_mode = str(self.get_parameter('ref_point0_extrap_mode').value)
-        self.ref_point0_min_confidence = float(self.get_parameter('ref_point0_min_confidence').value)
-        self.ref_point0_c0_safe_m = float(self.get_parameter('ref_point0_c0_safe_m').value)
-        self.ref_point0_c0_unsafe_m = float(self.get_parameter('ref_point0_c0_unsafe_m').value)
-        self.ref_point0_min_turn_radius_m = float(self.get_parameter('ref_point0_min_turn_radius_m').value)
         self.max_y_jump_m = float(self.get_parameter('max_y_jump_m').value)
         self.hold_frames = int(self.get_parameter('hold_frames').value)
         self.hold_confidence_decay = float(self.get_parameter('hold_confidence_decay').value)
@@ -153,6 +131,7 @@ class StackLaneNode(Node):
         # 추적 상태머신: 'valid'(방금 새로 검출) | 'held' | 'search' | 'lost'
         self._track_status = 'lost'
         self._age_frames = 0        # 현재 상태(held/search)에서 경과 프레임 수
+        self._reference_stamp = None
         self._held_estimate = None  # HELD/SEARCH 중 그대로 재발행할 마지막 정상 LaneEstimate
         self.warmup_frames = int(self.get_parameter('warmup_frames').value)
         self._frames_seen = 0
@@ -161,6 +140,7 @@ class StackLaneNode(Node):
         self._frames_dropped = 0         # 큐에서 버린 낡은 프레임 누계
 
         self.publish_debug_image = bool(self.get_parameter('publish_debug_image').value)
+        self.raw_image_pub = self.create_publisher(Image, '/perception/lane_image_raw', 1)
         self.debug_pub = None
         self.bridge = None
         if self.publish_debug_image:
@@ -170,38 +150,73 @@ class StackLaneNode(Node):
         log_csv_path = str(self.get_parameter('log_csv').value)
         self.logger_csv = None
 
-        device_arg = str(self.get_parameter('device').value)
-        self.device, self.half = resolve_device(device_arg)
-        weights = str(self.get_parameter('weights').value)
-        self.model = load_model(weights, self.device, self.half)
-        self._warmup_model()
+        if not self._camera_only:
+            device_arg = str(self.get_parameter('device').value)
+            self.device, self.half = resolve_device(device_arg)
+            weights = str(self.get_parameter('weights').value)
+            self.model = load_model(weights, self.device, self.half)
+            self._warmup_model()
 
-        homography_path = str(self.get_parameter('homography_path').value) or None
-        self.H, self.is_placeholder, meta = load_homography(homography_path)
-        if self.is_placeholder:
-            self.get_logger().warn(
-                '실측 호모그래피 없음 — placeholder 사용 중 '
-                f'(실좌표 정확도 보장 안 됨): {meta.get("placeholder_params")}')
-        self.H_inv = np.linalg.inv(self.H)
-        self.grid = BevGrid()
+            homography_path = str(self.get_parameter('homography_path').value) or None
+            self.H, self.is_placeholder, meta = load_homography(homography_path)
+            if self.is_placeholder:
+                self.get_logger().warn(
+                    '실측 호모그래피 없음 — placeholder 사용 중 '
+                    f'(실좌표 정확도 보장 안 됨): {meta.get("placeholder_params")}')
+            self.H_inv = np.linalg.inv(self.H)
+            self.grid = BevGrid()
 
-        if log_csv_path:
-            self.logger_csv = CsvFrameLogger(log_csv_path, is_placeholder_homography=self.is_placeholder)
-            self.get_logger().info(f'CSV 로깅: {log_csv_path}')
+            if log_csv_path:
+                self.logger_csv = CsvFrameLogger(log_csv_path, is_placeholder_homography=self.is_placeholder)
+                self.get_logger().info(f'CSV 로깅: {log_csv_path}')
 
         self._setup_camera(int(self.get_parameter('camera_fps').value))
 
         self.pub = self.create_publisher(LanePath, '/perception/lane_path', 1)
+        self.camera_pub = self.create_publisher(Header, '/perception/lane_camera', 1)
+        self._zone_gated = bool(self.get_parameter('zone_gated').value)
+        self._mgm_blocks_lane = False
+        self._gps_blocks_lane = False
+        self._lane_enabled = not self._camera_only
+        if self._zone_gated:
+            self._mgm_sub = self.create_subscription(
+                MgmState, '/adas/mgm_state', self._on_mgm_state, 1)
+            self._gps_sub = self.create_subscription(
+                GpsPath, '/perception/gps_path', self._on_gps_zone, 1)
         period = float(self.get_parameter('poll_period_sec').value)
         self.timer = self.create_timer(period, self.tick)
         self.get_logger().info(
-            f'stack_lane_node 준비됨 (ref_point0_base_lookahead_m={self.ref_point0_lookahead_m}, '
-            f'c0_safe_m={self.ref_point0_c0_safe_m}, c0_unsafe_m={self.ref_point0_c0_unsafe_m}, '
-            f'min_turn_radius_m={self.ref_point0_min_turn_radius_m}, '
-            f'extrap_mode={self.ref_point0_extrap_mode}, '
-            f'min_confidence={self.ref_point0_min_confidence}) — CSV의 ref_point0_applied/'
-            f'ref_point0_x와 대조해 사후 분석할 것(ref_point0_x가 매 프레임 달라지면'
-            f' 동적 로직이 작동 중인 것)')
+            f'stack_lane_node 준비됨 (preview_station_m={CAMERA_PREVIEW_STATION_M}, '
+            f'output_points=1, internal_samples={self.n_points})')
+
+    def _on_mgm_state(self, msg):
+        # Mission/avoidance retain ownership after leaving their entry zone.
+        self._mgm_blocks_lane = bool(
+            msg.in_gps_only_zone or msg.traffic_zone_active
+            or msg.mission or msg.avoidance
+            or any(z.in_zone and z.zone_type != 0 for z in msg.zones))
+        self._update_lane_gate()
+
+    def _on_gps_zone(self, msg):
+        # Physical waypoint zones may lead confirmed MGM membership. A held
+        # state=4 trigger is not active avoidance; MGM owns the episode lifetime.
+        self._gps_blocks_lane = bool(msg.zone_valid and msg.gps_only_zone)
+        self._update_lane_gate()
+
+    def _update_lane_gate(self):
+        enabled = not self._camera_only and not (self._mgm_blocks_lane or self._gps_blocks_lane)
+        if enabled != self._lane_enabled:
+            self._prev_y = self._prev_coeffs = self._held_estimate = None
+            self._reference_stamp = None
+            self._track_status = 'lost'
+            self._age_frames = 0
+            self._lane_enabled = enabled
+
+    def _publish_idle_frame(self, frame):
+        if self.debug_pub is not None:
+            image = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+            image.header.stamp = self.get_clock().now().to_msg()
+            self.debug_pub.publish(image)
 
     def _warmup_model(self) -> None:
         dummy = torch.zeros(1, 3, self.img_size, self.img_size, device=self.device)
@@ -339,17 +354,19 @@ class StackLaneNode(Node):
             pkt = newer
             self._frames_dropped += 1
 
+        cap_mono = self._capture_monotonic(pkt)
+        frame = pkt.getCvFrame()
+        self._publish_camera_status(cap_mono)
+        self._publish_raw_image(frame, cap_mono)
         self._frames_seen += 1
-        if self._frames_seen <= self.warmup_frames:
+        if not self._lane_enabled or self._frames_seen <= self.warmup_frames:
+            self._publish_idle_frame(frame)
             return  # 노출 적응 대기 중 — 오검출 위험 있는 콜드스타트 프레임 스킵
 
         # 프레임 **캡처 시각**을 붙잡아 둔다 (아래 header.stamp 용).
         # depthai의 getTimestamp()는 호스트 steady_clock(=CLOCK_MONOTONIC) 기준이라
         # time.monotonic()과 기준선이 같다 — 두 값의 **차이**만 쓰므로 ROS 시각과의
         # 에폭 오프셋을 알 필요가 없다.
-        cap_mono = self._capture_monotonic(pkt)
-
-        frame = pkt.getCvFrame()
         canvas, tensor = preprocess(frame, self.img_size, self.device, self.half)
         t0 = self.get_clock().now()
         _da_mask, ll_mask = infer(self.model, tensor)
@@ -368,12 +385,6 @@ class StackLaneNode(Node):
         estimate, debug = estimate_lane_path(
             ll_mask.astype(np.uint8), self.H, self.grid, lookahead_m=self.lookahead_m,
             n_points=self.n_points, points_x_start=self.points_x_start, points_x_end=self.points_x_end,
-            ref_point0_lookahead_m=self.ref_point0_lookahead_m,
-            ref_point0_extrap_mode=self.ref_point0_extrap_mode,
-            ref_point0_min_confidence=self.ref_point0_min_confidence,
-            ref_point0_c0_safe_m=self.ref_point0_c0_safe_m,
-            ref_point0_c0_unsafe_m=self.ref_point0_c0_unsafe_m,
-            ref_point0_min_turn_radius_m=self.ref_point0_min_turn_radius_m,
             prev_y=prev_y, max_y_jump_m=effective_max_jump,
             prev_coeffs=prev_coeffs, coeff_smoothing_alpha=self.coeff_smoothing_alpha)
 
@@ -437,16 +448,8 @@ class StackLaneNode(Node):
         msg = LanePath()
         msg.header.stamp = (now - Duration(seconds=pipeline_s)).to_msg()
         msg.header.frame_id = 'base_link'
-        msg.confidence = float(final_estimate.confidence)
-        points = []
-        for p in final_estimate.points:
-            rp = RefPoint()
-            rp.x = float(p.x)
-            rp.y = float(p.y)
-            rp.yaw = float(p.yaw)
-            rp.curvature = float(p.curvature)
-            points.append(rp)
-        msg.points = points
+        self._fill_reference(msg, final_estimate)
+        self._set_reference_stamp(msg, cap_mono, estimate.mode != 'none')
         self.pub.publish(msg)
 
         # 캡처→발행 지연 주기 로깅 (5초). 차선 추종 루프의 위상 여유를 좌우하는
@@ -462,6 +465,57 @@ class StackLaneNode(Node):
                     % (v[len(v) // 2], v[int(0.9 * len(v))], v[-1],
                        infer_ms, self._frames_dropped))
                 self._pipeline_ms.clear()
+
+    def _fill_reference(self, msg, estimate):
+        # Unpack exactly one calculated preview; do not truncate or interpolate a path.
+        point, = estimate.points
+        ref = RefPoint()
+        ref.x = float(point.x)
+        ref.y = float(point.y)
+        ref.yaw = float(point.yaw)
+        ref.curvature = float(point.curvature)
+        msg.confidence = float(estimate.confidence)
+        msg.points = [ref]
+
+    def _publish_raw_image(self, frame, cap_mono):
+        # Exit YOLO needs untouched pixels even when lane inference is gated.
+        if self.raw_image_pub.get_subscription_count() == 0:
+            return
+        msg = Image()
+        msg.header.frame_id = 'lane_camera'
+        if cap_mono is not None:
+            age = time.monotonic() - cap_mono
+            if math.isfinite(age) and age >= 0.:
+                msg.header.stamp = (self.get_clock().now() - Duration(seconds=age)).to_msg()
+        # Unknown capture time remains zero and cannot enter the exit vote window.
+        msg.height, msg.width = frame.shape[:2]
+        msg.encoding = 'bgr8'
+        msg.step = msg.width * 3
+        msg.data = frame.tobytes()
+        self.raw_image_pub.publish(msg)
+
+    def _publish_camera_status(self, cap_mono):
+        # A fresh frame certifies camera availability even during warmup/no lane.
+        # Repeating a frame or publishing an empty LanePath is not a heartbeat.
+        msg = Header(frame_id='lane_camera')
+        if cap_mono is not None:
+            age = time.monotonic()-cap_mono
+            if math.isfinite(age) and age >= 0.:
+                msg.stamp = (self.get_clock().now()-Duration(seconds=age)).to_msg()
+        self.camera_pub.publish(msg)
+
+    def _set_reference_stamp(self, msg, cap_mono, new_estimate):
+        # HELD/SEARCH republishes the previous estimate: a new camera frame
+        # alone must not renew that path's generation. Geometry is unchanged.
+        if new_estimate:
+            self._reference_stamp = None
+            if cap_mono is not None:
+                capture_age = time.monotonic() - cap_mono
+                if math.isfinite(capture_age) and capture_age >= 0.0:
+                    self._reference_stamp = (
+                        self.get_clock().now() - Duration(seconds=capture_age)).to_msg()
+        if msg.points and self._reference_stamp is not None:
+            msg.reference_stamp = self._reference_stamp
 
     def destroy_node(self) -> None:
         if self.logger_csv is not None:

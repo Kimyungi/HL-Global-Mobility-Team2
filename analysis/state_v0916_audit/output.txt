@@ -1,0 +1,229 @@
+{
+  "commit": "2991216",
+  "sequence": [
+    "01",
+    "03",
+    "04",
+    "05",
+    "07"
+  ],
+  "routes": [
+    {
+      "id": "01",
+      "points": 27,
+      "length": 6.423212231173666,
+      "min_spacing": 0.24178937782159537,
+      "max_spacing": 0.24881280850240373,
+      "min_radius": 1125899906842624.0,
+      "bad_indices": [],
+      "max_curvature_index": 3
+    },
+    {
+      "id": "02",
+      "points": 32,
+      "length": 7.431422166638388,
+      "min_spacing": 0.02434024280315917,
+      "max_spacing": 0.2577502218295865,
+      "min_radius": 0.12714843345581983,
+      "bad_indices": [
+        30,
+        31
+      ],
+      "max_curvature_index": 31
+    },
+    {
+      "id": "03",
+      "points": 159,
+      "length": 39.14492070762249,
+      "min_spacing": 0.15747718386863596,
+      "max_spacing": 0.2543468655639764,
+      "min_radius": 1.9575094460154867,
+      "bad_indices": [],
+      "max_curvature_index": 155
+    },
+    {
+      "id": "04",
+      "points": 206,
+      "length": 51.011428449006885,
+      "min_spacing": 0.0819981145374752,
+      "max_spacing": 0.25434686468783846,
+      "min_radius": 0.5236223914238564,
+      "bad_indices": [
+        0,
+        1,
+        192,
+        204,
+        205
+      ],
+      "max_curvature_index": 0
+    },
+    {
+      "id": "05",
+      "points": 317,
+      "length": 78.27409671644918,
+      "min_spacing": 0.03613079216091247,
+      "max_spacing": 0.25795207078216,
+      "min_radius": 0.07438086477090874,
+      "bad_indices": [
+        12,
+        13,
+        278,
+        279,
+        286,
+        287
+      ],
+      "max_curvature_index": 286
+    },
+    {
+      "id": "06",
+      "points": 81,
+      "length": 19.746668696281127,
+      "min_spacing": 0.07857132626911244,
+      "max_spacing": 0.2545733371414417,
+      "min_radius": 0.8928587525836309,
+      "bad_indices": [
+        22,
+        23
+      ],
+      "max_curvature_index": 22
+    },
+    {
+      "id": "07",
+      "points": 79,
+      "length": 19.3933911700778,
+      "min_spacing": 0.23224941712037717,
+      "max_spacing": 0.2568411707892335,
+      "min_radius": 4.4725068401637715,
+      "bad_indices": [],
+      "max_curvature_index": 1
+    }
+  ],
+  "junctions": [
+    {
+      "routes": [
+        "01",
+        "03"
+      ],
+      "gap_m": 0.0,
+      "yaw_delta_deg": 1.8947666156521583
+    },
+    {
+      "routes": [
+        "03",
+        "04"
+      ],
+      "gap_m": 0.0,
+      "yaw_delta_deg": 37.02921602107541
+    },
+    {
+      "routes": [
+        "04",
+        "05"
+      ],
+      "gap_m": 0.0,
+      "yaw_delta_deg": 41.66984184611391
+    },
+    {
+      "routes": [
+        "05",
+        "07"
+      ],
+      "gap_m": 0.0,
+      "yaw_delta_deg": -5.005516632473424
+    }
+  ],
+  "parking": [
+    {
+      "name": "parking_ref_01",
+      "min_radius": 0.9507904793184917,
+      "max_required_steer_deg": 32.0381297830027,
+      "start_yaw_delta_deg": 12.680551887691962,
+      "length": 7.679351049464921
+    },
+    {
+      "name": "parking_ref_02",
+      "min_radius": 0.9234393452243725,
+      "max_required_steer_deg": 32.794912313101044,
+      "start_yaw_delta_deg": 13.593871364907235,
+      "length": 9.174644107876096
+    }
+  ]
+}
+RUNTIME [
+  {
+    "id": "01",
+    "min_radius": 365.3049593519488,
+    "over_limit_indices": [],
+    "turn_ranges": [],
+    "t_parking": [],
+    "parallel": [],
+    "avoid": []
+  },
+  {
+    "id": "03",
+    "min_radius": 12.735141847036314,
+    "over_limit_indices": [],
+    "turn_ranges": [
+      [
+        28,
+        116
+      ]
+    ],
+    "t_parking": [
+      [
+        145,
+        149
+      ]
+    ],
+    "parallel": [],
+    "avoid": []
+  },
+  {
+    "id": "04",
+    "min_radius": 2.984301034730021,
+    "over_limit_indices": [],
+    "turn_ranges": [],
+    "t_parking": [],
+    "parallel": [
+      [
+        185,
+        189
+      ]
+    ],
+    "avoid": [
+      [
+        77,
+        205
+      ]
+    ]
+  },
+  {
+    "id": "05",
+    "min_radius": 2.057825647044358,
+    "over_limit_indices": [],
+    "turn_ranges": [
+      [
+        276,
+        316
+      ]
+    ],
+    "t_parking": [],
+    "parallel": [],
+    "avoid": []
+  },
+  {
+    "id": "07",
+    "min_radius": 12.364668584881207,
+    "over_limit_indices": [],
+    "turn_ranges": [
+      [
+        0,
+        36
+      ]
+    ],
+    "t_parking": [],
+    "parallel": [],
+    "avoid": []
+  }
+]
+JUNCTIONS [{'routes': ['01', '03'], 'yaw_delta_deg': 2.2252124149577712}, {'routes': ['03', '04'], 'yaw_delta_deg': 10.981002970934922}, {'routes': ['04', '05'], 'yaw_delta_deg': 69.24494054267403}, {'routes': ['05', '07'], 'yaw_delta_deg': -11.007209550444308}]

@@ -124,6 +124,13 @@ def validate_oak_usb_bandwidth(
     )
 
 
+def validate_exposure_compensation(value: int) -> int:
+    """DepthAI auto-exposure brightness target adjustment (SDK units)."""
+    if isinstance(value, bool) or not isinstance(value, int) or not -9 <= value <= 9:
+        raise ValueError("oak_exposure_compensation must be an integer in -9..9")
+    return value
+
+
 class OakRgbdCamera:
     """동기화된 RGB 프레임과 millimetre depth 프레임을 읽는다."""
 
@@ -145,6 +152,7 @@ class OakRgbdCamera:
         maximum_depth_m: float,
         mxid: str = "",
         usb_speed: str = "super",
+        exposure_compensation: int = 0,
     ) -> None:
         if dai is None:
             raise RuntimeError(
@@ -155,6 +163,7 @@ class OakRgbdCamera:
         api_major, _depthai_version = validate_depthai_version()
 
         self.depth_enabled = depth_enabled
+        self.exposure_compensation = validate_exposure_compensation(exposure_compensation)
         self.requested_mxid = normalize_oak_mxid(mxid)
         self.requested_usb_speed = normalize_oak_usb_speed(usb_speed)
         validate_oak_usb_bandwidth(
@@ -179,6 +188,7 @@ class OakRgbdCamera:
             "minimum_depth_m": minimum_depth_m,
             "maximum_depth_m": maximum_depth_m,
             "depth_enabled": depth_enabled,
+            "exposure_compensation": self.exposure_compensation,
         }
         try:
             if api_major >= 3:
@@ -227,6 +237,7 @@ class OakRgbdCamera:
             self.last_read_status = "empty"
             return False, None, None
 
+        self.last_capture_monotonic = None
         try:
             if self.depth_enabled:
                 rgb_message = message_group["rgb"]
@@ -234,7 +245,8 @@ class OakRgbdCamera:
                 frame = rgb_message.getCvFrame()
                 depth_mm = depth_message.getFrame()
             else:
-                frame = message_group.getCvFrame()
+                rgb_message = message_group
+                frame = rgb_message.getCvFrame()
                 depth_mm = None
         except (KeyError, RuntimeError, TypeError, AttributeError):
             self.last_read_status = "error"
@@ -259,6 +271,14 @@ class OakRgbdCamera:
         elif depth_mm is not None:
             self.depth_native_shape = tuple(depth_mm.shape[:2])
             self.depth_resized = False
+        # DepthAI timestamps share the host monotonic clock through dai.Clock.
+        # Missing timestamps must not make queued images look newly captured.
+        try:
+            age = (dai.Clock.now() - rgb_message.getTimestamp()).total_seconds()
+            if age >= 0.0:
+                self.last_capture_monotonic = time.monotonic() - age
+        except (AttributeError, RuntimeError, TypeError):
+            pass
         self.last_read_status = "ok"
         return True, frame, depth_mm
 
@@ -637,10 +657,15 @@ def _build_oak_v3_pipeline(
     minimum_depth_m: float,
     maximum_depth_m: float,
     depth_enabled: bool,
+    exposure_compensation: int = 0,
 ):
     """이미 선택된 DepthAI 3 장치에 RGB/RGBD 노드를 구성한다."""
     color = pipeline.create(dai.node.Camera).build(
         dai.CameraBoardSocket.CAM_A
+    )
+    color.initialControl.setAutoExposureEnable()
+    color.initialControl.setAutoExposureCompensation(
+        validate_exposure_compensation(exposure_compensation)
     )
     rgb_output = color.requestOutput(
         size=(width, height),
@@ -776,6 +801,7 @@ def build_oak_pipeline(
     minimum_depth_m: float = 0.3,
     maximum_depth_m: float = 20.0,
     depth_enabled: bool = True,
+    exposure_compensation: int = 0,
 ):
     """OAK-D Pro용 RGB 또는 RGB 정렬 stereo depth 파이프라인을 만든다."""
     if dai is None:
@@ -793,6 +819,10 @@ def build_oak_pipeline(
     color.setInterleaved(False)
     color.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
     color.setFps(fps)
+    color.initialControl.setAutoExposureEnable()
+    color.initialControl.setAutoExposureCompensation(
+        validate_exposure_compensation(exposure_compensation)
+    )
 
     output.input.setBlocking(False)
     output.input.setQueueSize(1)

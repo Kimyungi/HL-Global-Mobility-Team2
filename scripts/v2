@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# One source tree and one install: never inherit another workspace's ROS overlay.
+set -eo pipefail
+V2_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+V2_ACTION=${1:-check}
+case "$V2_ACTION" in
+  build|check|test|bench|lidar|vehicle|vehicle-no-estop|prepare|obstacle|gps-start|gps-status|gps-off|drive|view|go|state|stop) ;;
+  *) echo 'Usage: scripts/v2 [build|check|test|bench|lidar [launch arguments]|vehicle|vehicle-no-estop|prepare|obstacle|gps-start|gps-status|gps-off|drive [launch arguments]|view|go [options]|state|stop]' >&2; exit 2 ;;
+esac
+if [[ ${FMA_V2_CLEAN:-} != "$V2_ROOT" ]]; then
+  exec env -i HOME="$HOME" USER="${USER:-}" LANG="${LANG:-C.UTF-8}" \
+    TERM="${TERM:-dumb}" DISPLAY="${DISPLAY:-}" XAUTHORITY="${XAUTHORITY:-}" \
+    ROS_LOG_DIR="${ROS_LOG_DIR:-$V2_ROOT/log_v2/ros}" \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    FMA_V2_CLEAN="$V2_ROOT" FMA_V2_WORKSPACE="$V2_ROOT" \
+    /bin/bash --noprofile --norc "$V2_ROOT/scripts/v2" "$@"
+fi
+source /opt/ros/humble/setup.bash
+cd -- "$V2_ROOT"
+if [[ "$V2_ACTION" == build ]]; then
+  exec colcon --log-base "$V2_ROOT/log_v2" build --base-paths "$V2_ROOT/src" \
+    --build-base "$V2_ROOT/build_v2" --install-base "$V2_ROOT/install_v2" \
+    --symlink-install --parallel-workers 2 \
+    --packages-up-to adas_mgm stack_traffic lidar_fusion_v2 multi_lidar_fusion \
+    --cmake-args -DBUILD_TESTING=ON -DADAS_MGM_ENABLE_GENERATED_BACKEND=OFF
+fi
+if [[ ! -f "$V2_ROOT/install_v2/local_setup.bash" ]]; then
+  echo 'v2 install missing. Run scripts/v2 build first.' >&2; exit 1
+fi
+# local_setup does not replay a cached chain of unrelated underlays.
+source "$V2_ROOT/install_v2/local_setup.bash"
+/usr/bin/python3 "$V2_ROOT/scripts/v2_check.py"
+case "$V2_ACTION" in
+  check) ;;
+  lidar)
+    shift
+    exec ros2 launch lidar_fusion_v2 bringup.launch.py "$@"
+    ;;
+  test)
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=197 /usr/bin/python3 \
+      src/adas_mgm/test/last_mission_ros_smoke.py
+    ctest --test-dir "$V2_ROOT/build_v2/adas_mgm" --output-on-failure
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=196 /usr/bin/python3 \
+      src/adas_mgm/test/revised_v2_ros_smoke.py "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=198 /usr/bin/python3 \
+      src/adas_mgm/test/waypoint_provider_ros_smoke.py "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export PYTHONPATH="$V2_ROOT/src/stack_gps:$V2_ROOT/src/stack_lane:$V2_ROOT/src/stack_parking:$V2_ROOT/src/stack_estop:$V2_ROOT/src/stack_avoid:$V2_ROOT/src/lidar_fusion_v2:$V2_ROOT/src/stack_traffic:$PYTHONPATH"
+    # GPS and avoidance both contain test_station_path.py; ROS launch_testing
+    # imports bare module names, so collect the GPS suite in its own process.
+    /usr/bin/python3 -m pytest -q src/stack_gps/test
+    /usr/bin/python3 -m pytest -q src/stack_estop/test \
+      src/stack_parking/test src/stack_avoid/test src/lidar_fusion_v2/test src/stack_lane/test \
+      src/stack_traffic/test src/stack_exit_decision/test src/adas_mgm/test/test_reference_metadata.py \
+      src/adas_mgm/test/test_mission_calibration.py src/adas_mgm/test/test_start_readiness.py \
+      scripts/test_v2_preparation.py scripts/test_v2_launch.py scripts/test_revised_v2_launch.py \
+      scripts/test_v2_start_selection.py \
+      scripts/test_v2_recover_lidars.py scripts/test_v2_front_lidar.py
+    ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=181 /usr/bin/python3 -m pytest -q \
+      src/adas_mgm/test/test_integration_view.py
+    export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=174
+    /usr/bin/python3 src/adas_mgm/test/manager_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=188
+    /usr/bin/python3 src/adas_mgm/test/sensor_health_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=187
+    /usr/bin/python3 src/adas_mgm/test/gps_cubic_avoid_ros_smoke.py "$V2_ROOT"
+    export ROS_DOMAIN_ID=193
+    /usr/bin/python3 src/adas_mgm/test/gps_cubic_avoid_ros_smoke.py "$V2_ROOT" --zone-entry
+    export ROS_DOMAIN_ID=182
+    /usr/bin/python3 src/adas_mgm/test/startup_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=178
+    /usr/bin/python3 src/adas_mgm/test/parking_entry_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=179
+    /usr/bin/python3 src/adas_mgm/test/parking_search_route_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node"
+    export ROS_DOMAIN_ID=176
+    for V2_TEST_START in 01 02; do
+      for V2_TEST_END in 06 07; do
+        /usr/bin/python3 src/adas_mgm/test/route_sequence_ros_smoke.py \
+          "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node" \
+          --start "$V2_TEST_START" --end "$V2_TEST_END"
+      done
+    done
+    /usr/bin/python3 src/adas_mgm/test/route_sequence_ros_smoke.py \
+      "$V2_ROOT/install_v2/adas_mgm/lib/adas_mgm/mgm_node" --start 01 --end 07 --fail-search
+    ;;
+  bench)
+    export ROS_LOCALHOST_ONLY=1 ROS_DOMAIN_ID=175
+    exec ros2 launch adas_mgm integration_v2_bench.launch.py
+    ;;
+  gps-start|gps-status|gps-off)
+    case "$V2_ACTION" in
+      gps-start) V2_GPS_ACTION=start ;;
+      gps-status) V2_GPS_ACTION=status ;;
+      gps-off) V2_GPS_ACTION=stop ;;
+    esac
+    exec /usr/bin/python3 -m stack_gps.persistent_service "$V2_GPS_ACTION" \
+      --config "$V2_ROOT/src/stack_gps/config/persistent_gps.yaml" \
+      --relay-script "$V2_ROOT/src/stack_gps/tools/base_station/rtcm_server.py"
+    ;;
+  obstacle)
+    shift
+    exec ros2 launch "$V2_ROOT/src/adas_mgm/launch/REAL_VEHICLE_integration_v2_obstacle.launch.py" "$@"
+    ;;
+  prepare|drive)
+    shift
+    source "$V2_ROOT/scripts/v2_select_start.sh"
+    v2_select_start "$@"
+    exec ros2 launch "$V2_ROOT/src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py" "${V2_LAUNCH_ARGS[@]}"
+    ;;
+  vehicle|vehicle-no-estop)
+    echo 'Retired v2 launcher excluded. Use scripts/v2 prepare with RUN_BOOK_HALLA_FINAL.md.' >&2
+    exit 2
+    ;;
+  view)
+    shift
+    exec ros2 launch adas_mgm integration_v2_view.launch.py "$@"
+    ;;
+  go)
+    shift
+    exec ros2 run adas_mgm go "$@"
+    ;;
+  state) exec ros2 topic echo /adas/mgm_state ;;
+  stop) exec ros2 topic pub --once /operator/stop std_msgs/msg/Bool '{data: true}' ;;
+esac

@@ -87,7 +87,7 @@ class WallGapNode(Node):
         self.declare_parameter('map_frame', 'parking_map')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('near_m', 0.3)
-        self.declare_parameter('far_m', 1.6)
+        self.declare_parameter('far_m', 3.0)
         self.declare_parameter('wall_line_offset_m', 0.12)
         self.declare_parameter('initial_wall_min_points', 6)
         self.declare_parameter('initial_wall_min_length_m', 0.5)

@@ -1,15 +1,53 @@
 # adas_mgm — Decision 계층 (10ms MGM 루프)
 
+> 현재 주차: [Zone 진입 즉시 PARKING](../../docs/MGM_PARKING_ENTRY.md).
+> 탐색 중 현재 CSV의 GPS를 추종하고 ready 후 주차 제어로 인계한다. 완료 또는 현재 CSV 종점에서 복귀하며, 종점 실패는 다음 CSV로 자동 전환한다. 아래 과거 PREPARE 주행 정책보다 우선한다.
+
+> **6차 단일 기준:** [MGM_MBD_STATE_MACHINE_SPEC.md](../../docs/MGM_MBD_STATE_MACHINE_SPEC.md). 현재 MBD 정본은 병행 Top/Nav/Avoid/Signal/Safety/Mission이며 legacy 5-state byte는 호환 projection이다.
+> Zone 확인은 독립 GNSS sample이며 0=미설정. Parking 제한 -1, Recovery OFF 유지. 현재 bus/dump는 v15(연속 경로 확장, 6차는 v12)이며 이전 버전 설명/시험 절차는 역사적 비교 범위다.
+> 실제 운용 전 Zone/Parking/후방 corridor calibration과 현장 검증이 필요하다.
+
+## 2026-09-11 공통 베이스 상태 머신
+
+C++ `backend=core`는 Navigation/Avoidance/Traffic/Safety/Mission 병행 Manager를 기본 사용합니다.
+Mission은 GPS의 `MISSION_ZONE` entry에서 `MISSION_PREPARE` 요청을 latch합니다.
+Zone 밖에서도 탐색을 유지하며 현재 요청의 ready 이후에만 `MISSION_ACTIVE`로 제어권을 넘깁니다.
+기존 GPS 전용·주차 구간을 재사용하고, 명시적 Zone ID/Mission ID는 GPS `zones_file`에서 설정합니다.
+확정된 실차 Mission 경계는 별도로 설정해야 하며 임의 좌표는 추가하지 않았습니다.
+Zone/Manager 구조는 [설계 문서](../../docs/MGM_BASE_STATE_MACHINE.md)를 참고하세요.
+4차에서는 실제 생성 시각에 따른 Reference validity/freshness와 독립 SAFE_STOP reason을 추가했습니다.
+invalid/stale 경로는 제어권을 유지한 채 속도를 0으로 차단합니다. timeout은 기존 provider별 설정을 재사용합니다.
+메시지·복구 입력·경계 chatter·최신 시험 결과는 [Reference 안전 통합 보고서](../../docs/MGM_REFERENCE_SAFETY.md)에 있습니다.
+5차 구현·검증 결과는 [Mission Preparation 보고서](../../docs/MGM_MISSION_PREPARATION.md)를 참고하세요.
+`parking_search_timeout`(s), `max_parking_search_distance`(m)는 실측 전 **-1.0(미설정)** 입니다.
+둘 다 유한 양수로 설정해야 탐색합니다. 미설정 요청은 `CALIBRATION_REQUIRED`로 취소하고 일반 주행을 유지합니다.
+`/operator/cancel_mission`의 Bool true는 Mission만 취소합니다. `/operator/stop`은 기존 임시 정지입니다.
+`mission_events_csv_path`에 보정용 이벤트 CSV를 기록할 수 있으며 실차 통합 launch는 `mission_events.csv`를 설정합니다.
+아래 기존 5상태 설명은 `base_state_machine_enabled=false`의 legacy 동작과 구별해야 합니다.
+
 구조·규칙의 단일 소스는 워크스페이스 루트 `CLAUDE.md` (§2, §4, §5, §5.5). 이 문서는 실행·측정 절차만 다룬다.
 
-실차 통합 실행은 다음 두 문서를 순서대로 사용한다.
+**Integration v2의 통합 실행은 코스에 맞는 새 런북을 사용한다.**
+
+통합 실시간 화면은 `./scripts/v2 view`: 차량 고정 RViz 한 창에 GPS/카메라 목표점,
+정지선 거리·신호등, 4-LiDAR/SLAM 지도와 주차 경로·두 카메라 영상을 표시한다.
+[통합 화면 사용법](../../docs/INTEGRATION_V2_VIEW.md)을 참고한다.
+
+- [한라대학교 — Integration v2](RUNBOOK_integration_v2_halla.md): 업로드된 기준경로 (01 또는 02)→03→04→05→(06 또는 07)과 경로별 Zone/Mission 인계.
+- [용인 Course A — Integration v2](RUNBOOK_integration_v2_yongin.md): 업로드된 2,141점 CSV, 별도 Mission Zone 준비.
+
+두 런북은 v2 전용 설치/launch, 출발 점검, Mission PREPARE→ACTIVE, 종료와 기록 절차를 다룬다.
+실차 검증 전 기준이며 Zone/Parking 보정값은 측정한 값을 입력한다.
+
+아래 두 문서는 기존 통합 구성의 측정/운영 절차다. v2의 시작 명령과 신호/주차 상태 설명은
+위 코스별 런북 및 6차 명세를 우선한다.
 
 1. [`RUNBOOK_full_measurement_20260904.md`](RUNBOOK_full_measurement_20260904.md) —
    처음 설치하거나 장착 위치가 바뀐 경우의 임계값 측정
 2. [`RUNBOOK_full_operation_20260904.md`](RUNBOOK_full_operation_20260904.md) —
    측정 완료 후 차선·GPS·회피·긴급정지·신호등을 함께 실행
 
-신호등 실차 정지의 표준 실행은 운영 런북의
+기존 구성의 신호등 실차 정지 실행은 운영 런북의
 `REAL_VEHICLE_lane_gps_can.launch.py` 명령 블록 하나다. 야간 국소 대비·평행
 에지 쌍 정지선 검출과 `stack_traffic_node` 2초 자동 재시작도 이 구성에 포함된다.
 
@@ -36,7 +74,7 @@ g++ -std=c++17 -Wall -Wextra -c core/mgm_step.cpp -I.   # 통과해야 정상
 
 ## 실험용 generated backend (4상태 v1.88, opt-in)
 
-ROS 노드의 기본 backend는 TRAFFIC을 포함한 5상태 C++ `core`이며, 기본 빌드에는 생성
+ROS 노드의 기본 backend는 위 병행 Manager를 실행하는 C++ `core`이며, 기본 빌드에는 생성
 backend가 링크되지 않는다. `ADAS_MGR2` v1.88을 실행하려면 아래 두 단계를 모두
 명시해야 한다. v1.88은 TRAFFIC 상태가 없으므로 generated backend는
 `traffic_state_enabled=false`일 때만 기동한다.
@@ -169,3 +207,9 @@ ulimit -r   # 90 확인
 5. 판정(§7): 최악 지연 × 2 를 watchdog 타임아웃으로 잡았을 때 안전한가 → v1 유지 / v3 이관.
 
 기록 양식: `최악 lateness ____ us (측정일 ____, 부하: baseline/풀가동, 시간 ____ h)` — 결과는 CLAUDE.md §7 옆에 남길 것.
+
+연속 CSV 운용: [경로 순서/전환 계약](../../docs/MGM_ROUTE_SEQUENCE.md).
+한라대는 `route_sequence_file:=<v2>/src/stack_gps/waypoints/halla_route_sequence.yaml`로
+`route_start_id:=01 route_end_id:=07`이면 01→03→04→05→07 순서다. 두 선택 인자는 필수다. 경로별 Mission 완료를 보존하며 마지막 파일만 FINISH다. 현재 raw dump는 v15이다.
+
+현재 Parking 탐색은 [Zone 탐색 정책](../../docs/MGM_ZONE_SEARCH.md)을 따른다. source Zone 이탈 실패 뒤 현재 CSV를 계속 주행하며 시간·거리 제한을 쓰지 않는다.

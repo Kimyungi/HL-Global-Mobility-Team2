@@ -51,14 +51,14 @@
 
 ## 정지선 판정
 
-- 신규 정지선 검출은 `stopline_yolo_confidence_threshold=0.35` 이상이다.
+- 신규 정지선 검출은 `stopline_yolo_confidence_threshold=0.30` 이상이다.
   한 번 검출한 뒤 위치·크기가 이어지는 후보는
   `stopline_tracking_confidence_threshold=0.20` 이상까지 유지한다.
   낮은 신뢰도 후보는 이전 bbox와 가로·세로 크기 유사도가 각각 0.5 이상이며,
   IoU가 0.1 이상이거나 중심 이동이 이전 bbox 대각선의 0.1 이내여야 한다.
 - 실제 정지선 추론에서 `stopline_tracking_max_missed_frames=3`회 연속
   놓치면 추적을 해제한다. 신호등만 추론한 프레임은 miss로 세지 않는다.
-  정지선 검출 페이즈 종료 시에도 추적을 초기화한다.
+  zone 초기화 또는 정지선 검출 페이즈 종료 시에도 추적을 초기화한다.
   추적 해제 후에는 다시 신규 검출 문턱을 넘어야 하며, 기존 3/5 안정화는 유지한다.
 
 - `models/stopline_yolov8s_seg.pt`의 `stop_line` segmentation만 사용한다.
@@ -124,6 +124,10 @@ depth 유효성과 독립이다.
   통합 차량 launch의 표준 프로필은 640x360, 10 FPS, `oak_usb_speed=high`,
   RGB-only다. HIGH 요청 후 실제 `getUsbSpeed()`가 HIGH가 아니면 노드는
   fail-closed한다.
+- 신호등 RGB 센서의 자동 노출 보정은 `oak_exposure_compensation=0`으로 기본 자동 노출을 사용한다. 통합 launch 인자는 `traffic_exposure_compensation`이다. SDK 정수 범위는
+  -9..9이며 0은 기존 자동 노출 목표로 복원한다. EV/밝기 백분율 값은 아니다.
+  시작 시 적용하므로 변경하려면 신호등 노드를 재시작한다. 차선 카메라와 stereo
+  노출은 변경하지 않는다. 노출 조정만으로 신호등 검출 성공을 보장하지는 않는다.
 - USB2 안전 payload 상한은 36 MB/s로 둔다. 비압축 BGR은 3 B/px, depth는
   2 B/px로 계산하며 1280x720@10 RGB-only는 27.65 MB/s라 허용한다.
   같은 해상도의 RGBD는 46.08 MB/s라 거부하고, depth 진단은

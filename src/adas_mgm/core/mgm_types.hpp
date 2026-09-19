@@ -7,12 +7,13 @@
 #define ADAS_MGM__CORE__MGM_TYPES_HPP_
 
 #include <cstdint>
+#include "manager_types.hpp"
 
 namespace adas_mgm
 {
 
-constexpr int32_t MGM_NUM_POINTS = 20;   // ref points 최대치 (CAN ID 예약 폭, PROTOCOL.md)
-                                         // 실제 점 수는 현재 모든 소스 1 (n은 확장 대비 가변)
+constexpr int32_t MGM_NUM_POINTS = 20;   // historical/generated bus storage capacity only
+constexpr int32_t MGM_CONTROL_POINTS = 1;  // v2 valid provider and TargetRef count; CAN v5
 constexpr float MGM_PERIOD_S = 0.01f;    // 10ms 고정 주기
 // 안전 폴백이 내보내는 최소 전방 ref 거리 [m]. 값이 작은 이유: avoid 1점 계약을
 // 20점으로 보간하면 첫 점이 목표의 1/20(1.5m 목표 → 0.075m)이라 정상값도 작다.
@@ -26,6 +27,7 @@ enum : uint8_t
   MGM_STATE_AVOID = 2,
   MGM_STATE_PARKING = 3,
   MGM_STATE_TRAFFIC = 4,
+  MGM_STATE_ESTOP = 5,
 };
 
 // 스테이트가 고른 횡방향 경로 소스
@@ -70,6 +72,11 @@ struct CorePath
 // 매 10ms 틱의 입력 — "최신 인지 스냅샷" (fma_interfaces 6개 토픽의 코어 필요분)
 struct CoreSnapshot
 {
+  bool route_metadata_fresh;     // route catalog received even while receiver fix is weak
+  bool start_gate_enabled;       // real-vehicle wait_go start policy
+  bool camera_available;         // fresh actual image, independent of lane detection
+  bool gps_fixed_ready;          // current fresh receiver quality=4 and usable GPS path
+
   // stack_lane
   float lane_confidence;        // 0.0~1.0 — lane↔waypoint 히스테리시스 입력
   CorePath lane_path;
@@ -79,6 +86,8 @@ struct CoreSnapshot
   bool gps_parking_zone;
   bool gps_at_end;
   float gps_cross_track;                  // [m] 트랙까지 수직거리 (재합류 판정, GpsPath.msg 참조)
+  float gps_station_yaw_error;            // [rad] current station tangent minus actual vehicle heading
+  bool gps_station_error_valid;          // excludes unknown/tangent-fallback heading
   // 헤딩을 믿어도 되는가 (GpsPath.heading_source != HEADING_TANGENT). 2026-08-16 신설.
   // 접선 폴백은 "최근접 트랙 접선 = 차량 헤딩"을 가정하므로 **ref[0].yaw 가 항상
   // 0 부근으로 나온다** — 즉 차가 실제로 트랙을 등지고 있어도 "정렬됨"으로 보인다.
@@ -133,7 +142,8 @@ struct CoreSnapshot
   // 지점별로 "이미 정지했다"를 기억해야 하기 때문 — bool이면 언덕에서 정지 중
   // 차가 밀려 구간을 벗어났다 다시 들어올 때 재정지 루프가 된다.
   uint8_t gps_stop_zone;
-  bool gps_avoid_zone;       // 회피 허용 구간 안인가 (avoid_zone_only 게이트 입력)
+  bool gps_exit_stop_reached;  // current station has reached CSV state=3
+  bool gps_avoid_zone;       // 회피 시작 구간/CSV state=4 통과 여부 (base manager는 복귀 완료까지 유지)
   // GPS 전용 구간 안인가 (2026-08-18). true면 LANE 전이를 하지 않고 WAYPOINT로
   // 고정한다 — 차선을 믿기 어려운 구간을 **구간 단위로** 지정하기 위한 것.
   // launch의 gps_only:=true(임계를 2.0으로 올려 run 전체에서 LANE 불가)와 달리
@@ -143,6 +153,57 @@ struct CoreSnapshot
   // **모르면 false**: 후방 센서 미탑재·스캔 무효·stack_estop staleness 전부 false다.
   // escape_require_rear_clear가 켜져 있으면 이 값이 true인 동안만 후진한다.
   bool estop_rear_clear;
+  // Explicit validity/operating inputs for the parallel manager core.
+  // Legacy/generated snapshots ignore these appended fields.
+  bool autonomous_enabled;
+  bool new_session;
+  bool external_stop;  // operator/CAN; never masked by parking or recovery
+  bool camera_line_valid;
+  bool gps_valid;
+  bool lidar_valid;  // avoidance scan + required raw scans + E-stop input fresh/valid
+  bool auto_estop;   // fresh LiDAR danger; excludes scan timeout and operator stop
+  bool parking_valid;
+  bool parking_updated;
+  ZoneSnapshot zones;
+  bool parking_mission_active;
+  uint8_t parking_mission_mode;
+  ReferenceSample references[MGM_REFERENCE_PROVIDERS];
+  int64_t monotonic_ns;
+  int64_t event_time_ns;
+  bool mission_cancel_requested;
+  uint64_t parking_request_id;
+  bool parking_search_active;
+  bool parking_wall_acquisition_complete;
+  bool parking_search_space_found;
+  bool parking_preparation_ready;
+  ReferenceSample parking_preparation_reference;
+  bool gps_position_valid;
+  double gps_x, gps_y;
+  int32_t gps_track_index;
+  bool rear_sensor_valid;  // includes actual rear generation freshness in wrapper
+  RearCorridorState rear_corridor_state;
+  RouteFeedback route;
+  // Physical sensor availability: lane camera, traffic camera, a1/a2/b1/b2, GPS.
+  uint8_t sensor_alive_mask;
+  // Interview policy (2026-09-16); appended raw-dump contract, version 32.
+  bool revised_v2;
+  bool start_lidar_ready;
+  bool gps_handoff_cached;
+  uint8_t gps_fix_quality;
+  bool traffic_status_fresh;
+  int64_t traffic_status_stamp_ns;
+  ReferenceSample estop_scans[3];  // front, left, right: independent scan stamps
+  float estop_clearance_m[3];      // measured from body exterior; +inf = clear
+  uint64_t recovery_request_id;
+  bool recovery_done;
+  CorePath recovery_path;
+  float recovery_speed;
+  ReferenceSample recovery_reference;
+  uint64_t exit_request_id;
+  ReferenceSample exit_reference;
+  int32_t exit_class_id;
+  float exit_confidence;
+
 };
 
 // 튜닝 파라미터 — params.yaml과 1:1, Simulink에서는 tunable parameter
@@ -151,13 +212,13 @@ struct CoreParams
   float lane_conf_exit;    // lane→waypoint 이탈 임계
   float lane_conf_return;  // waypoint→lane 복귀 임계 (히스테리시스 분리)
   int32_t n_cycles;        // N주기 연속 조건
-  float v_base;            // [m/s]
+  float v_base;            // [m/s] parallel Manager: common non-stop speed magnitude
   float v_accel_zone;      // [m/s]
   float v_narrow;          // [m/s] avoid 여유 폭 좁을 때 상한
   float ttc_stop;          // [s] TTC 안전 바닥
   int32_t blend_cycles;    // 스테이트 전환 ref 블렌드 구간 (틱)
-  float a_up;              // [m/s^2] 가속 rate limit
-  float a_down;            // [m/s^2] 일반 감속 rate limit (immediate_stop은 우회)
+  float a_up;              // [m/s^2] legacy/generated only; v2 passes speed through
+  float a_down;            // [m/s^2] legacy/generated only; immediate_stop bypasses
   float wrongway_yaw;      // [rad] 역방향 판정 |ref[0].yaw| 임계 (waypoint, §4)
   int32_t wrongway_cycles; // 역방향 N주기 연속 조건
   // avoid→waypoint 복귀 후 이 틱수 동안 waypoint→lane 전이를 보류한다.
@@ -210,6 +271,7 @@ struct CoreParams
   // ⚠ TTC 안전 바닥(ttc_stop)은 AVOID 스테이트 안에서만 걸리므로, 이 게이트를
   //   켜면 구간 밖 장애물의 유일한 방어선은 stack_estop 이다.
   int32_t avoid_zone_only;
+  int32_t avoid_unblended;  // Preserve validated wall-planner geometry at ownership changes.
 
   // ── 후진 탈출 (2026-08-24 신설, §4 우선권 표 / AVOID 진입 페이즈).
   //
@@ -241,6 +303,8 @@ struct CoreParams
   // ── 신호등 정지 상태 (§4, MGM_STATE_TRAFFIC). 0이면 생성 v1.88 호환을 위해
   // 기능을 끈다.
   int32_t traffic_state_enabled;
+  // 한라대 전용 정지선 인식 여부 판단을 위한 임시 스테이트 전이조건.
+  int32_t halla_stopline_test_enabled;
   // ── 정지 거리 추적 (2026-09-02 개정, 사용자 지정 — 정지선 소실 edge 기준).
   // 카메라 optical-Z 거리(TrafficStop.stop_distance)는 검출이 불안정하면
   // 즉시 무효가 돼 그 자체로는 연속 신뢰 기준으로 못 쓴다. 대신 "정지선이
@@ -251,11 +315,24 @@ struct CoreParams
   // 안정 검출 시 매 틱 재신뢰로 두 번 바뀌었다가, 두 안 모두 이 edge 기반
   // 시드 방식으로 되돌아왔다 — mgm_step.cpp의 거리 추적 블록 주석 참조.)
   float traffic_ramp_distance_m;  // 소실 edge에서의 시드 거리 [m] — ramp는 여기서 v_base로 시작
-  // 두 역할을 겸한다: ① 빨간불이 아직 확정 안 된 채 감쇠값이 이 이하로
-  // 떨어지면 시드로 되돌리는 가드 문턱, ② 빨간불 확정 후 이 이하에서 완전
-  // 정지(v_ref=0). 기본 0.5m — "seed(1.5m)에서 1m 이상 진행한 뒤에만 실제
-  // 정지가 성립한다"는 요구사항과 동일한 값이다(사용자 지정, 2026-09-02).
+  // Current base: desired front-bumper remaining distance, 1.0m. First loss
+  // seeds 1.5m; actual |speed| integration consumes 0.5m to reach this target.
+  // Existing speed profile/merge remain; physical stopping position needs measurement.
+  // Legacy false backend additionally uses this threshold for its historical pre-red guard.
   float traffic_stop_offset;
+  // 0: historical/generated parity; 1: parallel managers. ROS core defaults to 1.
+  int32_t base_state_machine_enabled;
+  int32_t parking_search_zone_only;    // 1: source Zone bounds PREPARE; 0: historical time/distance limits
+  double parking_search_timeout;       // seconds; <=0 means uncalibrated
+  double max_parking_search_distance;  // metres; <=0 means uncalibrated
+  int32_t zone_enter_confirm_samples;  // independent GNSS fixes; 0 = uncalibrated
+  int32_t zone_exit_confirm_samples;
+  int32_t route_sequence_enabled;  // opt-in; single CSV and historical parity remain unchanged
+  int32_t parking_zone_entry_active;  // enter Parking/search on Zone, GPS until ready; done/current CSV end releases
+  int32_t avoidance_enabled;  // parallel Manager: 0 disables ordinary avoidance and LiDAR fallback
+  int32_t safe_stop_all_sensors_only;  // legacy policy; revised v2 excludes rear from health
+  int32_t revised_v2_enabled;  // runbook v2 policy; legacy fixtures/backends retain their own semantics
+
 };
 
 // mgm_step이 읽고 갱신하는 유일한 내부 상태 — Simulink의 상태 보존 방식과 대칭
@@ -294,7 +371,7 @@ struct CoreState
   bool has_raw_target;
   int32_t raw_n;
   CorePoint last_raw_target[MGM_NUM_POINTS];
-  // 종방향 병합 (rate limit)
+  // Previous published speed command; v2 does not rate-limit it.
   float v;
   // ── 후진 탈출 (2026-08-24)
   int32_t estop_hold_cnt;   // 실제 estop 연속 틱 (watchdog 보정 제외)
@@ -318,6 +395,12 @@ struct CoreState
   float traffic_stopline_distance;
   // edge(true→false) 검출용 — 이번 틱 traffic_stopline_detected의 직전값.
   bool traffic_prev_stopline_detected;
+  ManagerState managers;
+  CorePath handoff_gps_path;
+  ReferenceSample handoff_gps_reference;
+  int64_t handoff_gps_saved_ns;
+  bool handoff_gps_known;
+
 };
 
 // 매 틱의 출력 — wrapper가 TargetRef로 변환·발행
@@ -327,8 +410,40 @@ struct CoreOutput
   uint8_t path_source;     // MGM_SRC_* (디버그·back-to-back 비교용)
   bool immediate_stop;     // 디버그·back-to-back 비교용
   float v_ref;             // [m/s] 병합 최종 목표 속도. 정지 = 0
-  int32_t n_points;        // 유효 점 수 (1~20) — CAN에는 이만큼만 실린다
+  int32_t n_points;        // v2: exactly 1; legacy may use 1..20 (CAN v5 sends one)
   CorePoint ref_points[MGM_NUM_POINTS];
+  // The legacy state byte above remains a CAN-compatible path projection.
+  TopState top;
+  NavState nav;
+  AvoidState avoid;
+  SignalState signal;
+  SafetyState safety;
+  MissionState mission;
+  MissionType mission_type;
+  SpeedOwner speed_owner;
+  bool mission_start;
+  bool mission_cancel;
+  bool mission_prepare;
+  MissionRequest mission_request;
+  uint32_t mission_events;
+  bool active_mission_completed;
+  bool reference_available;
+  bool reference_motion_blocked;  // output contract hold, independent of SAFE_STOP policy
+  ZoneState zones;
+  uint8_t active_mission_id;
+  ReferenceStatus references[MGM_REFERENCE_PROVIDERS];
+  ReferenceStatus selected_reference;
+  uint32_t safe_stop_reasons;
+  bool avoid_episode_reference_seen;
+  CalibrationState parking_calibration;
+  bool active_mission_failed;
+  RecoveryDiagnostics recovery;
+  float traffic_remaining_m;
+  bool traffic_distance_known, traffic_stop_in_success_region;
+  RouteControl route;
+  bool estop_active;
+  uint64_t estop_request_id;
+  LastMissionControl last_mission;
 };
 
 }  // namespace adas_mgm

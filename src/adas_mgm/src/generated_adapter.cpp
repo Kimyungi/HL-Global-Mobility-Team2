@@ -427,6 +427,16 @@ CoreOutput GeneratedMgmAdapter::step(const CoreSnapshot & input)
   throwIfModelError("step");
 
   const uint8_t path_source = ADAS_MGR2_Y.core_output.path_source;
+  // Match the maintained core's immediate avoidance reference selection while
+  // keeping the generated artifact reproducible. Other transitions still blend.
+  if (path_source == MGM_SRC_AVOID && previous_source != path_source &&
+    input.avoid_path.n > 0)
+  {
+    ADAS_MGR2_DW.blend_left = 0;
+    restoreHeldReference(
+      ADAS_MGR2_B.target_x, ADAS_MGR2_B.target_y,
+      ADAS_MGR2_B.target_yaw, ADAS_MGR2_B.target_curvature);
+  }
   const bool stale_repeat = matchesPreviousRawTarget(
     path_source,
     input,

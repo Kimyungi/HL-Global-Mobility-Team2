@@ -6,11 +6,14 @@
   <description>장애물 인지, 회피 가능 판정 재료(TTC·측방), 회피 경로 — 담당: 이기돈</description>
   <maintainer email="kyg100800@gmail.com">이기돈</maintainer>
   <license>MIT</license>
+  <build_depend>python3-dev</build_depend>
 
   <depend>rclpy</depend>
   <depend>fma_interfaces</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>rcl_interfaces</depend>
   <depend>visualization_msgs</depend>
@@ -21,6 +24,8 @@
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
+  <exec_depend>stack_gps</exec_depend>
+  <exec_depend>sensor_msgs_py</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

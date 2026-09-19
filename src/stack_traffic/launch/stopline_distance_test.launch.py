@@ -96,7 +96,7 @@ def build_node_parameters():
             stopline_model_path,
             value_type=str,
         ),
-        "stopline_yolo_confidence_threshold": 0.35,
+        "stopline_yolo_confidence_threshold": 0.30,
         "stopline_yolo_image_size": 640,
         "stopline_roi_x_min": 0.08,
         "stopline_roi_y_min": 0.48,

@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><meta content="light" name="color-scheme"/><title>스테이트 v09.16 · 상태 블록도와 전이조건</title><style>
+:root{--ink:#142d46;--muted:#65758a;--blue:#245bd8;--line:#dce5ef;--paper:#fff;--bg:#f3f6fa;--lat:#276aab;--lon:#20785d;font-family:"Noto Sans CJK KR","Malgun Gothic",system-ui,sans-serif;color:var(--ink);background:var(--bg);font-synthesis:none;line-height:1.7;scroll-behavior:smooth;scroll-padding-top:28px}*{box-sizing:border-box}body{margin:0}a{color:var(--blue);text-underline-offset:3px}button,input,select{font:inherit}button,a,input,select{-webkit-tap-highlight-color:transparent}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #eea538;outline-offset:4px}.sidebar{position:fixed;inset:0 auto 0 0;width:236px;background:#10273f;color:#cedbea;padding:30px 22px;overflow:auto}.brand{font-size:12px;letter-spacing:2px;color:#8dabc6}.version{font-size:29px;color:#fff;letter-spacing:-1px;font-weight:800;margin:7px 0 3px}.sidebar small{color:#9bb2c9}.side-label{font-size:11px;color:#7793ae;letter-spacing:1px;margin:30px 10px 8px}.sidebar nav a{display:block;text-decoration:none;color:#cad8e8;border-radius:7px;font-size:13px;padding:9px 11px;margin:2px 0}.sidebar nav a:hover{background:#213d59;color:white}.side-foot{border-top:1px solid #34506b;margin-top:25px;padding-top:18px;font-size:11px;color:#96aec5}.main{margin-left:236px;padding:44px 42px 36px;max-width:1740px}.eyebrow{font-size:12px;font-weight:700;letter-spacing:1.5px;color:var(--blue)}h1{font-size:clamp(27px,3vw,42px);line-height:1.3;letter-spacing:-1.7px;margin:10px 0 14px}h2{font-size:25px;letter-spacing:-.7px;margin:0}h3{font-size:17px;margin:0}p{margin:8px 0}.lead{font-size:15px;color:var(--muted);max-width:980px}.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:19px}.pill{font-size:11px;border:1px solid var(--line);border-radius:20px;padding:4px 11px;background:#fff;color:#486078}.hero-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:26px}.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px}.lat{color:var(--lat)}.lon{color:var(--lon)}.dot{display:inline-block;width:8px;height:8px;background:currentColor;border-radius:50%;margin-right:6px}.btn{border:1px solid #c9d6e5;border-radius:8px;background:white;color:var(--ink);padding:8px 13px;cursor:pointer;font-size:12px;white-space:nowrap}.btn:hover{background:#eaf0f8}.notice{border-left:3px solid #3776d4;background:#eaf2ff;border-radius:0 8px 8px 0;padding:16px 20px;margin:24px 0 30px;font-size:13px;line-height:1.85}.notice strong{color:#204977}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:25px 0}.stat{background:white;border:1px solid var(--line);border-radius:10px;padding:15px 19px}.stat b{font-size:26px;letter-spacing:-1px}.stat span{display:block;color:var(--muted);font-size:11px}.section{margin-top:45px}.section-title{display:flex;align-items:baseline;gap:12px;margin-bottom:13px}.section-no{font-size:12px;color:var(--blue);font-weight:800;letter-spacing:1px}.caption{font-size:13px;color:var(--muted);margin:5px 0 18px}.diagram-card{background:#fff;border:1px solid var(--line);border-radius:12px;margin:15px 0 22px;overflow:hidden;box-shadow:0 3px 12px #173b6410;scroll-margin-top:25px}.card-head{padding:20px 23px 13px;display:flex;justify-content:space-between;align-items:flex-start;gap:15px}.card-head p{font-size:12px;color:var(--muted);margin-top:5px}.chart-tools{display:flex;gap:5px;align-items:center;flex-shrink:0}.chart-tools button{width:30px;height:29px;border:1px solid var(--line);border-radius:5px;background:#fff;color:#435c77;cursor:pointer;font-size:12px}.chart-tools .fit{width:auto;padding:0 8px}.chart-tools button:disabled{opacity:.4;cursor:default}.chart{overflow:auto;padding:8px 15px 15px}.chart svg{display:block;width:100%;height:auto;max-height:none;margin:auto}.chart .edge a text{font-weight:700;fill:#245bd8;text-decoration:underline}.chart .edge a:hover text{fill:#c25b16}.chart .edge a{cursor:pointer}.card-foot{font-size:11px;padding:9px 23px;background:#f8fafc;border-top:1px solid #edf1f6;color:#6d7f93}.grid-notes{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:20px 0}.note{padding:18px 20px;background:white;border:1px solid var(--line);border-radius:9px;font-size:12px}.note strong{display:block;margin-bottom:5px;font-size:13px}.table-wrap{overflow:auto;background:white;border:1px solid var(--line);border-radius:10px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{padding:13px 15px;border-bottom:1px solid #e4ebf2;text-align:left;vertical-align:top}th{background:#eaf0f7;color:#4a607a;font-size:11px;letter-spacing:.1px;white-space:nowrap}tbody tr:last-child td{border-bottom:0}tbody tr:hover{background:#f6f9fd}#outputs td:nth-child(3){color:var(--lat)}#outputs td:nth-child(4){color:var(--lon)}#outputs td:first-child{font-weight:700;min-width:165px}#outputs td:nth-child(2){white-space:nowrap}#outputs td:last-child{font-size:10px;letter-spacing:.2px}code{font-family:ui-monospace,monospace;font-size:.92em;background:#e9eff6;padding:2px 5px;border-radius:4px}.formula{background:#10273f;color:#d5e5f5;border-radius:10px;padding:19px 23px;margin:17px 0;font-size:13px}.formula b{color:#75d8b6}.formula p{margin:3px 0}.filters{display:flex;gap:9px;align-items:center;margin:17px 0 12px;flex-wrap:wrap}.filters input{flex:1;min-width:200px}.filters input,.filters select{border:1px solid #cbd8e7;border-radius:7px;background:white;padding:10px 12px;font-size:13px;color:var(--ink)}.count{font-size:12px;color:var(--muted);margin-bottom:10px}.transition-table{min-width:710px}.transition-table td:nth-child(1){width:60px}.transition-table td:nth-child(2){width:113px;white-space:nowrap}.transition-table td:nth-child(3){width:255px;font-size:11px;font-weight:600;overflow-wrap:anywhere}.num{display:inline-block;border-radius:6px;background:#e8f0ff;text-decoration:none;color:#245bd8;padding:2px 8px;font-size:12px;font-weight:800}.transition-table tr:target{background:#fff2d2;outline:2px solid #e9b45c;outline-offset:-2px}.transition-table tr{scroll-margin-top:30px}.group{font-size:10px;background:#eff3f7;border-radius:4px;padding:4px 7px;display:inline-block}.empty{padding:28px;background:white;text-align:center;color:var(--muted);border-radius:9px}.source-list{display:flex;gap:8px 20px;flex-wrap:wrap;font-size:12px}.footer{border-top:1px solid var(--line);margin-top:38px;padding-top:21px;font-size:11px;color:var(--muted)}[hidden]{display:none!important}.backtop{position:fixed;right:22px;bottom:20px;padding:9px 14px;border:1px solid #c7d7e7;border-radius:25px;background:#fff;text-decoration:none;font-size:12px;box-shadow:0 3px 12px #12345514}
+@media(min-width:1500px){.main{padding-left:55px;padding-right:55px}}@media(max-width:1000px){.sidebar{width:190px;padding:24px 14px}.main{margin-left:190px;padding:30px 22px}.version{font-size:25px}.grid-notes{grid-template-columns:1fr}.chart{padding:6px}.card-head{padding:18px}.chart svg{min-width:650px}}@media(max-width:700px){.sidebar{position:static;width:auto;padding:19px 20px}.brand{font-size:10px}.version{font-size:24px}.sidebar small,.side-label,.side-foot{display:none}.sidebar nav{display:flex;gap:5px;overflow:auto;margin-top:12px}.sidebar nav a{white-space:nowrap;padding:5px 8px;font-size:11px}.main{margin:0;padding:26px 15px}.stats{grid-template-columns:repeat(2,1fr);gap:8px}.hero-foot{align-items:flex-start}.section{margin-top:33px}.card-head{display:block}.chart-tools{margin-top:10px}.filters{align-items:stretch}.filters input{flex-basis:100%}.filters select{flex:1}.backtop{right:12px;bottom:12px}h2{font-size:21px}.notice{padding:13px 16px}}
+@media(prefers-reduced-motion:reduce){:root{scroll-behavior:auto}}@media print{@page{size:A4 landscape;margin:12mm}:root{background:white;scroll-behavior:auto}.sidebar,.hero-foot>.btn,.chart-tools,.filters,.backtop{display:none!important}.main{margin:0;padding:0;max-width:none}.stats{margin:14px 0}.section{margin-top:24px}.diagram-card{break-inside:avoid;box-shadow:none;margin:12px 0}.chart{overflow:visible}.chart svg{width:100%!important;min-width:0!important;max-height:145mm}.table-wrap{overflow:visible}.transition-table{min-width:0}table{font-size:10px}th,td{padding:8px}thead{display:table-header-group}tr{break-inside:avoid}.transition-table tr[hidden]{display:table-row!important}.count,.empty{display:none}.notice,.note{break-inside:avoid}h2,h3,.section-title{break-after:avoid}a{color:inherit}.footer{break-inside:avoid}.pill{font-size:10px}}
+
+.overview-viewer{background:#fff;border:1px solid #cedbea;border-radius:12px;overflow:hidden}.overview-toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:14px;border-bottom:1px solid #e0e8f0;background:#f8fafd}.overview-toolbar a{text-decoration:none}.overview-toolbar output{min-width:54px;text-align:center;font-size:12px;font-weight:700}.overview-hint{font-size:12px;color:#61758c;padding:9px 16px;margin:0}.overview-canvas{height:78vh;min-height:480px;max-height:1200px;overflow:auto;background:#e3eaf2;cursor:grab;overscroll-behavior:contain;touch-action:pan-x pan-y}.overview-canvas.dragging{cursor:grabbing;user-select:none}.overview-canvas>svg{display:block;width:auto;height:auto;max-width:none;min-width:0;margin:0}.overview-canvas .edge a{cursor:pointer}.overview-viewer:fullscreen{display:flex;flex-direction:column;border-radius:0}.overview-viewer:fullscreen .overview-canvas{flex:1;height:auto;max-height:none;min-height:0}.overview-toolbar .btn:disabled{opacity:.45;cursor:default}@media(max-width:700px){.overview-canvas{min-height:420px;height:72vh}.overview-toolbar{gap:5px;padding:10px}.overview-toolbar .btn{padding:7px 9px;font-size:11px}}@media print{.overview-toolbar,.overview-hint{display:none}.overview-canvas{height:auto!important;min-height:0;max-height:none;overflow:visible}.overview-canvas>svg{width:100%!important;height:auto!important}.overview-viewer{break-inside:avoid}}
+</style></head><body>
+<aside class="sidebar"><div class="brand">HL GLOBAL MOBILITY</div><div class="version">STATE v09.16</div><small>v2_main · 상태 머신 명세</small><div class="side-label">CONTENTS</div><nav aria-label="문서 목차"><a href="#overview">개요</a><a href="#blocks">계층형 상태 블록도</a><a href="#outputs">횡·종방향 설정</a><a href="#detail">실행기 · 경로 메모</a><a href="#conditions">전이조건 01–47</a><a href="#sources">코드 근거</a></nav><div class="side-foot">기준 브랜치<br/><b>integration/v2_main</b><br/><br/>scripts/v2 prepare · drive<br/>revised_v2_enabled=true<br/><br/>2026.09.17 작성<br/>외부 라이브러리 없이 열람 가능</div></aside>
+<main class="main" id="overview"><header><div class="eyebrow">CONTROL STATE REFERENCE</div><h1>스테이트 v09.16<br/>계층형 상태 블록도</h1><p class="lead">하나의 상태 머신 안에서 상위 상태와 하위 상태의 포함 관계, 상위 상태 간 제어권 전환을 함께 보여줍니다. 횡·종방향 설정은 블록 안에, 전이조건은 별도 번호 표에 정리했습니다.</p><div class="meta"><span class="pill">스테이트 v09.16</span><span class="pill">integration/v2_main</span><span class="pill">prepare / drive 기본 설정</span><span class="pill">속도 단위 m/s</span></div><div class="hero-foot"><div class="legend"><span class="lat"><i class="dot"></i>횡방향 · 경로 선택</span><span class="lon"><i class="dot"></i>종방향 · 목표속도</span><span><a class="num" href="#t1">1</a> 전이조건으로 이동</span></div><button class="btn" id="print">인쇄 / PDF 저장</button></div></header>
+<div class="stats"><div class="stat"><b>1</b><span>계층형 상태 머신</span></div><div class="stat"><b>47</b><span>전이조건 번호</span></div><div class="stat"><b>0–5</b><span>CAN 출력 상태</span></div><div class="stat"><b>횡 / 종</b><span>경로·속도 결정 분리</span></div></div>
+<div class="notice"><strong>현재 구현 기준</strong><br/>독립 E-stop 실행·구독은 제외했고 상위 ESTOP과 회복 실행기를 연결했습니다. 이 그림은 코드의 병렬 상태를 <strong>제어권 기준 계층도</strong>로 표현합니다. 상위 블록 간 화살표는 제어권 전환, 내부 화살표는 하위 상태 전이입니다. SAFE_STOP은 운행 상태를 보존하고, ESTOP 완료는 H를 통해 진입 직전 상태 조합을 복원합니다. 숫자 1–47은 전이조건 번호이며 CAN 번호와 다릅니다.</div>
+<section class="section" id="blocks"><div class="section-title"><span class="section-no">01</span><h2>계층형 상태 블록도</h2></div><p class="caption">AUTONOMOUS_DRIVE 안에 상위 운행 상태를, 각 상위 블록 안에 하위 상태·실행기를 배치했습니다. 블록 간 번호 화살표를 따라 전이를 확인할 수 있습니다. 원본 10,000 × 10,000.</p>
+<div class="overview-viewer" id="overview-viewer"><div aria-label="통합 상태 블록도 보기" class="overview-toolbar" role="group"><button class="btn" id="overview-fit">가로 맞춤</button><button class="btn" id="overview-read">읽기 크기</button><button aria-label="통합 이미지 축소" class="btn" id="overview-out">−</button><output aria-live="polite" id="overview-scale">100%</output><button aria-label="통합 이미지 확대" class="btn" id="overview-in">+</button><button class="btn" id="overview-native">원본 100%</button><button class="btn" id="overview-fullscreen">전체화면</button><a class="btn" href="STATE_V09_16_OVERVIEW.svg" rel="noopener" target="_blank">SVG 원본 열기</a><a class="btn" download="" href="STATE_V09_16_OVERVIEW.png">고해상도 PNG 저장</a></div><p class="overview-hint">가로 맞춤으로 구성을 확인하고, 읽기 크기 또는 원본 100%로 확대하세요. 빈 공간을 드래그해 이동할 수 있습니다.</p><div aria-label="확대 가능한 통합 상태 블록도" class="overview-canvas" id="overview-canvas" tabindex="0"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="10000" height="10000" viewBox="0 0 10000 10000" role="img" aria-labelledby="hier-title hier-desc"><title id="hier-title">스테이트 v09.16 계층형 상태도</title><desc id="hier-desc">AUTONOMOUS_DRIVE 상위 상태 안에 운행·안전 상태와 하위 실행기를 배치했습니다. 상위 블록 사이 번호 화살표는 제어권 전환, 내부 번호 화살표는 실제 하위 상태 전이입니다.</desc><style>.edge text{paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round;font-weight:700}.main-edge text{font-weight:800}.main-edge a{cursor:pointer}.main-edge a:hover rect{fill:#dceaff}.edge a:hover text{fill:#b14f16}</style><defs><marker id="parent-arrow" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="36" markerHeight="36" orient="auto" markerUnits="userSpaceOnUse"><path d="M 0 0 L 12 6 L 0 12 Z" fill="#315d94" /></marker></defs><rect width="10000" height="10000" fill="#f2f6fb" /><text x="130" y="95" font-size="40" fill="#396088" font-weight="600" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">HL GLOBAL MOBILITY  /  STATE v09.16</text><text x="130" y="215" font-size="82" fill="#18364e" font-weight="800" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">하나의 상태 머신 · 상위 상태 안에 하위 상태</text><text x="130" y="305" font-size="39" fill="#557089" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">파랑: 횡방향 경로  /  초록: 종방향 목표속도  /  화살표 숫자: 전이조건 표 번호</text><g id="enable" class="manual-node"><rect class="node-border" x="500" y="550" width="2300" height="300" rx="25" fill="#fff" stroke="#8aa5c0" stroke-width="4" /><text x="1650.0" y="635" font-size="48" fill="#18364e" font-weight="750" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">AUTONOMOUS_ENABLE</text><text x="1650.0" y="705" font-size="36" fill="#276aab" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">횡 · 주행 출력 대기</text><text x="1650.0" y="765" font-size="36" fill="#20785d" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">종 · 0</text></g><g id="finish" class="manual-node"><rect class="node-border" x="7200" y="550" width="2300" height="300" rx="25" fill="#fff" stroke="#8aa5c0" stroke-width="4" /><text x="8350.0" y="635" font-size="48" fill="#18364e" font-weight="750" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">FINISH</text><text x="8350.0" y="705" font-size="36" fill="#276aab" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">횡 · 기존 선택 유지</text><text x="8350.0" y="765" font-size="36" fill="#20785d" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">종 · 0</text></g><g id="drive-state" class="state-container" data-title="AUTONOMOUS_DRIVE"><rect class="container-border" x="100" y="1300" width="9800" height="8200" rx="30" fill="#eaf2fb" stroke="#3b6f9b" stroke-width="5" /><text x="150" y="1383" font-size="76" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">AUTONOMOUS_DRIVE</text><text x="150" y="1445" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">하위 상태가 선택한 경로·속도에 인가·안전·최종 참조 게이트 적용</text><path d="M 101 1485 H 9899" stroke="#3b6f9b" stroke-width="2" opacity=".45" /><g id="normal-state" class="state-container" data-title="NORMAL · 운행 제어"><rect class="container-border" x="350" y="1700" width="6800" height="7400" rx="30" fill="#fbfdff" stroke="#79a2bd" stroke-width="5" /><text x="400" y="1783" font-size="61" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">NORMAL · 운행 제어</text><text x="400" y="1845" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">일반 주행 ↔ 회피 / 주차 / 신호 · 내부 상태 조합을 보존</text><path d="M 351 1885 H 7149" stroke="#79a2bd" stroke-width="2" opacity=".45" /><g id="nav-state" class="state-container" data-title="NAVIGATION · 일반 주행"><rect class="container-border" x="550" y="2150" width="2800" height="1250" rx="30" fill="#f4f8ff" stroke="#7ba4d1" stroke-width="5" /><text x="600" y="2233" font-size="55" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">NAVIGATION · 일반 주행</text><text x="600" y="2295" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">CAN 0 LANE / 1 WAYPOINT</text><path d="M 551 2335 H 3349" stroke="#7ba4d1" stroke-width="2" opacity=".45" /><g class="nested-states" data-graph="nav" transform="translate(737.62 2370.00) scale(3.381818)"><g id="nav-graph0" class="graph" transform="scale(1 1) rotate(0) translate(18 257)">
+<title id="nav-svg-title">일반 주행 상태 블록도. 화살표 번호는 전이조건 표로 연결됩니다.</title>
+
+<g id="nav-edge1" class="edge">
+<title>L-&gt;G</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M156.19,-112.34C168.57,-119.75 181.45,-126.91 194,-133 206.95,-139.28 220.99,-145.14 234.91,-150.42" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="234.31,-152.82 241.72,-152.97 236.02,-148.23 234.31,-152.82" />
+<g id="nav-a_edge1-label"><a xlink:href="#t5" xlink:title="전이조건 5 보기">
+<text text-anchor="middle" x="199" y="-141.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">5</text>
+</a>
+</g>
+</g>
+
+<g id="nav-edge3" class="edge">
+<title>L-&gt;O</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M156.23,-60C245.14,-60 391.37,-60 488.54,-60" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="488.75,-62.45 495.75,-60 488.75,-57.55 488.75,-62.45" />
+<g id="nav-a_edge3-label"><a xlink:href="#t7" xlink:title="전이조건 7 보기">
+<text text-anchor="middle" x="326" y="-65.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">7</text>
+</a>
+</g>
+</g>
+
+<g id="nav-edge2" class="edge">
+<title>G-&gt;L</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M241.85,-126.03C229.37,-118.91 216.5,-112 204,-106 191.01,-99.76 176.94,-93.84 163.09,-88.44" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="163.72,-86.06 156.31,-85.83 161.96,-90.63 163.72,-86.06" />
+<g id="nav-a_edge2-label"><a xlink:href="#t6" xlink:title="전이조건 6 보기">
+<text text-anchor="middle" x="199" y="-111.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">6</text>
+</a>
+</g>
+</g>
+
+<g id="nav-edge4" class="edge">
+<title>G-&gt;O</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M410.33,-152.21C426.35,-146.37 442.85,-139.87 458,-133 468.41,-128.28 479.1,-123.01 489.66,-117.51" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="490.8,-119.68 495.86,-114.26 488.52,-115.35 490.8,-119.68" />
+<g id="nav-a_edge4-label"><a xlink:href="#t7" xlink:title="전이조건 7 보기">
+<text text-anchor="middle" x="453" y="-141.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">7</text>
+</a>
+</g>
+</g>
+
+<g id="nav-edge5" class="edge">
+<title>O-&gt;L</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M495.88,-38.4C468.43,-32.89 438.13,-27.75 410,-25 335.69,-17.74 316.25,-17.12 242,-25 216.22,-27.74 188.52,-32.84 163.41,-38.33" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="162.7,-35.97 156.39,-39.88 163.76,-40.76 162.7,-35.97" />
+<g id="nav-a_edge5-label"><a xlink:href="#t8" xlink:title="전이조건 8 보기">
+<text text-anchor="middle" x="326" y="-30.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">8</text>
+</a>
+</g>
+</g>
+
+<g id="nav-edge6" class="edge">
+<title>O-&gt;G</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M495.94,-86.92C479.72,-92.61 463.18,-99.03 448,-106 437.56,-110.79 426.9,-116.28 416.44,-122.04" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="415.22,-119.91 410.3,-125.45 417.61,-124.19 415.22,-119.91" />
+<g id="nav-a_edge6-label"><a xlink:href="#t9" xlink:title="전이조건 9 보기">
+<text text-anchor="middle" x="453" y="-111.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">9</text>
+</a>
+</g>
+</g>
+
+<g id="nav-node1" class="node">
+<title>L</title>
+<path fill="#eff6ff" stroke="#6194d0" stroke-width="1.15" d="M144,-120C144,-120 12,-120 12,-120 6,-120 0,-114 0,-108 0,-108 0,-12 0,-12 0,-6 6,0 12,0 12,0 144,0 144,0 150,0 156,-6 156,-12 156,-12 156,-108 156,-108 156,-114 150,-120 144,-120" />
+<text text-anchor="start" x="59.5" y="-84.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">LINE</text>
+<text text-anchor="start" x="31" y="-54.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 카메라 차선</text>
+<text text-anchor="start" x="41" y="-27.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 기본 2.0</text>
+</g>
+
+<g id="nav-node2" class="node">
+<title>G</title>
+<path fill="#eff6ff" stroke="#6194d0" stroke-width="1.15" d="M398,-239C398,-239 254,-239 254,-239 248,-239 242,-233 242,-227 242,-227 242,-131 242,-131 242,-125 248,-119 254,-119 254,-119 398,-119 398,-119 404,-119 410,-125 410,-131 410,-131 410,-227 410,-227 410,-233 404,-239 398,-239" />
+<text text-anchor="start" x="273" y="-203.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">GPS_BACKUP</text>
+<text text-anchor="start" x="279" y="-173.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · FIXED GPS</text>
+<text text-anchor="start" x="289" y="-146.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 기본 2.0</text>
+</g>
+
+<g id="nav-node3" class="node">
+<title>O</title>
+<path fill="#eff6ff" stroke="#6194d0" stroke-width="1.15" d="M669,-120C669,-120 508,-120 508,-120 502,-120 496,-114 496,-108 496,-108 496,-12 496,-12 496,-6 502,0 508,0 508,0 669,0 669,0 675,0 681,-6 681,-12 681,-12 681,-108 681,-108 681,-114 675,-120 669,-120" />
+<text text-anchor="start" x="528" y="-84.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">GPS_ONLY_NAV</text>
+<text text-anchor="start" x="527.5" y="-54.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · FIXED GPS 강제</text>
+<text text-anchor="start" x="552" y="-27.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 기본 2.0</text>
+</g>
+</g>
+</g></g><g id="avoid-state" class="state-container" data-title="AVOID · 회피"><rect class="container-border" x="3950" y="2150" width="2800" height="1250" rx="30" fill="#f8f5ff" stroke="#9b8ac7" stroke-width="5" /><text x="4000" y="2233" font-size="55" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">AVOID · 회피</text><text x="4000" y="2295" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">활성 시 CAN 2 · GPS_RETURN도 CAN 2 유지</text><path d="M 3951 2335 H 6749" stroke="#9b8ac7" stroke-width="2" opacity=".45" /><g class="nested-states" data-graph="avoid" transform="translate(4169.02 2370.00) scale(3.079470)"><g id="avoid-graph0" class="graph" transform="scale(1 1) rotate(0) translate(18 284)">
+<title id="avoid-svg-title">회피 상태 블록도. 화살표 번호는 전이조건 표로 연결됩니다.</title>
+
+<g id="avoid-edge1" class="edge">
+<title>I-&gt;A</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M171.32,-170.56C183.58,-176.93 196.35,-182.68 209,-187 224.64,-192.34 241.6,-196.22 258.4,-199.03" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="258.29,-201.49 265.59,-200.17 259.06,-196.65 258.29,-201.49" />
+<g id="avoid-a_edge1-label"><a xlink:href="#t10" xlink:title="전이조건 10 보기">
+<text text-anchor="middle" x="218.5" y="-196.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">10</text>
+</a>
+</g>
+</g>
+
+<g id="avoid-edge4" class="edge">
+<title>A-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M265.65,-172.48C252.98,-168.27 240.19,-164.02 228,-160 211.9,-154.69 194.76,-149.08 178.16,-143.67" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="178.5,-141.21 171.09,-141.37 176.99,-145.87 178.5,-141.21" />
+<g id="avoid-a_edge4-label"><a xlink:href="#t13" xlink:title="전이조건 13 보기">
+<text text-anchor="middle" x="218.5" y="-165.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">13</text>
+</a>
+</g>
+</g>
+
+<g id="avoid-edge2" class="edge">
+<title>A-&gt;R</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M467.08,-153.7C495.9,-138.57 527.19,-122.13 555.4,-107.32" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="556.69,-109.41 561.75,-103.99 554.41,-105.07 556.69,-109.41" />
+<g id="avoid-a_edge2-label"><a xlink:href="#t11" xlink:title="전이조건 11 보기">
+<text text-anchor="middle" x="514.5" y="-138.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">11</text>
+</a>
+</g>
+</g>
+
+<g id="avoid-edge3" class="edge">
+<title>R-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M561.79,-66.98C484.86,-73.51 367.69,-83.78 266,-94 237.53,-96.86 206.54,-100.22 178.45,-103.37" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="178.06,-100.95 171.38,-104.16 178.61,-105.82 178.06,-100.95" />
+<g id="avoid-a_edge3-label"><a xlink:href="#t12" xlink:title="전이조건 12 보기">
+<text text-anchor="middle" x="366.5" y="-99.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">12</text>
+</a>
+</g>
+</g>
+
+<g id="avoid-edge5" class="edge">
+<title>R-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M561.74,-43.84C484.28,-31.66 366.32,-20.13 266,-40 236.31,-45.88 205.36,-56.74 177.69,-68.36" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="176.58,-66.17 171.1,-71.17 178.5,-70.68 176.58,-66.17" />
+<g id="avoid-a_edge5-label"><a xlink:href="#t13" xlink:title="전이조건 13 보기">
+<text text-anchor="middle" x="366.5" y="-45.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">13</text>
+</a>
+</g>
+</g>
+
+<g id="avoid-node1" class="node">
+<title>I</title>
+<path fill="#f1efff" stroke="#9a8ad0" stroke-width="1.15" d="M159,-174C159,-174 12,-174 12,-174 6,-174 0,-168 0,-162 0,-162 0,-66 0,-66 0,-60 6,-54 12,-54 12,-54 159,-54 159,-54 165,-54 171,-60 171,-66 171,-66 171,-162 171,-162 171,-168 165,-174 159,-174" />
+<text text-anchor="start" x="49.5" y="-138.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">INACTIVE</text>
+<text text-anchor="start" x="31.5" y="-108.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 일반 주행 경로</text>
+<text text-anchor="start" x="31.5" y="-81.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 일반 주행 속도</text>
+</g>
+
+<g id="avoid-node2" class="node">
+<title>A</title>
+<path fill="#f1efff" stroke="#9a8ad0" stroke-width="1.15" d="M455,-266C455,-266 278,-266 278,-266 272,-266 266,-260 266,-254 266,-254 266,-158 266,-158 266,-152 272,-146 278,-146 278,-146 455,-146 455,-146 461,-146 467,-152 467,-158 467,-158 467,-254 467,-254 467,-260 461,-266 455,-266" />
+<text text-anchor="start" x="311" y="-230.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">AVOID_ACTIVE</text>
+<text text-anchor="start" x="326.5" y="-200.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 회피 경로</text>
+<text text-anchor="start" x="297.5" y="-173.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 제안속도 · 상한 1.0</text>
+</g>
+
+<g id="avoid-node3" class="node">
+<title>R</title>
+<path fill="#f1efff" stroke="#9a8ad0" stroke-width="1.15" d="M719,-120C719,-120 574,-120 574,-120 568,-120 562,-114 562,-108 562,-108 562,-12 562,-12 562,-6 568,0 574,0 574,0 719,0 719,0 725,0 731,-6 731,-12 731,-12 731,-108 731,-108 731,-114 725,-120 719,-120" />
+<text text-anchor="start" x="593.5" y="-84.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">GPS_RETURN</text>
+<text text-anchor="start" x="600" y="-54.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · FIXED GPS</text>
+<text text-anchor="start" x="610" y="-27.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 최대 1.0</text>
+</g>
+</g>
+</g></g><g id="traffic-state" class="state-container" data-title="SIGNAL · 신호 속도 제어"><rect class="container-border" x="550" y="4050" width="2800" height="1950" rx="30" fill="#f3fbf7" stroke="#7aad96" stroke-width="5" /><text x="600" y="4133" font-size="55" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">SIGNAL · 신호 속도 제어</text><text x="600" y="4195" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">접근·대기 시 CAN 4 TRAFFIC · 횡방향 유지</text><path d="M 551 4235 H 3349" stroke="#7aad96" stroke-width="2" opacity=".45" /><g class="nested-states" data-graph="traffic" transform="translate(619.23 4290.00) scale(2.404288)"><g id="traffic-graph0" class="graph" transform="scale(1 1) rotate(0) translate(18 635)">
+<title id="traffic-svg-title">신호 상태 블록도. 화살표 번호는 전이조건 표로 연결됩니다.</title>
+
+<g id="traffic-edge1" class="edge">
+<title>I-&gt;R</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M99.96,-431.14C116.44,-483.16 148.55,-555.18 206,-589 221.06,-597.87 238.27,-600.03 255.52,-598.35" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="256.28,-600.72 262.91,-597.41 255.65,-595.86 256.28,-600.72" />
+<g id="traffic-a_edge1-label"><a xlink:href="#t17" xlink:title="전이조건 17 보기">
+<text text-anchor="middle" x="215.5" y="-601.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">17</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge5" class="edge">
+<title>R-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M262.82,-527.72C243.25,-519.56 223.3,-509.67 206,-498 180.98,-481.13 157.2,-458.28 137.44,-436.62" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="139.02,-434.71 132.51,-431.15 135.37,-437.99 139.02,-434.71" />
+<g id="traffic-a_edge5-label"><a xlink:href="#t21" xlink:title="전이조건 21 보기">
+<text text-anchor="middle" x="215.5" y="-514.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">21</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge8" class="edge">
+<title>R-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M267.86,-496.97C237.89,-476.33 204.31,-453.19 174.19,-432.44" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="175.37,-430.28 168.21,-428.32 172.59,-434.31 175.37,-430.28" />
+<g id="traffic-a_edge8-label"><a xlink:href="#t22" xlink:title="전이조건 22 보기">
+<text text-anchor="middle" x="215.5" y="-469.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">22</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge2" class="edge">
+<title>R-&gt;A</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M439.4,-496.73C482.18,-465.45 534.46,-427.21 578.02,-395.35" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="579.63,-397.21 583.83,-391.1 576.73,-393.25 579.63,-397.21" />
+<g id="traffic-a_edge2-label"><a xlink:href="#t18" xlink:title="전이조건 18 보기">
+<text text-anchor="middle" x="496.5" y="-462.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">18</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge6" class="edge">
+<title>A-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M543.92,-339.4C433.78,-346.99 274.29,-357.97 175.27,-364.79" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="175.06,-362.34 168.24,-365.27 175.39,-367.23 175.06,-362.34" />
+<g id="traffic-a_edge6-label"><a xlink:href="#t21" xlink:title="전이조건 21 보기">
+<text text-anchor="middle" x="356" y="-363.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">21</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge9" class="edge">
+<title>A-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M543.56,-311.56C463.29,-302.09 356.32,-295.69 263,-311 233.65,-315.81 202.63,-324.81 174.85,-334.4" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="174.03,-332.09 168.23,-336.72 175.64,-336.72 174.03,-332.09" />
+<g id="traffic-a_edge9-label"><a xlink:href="#t22" xlink:title="전이조건 22 보기">
+<text text-anchor="middle" x="356" y="-316.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">22</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge3" class="edge">
+<title>A-&gt;A</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M636.93,-391.25C630.66,-426.29 640.69,-459 667,-459 691.57,-459 701.93,-430.49 698.1,-398.19" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="700.52,-397.81 697.07,-391.25 695.67,-398.53 700.52,-397.81" />
+<g id="traffic-a_edge3-label"><a xlink:href="#t19" xlink:title="전이조건 19 보기">
+<text text-anchor="middle" x="667" y="-464.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">19</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge4" class="edge">
+<title>A-&gt;W</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M736.58,-270.86C785.9,-227.6 852.35,-169.32 902.89,-125" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="904.7,-126.67 908.35,-120.21 901.47,-122.98 904.7,-126.67" />
+<g id="traffic-a_edge4-label"><a xlink:href="#t20" xlink:title="전이조건 20 보기">
+<text text-anchor="middle" x="837.5" y="-192.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">20</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge7" class="edge">
+<title>W-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M884.84,-88.85C748.8,-131.46 486.21,-213.74 263,-284 237.66,-291.98 230.34,-291.36 206,-302 195.63,-306.53 185.01,-311.71 174.58,-317.15" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="173.16,-315.13 168.11,-320.57 175.44,-319.47 173.16,-315.13" />
+<g id="traffic-a_edge7-label"><a xlink:href="#t21" xlink:title="전이조건 21 보기">
+<text text-anchor="middle" x="496.5" y="-217.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">21</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-edge10" class="edge">
+<title>W-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M884.74,-60.08C741.35,-64.23 460.93,-88.76 263,-210 220.16,-236.24 178.2,-273.47 145.79,-305.52" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="143.9,-303.94 140.67,-310.61 147.36,-307.41 143.9,-303.94" />
+<g id="traffic-a_edge10-label"><a xlink:href="#t22" xlink:title="전이조건 22 보기">
+<text text-anchor="middle" x="496.5" y="-122.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">22</text>
+</a>
+</g>
+</g>
+
+<g id="traffic-node1" class="node">
+<title>I</title>
+<path fill="#e9f8f3" stroke="#65ab94" stroke-width="1.15" d="M156,-431C156,-431 12,-431 12,-431 6,-431 0,-425 0,-419 0,-419 0,-323 0,-323 0,-317 6,-311 12,-311 12,-311 156,-311 156,-311 162,-311 168,-317 168,-323 168,-323 168,-419 168,-419 168,-425 162,-431 156,-431" />
+<text text-anchor="start" x="32.5" y="-395.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">SIGNAL_IDLE</text>
+<text text-anchor="start" x="43.5" y="-365.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 경로</text>
+<text text-anchor="start" x="31" y="-338.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 기존 목표속도</text>
+</g>
+
+<g id="traffic-node2" class="node">
+<title>R</title>
+<path fill="#e9f8f3" stroke="#65ab94" stroke-width="1.15" d="M437,-617C437,-617 275,-617 275,-617 269,-617 263,-611 263,-605 263,-605 263,-509 263,-509 263,-503 269,-497 275,-497 275,-497 437,-497 437,-497 443,-497 449,-503 449,-509 449,-509 449,-605 449,-605 449,-611 443,-617 437,-617" />
+<text text-anchor="start" x="294" y="-581.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">RED_DETECTED</text>
+<text text-anchor="start" x="315.5" y="-551.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 경로</text>
+<text text-anchor="start" x="303" y="-524.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 기존 목표속도</text>
+</g>
+
+<g id="traffic-node3" class="node">
+<title>A</title>
+<path fill="#e9f8f3" stroke="#65ab94" stroke-width="1.15" d="M778,-391C778,-391 556,-391 556,-391 550,-391 544,-385 544,-379 544,-379 544,-283 544,-283 544,-277 550,-271 556,-271 556,-271 778,-271 778,-271 784,-271 790,-277 790,-283 790,-283 790,-379 790,-379 790,-385 784,-391 778,-391" />
+<text text-anchor="start" x="575" y="-355.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">APPROACH_STOP_LINE</text>
+<text text-anchor="start" x="626.5" y="-325.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 경로</text>
+<text text-anchor="start" x="612.5" y="-298.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 거리 기반 감속</text>
+</g>
+
+<g id="traffic-node4" class="node">
+<title>W</title>
+<path fill="#e9f8f3" stroke="#65ab94" stroke-width="1.15" d="M1059,-120C1059,-120 897,-120 897,-120 891,-120 885,-114 885,-108 885,-108 885,-12 885,-12 885,-6 891,0 897,0 897,0 1059,0 1059,0 1065,0 1071,-6 1071,-12 1071,-12 1071,-108 1071,-108 1071,-114 1065,-120 1059,-120" />
+<text text-anchor="start" x="916" y="-84.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">STOPPED_WAIT</text>
+<text text-anchor="start" x="937.5" y="-54.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 경로</text>
+<text text-anchor="start" x="961" y="-27.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+</g>
+</g></g><g id="parking-state" class="state-container" data-title="PARKING · 주차"><rect class="container-border" x="3950" y="4050" width="2800" height="4400" rx="30" fill="#fffbf1" stroke="#c7a45e" stroke-width="5" /><text x="4000" y="4133" font-size="55" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">PARKING · 주차</text><text x="4000" y="4195" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">MISSION_ACTIVE 동안 CAN 3</text><path d="M 3951 4235 H 6749" stroke="#c7a45e" stroke-width="2" opacity=".45" /><g id="mission-idle" class="manual-node"><rect class="node-border" x="4275" y="4300" width="2050" height="290" rx="25" fill="#fff" stroke="#8aa5c0" stroke-width="4" /><text x="5300.0" y="4385" font-size="48" fill="#18364e" font-weight="750" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">MISSION_IDLE</text><text x="5300.0" y="4455" font-size="36" fill="#276aab" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">횡 · 일반 주행 / 회피</text><text x="5300.0" y="4515" font-size="36" fill="#20785d" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">종 · 현재 운행 속도</text></g><g id="mission-active" class="state-container" data-title="MISSION_ACTIVE"><rect class="container-border" x="4080" y="4930" width="2540" height="3230" rx="30" fill="#fffdf8" stroke="#c7a45e" stroke-width="5" /><text x="4130" y="5013" font-size="52" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">MISSION_ACTIVE</text><text x="4130" y="5075" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">횡: 준비 GPS → 인계 후 주차 경로</text><path d="M 4081 5115 H 6619" stroke="#c7a45e" stroke-width="2" opacity=".45" /><text x="4130" y="5140" font-size="33" fill="#20785d" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">종 · 초기 준비 0 / 탐색 2.0 / 실행 단계별 속도</text><text x="4130" y="5210" font-size="32" fill="#60758a" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">준비 응답·실행 활성 확인은 ACTIVE 내부 절차</text><g id="tparking-state" class="state-container" data-title="T 주차 실행기"><rect class="container-border" x="4200" y="5380" width="2300" height="1930" rx="30" fill="#fff" stroke="#d5b16d" stroke-width="5" /><text x="4250" y="5463" font-size="48" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">T 주차 실행기</text><text x="4250" y="5525" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">횡: 경로 03 → 후진 주차 → 전진 복귀</text><path d="M 4201 5565 H 6499" stroke="#d5b16d" stroke-width="2" opacity=".45" /><g class="nested-states" data-graph="tparking" transform="translate(4240.00 6061.26) scale(1.228556)"><g id="tparking-graph0" class="graph" transform="scale(1 1) rotate(0) translate(18 566)">
+<title id="tparking-svg-title">T 주차 실행기 상태 블록도. 화살표 번호는 전이조건 표로 연결됩니다.</title>
+
+<g id="tparking-edge1" class="edge">
+<title>A-&gt;B</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M172.35,-488C211.91,-488 259.07,-488 300.33,-488" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="300.43,-490.45 307.43,-488 300.43,-485.55 300.43,-490.45" />
+<g id="tparking-a_edge1-label"><a xlink:href="#t40" xlink:title="전이조건 40 보기">
+<text text-anchor="middle" x="239.75" y="-496.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">40</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge8" class="edge">
+<title>A-&gt;X</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M155.38,-427.93C224.69,-370.21 335.4,-281.42 438,-214 497.96,-174.6 568.86,-135.69 624.05,-106.97" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="625.27,-109.09 630.36,-103.7 623.02,-104.75 625.27,-109.09" />
+<g id="tparking-a_edge8-label"><a xlink:href="#t47" xlink:title="전이조건 47 보기">
+<text text-anchor="middle" x="447.5" y="-270.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">47</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge2" class="edge">
+<title>B-&gt;C</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M496.87,-488C537.12,-488 584.04,-488 624.75,-488" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="624.75,-490.45 631.75,-488 624.75,-485.55 624.75,-490.45" />
+<g id="tparking-a_edge2-label"><a xlink:href="#t41" xlink:title="전이조건 41 보기">
+<text text-anchor="middle" x="564.25" y="-496.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">41</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge9" class="edge">
+<title>B-&gt;X</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M426.61,-427.91C451.7,-370.76 493.71,-282.93 542,-214 561.49,-186.18 569.08,-181.08 594,-158 606.07,-146.82 619.29,-135.48 632.44,-124.68" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="634.19,-126.41 638.06,-120.09 631.09,-122.62 634.19,-126.41" />
+<g id="tparking-a_edge9-label"><a xlink:href="#t47" xlink:title="전이조건 47 보기">
+<text text-anchor="middle" x="551.5" y="-270.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">47</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge3" class="edge">
+<title>C-&gt;D</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M816.11,-488C856.16,-488 903.3,-488 944.72,-488" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="944.85,-490.45 951.85,-488 944.85,-485.55 944.85,-490.45" />
+<g id="tparking-a_edge3-label"><a xlink:href="#t42" xlink:title="전이조건 42 보기">
+<text text-anchor="middle" x="884" y="-496.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">42</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge10" class="edge">
+<title>C-&gt;X</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M654.68,-427.69C629.59,-401.79 604.19,-369.27 591,-334 572.32,-284.04 573.09,-264.24 591,-214 602.62,-181.42 624.47,-150.78 646.7,-125.59" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="648.6,-127.14 651.45,-120.3 644.95,-123.87 648.6,-127.14" />
+<g id="tparking-a_edge10-label"><a xlink:href="#t47" xlink:title="전이조건 47 보기">
+<text text-anchor="middle" x="600.5" y="-270.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">47</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge4" class="edge">
+<title>D-&gt;E</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M956.96,-427.95C905.6,-395.34 842.53,-355.31 793.8,-324.38" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="794.85,-322.15 787.63,-320.47 792.23,-326.29 794.85,-322.15" />
+<g id="tparking-a_edge4-label"><a xlink:href="#t43" xlink:title="전이조건 43 보기">
+<text text-anchor="middle" x="903.5" y="-377.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">43</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge11" class="edge">
+<title>D-&gt;X</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M1148.1,-481.43C1371.33,-465.31 1885.55,-406.69 1720,-214 1602.78,-77.56 1034.65,-61.42 808.82,-60.49" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="808.6,-58.04 801.59,-60.46 808.58,-62.94 808.6,-58.04" />
+<g id="tparking-a_edge11-label"><a xlink:href="#t47" xlink:title="전이조건 47 보기">
+<text text-anchor="middle" x="1761.5" y="-270.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">47</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge5" class="edge">
+<title>E-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M787.59,-274C825.69,-274 873.31,-274 915.73,-274" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="915.77,-276.45 922.77,-274 915.77,-271.55 915.77,-276.45" />
+<g id="tparking-a_edge5-label"><a xlink:href="#t44" xlink:title="전이조건 44 보기">
+<text text-anchor="middle" x="855.25" y="-282.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">44</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge12" class="edge">
+<title>E-&gt;X</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M716,-213.95C716,-187.07 716,-155.14 716,-127.43" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="718.45,-127.1 716,-120.1 713.55,-127.1 718.45,-127.1" />
+<g id="tparking-a_edge12-label"><a xlink:href="#t47" xlink:title="전이조건 47 보기">
+<text text-anchor="middle" x="725.5" y="-163.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">47</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge6" class="edge">
+<title>F-&gt;G</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M1123.22,-274C1164.69,-274 1212.16,-274 1251.44,-274" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1251.68,-276.45 1258.68,-274 1251.68,-271.55 1251.68,-276.45" />
+<g id="tparking-a_edge6-label"><a xlink:href="#t45" xlink:title="전이조건 45 보기">
+<text text-anchor="middle" x="1191" y="-282.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">45</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge13" class="edge">
+<title>F-&gt;X</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M937.48,-213.95C896.98,-185.98 848.57,-152.55 807.36,-124.09" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="808.74,-122.07 801.59,-120.1 805.96,-126.1 808.74,-122.07" />
+<g id="tparking-a_edge13-label"><a xlink:href="#t47" xlink:title="전이조건 47 보기">
+<text text-anchor="middle" x="888.5" y="-163.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">47</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge7" class="edge">
+<title>G-&gt;H</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M1407.2,-274C1446.54,-274 1494.88,-274 1534.92,-274" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1535.3,-276.45 1542.3,-274 1535.3,-271.55 1535.3,-276.45" />
+<g id="tparking-a_edge7-label"><a xlink:href="#t46" xlink:title="전이조건 46 보기">
+<text text-anchor="middle" x="1474.75" y="-282.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">46</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-edge14" class="edge">
+<title>G-&gt;X</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M1258.88,-247.53C1146.07,-208.77 931.43,-135.02 808.54,-92.8" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="809.08,-90.39 801.67,-90.44 807.49,-95.03 809.08,-90.39" />
+<g id="tparking-a_edge14-label"><a xlink:href="#t47" xlink:title="전이조건 47 보기">
+<text text-anchor="middle" x="1053.5" y="-163.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">47</text>
+</a>
+</g>
+</g>
+
+<g id="tparking-node1" class="node">
+<title>A</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M160,-548C160,-548 12,-548 12,-548 6,-548 0,-542 0,-536 0,-536 0,-440 0,-440 0,-434 6,-428 12,-428 12,-428 160,-428 160,-428 166,-428 172,-434 172,-440 172,-440 172,-536 172,-536 172,-542 166,-548 160,-548" />
+<text text-anchor="start" x="31" y="-512.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">STOP_SELECT</text>
+<text text-anchor="start" x="45.5" y="-482.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 선택 대기</text>
+<text text-anchor="start" x="69" y="-455.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="tparking-node2" class="node">
+<title>B</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M484.5,-548C484.5,-548 319.5,-548 319.5,-548 313.5,-548 307.5,-542 307.5,-536 307.5,-536 307.5,-440 307.5,-440 307.5,-434 313.5,-428 319.5,-428 319.5,-428 484.5,-428 484.5,-428 490.5,-428 496.5,-434 496.5,-440 496.5,-440 496.5,-536 496.5,-536 496.5,-542 490.5,-548 484.5,-548" />
+<text text-anchor="start" x="355.5" y="-512.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">ADVANCE_3</text>
+<text text-anchor="start" x="339" y="-482.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 경로 03 잔여 경로</text>
+<text text-anchor="start" x="372" y="-455.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · +0.55</text>
+</g>
+
+<g id="tparking-node3" class="node">
+<title>C</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M804,-548C804,-548 644,-548 644,-548 638,-548 632,-542 632,-536 632,-536 632,-440 632,-440 632,-434 638,-428 644,-428 644,-428 804,-428 804,-428 810,-428 816,-434 816,-440 816,-440 816,-536 816,-536 816,-542 810,-548 804,-548" />
+<text text-anchor="start" x="663" y="-512.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">STOP_REVERSE</text>
+<text text-anchor="start" x="683.5" y="-482.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 선택 경로</text>
+<text text-anchor="start" x="707" y="-455.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="tparking-node4" class="node">
+<title>D</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M1136,-548C1136,-548 964,-548 964,-548 958,-548 952,-542 952,-536 952,-536 952,-440 952,-440 952,-434 958,-428 964,-428 964,-428 1136,-428 1136,-428 1142,-428 1148,-434 1148,-440 1148,-440 1148,-536 1148,-536 1148,-542 1142,-548 1136,-548" />
+<text text-anchor="start" x="1014.5" y="-512.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">REVERSE</text>
+<text text-anchor="start" x="995.5" y="-482.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 선택 주차 경로</text>
+<text text-anchor="start" x="983" y="-455.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · −0.55 / 도킹 −0.15</text>
+</g>
+
+<g id="tparking-node5" class="node">
+<title>E</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M775.5,-334C775.5,-334 656.5,-334 656.5,-334 650.5,-334 644.5,-328 644.5,-322 644.5,-322 644.5,-226 644.5,-226 644.5,-220 650.5,-214 656.5,-214 656.5,-214 775.5,-214 775.5,-214 781.5,-214 787.5,-220 787.5,-226 787.5,-226 787.5,-322 787.5,-322 787.5,-328 781.5,-334 775.5,-334" />
+<text text-anchor="start" x="681.5" y="-298.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">WAIT_10</text>
+<text text-anchor="start" x="676" y="-268.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 주차 경로</text>
+<text text-anchor="start" x="699.5" y="-241.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="tparking-node6" class="node">
+<title>F</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M1111,-334C1111,-334 935,-334 935,-334 929,-334 923,-328 923,-322 923,-322 923,-226 923,-226 923,-220 929,-214 935,-214 935,-214 1111,-214 1111,-214 1117,-214 1123,-220 1123,-226 1123,-226 1123,-322 1123,-322 1123,-328 1117,-334 1111,-334" />
+<text text-anchor="start" x="1005.5" y="-298.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">EXIT</text>
+<text text-anchor="start" x="954" y="-268.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 실제 후진 경로 역순</text>
+<text text-anchor="start" x="992.5" y="-241.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · +0.55</text>
+</g>
+
+<g id="tparking-node7" class="node">
+<title>G</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M1395,-334C1395,-334 1271,-334 1271,-334 1265,-334 1259,-328 1259,-322 1259,-322 1259,-226 1259,-226 1259,-220 1265,-214 1271,-214 1271,-214 1395,-214 1395,-214 1401,-214 1407,-220 1407,-226 1407,-226 1407,-322 1407,-322 1407,-328 1401,-334 1395,-334" />
+<text text-anchor="start" x="1290" y="-298.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">EXIT_STOP</text>
+<text text-anchor="start" x="1292.5" y="-268.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 복귀 경로</text>
+<text text-anchor="start" x="1316" y="-241.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="tparking-node8" class="node">
+<title>H</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M1673.5,-334C1673.5,-334 1554.5,-334 1554.5,-334 1548.5,-334 1542.5,-328 1542.5,-322 1542.5,-322 1542.5,-226 1542.5,-226 1542.5,-220 1548.5,-214 1554.5,-214 1554.5,-214 1673.5,-214 1673.5,-214 1679.5,-214 1685.5,-220 1685.5,-226 1685.5,-226 1685.5,-322 1685.5,-322 1685.5,-328 1679.5,-334 1673.5,-334" />
+<text text-anchor="start" x="1591.5" y="-298.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">DONE</text>
+<text text-anchor="start" x="1574" y="-268.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 복귀 경로</text>
+<text text-anchor="start" x="1597.5" y="-241.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="tparking-node9" class="node">
+<title>X</title>
+<path fill="#fff8e9" stroke="#d3ac52" stroke-width="1.15" d="M789.5,-120C789.5,-120 642.5,-120 642.5,-120 636.5,-120 630.5,-114 630.5,-108 630.5,-108 630.5,-12 630.5,-12 630.5,-6 636.5,0 642.5,0 642.5,0 789.5,0 789.5,0 795.5,0 801.5,-6 801.5,-12 801.5,-12 801.5,-108 801.5,-108 801.5,-114 795.5,-120 789.5,-120" />
+<text text-anchor="start" x="692.5" y="-84.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">FAULT</text>
+<text text-anchor="start" x="662" y="-54.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 선택 유지</text>
+<text text-anchor="start" x="699.5" y="-27.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+</g>
+</g></g><g id="parallel-state" class="state-container" data-title="평행 주차 실행기"><rect class="container-border" x="4200" y="7550" width="2300" height="380" rx="30" fill="#fff" stroke="#d5b16d" stroke-width="5" /><text x="4250" y="7633" font-size="43" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">평행 주차 실행기</text><text x="4250" y="7695" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">기존 ParkingMission 연결 유지</text><path d="M 4201 7735 H 6499" stroke="#d5b16d" stroke-width="2" opacity=".45" /><text x="4250" y="7840" font-size="34" fill="#20785d" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">횡 · 평행 주차 경로       종 · 0 또는 ±2.0</text></g></g></g><g id="route-state" class="state-container" data-title="ROUTE · 경로 진행"><rect class="container-border" x="550" y="6690" width="2800" height="2060" rx="30" fill="#f7fafc" stroke="#8ca4ba" stroke-width="5" /><text x="600" y="6773" font-size="52" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">ROUTE · 경로 진행</text><text x="600" y="6835" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">운행과 함께 갱신 · WAIT_ACK 중 유효 참조 주행 가능</text><path d="M 551 6875 H 3349" stroke="#8ca4ba" stroke-width="2" opacity=".45" /><g class="nested-states" data-graph="route" transform="translate(610.00 7014.57) scale(1.712460)"><g id="route-graph0" class="graph" transform="scale(1 1) rotate(0) translate(18 875.95)">
+<title id="route-svg-title">경로 전환 상태 블록도. 화살표 번호는 전이조건 표로 연결됩니다.</title>
+
+<g id="route-edge1" class="edge">
+<title>D-&gt;R</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M153.45,-570.24C187.72,-545.22 230.47,-513.99 267.89,-486.66" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="269.64,-488.42 273.85,-482.31 266.75,-484.46 269.64,-488.42" />
+<g id="route-a_edge1-label"><a xlink:href="#t33" xlink:title="전이조건 33 보기">
+<text text-anchor="middle" x="224.5" y="-524.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">33</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge8" class="edge">
+<title>D-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M117.03,-663.7C159.46,-729.09 247.49,-839.95 356.5,-839.95 356.5,-839.95 356.5,-839.95 1172,-839.95 1347.38,-839.95 1412.14,-584.98 1433.34,-460.17" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1435.76,-460.54 1434.49,-453.23 1430.93,-459.74 1435.76,-460.54" />
+<g id="route-a_edge8-label"><a xlink:href="#t39" xlink:title="전이조건 39 보기">
+<text text-anchor="middle" x="765.5" y="-845.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">39</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge2" class="edge">
+<title>R-&gt;M</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M440.88,-361.81C471.94,-339.14 507.37,-313.28 538.93,-290.24" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="540.56,-292.08 544.77,-285.98 537.67,-288.12 540.56,-292.08" />
+<g id="route-a_edge2-label"><a xlink:href="#t34" xlink:title="전이조건 34 보기">
+<text text-anchor="middle" x="490.5" y="-334.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">34</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge3" class="edge">
+<title>R-&gt;S</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M443.02,-417.4C541.53,-412.1 703.78,-403.37 805.43,-397.9" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="805.78,-400.34 812.64,-397.52 805.52,-395.45 805.78,-400.34" />
+<g id="route-a_edge3-label"><a xlink:href="#t35" xlink:title="전이조건 35 보기">
+<text text-anchor="middle" x="628" y="-417.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">35</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge9" class="edge">
+<title>R-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M383.71,-482.02C422.74,-564.29 506.11,-701.95 627,-701.95 627,-701.95 627,-701.95 1172,-701.95 1299.64,-701.95 1381.04,-550.84 1418.46,-459.97" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1420.82,-460.67 1421.18,-453.26 1416.28,-458.82 1420.82,-460.67" />
+<g id="route-a_edge9-label"><a xlink:href="#t39" xlink:title="전이조건 39 보기">
+<text text-anchor="middle" x="898.5" y="-707.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">39</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge4" class="edge">
+<title>M-&gt;S</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M718.03,-281.33C746.54,-299.06 778.12,-318.7 806.74,-336.5" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="805.57,-338.66 812.8,-340.27 808.15,-334.49 805.57,-338.66" />
+<g id="route-a_edge4-label"><a xlink:href="#t35" xlink:title="전이조건 35 보기">
+<text text-anchor="middle" x="765.5" y="-319.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">35</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge10" class="edge">
+<title>M-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M718.18,-173.18C846.56,-104.75 1087.31,-5.07 1263,-102.95 1347.94,-150.27 1397.76,-256.2 1422.57,-326.08" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1420.28,-326.93 1424.9,-332.73 1424.9,-325.31 1420.28,-326.93" />
+<g id="route-a_edge10-label"><a xlink:href="#t39" xlink:title="전이조건 39 보기">
+<text text-anchor="middle" x="1031.5" y="-73.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">39</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge5" class="edge">
+<title>S-&gt;A</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M982.5,-332.81C1013.78,-310.14 1049.48,-284.28 1081.27,-261.24" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1082.93,-263.07 1087.16,-256.98 1080.05,-259.1 1082.93,-263.07" />
+<g id="route-a_edge5-label"><a xlink:href="#t36" xlink:title="전이조건 36 보기">
+<text text-anchor="middle" x="1031.5" y="-305.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">36</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge7" class="edge">
+<title>S-&gt;E</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M984.35,-438.75C1014.43,-454.98 1048.4,-473.32 1078.98,-489.83" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1078.13,-492.15 1085.46,-493.32 1080.46,-487.84 1078.13,-492.15" />
+<g id="route-a_edge7-label"><a xlink:href="#t38" xlink:title="전이조건 38 보기">
+<text text-anchor="middle" x="1031.5" y="-471.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">38</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge11" class="edge">
+<title>S-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M984.05,-392.95C1083.46,-392.95 1247.87,-392.95 1350.43,-392.95" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1350.71,-395.4 1357.71,-392.95 1350.71,-390.5 1350.71,-395.4" />
+<g id="route-a_edge11-label"><a xlink:href="#t39" xlink:title="전이조건 39 보기">
+<text text-anchor="middle" x="1171" y="-398.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">39</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge6" class="edge">
+<title>A-&gt;R</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M1135.55,-136.88C1113.21,-104.31 1080.87,-67.09 1041,-48.95 834.76,44.87 725.87,-5.29 538,-131.95 458.5,-185.55 407.75,-287.38 381.19,-354.98" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="378.79,-354.4 378.54,-361.82 383.35,-356.18 378.79,-354.4" />
+<g id="route-a_edge6-label"><a xlink:href="#t37" xlink:title="전이조건 37 보기">
+<text text-anchor="middle" x="765.5" y="-20.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">37</text>
+</a>
+</g>
+</g>
+
+<g id="route-edge12" class="edge">
+<title>A-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M1255,-257.09C1286.28,-279.76 1321.98,-305.62 1353.77,-328.66" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="1352.55,-330.8 1359.66,-332.93 1355.43,-326.83 1352.55,-330.8" />
+<g id="route-a_edge12-label"><a xlink:href="#t39" xlink:title="전이조건 39 보기">
+<text text-anchor="middle" x="1310.5" y="-305.15" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">39</text>
+</a>
+</g>
+</g>
+
+<g id="route-node1" class="node">
+<title>D</title>
+<path fill="#f1f5f9" stroke="#91a3b9" stroke-width="1.15" d="M165,-663.45C165,-663.45 12,-663.45 12,-663.45 6,-663.45 0,-657.45 0,-651.45 0,-651.45 0,-582.45 0,-582.45 0,-576.45 6,-570.45 12,-570.45 12,-570.45 165,-570.45 165,-570.45 171,-570.45 177,-576.45 177,-582.45 177,-582.45 177,-651.45 177,-651.45 177,-657.45 171,-663.45 165,-663.45" />
+<text text-anchor="start" x="49.5" y="-627.15" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">DISABLED</text>
+<text text-anchor="start" x="31.5" y="-597.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 초기화 / 비활성</text>
+</g>
+
+<g id="route-node2" class="node">
+<title>R</title>
+<path fill="#f1f5f9" stroke="#91a3b9" stroke-width="1.15" d="M431,-481.95C431,-481.95 284,-481.95 284,-481.95 278,-481.95 272,-475.95 272,-469.95 272,-469.95 272,-373.95 272,-373.95 272,-367.95 278,-361.95 284,-361.95 284,-361.95 431,-361.95 431,-361.95 437,-361.95 443,-367.95 443,-373.95 443,-373.95 443,-469.95 443,-469.95 443,-475.95 437,-481.95 431,-481.95" />
+<text text-anchor="start" x="320" y="-446.15" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">RUNNING</text>
+<text text-anchor="start" x="303.5" y="-416.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 현재 운행 경로</text>
+<text text-anchor="start" x="303.5" y="-389.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 현재 운행 속도</text>
+</g>
+
+<g id="route-node3" class="node">
+<title>M</title>
+<path fill="#f1f5f9" stroke="#91a3b9" stroke-width="1.15" d="M706,-285.95C706,-285.95 550,-285.95 550,-285.95 544,-285.95 538,-279.95 538,-273.95 538,-273.95 538,-177.95 538,-177.95 538,-171.95 544,-165.95 550,-165.95 550,-165.95 706,-165.95 706,-165.95 712,-165.95 718,-171.95 718,-177.95 718,-177.95 718,-273.95 718,-273.95 718,-279.95 712,-285.95 706,-285.95" />
+<text text-anchor="start" x="569" y="-250.15" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">WAIT_MISSION</text>
+<text text-anchor="start" x="573.5" y="-220.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 선택 유지</text>
+<text text-anchor="start" x="611" y="-193.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="route-node4" class="node">
+<title>S</title>
+<path fill="#f1f5f9" stroke="#91a3b9" stroke-width="1.15" d="M972,-452.95C972,-452.95 825,-452.95 825,-452.95 819,-452.95 813,-446.95 813,-440.95 813,-440.95 813,-344.95 813,-344.95 813,-338.95 819,-332.95 825,-332.95 825,-332.95 972,-332.95 972,-332.95 978,-332.95 984,-338.95 984,-344.95 984,-344.95 984,-440.95 984,-440.95 984,-446.95 978,-452.95 972,-452.95" />
+<text text-anchor="start" x="853" y="-417.15" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">WAIT_STOP</text>
+<text text-anchor="start" x="844.5" y="-387.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 선택 유지</text>
+<text text-anchor="start" x="882" y="-360.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="route-node5" class="node">
+<title>A</title>
+<path fill="#f1f5f9" stroke="#91a3b9" stroke-width="1.15" d="M1251,-256.95C1251,-256.95 1091,-256.95 1091,-256.95 1085,-256.95 1079,-250.95 1079,-244.95 1079,-244.95 1079,-148.95 1079,-148.95 1079,-142.95 1085,-136.95 1091,-136.95 1091,-136.95 1251,-136.95 1251,-136.95 1257,-136.95 1263,-142.95 1263,-148.95 1263,-148.95 1263,-244.95 1263,-244.95 1263,-250.95 1257,-256.95 1251,-256.95" />
+<text text-anchor="start" x="1130" y="-221.15" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">WAIT_ACK</text>
+<text text-anchor="start" x="1110" y="-191.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 유효한 현재 경로</text>
+<text text-anchor="start" x="1116.5" y="-164.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 주행 유지 가능</text>
+</g>
+
+<g id="route-node6" class="node">
+<title>E</title>
+<path fill="#f1f5f9" stroke="#91a3b9" stroke-width="1.15" d="M1244.5,-598.95C1244.5,-598.95 1097.5,-598.95 1097.5,-598.95 1091.5,-598.95 1085.5,-592.95 1085.5,-586.95 1085.5,-586.95 1085.5,-490.95 1085.5,-490.95 1085.5,-484.95 1091.5,-478.95 1097.5,-478.95 1097.5,-478.95 1244.5,-478.95 1244.5,-478.95 1250.5,-478.95 1256.5,-484.95 1256.5,-490.95 1256.5,-490.95 1256.5,-586.95 1256.5,-586.95 1256.5,-592.95 1250.5,-598.95 1244.5,-598.95" />
+<text text-anchor="start" x="1134" y="-563.15" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">FINISHED</text>
+<text text-anchor="start" x="1117" y="-533.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 선택 유지</text>
+<text text-anchor="start" x="1154.5" y="-506.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="route-node7" class="node">
+<title>F</title>
+<path fill="#f1f5f9" stroke="#91a3b9" stroke-width="1.15" d="M1517,-452.95C1517,-452.95 1370,-452.95 1370,-452.95 1364,-452.95 1358,-446.95 1358,-440.95 1358,-440.95 1358,-344.95 1358,-344.95 1358,-338.95 1364,-332.95 1370,-332.95 1370,-332.95 1517,-332.95 1517,-332.95 1523,-332.95 1529,-338.95 1529,-344.95 1529,-344.95 1529,-440.95 1529,-440.95 1529,-446.95 1523,-452.95 1517,-452.95" />
+<text text-anchor="start" x="1420" y="-417.15" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">FAULT</text>
+<text text-anchor="start" x="1389.5" y="-387.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 기존 선택 유지</text>
+<text text-anchor="start" x="1427" y="-360.75" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+</g>
+</g></g><g id="return-history" class="history-node"><circle cx="6970" cy="5830" r="85" fill="#fff" stroke="#315d94" stroke-width="5" /><text x="6970" y="5850" font-size="63" fill="#18364e" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">H</text><text x="6970" y="6010" font-size="30" fill="#526980" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">진입 직전</text><text x="6970" y="6060" font-size="30" fill="#526980" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">상태 복원</text></g></g><g id="safe-stop-state" class="state-container" data-title="SAFE_STOP"><rect class="container-border" x="7500" y="1700" width="2100" height="770" rx="30" fill="#fff5f3" stroke="#cb958d" stroke-width="5" /><text x="7550" y="1783" font-size="57" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">SAFE_STOP</text><text x="7550" y="1845" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">기존 운행 상태와 횡방향 선택 보존</text><path d="M 7501 1885 H 9599" stroke="#cb958d" stroke-width="2" opacity=".45" /><text x="7560" y="2010" font-size="43" fill="#276aab" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">횡 · 기존 선택 유지</text><text x="7560" y="2110" font-size="43" fill="#20785d" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">종 · 0</text><text x="7560" y="2240" font-size="32" fill="#6b7d8e" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">CAN 번호를 별도 정지 상태로 바꾸지 않음</text></g><g id="estop-state" class="state-container" data-title="ESTOP"><rect class="container-border" x="7500" y="3010" width="2100" height="5930" rx="30" fill="#fff4f1" stroke="#c87f77" stroke-width="5" /><text x="7550" y="3093" font-size="72" fill="#18364e" font-weight="750" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">ESTOP</text><text x="7550" y="3155" font-size="34" fill="#536f88" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">상위 Safety ESTOP / CAN 5</text><path d="M 7501 3195 H 9599" stroke="#c87f77" stroke-width="2" opacity=".45" /><text x="7560" y="3310" font-size="42" fill="#276aab" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">횡 · 회복 실행기 경로</text><text x="7560" y="3400" font-size="42" fill="#20785d" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">종 · 0 또는 −0.3</text><g class="nested-states" data-graph="recovery_vertical" transform="translate(7560.00 3820.98) scale(3.440487)"><g id="recovery_vertical-graph0" class="graph" transform="scale(1 1) rotate(0) translate(18 1208)">
+<title id="recovery_vertical-svg-title">ESTOP 회복 실행기 상태 블록도. 화살표 번호는 전이조건 표로 연결됩니다.</title>
+
+<g id="recovery_vertical-edge1" class="edge">
+<title>I-&gt;H</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M333.33,-1069.95C314.5,-1042.61 292.08,-1010.05 272.77,-982.01" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="274.69,-980.48 268.7,-976.1 270.66,-983.26 274.69,-980.48" />
+<g id="recovery_vertical-a_edge1-label"><a xlink:href="#t27" xlink:title="전이조건 27 보기">
+<text text-anchor="middle" x="315.5" y="-1019.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">27</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-edge2" class="edge">
+<title>H-&gt;R</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M228,-855.95C228,-829.07 228,-797.14 228,-769.43" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="230.45,-769.1 228,-762.1 225.55,-769.1 230.45,-769.1" />
+<g id="recovery_vertical-a_edge2-label"><a xlink:href="#t28" xlink:title="전이조건 28 보기">
+<text text-anchor="middle" x="237.5" y="-805.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">28</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-edge5" class="edge">
+<title>H-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M156.48,-884.72C89.62,-851.06 0,-789.75 0,-703 0,-703 0,-703 0,-273 0,-190.88 80.41,-130.95 144.66,-96.16" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="146.19,-98.12 151.21,-92.66 143.88,-93.79 146.19,-98.12" />
+<g id="recovery_vertical-a_edge5-label"><a xlink:href="#t31" xlink:title="전이조건 31 보기">
+<text text-anchor="middle" x="9.5" y="-484.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">31</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-edge3" class="edge">
+<title>R-&gt;S</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M251.68,-641.95C262.55,-614.84 275.47,-582.6 286.65,-554.72" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="288.97,-555.51 289.3,-548.1 284.42,-553.69 288.97,-555.51" />
+<g id="recovery_vertical-a_edge3-label"><a xlink:href="#t29" xlink:title="전이조건 29 보기">
+<text text-anchor="middle" x="283.5" y="-591.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">29</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-edge6" class="edge">
+<title>R-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M217.99,-641.98C213.67,-613.65 209.13,-579.16 207,-548 196.75,-397.89 208.46,-221.28 216.57,-127.45" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="219.03,-127.48 217.2,-120.29 214.15,-127.05 219.03,-127.48" />
+<g id="recovery_vertical-a_edge6-label"><a xlink:href="#t31" xlink:title="전이조건 31 보기">
+<text text-anchor="middle" x="213.5" y="-377.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">31</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-edge4" class="edge">
+<title>S-&gt;D</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M356.18,-427.95C376.16,-400.61 399.97,-368.05 420.47,-340.01" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="422.63,-341.2 424.79,-334.1 418.68,-338.31 422.63,-341.2" />
+<g id="recovery_vertical-a_edge4-label"><a xlink:href="#t30" xlink:title="전이조건 30 보기">
+<text text-anchor="middle" x="405.5" y="-377.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">30</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-edge7" class="edge">
+<title>S-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M300.49,-427.77C283.82,-348.87 254.42,-209.72 237.02,-127.37" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="239.32,-126.41 235.48,-120.07 234.53,-127.43 239.32,-126.41" />
+<g id="recovery_vertical-a_edge7-label"><a xlink:href="#t31" xlink:title="전이조건 31 보기">
+<text text-anchor="middle" x="289.5" y="-270.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">31</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-edge9" class="edge">
+<title>D-&gt;I</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M476.6,-334.26C482.02,-376.69 488,-435.24 488,-487 488,-917 488,-917 488,-917 488,-970.97 458.99,-1024.44 430.23,-1064.18" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="428.17,-1062.85 426,-1069.94 432.12,-1065.76 428.17,-1062.85" />
+<g id="recovery_vertical-a_edge9-label"><a xlink:href="#t32" xlink:title="전이조건 32 보기">
+<text text-anchor="middle" x="497.5" y="-698.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">32</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-edge8" class="edge">
+<title>D-&gt;F</title>
+<path fill="none" stroke="#90a0b3" stroke-width="1.1" d="M417.44,-213.96C400.3,-195.25 380.53,-175.03 361,-158 342.32,-141.71 320.9,-125.59 300.6,-111.3" />
+<polygon fill="#90a0b3" stroke="#90a0b3" stroke-width="1.1" points="301.77,-109.13 294.63,-107.13 298.96,-113.15 301.77,-109.13" />
+<g id="recovery_vertical-a_edge8-label"><a xlink:href="#t31" xlink:title="전이조건 31 보기">
+<text text-anchor="middle" x="389.5" y="-163.2" font-family="Noto Sans CJK KR" font-size="16.00" fill="#2456a6">31</text>
+</a>
+</g>
+</g>
+
+<g id="recovery_vertical-node1" class="node">
+<title>I</title>
+<path fill="#fff0ef" stroke="#d78680" stroke-width="1.15" d="M419,-1190C419,-1190 329,-1190 329,-1190 323,-1190 317,-1184 317,-1178 317,-1178 317,-1082 317,-1082 317,-1076 323,-1070 329,-1070 329,-1070 419,-1070 419,-1070 425,-1070 431,-1076 431,-1082 431,-1082 431,-1178 431,-1178 431,-1184 425,-1190 419,-1190" />
+<text text-anchor="start" x="356" y="-1154.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">IDLE</text>
+<text text-anchor="start" x="348" y="-1124.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 대기</text>
+<text text-anchor="start" x="357" y="-1097.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="recovery_vertical-node2" class="node">
+<title>H</title>
+<path fill="#fff0ef" stroke="#d78680" stroke-width="1.15" d="M287.5,-976C287.5,-976 168.5,-976 168.5,-976 162.5,-976 156.5,-970 156.5,-964 156.5,-964 156.5,-868 156.5,-868 156.5,-862 162.5,-856 168.5,-856 168.5,-856 287.5,-856 287.5,-856 293.5,-856 299.5,-862 299.5,-868 299.5,-868 299.5,-964 299.5,-964 299.5,-970 293.5,-976 287.5,-976" />
+<text text-anchor="start" x="206" y="-940.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">HOLD</text>
+<text text-anchor="start" x="188" y="-910.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 회복 참조</text>
+<text text-anchor="start" x="211.5" y="-883.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="recovery_vertical-node3" class="node">
+<title>R</title>
+<path fill="#fff0ef" stroke="#d78680" stroke-width="1.15" d="M308,-762C308,-762 148,-762 148,-762 142,-762 136,-756 136,-750 136,-750 136,-654 136,-654 136,-648 142,-642 148,-642 148,-642 308,-642 308,-642 314,-642 320,-648 320,-654 320,-654 320,-750 320,-750 320,-756 314,-762 308,-762" />
+<text text-anchor="start" x="192.5" y="-726.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">REVERSE</text>
+<text text-anchor="start" x="167" y="-696.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 후방 직선 제어점</text>
+<text text-anchor="start" x="201.5" y="-669.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · −0.3</text>
+</g>
+
+<g id="recovery_vertical-node4" class="node">
+<title>S</title>
+<path fill="#fff0ef" stroke="#d78680" stroke-width="1.15" d="M372.5,-548C372.5,-548 253.5,-548 253.5,-548 247.5,-548 241.5,-542 241.5,-536 241.5,-536 241.5,-440 241.5,-440 241.5,-434 247.5,-428 253.5,-428 253.5,-428 372.5,-428 372.5,-428 378.5,-428 384.5,-434 384.5,-440 384.5,-440 384.5,-536 384.5,-536 384.5,-542 378.5,-548 372.5,-548" />
+<text text-anchor="start" x="284.5" y="-512.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">SETTLE</text>
+<text text-anchor="start" x="273" y="-482.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 회복 참조</text>
+<text text-anchor="start" x="296.5" y="-455.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="recovery_vertical-node5" class="node">
+<title>D</title>
+<path fill="#fff0ef" stroke="#d78680" stroke-width="1.15" d="M527.5,-334C527.5,-334 408.5,-334 408.5,-334 402.5,-334 396.5,-328 396.5,-322 396.5,-322 396.5,-226 396.5,-226 396.5,-220 402.5,-214 408.5,-214 408.5,-214 527.5,-214 527.5,-214 533.5,-214 539.5,-220 539.5,-226 539.5,-226 539.5,-322 539.5,-322 539.5,-328 533.5,-334 527.5,-334" />
+<text text-anchor="start" x="445.5" y="-298.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">DONE</text>
+<text text-anchor="start" x="428" y="-268.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 회복 참조</text>
+<text text-anchor="start" x="451.5" y="-241.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+
+<g id="recovery_vertical-node6" class="node">
+<title>F</title>
+<path fill="#fff0ef" stroke="#d78680" stroke-width="1.15" d="M282.5,-120C282.5,-120 163.5,-120 163.5,-120 157.5,-120 151.5,-114 151.5,-108 151.5,-108 151.5,-12 151.5,-12 151.5,-6 157.5,0 163.5,0 163.5,0 282.5,0 282.5,0 288.5,0 294.5,-6 294.5,-12 294.5,-12 294.5,-108 294.5,-108 294.5,-114 288.5,-120 282.5,-120" />
+<text text-anchor="start" x="199.5" y="-84.2" font-family="Noto Sans CJK KR" font-weight="bold" font-size="16.00" fill="#17304b">FAULT</text>
+<text text-anchor="start" x="183" y="-54.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#2a6b9e">횡 · 회복 참조</text>
+<text text-anchor="start" x="206.5" y="-27.8" font-family="Noto Sans CJK KR" font-size="14.00" fill="#277c64">종 · 0</text>
+</g>
+</g>
+</g><text x="7560" y="8470" font-size="36" fill="#96524c" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">완료 후 진입 직전 운행 상태 복원</text><text x="7560" y="8560" font-size="31" fill="#6b7d8e" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">FAULT는 같은 요청에서 자동 재시도 없음</text></g></g><g id="parent-transitions"><g class="main-edge" data-transition="1" data-kind="parent"><path d="M 1350 850 L 1350 1300" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t1" xlink:title="전이조건 1"><rect x="1307" y="1035" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="1350" y="1085" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">1</text></a></g><g class="main-edge" data-transition="2" data-kind="parent"><path d="M 2500 1300 L 2500 850" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t2" xlink:title="전이조건 2"><rect x="2457" y="1095" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="2500" y="1145" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">2</text></a></g><g class="main-edge" data-transition="3" data-kind="parent"><path d="M 8400 1300 L 8400 850" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t3" xlink:title="전이조건 3"><rect x="8357" y="1035" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="8400" y="1085" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">3</text></a></g><g class="main-edge" data-transition="4" data-kind="parent"><path d="M 8350 550 L 8350 440 L 1700 440 L 1700 550" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t4" xlink:title="전이조건 4"><rect x="5057" y="405" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="5100" y="455" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">4</text></a></g><g class="main-edge" data-transition="10" data-kind="parent"><path d="M 3350 2530 L 3950 2530" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t10" xlink:title="전이조건 10"><rect x="3607" y="2495" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="3650" y="2545" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">10</text></a></g><g class="main-edge" data-transition="12" data-kind="parent"><path d="M 3950 2840 L 3350 2840" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t12" xlink:title="전이조건 12"><rect x="3607" y="2805" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="3650" y="2855" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">12</text></a></g><g class="main-edge" data-transition="13" data-kind="parent"><path d="M 3950 3160 L 3350 3160" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t13" xlink:title="전이조건 13"><rect x="3607" y="3125" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="3650" y="3175" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">13</text></a></g><g class="main-edge" data-transition="18" data-kind="parent"><path d="M 1480 3400 L 1480 4050" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t18" xlink:title="전이조건 18"><rect x="1437" y="3675" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="1480" y="3725" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">18</text></a></g><g class="main-edge" data-transition="21" data-kind="parent"><path d="M 2320 4050 L 2320 3400" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t21" xlink:title="전이조건 21"><rect x="2277" y="3735" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="2320" y="3785" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">21</text></a></g><g class="main-edge" data-transition="22" data-kind="parent"><path d="M 2780 4050 L 2780 3400" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t22" xlink:title="전이조건 22"><rect x="2737" y="3665" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="2780" y="3715" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">22</text></a></g><g class="main-edge" data-transition="14" data-kind="parent"><path d="M 3350 3290 L 3470 3290 L 3470 4230 L 3950 4230" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t14" xlink:title="전이조건 14"><rect x="3427" y="3725" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="3470" y="3775" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">14</text></a></g><g class="main-edge" data-transition="14" data-kind="parent"><path d="M 5300 3400 L 5300 4050" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t14" xlink:title="전이조건 14"><rect x="5257" y="3685" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="5300" y="3735" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">14</text></a></g><g class="main-edge" data-transition="14" data-kind="parent"><path d="M 3350 4800 L 3950 4800" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t14" xlink:title="전이조건 14"><rect x="3607" y="4765" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="3650" y="4815" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">14</text></a></g><g class="main-edge" data-transition="16" data-kind="parent"><path d="M 3950 4660 L 3780 4660 L 3780 3500 L 3020 3500 L 3020 3400" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t16" xlink:title="전이조건 16"><rect x="3737" y="3765" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="3780" y="3815" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">16</text></a></g><g class="main-edge" data-transition="14" data-kind="internal"><path d="M 4720 4590 L 4720 4930" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t14" xlink:title="전이조건 14"><rect x="4677" y="4720" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="4720" y="4770" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">14</text></a></g><g class="main-edge" data-transition="16" data-kind="internal"><path d="M 6130 4930 L 6130 4590" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t16" xlink:title="전이조건 16"><rect x="6087" y="4735" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="6130" y="4785" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">16</text></a></g><g class="main-edge" data-transition="15" data-kind="internal"><path d="M 6620 5180 L 6700 5180 L 6700 5310 L 6620 5310" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t15" xlink:title="전이조건 15"><rect x="6657" y="5210" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="6700" y="5260" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">15</text></a></g><g class="main-edge" data-transition="23" data-kind="parent"><path d="M 7150 2010 L 7500 2010" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t23" xlink:title="전이조건 23"><rect x="7287" y="1975" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="7330" y="2025" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">23</text></a></g><g class="main-edge" data-transition="24" data-kind="parent"><path d="M 7500 2330 L 7330 2330 L 7330 2640 L 7150 2640" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t24" xlink:title="전이조건 24"><rect x="7287" y="2525" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="7330" y="2575" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">24</text></a></g><g class="main-edge" data-transition="25" data-kind="parent"><path d="M 7150 5450 L 7500 5450" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t25" xlink:title="전이조건 25"><rect x="7282" y="5415" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="7325" y="5465" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">25</text></a></g><g class="main-edge" data-transition="25" data-kind="parent"><path d="M 8600 2470 L 8600 3010" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t25" xlink:title="전이조건 25"><rect x="8557" y="2695" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="8600" y="2745" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">25</text></a></g><g class="main-edge" data-transition="26" data-kind="parent"><path d="M 7500 5830 L 7055 5830" fill="none" stroke="#315d94" stroke-width="6" marker-end="url(#parent-arrow)" stroke-linecap="round" stroke-linejoin="round" /><a xlink:href="#t26" xlink:title="전이조건 26"><rect x="7287" y="5795" width="86" height="70" rx="14" fill="#fff" stroke="#bfd1e7" stroke-width="2" /><text x="7330" y="5845" font-size="42" fill="#2456a6" font-weight="800" text-anchor="middle" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">26</text></a></g></g><text x="130" y="9650" font-size="39" fill="#355570" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">상위 블록 사이 화살표: 제어권 전환    ·    블록 안 화살표: 하위 상태 전이    ·    H: 저장된 진입 직전 상태 조합으로 복귀</text><text x="130" y="9730" font-size="34" fill="#5a7085" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">신호·회피·미션·경로는 코드에서 함께 갱신되는 상태입니다. 중첩은 제어 관계를 표현하며, 상위 화살표가 다른 상태 값을 모두 지운다는 뜻은 아닙니다.</text><text x="130" y="9810" font-size="34" fill="#5a7085" font-weight="400" text-anchor="start" font-family="Noto Sans CJK KR, Malgun Gothic, sans-serif">독립 E-stop 실행·구독 제외 / 상위 ESTOP 회복 실행기 연결. 운전자 stop·CAN 고장·무효 참조는 목표속도 0을 우선합니다.</text></svg></div></div></section><section class="section" id="outputs"><div class="section-title"><span class="section-no">02</span><h2>횡방향 · 종방향 설정</h2></div><p class="caption">선택 참조가 유효하고 상위 정지 조건이 없을 때의 기본값입니다. 실행 인자로 속도를 바꾸면 실제 설정이 우선합니다. 현재 동작 중인 차량에서 읽은 값은 아닙니다.</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">상태 / 동작</th><th scope="col">CAN 출력 상태</th><th scope="col">횡방향 경로</th><th scope="col">종방향 목표속도 (m/s)</th><th scope="col">기본 속도 결정권</th></tr></thead><tbody><tr><td>LINE</td><td>0 LANE</td><td>카메라 차선</td><td>2.0</td><td>NAVIGATION</td></tr><tr><td>GPS_BACKUP</td><td>1 WAYPOINT</td><td>FIXED GPS</td><td>2.0</td><td>NAVIGATION</td></tr><tr><td>GPS_ONLY_NAV</td><td>1 WAYPOINT</td><td>FIXED GPS 강제</td><td>2.0 · GPS 무효 시 0, 차선 대체 금지</td><td>NAVIGATION</td></tr><tr><td>AVOID_ACTIVE</td><td>2 AVOID</td><td>회피 모듈 경로</td><td>회피 제안속도, 상한 1.0 · 좁은 통로 플래그 시 상한 0.2</td><td>AVOIDANCE</td></tr><tr><td>GPS_RETURN</td><td>2 AVOID</td><td>FIXED GPS</td><td>최대 1.0</td><td>AVOIDANCE</td></tr><tr><td>주차 ACTIVE · 초기 준비</td><td>3 PARKING</td><td>GPS</td><td>벽 획득 완료 전 0</td><td>MISSION</td></tr><tr><td>주차 ACTIVE · 준비 중 탐색</td><td>3 PARKING</td><td>GPS</td><td>조건 충족 시 2.0 · T 주차 종점에서는 0</td><td>NAVIGATION</td></tr><tr><td>주차 ACTIVE · 실행 인계 대기</td><td>3 PARKING</td><td>주차 경로 선택</td><td>실행 활성 응답 확인 전 0</td><td>MISSION</td></tr><tr><td>T 주차 실행</td><td>3 PARKING</td><td>T 주차 실행기 경로</td><td>전진 +0.55 / 후진 −0.55 / 도킹 −0.15 / 정차 0 · 크기는 v_base로 제한</td><td>MISSION</td></tr><tr><td>평행 주차 실행</td><td>3 PARKING</td><td>기존 평행 주차 경로</td><td>모듈의 정지·방향을 반영해 0 또는 ±2.0</td><td>MISSION</td></tr><tr><td>신호 접근 · 대기</td><td>보통 4 TRAFFIC</td><td>기존 횡방향 경로 유지</td><td>거리 감속 또는 0 · 회피와 겹치면 CAN 상태 2 유지 가능</td><td>TRAFFIC</td></tr><tr><td>SAFE_STOP</td><td>기존 CAN 상태</td><td>기존 선택 유지</td><td>0</td><td>SAFETY</td></tr><tr><td>ESTOP</td><td>5 ESTOP</td><td>회복 실행기 경로</td><td>0 또는 −0.3</td><td>SAFETY</td></tr><tr><td>FINISH</td><td>기존 CAN 상태</td><td>기존 선택 유지</td><td>0</td><td>FINISH</td></tr></tbody></table></div>
+<div class="grid-notes"><div class="note"><strong>CAN 상태와 경로의 차이</strong>GPS_RETURN은 CAN 2 AVOID를 유지하면서 GPS를 사용합니다. 주차 준비도 CAN 3 PARKING 상태에서 GPS를 사용합니다. 회피와 신호가 겹치면 CAN 2를 유지하면서 종방향 결정권은 TRAFFIC이 될 수 있습니다.</div><div class="note"><strong>출력 정지와 SAFE_STOP의 차이</strong>선택 참조의 신선도·기하·요청 ID 등이 무효이면 최종 목표속도는 0입니다. 현재 설정에서는 기존 상태를 유지하고 출력만 정지하는 경우가 있습니다. 운전자 stop과 CAN 고장은 ESTOP 회복보다 우선합니다.</div></div><div class="formula"><p><b>신호 접근 속도</b> · 남은 거리 d가 설정되었을 때</p><p>d &gt; 1.1m : min(기존 목표속도, 2.0 × clamp(d / 1.5, 0, 1))</p><p>d ≤ 1.1m : 0   /   STOPPED_WAIT : 0</p><p>거리 미설정: 기존 목표속도 유지</p></div><p class="caption">정지선 검출→소실마다 접근 거리를 1.5m로 설정합니다. 거리 적분은 현재 유효 실측 차속 → 마지막 유효 실측 차속 → 실측 이력이 없으면 직전 목표속도 순서입니다. 실제 정차 인증에는 유효 실측 차속만 사용합니다. v2의 목표속도는 상위에서 별도 가감속 램프 없이 전달하고 하위 제어기가 가감속을 담당합니다.</p></section>
+<section class="section" id="detail"><div class="section-title"><span class="section-no">03</span><h2>실행기 · 경로 읽기 메모</h2></div><p class="caption">T 주차 실행기는 PARKING → MISSION_ACTIVE 안에, 회복 실행기는 ESTOP 안에 배치했습니다. 경로 진행은 NORMAL의 내부 상태로 표시했습니다. 코드의 병렬 상태를 제어 관계에 따라 중첩 표현했습니다.</p>
+<div class="grid-notes"><div class="note"><strong>ESTOP 검출·재진입</strong>같은 센서의 새 유효 스캔만 집계합니다. 무효·오래된 입력에서는 카운터 유지, 정상 clear 관측에서는 초기화합니다. 회복 후 남아 있는 위험은 센서별 재진입을 억제하고 clear 이후 새 검출 3회를 요구합니다. 실행기 FAULT는 같은 요청에서 자동 재시도하지 않습니다.</div><div class="note"><strong>경로 응답 대기와 주차 일시정지</strong>WAIT_ACK 중 일반 구간에서는 유효 차선 주행이 가능합니다. GPS는 기존 경로의 원래 유효시간 안에서만 유지합니다. ESTOP 동안 T 주차 진행·타이머는 일시정지하고 복귀 후 정차 확인을 다시 시작합니다.</div></div></section>
+<section class="section" id="conditions"><div class="section-title"><span class="section-no">04</span><h2>전이조건 표</h2></div><p class="caption">같은 번호는 같은 조건을 뜻합니다. 상위 화살표는 제어권 전환, 하위 화살표는 내부 상태 전이이며 우선순위·복귀 범위는 각 행에 명시했습니다.</p><div class="filters"><input aria-label="전이조건 검색" id="query" placeholder="번호·상태·조건 검색: 25, GPS, 차속, 정차…" type="search"/><select aria-label="전이조건 계층" id="category"><option value="">모든 계층</option><option>최상위</option><option>주행</option><option>회피</option><option>주차</option><option>신호</option><option>안전</option><option>ESTOP 실행기</option><option>경로</option><option>T 주차 실행기</option></select><button class="btn" id="reset">검색 초기화</button></div><p aria-live="polite" class="count" id="count" role="status">47 / 47개 전이조건</p><div class="table-wrap"><table class="transition-table"><thead><tr><th scope="col">번호</th><th scope="col">계층</th><th scope="col">전이</th><th scope="col">전이조건</th></tr></thead><tbody>
+<tr data-category="최상위" id="t1"><td><a aria-label="전이조건 1" class="num" href="#t1">1</a></td><td><span class="group">최상위</span></td><td>ENABLE → DRIVE</td><td>go 인가 + 전·후·좌·우 raw LiDAR 준비 완료 + 카메라 영상 또는 유효 FIXED GPS 경로 확보. raw LiDAR 0.35초, 영상 1초, GPS 경로 0.5초 이내. 차선 검출 자체는 인가 필수조건이 아님.</td></tr>
+<tr data-category="최상위" id="t2"><td><a aria-label="전이조건 2" class="num" href="#t2">2</a></td><td><span class="group">최상위</span></td><td>DRIVE → ENABLE</td><td>운전자 stop 등으로 자율주행 인가 해제. 목표속도 0. ESTOP이 이미 활성화되어 있으면 그 상태는 보존될 수 있음.</td></tr>
+<tr data-category="최상위" id="t3"><td><a aria-label="전이조건 3" class="num" href="#t3">3</a></td><td><span class="group">최상위</span></td><td>DRIVE → FINISH</td><td>최종 경로 종점 도착 + 필요한 미션 처리 완료 + 다른 전이 제한 해소 + 유효 실측 차속 절댓값 ≤0.001 m/s.</td></tr>
+<tr data-category="최상위" id="t4"><td><a aria-label="전이조건 4" class="num" href="#t4">4</a></td><td><span class="group">최상위</span></td><td>FINISH → ENABLE</td><td>새 prepare 세션 시작. go만으로 FINISH를 해제하지 않음. 새 세션은 운용 상태와 미션 기록을 초기화함.</td></tr>
+<tr data-category="주행" id="t5"><td><a aria-label="전이조건 5" class="num" href="#t5">5</a></td><td><span class="group">주행</span></td><td>LINE → GPS_BACKUP</td><td>차선 경로 무효이면 즉시, 또는 차선 신뢰도 &lt;0.35를 제어 50주기 확인. GPS가 무효여도 상태는 전환될 수 있으나 유효 참조가 없으면 목표속도 0.</td></tr>
+<tr data-category="주행" id="t6"><td><a aria-label="전이조건 6" class="num" href="#t6">6</a></td><td><span class="group">주행</span></td><td>GPS_BACKUP → LINE</td><td>유효 차선 신뢰도 ≥0.70을 제어 50주기 확인하고 복귀 제한 해소. 일반 GPS 소실은 유효 차선으로 즉시 대체 가능. 저신뢰도 때문에 GPS가 필요했으나 GPS 무효로 대기한 경우에는 차선 복구 50주기 확인이 필요함.</td></tr>
+<tr data-category="주행" id="t7"><td><a aria-label="전이조건 7" class="num" href="#t7">7</a></td><td><span class="group">주행</span></td><td>LINE / GPS_BACKUP → GPS_ONLY_NAV</td><td>공용 회전·신호 zone [3] 진입을 독립 GNSS 관측 5회 확인. GPS 주행은 FIXED만 허용하지만 zone 위치 관측은 유효 FLOAT도 허용.</td></tr>
+<tr data-category="주행" id="t8"><td><a aria-label="전이조건 8" class="num" href="#t8">8</a></td><td><span class="group">주행</span></td><td>GPS_ONLY_NAV → LINE</td><td>zone 이탈을 독립 GNSS 관측 5회 확인하고 차선 복귀 조건 충족. GPS 무효를 zone 이탈로 간주하지 않음.</td></tr>
+<tr data-category="주행" id="t9"><td><a aria-label="전이조건 9" class="num" href="#t9">9</a></td><td><span class="group">주행</span></td><td>GPS_ONLY_NAV → GPS_BACKUP</td><td>zone 이탈 확인 후 GPS 선택. 차선 복귀 조건 미충족 시 GPS 주행을 유지하며 GPS도 무효이면 정지.</td></tr>
+<tr data-category="회피" id="t10"><td><a aria-label="전이조건 10" class="num" href="#t10">10</a></td><td><span class="group">회피</span></td><td>INACTIVE → AVOID_ACTIVE</td><td>상위 화살표는 일반 주행에서 회피 제어권으로 인계됨을 표시. 주행 인가, 주차 미션 비활성, 회피 기능 활성 상태에서 미완료 회피 zone 진입 확인. 장애물 검출 전에도 zone 진입 자체가 회피 제어권을 확보함.</td></tr>
+<tr data-category="회피" id="t11"><td><a aria-label="전이조건 11" class="num" href="#t11">11</a></td><td><span class="group">회피</span></td><td>AVOID_ACTIVE → GPS_RETURN</td><td>해당 회피 중 장애물 검출 이력 존재 + 현재 유효 회피 입력에서 장애물 없음 + avoid_maneuver_done. 회피 zone의 해당 회차를 완료 처리.</td></tr>
+<tr data-category="회피" id="t12"><td><a aria-label="전이조건 12" class="num" href="#t12">12</a></td><td><span class="group">회피</span></td><td>GPS_RETURN → INACTIVE</td><td>상위 화살표는 GPS 정렬 후 일반 주행 제어권 복귀를 표시. 유효 FIXED GPS와 헤딩·오차 관측 확보. 횡오차 절댓값 ≤0.10m, 방향오차 절댓값 ≤20°. 이후 일반 주행 경로 재선택.</td></tr>
+<tr data-category="회피" id="t13"><td><a aria-label="전이조건 13" class="num" href="#t13">13</a></td><td><span class="group">회피</span></td><td>AVOID_ACTIVE / GPS_RETURN → INACTIVE</td><td>상위 초기화 화살표는 회피 해제 효과를 표시하며, 주차가 활성화되어 있으면 최종 출력은 PARKING이 우선. 주차 미션 활성화, 최상위 DRIVE 해제, 회피 기능 비활성화 또는 새 경로 확정에 따른 초기화. 단순 zone 이탈만으로 진행 중 회피를 완료 처리하지 않음.</td></tr>
+<tr data-category="주차" id="t14"><td><a aria-label="전이조건 14" class="num" href="#t14">14</a></td><td><span class="group">주차</span></td><td>MISSION_IDLE → MISSION_ACTIVE</td><td>일반 주행·회피·신호 중에도 동일 조건으로 주차가 상위 제어권을 확보. 유효 주차 zone 신규 진입 확인. 해당 미션의 완료·실패 기록이 없고, 경로 전환 대기·연결 구간·경로 고장 등의 진입 제한이 없어야 함. 별도 MISSION_PREPARE 없이 ACTIVE 직접 진입.</td></tr>
+<tr data-category="주차" id="t15"><td><a aria-label="전이조건 15" class="num" href="#t15">15</a></td><td><span class="group">주차</span></td><td>MISSION_ACTIVE 내부 실행 인계</td><td>같은 요청 ID·미션 종류의 신선한 준비 응답 + 벽 획득 완료 + 준비 경로 유효 → ACTIVATE 인계. 이후 새 실행 활성 응답을 확인해야 주차 경로로 이동 가능. 상태 이름은 ACTIVE 유지.</td></tr>
+<tr data-category="주차" id="t16"><td><a aria-label="전이조건 16" class="num" href="#t16">16</a></td><td><span class="group">주차</span></td><td>MISSION_ACTIVE → MISSION_IDLE</td><td>완료·취소 후 일반 주행을 재선택하되 남은 신호·안전 조건을 다시 적용. 실행 인계·활성 응답을 확인한 미션의 유효 완료 응답 또는 명시적 취소. 평행 주차는 미완료 상태에서 경로 종점에 도달하면 실패·취소. T 주차는 전진 복귀 완료까지 유지. 세션 초기화·운행 종료 취소도 해당.</td></tr>
+<tr data-category="신호" id="t17"><td><a aria-label="전이조건 17" class="num" href="#t17">17</a></td><td><span class="group">신호</span></td><td>SIGNAL_IDLE → RED_DETECTED</td><td>zone [3] 내부에서 신선한 적색 활성 판단 수신. 적색만으로 감속·정지하지 않음.</td></tr>
+<tr data-category="신호" id="t18"><td><a aria-label="전이조건 18" class="num" href="#t18">18</a></td><td><span class="group">신호</span></td><td>RED_DETECTED → APPROACH_STOP_LINE</td><td>일반 주행→신호 블록 화살표는 주차 실행·회피 등 우선 제어가 없는 경우의 신호 제어권 인계. 회피가 이미 활성화되어 있으면 횡방향과 CAN AVOID를 유지하고 신호는 속도만 제한. 신선한 입력에서 적색 활성 + 정지선 검출. 두 조건이 동시에 들어오면 같은 제어 주기에 접근 상태까지 진행 가능.</td></tr>
+<tr data-category="신호" id="t19"><td><a aria-label="전이조건 19" class="num" href="#t19">19</a></td><td><span class="group">신호</span></td><td>APPROACH_STOP_LINE 내부 거리 재설정</td><td>신선한 정지선 검출→소실 edge 확인 시 남은 거리 1.5m 설정. 접근 중 재검출→재소실마다 다시 설정. STOPPED_WAIT에서는 재설정하지 않음.</td></tr>
+<tr data-category="신호" id="t20"><td><a aria-label="전이조건 20" class="num" href="#t20">20</a></td><td><span class="group">신호</span></td><td>APPROACH_STOP_LINE → STOPPED_WAIT</td><td>거리 설정 이력 존재 + 남은 거리 ≤1.1m + 유효 실측 차속 절댓값 ≤0.001 m/s. 목표속도 0 명령만으로 실제 정차를 인정하지 않음.</td></tr>
+<tr data-category="신호" id="t21"><td><a aria-label="전이조건 21" class="num" href="#t21">21</a></td><td><span class="group">신호</span></td><td>RED / APPROACH / STOPPED → SIGNAL_IDLE</td><td>상위 복귀 화살표는 신호 속도 제한 해제 효과를 표시하며 다른 독립 정지·미션 조건은 유지. 신선한 메시지에서 적색 활성 해제 확인. 초록 검출은 필수가 아님. 메시지 소실 자체는 적색 해제 조건이 아님.</td></tr>
+<tr data-category="신호" id="t22"><td><a aria-label="전이조건 22" class="num" href="#t22">22</a></td><td><span class="group">신호</span></td><td>RED / APPROACH / STOPPED → SIGNAL_IDLE</td><td>공용 신호 zone 활성 상태 변경에 따른 초기화. zone 이탈 시 신호 인식 종료 및 적색·거리 이력 초기화. 적색 정차 중 zone 이탈은 정의된 운용 범위 밖이지만 초기화 로직은 존재함.</td></tr>
+<tr data-category="안전" id="t23"><td><a aria-label="전이조건 23" class="num" href="#t23">23</a></td><td><span class="group">안전</span></td><td>NORMAL → SAFE_STOP</td><td>NORMAL 전체에서 SAFE_STOP 게이트로 연결. 내부 운행 상태는 보존. 감시 대상 카메라 2개·전/좌/우 LiDAR·GPS 모두 소실 또는 경로 FAULT. 후방 LiDAR만 살아 있어도 전체 감시 센서 소실로 판단. ESTOP 중에는 전체 감시 센서 소실만으로 회복을 취소하지 않음.</td></tr>
+<tr data-category="안전" id="t24"><td><a aria-label="전이조건 24" class="num" href="#t24">24</a></td><td><span class="group">안전</span></td><td>SAFE_STOP → NORMAL</td><td>NORMAL 운행 상태 조합으로 돌아가며 실제 이동은 유효 참조와 다른 정지 조건 해소가 필요. 모든 정지 사유 해소. 센서 소실 사유는 감시 센서 하나 복구 시 해소 가능하지만 실제 재출발에는 유효 경로와 나머지 조건도 필요. 경로 FAULT는 원인 수정 후 새 세션 필요.</td></tr>
+<tr data-category="안전" id="t25"><td><a aria-label="전이조건 25" class="num" href="#t25">25</a></td><td><span class="group">안전</span></td><td>NORMAL / SAFE_STOP → ESTOP</td><td>NORMAL 안의 일반 주행·회피·주차·신호 어느 상태에도 공통 적용. DRIVE 및 외부 정지 해제 상태에서 차체 외곽 기준 전방 ≤0.25m 또는 좌/우 ≤0.15m를 같은 센서의 새 유효 스캔 3회 확인. 센서 유효시간 0.35초. 주차 중에도 진입 가능.</td></tr>
+<tr data-category="안전" id="t26"><td><a aria-label="전이조건 26" class="num" href="#t26">26</a></td><td><span class="group">안전</span></td><td>ESTOP → NORMAL + 진입 직전 상태 복원</td><td>H는 코드에 새로 추가한 상태가 아니라 저장된 Nav/Avoid/Mission/Signal 조합을 복원하는 상태도 표기. 현재 요청 ID와 일치하는 신선한 회복 완료 응답 + DRIVE 유지 + 외부 정지 없음. Nav/Avoid/Mission/Signal의 진입 직전 상태를 복원. 장애물 소실만으로 해제하지 않음.</td></tr>
+<tr data-category="ESTOP 실행기" id="t27"><td><a aria-label="전이조건 27" class="num" href="#t27">27</a></td><td><span class="group">ESTOP 실행기</span></td><td>IDLE → HOLD</td><td>새 상위 ESTOP 요청 활성화. 새 요청 ID를 기준으로 대기·후진 거리·단계 초기화.</td></tr>
+<tr data-category="ESTOP 실행기" id="t28"><td><a aria-label="전이조건 28" class="num" href="#t28">28</a></td><td><span class="group">ESTOP 실행기</span></td><td>HOLD → REVERSE</td><td>정상 인가 중 실제 전진 차속 &gt;0.02 m/s 관측으로 사전 활성화. 실측 차속 절댓값 ≤0.02로 10초 연속 정차 + 인가·CAN 정상 + 후방 통로 확인. 차체 뒤 1.25m, 반폭 0.41m 범위의 유효 관측 필요.</td></tr>
+<tr data-category="ESTOP 실행기" id="t29"><td><a aria-label="전이조건 29" class="num" href="#t29">29</a></td><td><span class="group">ESTOP 실행기</span></td><td>REVERSE → SETTLE</td><td>새 실측 음수 차속의 사다리꼴 적분으로 후진 거리 1.0m 이상. 중복 차속 타임스탬프는 거리를 증가시키지 않음.</td></tr>
+<tr data-category="ESTOP 실행기" id="t30"><td><a aria-label="전이조건 30" class="num" href="#t30">30</a></td><td><span class="group">ESTOP 실행기</span></td><td>SETTLE → DONE</td><td>거리 도달 이후 새 차속 관측에서 절댓값 ≤0.02 m/s 확인. 해당 요청 ID의 done 전송.</td></tr>
+<tr data-category="ESTOP 실행기" id="t31"><td><a aria-label="전이조건 31" class="num" href="#t31">31</a></td><td><span class="group">ESTOP 실행기</span></td><td>진행 단계 → FAULT</td><td>시간 역행, REVERSE 이후 인가·차속·후방 관측 소실, 후진 중 반대 방향 이동, 차속 피드백 간격 초과, 5초 안에 1m 미달 등 단계별 고장. HOLD에서 일반적인 인가·차속 미충족은 대기시간을 초기화하고 대기.</td></tr>
+<tr data-category="ESTOP 실행기" id="t32"><td><a aria-label="전이조건 32" class="num" href="#t32">32</a></td><td><span class="group">ESTOP 실행기</span></td><td>DONE → IDLE</td><td>상위 MGM이 완료를 받아 ESTOP 비활성화. 실행기는 상위 비활성 시 IDLE로 초기화되지만 FAULT에서 같은 요청의 자동 재시도는 없음. 고장은 새 prepare 세션에서 재평가.</td></tr>
+<tr data-category="경로" id="t33"><td><a aria-label="전이조건 33" class="num" href="#t33">33</a></td><td><span class="group">경로</span></td><td>DISABLED → RUNNING</td><td>초기 경로 메타데이터 정상, 시작 인덱스와 요청 응답 검증 완료. DISABLED는 초기화·비활성 상태.</td></tr>
+<tr data-category="경로" id="t34"><td><a aria-label="전이조건 34" class="num" href="#t34">34</a></td><td><span class="group">경로</span></td><td>RUNNING → WAIT_MISSION</td><td>새 유효 GPS에서 종점 미도착→도착 확인, 필요한 미션 완료·실패 기록은 아직 미충족. 활성 주차 미션이 있으면 그 미션 처리가 우선.</td></tr>
+<tr data-category="경로" id="t35"><td><a aria-label="전이조건 35" class="num" href="#t35">35</a></td><td><span class="group">경로</span></td><td>RUNNING / WAIT_MISSION → WAIT_STOP</td><td>종점 도착 + 필요한 미션이 완료 또는 실패로 처리됨. 아직 남은 신호·인가 등의 전이 제한이 있으면 대기.</td></tr>
+<tr data-category="경로" id="t36"><td><a aria-label="전이조건 36" class="num" href="#t36">36</a></td><td><span class="group">경로</span></td><td>WAIT_STOP → WAIT_ACK</td><td>중간 경로이며 인가·신호·독립 정지 등의 제한 해소 → 다음 경로 또는 연결 경로 요청. 실제 정차는 요구하지 않으며 같은 제어 주기에 WAIT_ACK까지 진행 가능.</td></tr>
+<tr data-category="경로" id="t37"><td><a aria-label="전이조건 37" class="num" href="#t37">37</a></td><td><span class="group">경로</span></td><td>WAIT_ACK → RUNNING</td><td>요청 ID·경로 인덱스·연결 여부 일치 + 요청 이후의 새 유효 FIXED GPS 세대 확인. 오래된 GPS 캐시는 새 ACK로 인정하지 않음.</td></tr>
+<tr data-category="경로" id="t38"><td><a aria-label="전이조건 38" class="num" href="#t38">38</a></td><td><span class="group">경로</span></td><td>WAIT_STOP → FINISHED</td><td>최종 경로이며 전이 제한 해소 + 유효 실측 차속 절댓값 ≤0.001 m/s. 최상위도 FINISH로 전환.</td></tr>
+<tr data-category="경로" id="t39"><td><a aria-label="전이조건 39" class="num" href="#t39">39</a></td><td><span class="group">경로</span></td><td>경로 진행 상태 → FAULT</td><td>경로 메타데이터·세션·요청 응답 불일치, 시간 역행, 요청 번호 한계 등 경로 계약 위반. 카메라가 정상이어도 목표속도 0.</td></tr>
+<tr data-category="T 주차 실행기" id="t40"><td><a aria-label="전이조건 40" class="num" href="#t40">40</a></td><td><span class="group">T 주차 실행기</span></td><td>STOP_SELECT → ADVANCE_3</td><td>실제 정차 확인 후 좌측 LiDAR에서 사용 가능한 주차 경로 후보를 새 관측 3회 확인. 기본 정차 판정은 실측 차속 절댓값 ≤0.035 m/s로 0.5초 유지.</td></tr>
+<tr data-category="T 주차 실행기" id="t41"><td><a aria-label="전이조건 41" class="num" href="#t41">41</a></td><td><span class="group">T 주차 실행기</span></td><td>ADVANCE_3 → STOP_REVERSE</td><td>경로 03 기하학적 종점 도달과 GPS 종점 판단 모두 충족.</td></tr>
+<tr data-category="T 주차 실행기" id="t42"><td><a aria-label="전이조건 42" class="num" href="#t42">42</a></td><td><span class="group">T 주차 실행기</span></td><td>STOP_REVERSE → REVERSE</td><td>실제 정차 확인 + 선택 후진 경로 시작 위치·방향 정렬 충족.</td></tr>
+<tr data-category="T 주차 실행기" id="t43"><td><a aria-label="전이조건 43" class="num" href="#t43">43</a></td><td><span class="group">T 주차 실행기</span></td><td>REVERSE → WAIT_10</td><td>도킹 구간의 후방 벽 거리 ≤0.50m를 새 관측 3회 확인하고 실제 정차 성공 판정. 0.50m는 후방 LiDAR 기준이며 차체 외곽 기준 ESTOP 거리와 다름.</td></tr>
+<tr data-category="T 주차 실행기" id="t44"><td><a aria-label="전이조건 44" class="num" href="#t44">44</a></td><td><span class="group">T 주차 실행기</span></td><td>WAIT_10 → EXIT</td><td>실제 정차 상태에서 10초 대기 완료. 속도 부호가 바뀌기 전 목표 0의 경계 출력을 유지.</td></tr>
+<tr data-category="T 주차 실행기" id="t45"><td><a aria-label="전이조건 45" class="num" href="#t45">45</a></td><td><span class="group">T 주차 실행기</span></td><td>EXIT → EXIT_STOP</td><td>실제로 후진한 경로를 역순으로 전진하여 복귀 종점 도달.</td></tr>
+<tr data-category="T 주차 실행기" id="t46"><td><a aria-label="전이조건 46" class="num" href="#t46">46</a></td><td><span class="group">T 주차 실행기</span></td><td>EXIT_STOP → DONE</td><td>복귀 후 실제 정차 확인 → 미션 완료 응답. 상위 MGM이 이후 경로 04 전환을 판단.</td></tr>
+<tr data-category="T 주차 실행기" id="t47"><td><a aria-label="전이조건 47" class="num" href="#t47">47</a></td><td><span class="group">T 주차 실행기</span></td><td>진행 단계 → FAULT</td><td>단계별 필수 센서·인가 소실, 경로 추종 오차, 장애물, 반대 방향 이동 등 실행 조건 위반. STOP_SELECT의 일반적인 입력 미충족은 대기. 상위 ESTOP은 어댑터에서 진행·타이머를 일시정지하고 복귀 후 정차 확인을 다시 시작.</td></tr>
+</tbody></table></div><p class="empty" hidden="" id="empty">검색 조건에 맞는 전이가 없습니다.</p></section>
+<section class="section" id="sources"><div class="section-title"><span class="section-no">05</span><h2>범위와 코드 근거</h2></div><div class="note"><strong>현재 상태 정의에서 제외</strong>CLEAR_CONFIRM · MISSION_PREPARE · AUTO_ESTOP · 구형 REVERSE_RECOVERY는 운용 상태 블록에서 제외했습니다. mission_prepare 출력과 ParkingCommand.PREPARE는 ACTIVE 내부의 초기화 명령이므로 유지됩니다. 지도 CSV의 state=5 지정 정지점과 CAN state=5 ESTOP은 서로 다른 번호 체계입니다.</div><p class="caption">현재 소스와 기본 런처 설정을 정리한 문서입니다. 이 HTML 작성 과정에서 주행 코드나 하드웨어 설정을 변경하지 않았습니다.</p><div class="source-list">
+<a href="STATE_V09_16.md">v09.16 명세</a>
+<a href="MGM_STATE_MACHINE_CHANGE_NOTES.md">요구사항·후속 결정</a>
+<a href="V2_PR108_INTEGRATION.md">ESTOP 회복 계약</a>
+<a href="../src/adas_mgm/core/manager_types.hpp">상태 선언</a>
+<a href="../src/adas_mgm/core/manager_step.cpp">상태 전이·출력</a>
+<a href="../src/adas_mgm/core/reference_safety.cpp">최종 참조 게이트</a>
+<a href="../src/adas_mgm/core/mission_step.cpp">미션 전이</a>
+<a href="../src/adas_mgm/core/route_step.cpp">경로 전이</a>
+<a href="../src/adas_mgm/core/estop_state.hpp">상위 ESTOP</a>
+<a href="../src/adas_mgm/tools/estop_recovery_core.py">ESTOP 실행기</a>
+<a href="../src/stack_parking/stack_parking/t_parking_sequence.py">T 주차 실행기</a>
+<a href="../src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py">drive 기본 설정</a>
+</div></section><footer class="footer">스테이트 v09.16 · integration/v2_main · 2026.09.17<br/>외부 스크립트·폰트·네트워크 요청 없이 블록도와 전이조건을 열람할 수 있습니다. 인쇄 / PDF 저장 시 전이조건 전체가 포함됩니다.</footer></main><a aria-label="문서 맨 위로 이동" class="backtop" href="#overview">↑ 맨 위</a>
+<script>
+const rows=[...document.querySelectorAll('.transition-table tbody tr')];
+const query=document.querySelector('#query'),category=document.querySelector('#category');
+function filterRows(){const q=query.value.trim().toLocaleLowerCase(),g=category.value;let count=0;for(const row of rows){const exactNumber=/^\d+$/.test(q);const match=exactNumber?row.id==='t'+Number(q):row.textContent.toLocaleLowerCase().includes(q);row.hidden=!!((g&&row.dataset.category!==g)||!match);if(!row.hidden)count++;}document.querySelector('#count').textContent=`${count} / ${rows.length}개 전이조건`;document.querySelector('#empty').hidden=count!==0;}
+query.addEventListener('input',filterRows);category.addEventListener('change',filterRows);
+function resetFilters(){query.value='';category.value='';filterRows();}
+document.querySelector('#reset').addEventListener('click',resetFilters);
+function revealTarget(){if(!/^#t\d+$/.test(location.hash))return;const row=document.getElementById(location.hash.slice(1));if(!row)return;resetFilters();requestAnimationFrame(()=>row.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}));}
+window.addEventListener('hashchange',revealTarget);
+document.addEventListener('click',event=>{const anchor=event.target.closest('a');if(!anchor)return;const href=anchor.getAttribute('href')||anchor.getAttribute('xlink:href');if(/^#t\d+$/.test(href||'')){resetFilters();if(location.hash===href)revealTarget();}});
+document.querySelector('#print').addEventListener('click',()=>window.print());
+for(const card of document.querySelectorAll('.diagram-card')){let zoom=1;const svg=card.querySelector('svg'),buttons=[...card.querySelectorAll('[data-zoom]')];function apply(){svg.style.width=`${100*zoom}%`;buttons.find(b=>b.dataset.zoom==='out').disabled=zoom<=1;buttons.find(b=>b.dataset.zoom==='in').disabled=zoom>=3;}for(const button of buttons)button.addEventListener('click',()=>{zoom=button.dataset.zoom==='fit'?1:Math.max(1,Math.min(3,zoom+(button.dataset.zoom==='in'?.25:-.25)));apply();});apply();}
+filterRows();revealTarget();
+
+const ov=document.getElementById('overview-viewer'),canvas=document.getElementById('overview-canvas'),drawing=canvas.querySelector('svg');
+const naturalW=Number(drawing.getAttribute('width')),naturalH=Number(drawing.getAttribute('height'));let scale=1,fitMode=true;
+function fitScale(){return Math.min(1,canvas.clientWidth/naturalW);}
+function applyScale(next,center=true){const old=scale,cx=(canvas.scrollLeft+canvas.clientWidth/2)/old,cy=(canvas.scrollTop+canvas.clientHeight/2)/old;scale=Math.max(.05,Math.min(2,next));drawing.style.width=(naturalW*scale)+'px';drawing.style.height=(naturalH*scale)+'px';document.getElementById('overview-scale').textContent=Math.round(scale*100)+'%';if(center){canvas.scrollLeft=cx*scale-canvas.clientWidth/2;canvas.scrollTop=cy*scale-canvas.clientHeight/2;}document.getElementById('overview-out').disabled=scale<=.05;document.getElementById('overview-in').disabled=scale>=2;}
+document.getElementById('overview-fit').onclick=()=>{fitMode=true;applyScale(fitScale(),false);canvas.scrollTo(0,0);};
+document.getElementById('overview-read').onclick=()=>{fitMode=false;applyScale(.75,false);canvas.scrollTo(Math.max(0,(naturalW*scale-canvas.clientWidth)/2),1300*scale);};
+document.getElementById('overview-native').onclick=()=>{fitMode=false;applyScale(1);};
+document.getElementById('overview-in').onclick=()=>{fitMode=false;applyScale(scale*1.25);};
+document.getElementById('overview-out').onclick=()=>{fitMode=false;applyScale(scale/1.25);};
+document.getElementById('overview-fullscreen').onclick=async()=>{try{if(document.fullscreenElement===ov)await document.exitFullscreen();else await ov.requestFullscreen();}catch(e){document.querySelector('.overview-hint').textContent='전체화면을 사용할 수 없습니다. SVG 원본 열기를 이용해 주세요.';}};
+document.addEventListener('fullscreenchange',()=>{document.getElementById('overview-fullscreen').textContent=document.fullscreenElement===ov?'전체화면 종료':'전체화면';if(fitMode)requestAnimationFrame(()=>applyScale(fitScale(),false));});
+window.addEventListener('resize',()=>{if(fitMode)applyScale(fitScale(),false);});
+let drag=null;
+canvas.addEventListener('pointerdown',e=>{if(e.pointerType==='touch'||e.button!==0||e.target.closest('a'))return;drag={x:e.clientX,y:e.clientY,l:canvas.scrollLeft,t:canvas.scrollTop};canvas.setPointerCapture(e.pointerId);canvas.classList.add('dragging');});
+canvas.addEventListener('pointermove',e=>{if(!drag)return;canvas.scrollLeft=drag.l-(e.clientX-drag.x);canvas.scrollTop=drag.t-(e.clientY-drag.y);});
+function endDrag(){drag=null;canvas.classList.remove('dragging');}canvas.addEventListener('pointerup',endDrag);canvas.addEventListener('pointercancel',endDrag);
+applyScale(fitScale(),false);
+</script></body></html>

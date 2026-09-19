@@ -1,0 +1,22 @@
+track: waypoints_halla_reference_path_03.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones:
+- start:
+    lat: 37.3040878
+    lon: 127.90742776
+    note: rectangle zone 3 entry
+  end:
+    lat: 37.30394414
+    lon: 127.90725877
+    note: user-extended zone 3 exit
+- start:
+    lat: 37.30391639
+    lon: 127.90722613
+    note: parking approach GPS-only entry
+  end:
+    lat: 37.3038968
+    lon: 127.90720308
+    note: parking approach GPS-only exit
+parking_points: []
+zones: []

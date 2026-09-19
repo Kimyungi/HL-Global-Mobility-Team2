@@ -1,0 +1,42 @@
+{
+  "connector_cases": 258,
+  "points_bit_identical": 27822,
+  "scenes": [
+    {
+      "gap_m": 3.3,
+      "method": "baseline",
+      "first_ms": 21.075887998449616,
+      "median_ms": 20.993054498831043
+    },
+    {
+      "gap_m": 3.3,
+      "method": "prototype",
+      "first_ms": 9.761837995029055,
+      "median_ms": 6.467422004789114
+    },
+    {
+      "gap_m": 2.0,
+      "method": "baseline",
+      "first_ms": 23.428025997418445,
+      "median_ms": 23.392839499138063
+    },
+    {
+      "gap_m": 2.0,
+      "method": "prototype",
+      "first_ms": 11.245794004935306,
+      "median_ms": 6.968108500586823
+    },
+    {
+      "gap_m": 0.7,
+      "method": "baseline",
+      "first_ms": 230.5735299960361,
+      "median_ms": 225.63783250006963
+    },
+    {
+      "gap_m": 0.7,
+      "method": "prototype",
+      "first_ms": 60.500906001834664,
+      "median_ms": 40.09857449636911
+    }
+  ]
+}

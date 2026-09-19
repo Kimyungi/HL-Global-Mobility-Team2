@@ -1,5 +1,8 @@
 # lidar_fusion_v2
 
+> 이 저장소의 v2 작업 폴더에서는 `./scripts/v2 lidar`로 실행한다.
+> `install_v2` 환경과 장치 복구 절차는 [LiDAR 준비 문서](../../docs/LIDAR_PREPARATION.md)를 참고한다.
+
 기존 합성 구현에 의존하지 않는 4대 2D LiDAR 통합 패키지이다. 앞(a1)을 좌표계의
 고정 기준으로 두고, 뒤(a2)·좌(b1)·우(b2)를 벽 관측으로 공동 보정한다. 각
 센서의 방향과 시야각은 설정 파일에서 한 번만 읽으며 프레임마다 변경하지 않는다.
@@ -65,6 +68,8 @@ flowchart TD
 ## 빌드 및 실행 순서
 
 1. 최초 1회 udev 규칙을 설치해 네 물리 포트를 고정한다.
+   아래 고정 ID_PATH는 당시 PC 배치다. USB 경로가 달라져 링크가 사라진 현재 v2 현장 복구는
+   [한라대 런북의 내부 일련번호 확인 절차](../adas_mgm/RUNBOOK_integration_v2_halla.md#라이다-4대가-unknown-error로-종료되며-devlidar_가-없을-때)를 사용한다.
 2. 워크스페이스에서 패키지를 빌드하고 환경을 적용한다.
 3. `bringup.launch.py`로 네 드라이버, 통합 노드와 전용 RViz를 실행한다.
 4. 로그의 `active=['a1', 'a2', 'b1', 'b2']`를 확인한다.

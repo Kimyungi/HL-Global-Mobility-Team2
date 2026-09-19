@@ -365,6 +365,18 @@ rviz2 -d "$HOME/FMA_ws/src/stack_gps/tools/waypoints/gps_view.rviz"
 `halla_reference_mission.yaml` 및 각 경로에 대응하는
 `zones_halla_reference_path_XX.yaml`에 저장된다. 경로 2의 YAML은 시작부터 끝까지
 GPS 전용 구간이라 카메라 전이 없이 waypoint로만 주행한다.
+각 CSV의 `state`는 `0=일반`, `1=T자 주차`, `2=평행 주차`,
+`3=신호등 인식 예상 지점`, `4=장애물 회피 시작`이다. `state=3`은 코스 표식이며 위치만으로
+TRAFFIC 전이를 강제하지 않는다. 적색과 정지선을 카메라로 인식했을 때만
+MGM이 TRAFFIC으로 전이한다. Path 3의 Zone 3은 현장 편집값인
+`idx 28~116`으로 연장되어 있다.
+Path 4의 state=4(idx 55)는 GPS 회피 시작 신호로 전달된다. v2는 시작 확인 후
+장애물 유무와 관계없이 회피 상태에 진입하고 실제 waypoint 복귀 완료로 종료한다.
+같은 시작 표식은 완료 뒤 반복하지 않는다. 자세한 조건은
+[회피 Zone 상태 전이](../../../../docs/AVOID_ZONE_ENTRY.md)를 따른다.
+Path 4는 마지막 직선을 1m 줄인 `(-63.042107, -71.940893)`에서 끝나고, Path 5는
+주차 후 복귀 지점 `(-64.335, -70.648)`에서 시작하므로 두 CSV의 끝점은
+의도적으로 일치하지 않는다.
 
 `parking_points`는 인덱스를 직접 쓰지 않고 위경도와 모드를 저장한다.
 `stack_gps` 기동 시 `parking_zone_span_m`(기본 1.0m) 폭의 현재 트랙 인덱스
@@ -373,11 +385,11 @@ GPS 전용 구간이라 카메라 전이 없이 waypoint로만 주행한다.
 ```yaml
 parking_points:
 - mode: perpendicular
-  lat: 37.30387291
-  lon: 127.90717306
+  lat: 37.30389680
+  lon: 127.90720308
 - mode: parallel
-  lat: 37.30358042
-  lon: 127.90682516
+  lat: 37.30357615
+  lon: 127.90682074
 ```
 
 경로·Zone·주차점 확인 그림은 MATLAB에서 다음 파일을 실행한다.

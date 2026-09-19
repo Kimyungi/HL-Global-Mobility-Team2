@@ -1,0 +1,17 @@
+# PR #105 map; physical Zone 3 = shared Traffic/GPS-only zone.
+# Other legacy GPS-only zones are excluded; parking and stop points are retained.
+track: halla_0919_path_07.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points: []
+turn_zones:
+- zone_id: 3
+  start:
+    lat: 37.30404006
+    lon: 127.9073902
+    note: rectangle zone 3 entry
+  end:
+    lat: 37.30408645
+    lon: 127.9074725
+    note: rectangle zone 3 exit

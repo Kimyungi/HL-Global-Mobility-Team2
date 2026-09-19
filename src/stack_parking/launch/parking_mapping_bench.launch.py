@@ -2,9 +2,12 @@
 
 The vehicle is driven by hand with a controller (not MGM). This launch brings
 up the real 4-LiDAR drivers with the `lidar_fusion_v2` fusion (PR #70) and the
-real CAN bridge so `stack_parking_node` builds its ICP motion prior from the
+real CAN bridge so `stack_parking_node` predicts its pose from the
 actual `/vehicle/vector` feedback (`VehicleVector.v`/`.str` — real actuator
 velocity/steering), exactly the signal path used on the vehicle.
+The default pose uses vehicle feedback plus GPS correction, without map ICP.
+Run `stack_gps` separately to supply real `/perception/gps_path` corrections;
+this bench does not start a GPS publisher.
 
 `lidar_fusion_v2` publishes two competing merges of the four sensors:
   - `/unified_lidar/cloud` — raw concatenation, overlaps kept as-is

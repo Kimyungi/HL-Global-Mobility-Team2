@@ -332,6 +332,16 @@ class TestTrafficStopLogic(unittest.TestCase):
         phase = update_red_phase_latch(phase, False, True)
         self.assertFalse(phase)
 
+    def test_red_absence_policy_releases_phase_and_stop_for_both_green_values(self):
+        for red in (False, True):
+            for green in (False, True):
+                with self.subTest(red=red, green=green):
+                    phase = update_red_phase_latch(True, red, green, resume_on_red_absence=True)
+                    self.assertEqual(phase, red)
+                    stop = update_stop_latch(True, phase, True, green, True,
+                                            resume_on_red_absence=True)
+                    self.assertEqual(stop, red)
+
     def test_unconfirmed_red_never_arms_red_phase(self):
         self.assertFalse(update_red_phase_latch(False, False, False))
 

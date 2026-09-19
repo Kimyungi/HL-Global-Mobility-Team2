@@ -1,14 +1,25 @@
 # Exit decision model
 
 `exit_decision_yolo26n.pt` detects the three-panel exit signal as one bounding box.
-Runtime integration is intentionally excluded from this model-only change.
+The original model-only PR #83 is now connected to MGM through `stack_exit_decision.node`.
 
 ## Classes
 
-| ID | Name | Signal pattern |
-|---:|---|---|
-| 0 | `red_blue_red` | red-blue-red |
-| 1 | `blue_red_red` | blue-red-red |
+| ID | Name | Signal pattern (left to right) | Mission direction |
+|---:|---|---|---|
+| 0 | `red_blue_red` | red-blue-red | `Right` |
+| 1 | `blue_red_red` | blue-red-red | `Left` |
+
+The mission direction mapping was confirmed by the user on 2026-09-17 for
+`Last_mission_state`. The detector emits the signal class; application logic
+must translate that class into the mission direction.
+
+Current Yongin policy: entering route 05 zone [2] (indices 84–103) starts
+exit inference while navigation continues. Reaching CSV state=3 (index 92)
+requests a stop. After the vehicle stops, MGM observes for three seconds and
+selects route 06 for Left or route 07 for Right; no decision or a tie selects 06.
+Approach detections are not included in the stationary vote window.
+See [the mission contract](../../../docs/LAST_MISSION_STATE.md).
 
 ## Training summary
 

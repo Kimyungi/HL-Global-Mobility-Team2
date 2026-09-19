@@ -1,0 +1,51 @@
+{
+  "run_id": "v2_no_estop_20260912_223321_282247",
+  "timezone": "Asia/Seoul",
+  "source_head_at_run": "8697bcb",
+  "source_had_uncommitted_changes": true,
+  "integration_command": [
+    "./scripts/v2",
+    "vehicle-no-estop",
+    "REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX",
+    "route_sequence_file:=/home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main/src/stack_gps/waypoints/halla_route_sequence.yaml",
+    "route_start_id:=01",
+    "route_end_id:=07",
+    "parking_enabled:=true",
+    "t_parking_zone_ranges:=[0]",
+    "parallel_parking_zone_ranges:=[0]",
+    "zone_enter_confirm_samples:=5",
+    "zone_exit_confirm_samples:=5",
+    "parking_search_zone_only:=true",
+    "escape_after_cycles:=0",
+    "avoidance_enabled:=false",
+    "avoid_zone_only:=false",
+    "usb_speed:=high",
+    "camera_fps:=10",
+    "lane_debug:=true",
+    "traffic_show_debug:=true",
+    "traffic_enabled:=true",
+    "traffic_depth_enabled:=false",
+    "traffic_yolo_image_size:=320",
+    "traffic_yolo_inference_interval:=2",
+    "traffic_red_phase_yolo_inference_interval:=3",
+    "traffic_stopline_yolo_image_size:=320",
+    "traffic_require_stop_gate:=false",
+    "traffic_stop_y_ratio:=0.0"
+  ],
+  "rosbag_start": "2026-09-12T22:33:21.880039+09:00",
+  "rosbag_end": "2026-09-12T22:52:24.818379+09:00",
+  "integration_shutdown": "2026-09-12T22:53:55+09:00",
+  "bag_message_count": 492927,
+  "can_zero_send_confirmed": true,
+  "dump_header": {
+    "magic": "0x314d474d",
+    "version": 18,
+    "snapshot_size": 4936,
+    "params_size": 144
+  },
+  "git_scope": "CSV and metadata only; original rosbag DB and MGM dump are local-only",
+  "local_only": [
+    "rosbag/rosbag_0.db3",
+    "mgm_snapshots.bin"
+  ]
+}

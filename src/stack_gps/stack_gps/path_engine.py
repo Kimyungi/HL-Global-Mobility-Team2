@@ -15,9 +15,11 @@ stack_gps 노드의 로직 코어. CLAUDE.md §5.5의 정신에 따라 ROS 없�
   - GGA 좌표는 2~3cm 노이즈가 있으므로 접선·곡률을 이웃 한 칸이 아니라
     약 1m 베이스라인(중심 차분)으로 계산해 각도 노이즈를 줄인다.
 """
+from bisect import bisect_right
 import csv
 import math
 import time
+from .station_path import StationPath
 
 M_PER_DEG_LAT = 111_320.0
 
@@ -75,7 +77,7 @@ class PoseDeltaTracker:
         return self.delta, self.update
 
 
-def load_waypoints_csv(path, log=None):
+def load_waypoints_csv(path, log=None, avoid_starts=None, include_yaw=False, include_states=False, zone_indices=None):
     """record_waypoints.py가 만든 CSV → [(lat, lon)] (십진도).
 
     east_m/north_m 열은 기록 세션의 기준점에 묶여 있어 쓰지 않고,
@@ -86,7 +88,7 @@ def load_waypoints_csv(path, log=None):
     이웃 대비 2.5~2.7m 튀어 시작 횡오차 4m대의 한 원인이었음).
     버린 수는 log 콜백으로 보고.
     """
-    pts, dropped = [], 0
+    pts, yaws, states, dropped = [], [], [], 0
     with open(path, newline="") as f:
         for row in csv.DictReader(f):
             q = row.get("quality")
@@ -94,14 +96,74 @@ def load_waypoints_csv(path, log=None):
                 dropped += 1
                 continue
             lat, lon = float(row["lat"]), float(row["lon"])
-            if pts and pts[-1] == (lat, lon):
-                continue
-            pts.append((lat, lon))
+            if not pts or pts[-1] != (lat, lon):
+                pts.append((lat, lon))
+                raw = row.get('yaw_rad')
+                yaw = float(raw) if raw not in (None, '') else (
+                    math.radians(float(row['yaw_deg'])) if row.get('yaw_deg') not in (None, '') else None)
+                if yaw is not None and not math.isfinite(yaw):
+                    raise ValueError('CSV yaw must be finite')
+                yaws.append(yaw)
+                states.append(int(row.get('state') or 0))
+            elif str(row.get('state', '')).strip() == '4':
+                states[-1] = 4
+            if zone_indices is not None:
+                zone_id = int(row.get('zone_id') or 0)
+                if zone_id > 0 and int(row.get('inside_zone') or (1 if 'inside_zone' not in row else 0)):
+                    index = len(pts) - 1
+                    zone_indices[index] = min(zone_id, zone_indices.get(index, zone_id))
+            # Keep marker indices in the filtered/deduplicated geometry, not
+            # the CSV's optional idx column. Other state codes retain their roles.
+            if avoid_starts is not None and str(row.get('state', '')).strip() == '4':
+                index = len(pts) - 1
+                if index not in avoid_starts:
+                    avoid_starts.append(index)
     if dropped and log is not None:
         log(f"비-FIXED 웨이포인트 {dropped}개 제외 (FLOAT 오염 방지): {path}")
     if len(pts) < 2:
         raise ValueError(f"웨이포인트가 {len(pts)}개뿐 — 유효한 트랙이 아님: {path}")
+    if include_yaw or include_states:
+        if any(y is not None for y in yaws) and any(y is None for y in yaws):
+            raise ValueError('CSV yaw must be present on every retained waypoint')
+        values = yaws if all(y is not None for y in yaws) else None
+        return (pts, values, states) if include_states else (pts, values)
     return pts
+
+
+def csv_zone_ranges(path, zone_id=None):
+    """CSV physical-zone ranges in the same filtered/deduplicated index space."""
+    membership = {}
+    load_waypoints_csv(path, zone_indices=membership)
+    ranges = []
+    for index in sorted(i for i, zid in membership.items() if zone_id is None or zid == zone_id):
+        if ranges and index == ranges[-1][1] + 1:
+            ranges[-1] = (ranges[-1][0], index)
+        else:
+            ranges.append((index, index))
+    return ranges
+
+
+def exit_stop_index(path):
+    """CSV state=3 in the same filtered waypoint index space as navigation."""
+    _, _, states = load_waypoints_csv(path, include_states=True)
+    indices = [i for i, state in enumerate(states) if state == 3]
+    if len(indices) > 1:
+        raise ValueError(f'{path}: expected at most one state=3 exit stop marker')
+    return indices[0] if indices else -1
+
+
+def avoidance_marker_range(path):
+    """State 4 starts one avoidance episode per CSV; MGM owns its completion.
+
+    Hold the entry indication beyond the marker so a moving vehicle cannot
+    miss a single sample. The route endpoint is only the indication's extent,
+    never an avoidance completion condition.
+    """
+    starts = []
+    points = load_waypoints_csv(path, avoid_starts=starts)
+    if len(starts) > 1:
+        raise ValueError(f'{path}: multiple state=4 entries require separate route CSVs')
+    return [(starts[0], len(points)-1)] if starts else []
 
 
 class PathEngine:
@@ -110,6 +172,8 @@ class PathEngine:
     zone_ranges: [(start_idx, end_idx)] 포함 구간 목록 (웨이포인트 인덱스 기준).
     """
 
+    # Below rejoin constants and station_tracking=False are historical replay behavior.
+    # ROS v2 uses StationPath; these values do not alter its station preview.
     # ref 시작점이 "전방"으로 인정되는 최소 vehicle-frame x [m].
     # 0으로 두면 옆구리(x≈0) 점이 뽑혀 도달 곡률이 폭주한다(2026-08-05 위빙).
     MIN_FORWARD_M = 0.3
@@ -216,8 +280,12 @@ class PathEngine:
                  target_max_m=None, target_min_m=None, e_lpf_s=None,
                  curve_ff=None, curve_margin=None,
                  stop_ranges=(), avoid_ranges=(), gps_only_ranges=(),
-                 parallel_parking_ranges=()):
-        """lookahead_m: ref 시작점을 최근접점이 아니라 이만큼 전방의 트랙
+                 parallel_parking_ranges=(), station_tracking=False, waypoint_yaws=None, origin_latlon=None):
+        """station_tracking=True: bounded station search and one +2.5m preview.
+        generation (distinct fix), v_ref and sample_time are supplied to snapshot().
+        The following lookahead/rejoin options describe only historical False mode.
+
+        lookahead_m: ref 시작점을 최근접점이 아니라 이만큼 전방의 트랙
         점으로 민다. dSPACE는 첫 점만 목표로 쓰므로(stack_avoid 실측 주석)
         최근접점(차 옆구리, x≈0)을 주면 도달 곡률 κ=2y/(x²+y²)가 폭주해
         풀조향 위빙을 유발한다 — 회피(0.4m 호 lookahead)와 같은 원리로
@@ -229,7 +297,10 @@ class PathEngine:
         직접 갈아끼운다 (2026-08-17). 셋 다 "dSPACE 조향이 느리던 시절"에 맞춰
         잡은 보상값이라 조향 응답 특성이 바뀌면 함께 재조정해야 한다."""
         self.n_points = n_points
+        # ROS v2 always enables this. False retains historical offline replay semantics.
+        self.station_tracking = bool(station_tracking)
         self.accel_ranges = list(accel_ranges)
+        self.physical_waypoint_ranges = []
         self.parking_ranges = list(parking_ranges)
         self.parallel_parking_ranges = list(parallel_parking_ranges)
         for first in self.parking_ranges:
@@ -243,6 +314,7 @@ class PathEngine:
         # "이미 정지함"을 기억해야 하기 때문 (GpsPath.msg stop_zone 주석).
         self.stop_ranges = list(stop_ranges)
         self.avoid_ranges = list(avoid_ranges)
+        self.avoid_preview_ranges = list(avoid_ranges)
         self.gps_only_ranges = list(gps_only_ranges)
         self.lookahead_m = float(lookahead_m)
         self.rate_damp_s = (self.REJOIN_RATE_DAMP_S if rate_damp_s is None
@@ -265,7 +337,7 @@ class PathEngine:
         self._e_lpf = None           # [m] 저역통과된 부호 있는 횡오차
         self._prev_e_t = None
 
-        lat0, lon0 = latlon_pts[0]
+        lat0, lon0 = origin_latlon if origin_latlon is not None else latlon_pts[0]
         self._lat0, self._lon0 = lat0, lon0
         self._m_per_deg_lon = M_PER_DEG_LAT * math.cos(math.radians(lat0))
 
@@ -280,6 +352,11 @@ class PathEngine:
         # 점 간격 추정 → 접선/곡률용 이웃 스텝 k (약 tangent_baseline_m)
         seg = [math.hypot(self.e[i + 1] - self.e[i], self.n[i + 1] - self.n[i])
                for i in range(m - 1)]
+        self.station = [0.0]
+        for length in seg:
+            self.station.append(self.station[-1] + length)
+        self.avoid_event_indices = []
+        self._avoid_last_idx = None
         spacing = sorted(seg)[len(seg) // 2]
         k = max(1, round(tangent_baseline_m / max(spacing, 1e-6)))
         self._spacing = spacing          # set_lookahead() 재계산용
@@ -292,6 +369,11 @@ class PathEngine:
             self.yaw.append(math.atan2(self.n[b] - self.n[a],
                                        self.e[b] - self.e[a]))
 
+        if waypoint_yaws is not None:
+            if len(waypoint_yaws) != m or not all(map(math.isfinite, waypoint_yaws)):
+                raise ValueError('waypoint_yaws must contain one finite yaw per point')
+            self.yaw = [wrap_angle(y) for y in waypoint_yaws]
+
         # 곡률: 헤딩 변화율 Δyaw / 호길이 (좌회전 +, vehicle frame y좌측+와 일치)
         self.curvature = []
         for i in range(m):
@@ -299,6 +381,102 @@ class PathEngine:
             arc = sum(seg[a:b])
             dyaw = wrap_angle(self.yaw[b] - self.yaw[a])
             self.curvature.append(dyaw / arc if arc > 1e-6 else 0.0)
+
+        self.station_path = StationPath(self.e, self.n, self.yaw, self.curvature) if self.station_tracking else None
+
+    def at_station(self, station):
+        """Interpolate ENU position, CSV/tangent yaw and curvature by arc station.
+
+        Distances use the same ENU polyline as GPS driving, not CSV east/north
+        or a second geodetic origin. Extrapolating beyond the route is forbidden.
+        """
+        if not math.isfinite(station) or not 0.0 <= station <= self.station[-1]:
+            raise ValueError("station outside waypoint route")
+        a = min(bisect_right(self.station, station) - 1, len(self.e) - 2)
+        length = self.station[a + 1] - self.station[a]
+        t = (station - self.station[a]) / length if length > 1e-12 else 0.0
+        return (self.e[a] + t * (self.e[a + 1] - self.e[a]),
+                self.n[a] + t * (self.n[a + 1] - self.n[a]),
+                wrap_angle(self.yaw[a] + t * wrap_angle(self.yaw[a + 1] - self.yaw[a])),
+                self.curvature[a] + t * (self.curvature[a + 1] - self.curvature[a]))
+
+    def project_station(self, e, n):
+        """GPS's nearest vertex + adjacent-segment foot, with station and signed d."""
+        idx, _ = self._nearest_idx(e, n)
+        a, t, fe, fn, distance = self._avoid_project_adjacent(idx, e, n)
+        station = self.station[a] + t * (self.station[a + 1] - self.station[a])
+        yaw = self.at_station(station)[2]
+        lateral = -(e - fe) * math.sin(yaw) + (n - fn) * math.cos(yaw)
+        return station, lateral, idx, distance
+
+    def _avoid_project_adjacent(self, idx, e, n):
+        best = None
+        for a in (idx - 1, idx):
+            if a < 0 or a + 1 >= len(self.e):
+                continue
+            dx, dy = self.e[a+1]-self.e[a], self.n[a+1]-self.n[a]
+            length = dx*dx+dy*dy
+            if length <= 1e-12:
+                continue
+            t = max(0., min(1., ((e-self.e[a])*dx+(n-self.n[a])*dy)/length))
+            x, y = self.e[a]+t*dx, self.n[a]+t*dy
+            distance = math.hypot(e-x,n-y)
+            if best is None or distance < best[-1]:
+                best = (a,t,x,y,distance)
+        if best is None:
+            raise ValueError('route has no nonzero adjacent segment')
+        return best
+
+    def avoid_event(self, idx):
+        previous = self._avoid_last_idx
+        self._avoid_last_idx = idx
+        return any(idx == marker or (previous is not None and previous < marker <= idx)
+                   for marker in self.avoid_event_indices)
+
+    def reset_station(self):
+        if self.station_path is not None:
+            self.station_path.reset()
+
+    def _station_snapshot(self, lat, lon, heading, v_ref, sample_time, generation):
+        ev, nv = self.to_enu(lat, lon)
+        track = self.station_path
+        track.update(ev, nv, v_ref=v_ref, sample_time=sample_time, generation=generation)
+        idx = track.index
+        psi = self.yaw[idx] if heading is None else heading
+        if not math.isfinite(psi):
+            raise ValueError('invalid station heading')
+        (pe, pn, yaw, curvature), diagnostics = track.preview()
+        c, s = math.cos(psi), math.sin(psi)
+        de, dn = pe-ev, pn-nv
+        foot_e, foot_n = track.position()
+        perpendicular = self._in_ranges(idx, self.parking_ranges)
+        parallel = self._in_ranges(idx, self.parallel_parking_ranges)
+        preview_idx = diagnostics['preview_index']
+        # Current station zones win over a different preview-only GPS zone.
+        station_zone = any(self._in_ranges(idx, ranges) for ranges in (
+            self.gps_only_ranges, self.parking_ranges, self.parallel_parking_ranges,
+            self.stop_ranges, self.avoid_preview_ranges, self.accel_ranges, self.physical_waypoint_ranges))
+        gps_only = (self._in_ranges(idx, self.gps_only_ranges) or
+                    (not station_zone and self._in_ranges(preview_idx, self.gps_only_ranges)))
+        physical_gps_only = (self._in_ranges(idx, self.physical_waypoint_ranges) or
+            (not station_zone and self._in_ranges(preview_idx, self.physical_waypoint_ranges)))
+        waypoint_stations, waypoint_world = track.window()
+        waypoint_points = [(c*(e-ev)+s*(n-nv), -s*(e-ev)+c*(n-nv),
+                            wrap_angle(a-psi), k) for e, n, a, k in waypoint_world]
+        return dict(diagnostics, points=[(c*de+s*dn, -s*de+c*dn, wrap_angle(yaw-psi), curvature)],
+                    waypoint_stations=waypoint_stations, waypoint_points=waypoint_points,
+                    idx=idx, cross_track_m=math.hypot(foot_e-ev, foot_n-nv),
+                    station_yaw_error_rad=wrap_angle(track.heading()-psi),
+                    station_error_valid=heading is not None,
+                    accel_zone=(self._in_ranges(idx, self.accel_ranges) or
+                                (not station_zone and self._in_ranges(preview_idx, self.accel_ranges))),
+                    parking_zone=perpendicular or parallel,
+                    parking_mode='perpendicular' if perpendicular else 'parallel' if parallel else None,
+                    stop_zone=self._zone_id(idx, self.stop_ranges),
+                    avoid_zone=self._in_ranges(idx, self.avoid_ranges),
+                    gps_only_zone=gps_only or physical_gps_only,
+                    physical_gps_only=physical_gps_only,
+                    at_end=idx >= len(self.e)-2)
 
     def set_lookahead(self, lookahead_m):
         """주행 중 lookahead 변경 (ROS 파라미터 콜백용) — 폴백 인덱스도 재계산."""
@@ -450,18 +628,21 @@ class PathEngine:
             return fallback
         return min(idx + self._la_pts, last)
 
-    def snapshot(self, lat, lon, heading=None, now=None):
+    def snapshot(self, lat, lon, heading=None, now=None, *, v_ref=0.0, sample_time=0.1, generation=None):
         """현재 fix → dict(points, accel_zone, parking_zone, stop_zone, avoid_zone,
         gps_only_zone, idx, cross_track_m).
 
-        points: [(x, y, yaw, curvature)] vehicle frame, 최근접점부터 앞으로
-        n_points개 (트랙 끝에서는 남은 만큼만).
+        station_tracking=True: one station preview, with index/station history.
+        generation is required; v_ref/sample_time bound each new fix's search.
+        False: historical n_points window and rejoin geometry for offline replay.
 
         heading: 차량 헤딩(ENU rad, 예: RMC 이동방향). None이면 "최근접 경로
         접선 = 차량 헤딩" 가정으로 폴백 — 정지·출발 직후 등 헤딩을 모를 때만
         쓰고, 이때는 차가 트랙 위에 진행 방향으로 정렬돼 있어야 유효하다
         (2026-08-01 첫 주행에서 이 가정 위반으로 선회 발산 — COG 도입 계기).
         """
+        if self.station_tracking:
+            return self._station_snapshot(lat, lon, heading, v_ref, sample_time, generation)
         ev, nv = self.to_enu(lat, lon)
         idx, _vertex_dist = self._nearest_idx(ev, nv)
         fe, fn, dist = self._foot_on_track(idx, ev, nv)   # 선분까지 수직거리

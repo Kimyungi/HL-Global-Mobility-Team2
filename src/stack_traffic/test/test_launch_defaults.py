@@ -55,7 +55,7 @@ class TestLaunchDefaults(unittest.TestCase):
         self.assertEqual(parameters["stopline_model_path"], "")
         self.assertAlmostEqual(
             parameters["stopline_yolo_confidence_threshold"],
-            0.35,
+            0.30,
         )
         self.assertTrue(parameters["resume_on_green"])
         self.assertFalse(parameters["show_debug"])

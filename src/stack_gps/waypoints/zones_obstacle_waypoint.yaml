@@ -1,0 +1,7 @@
+# CSV state=4 at idx=20 supplies the avoidance entry; no parking mission.
+track: obstacle_waypoint.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points: []
+turn_zones: []

@@ -8,3 +8,9 @@ bool narrow_gap         # 여유 폭 좁음 → avoid 스테이트에서 감속 
 bool maneuver_done      # 회피 기동 완료 → 복귀 트리거
 RefPoint[] points       # 회피 경로
 float32 v_suggest       # [m/s] 회피 기하로 결정한 권장 속도
+bool scan_valid        # valid scan envelope; false must not count as obstacle clear
+
+# Actual sensor-input generation backing these points, not publication time.
+# Held on republish; zero means unproven/no generated reference. MGM applies
+# the existing provider timeout to this stamp, including transport delay.
+builtin_interfaces/Time reference_stamp

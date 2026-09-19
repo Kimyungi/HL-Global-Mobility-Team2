@@ -9,3 +9,16 @@ bool estop
 # MGM은 escape_require_rear_clear 가 켜져 있으면 이 값이 true 일 때만 후진한다.
 # 판정은 stack_estop 소관 — 어느 라이다를 쓸지(후방 단독 / 4개 통합)도 그쪽 결정이다.
 bool rear_clear
+
+# False when scan timeout/invalid scan caused estop. Allows MGM to distinguish
+# LiDAR failure from actual danger without changing emergency-brake thresholds.
+bool scan_valid
+
+# Dedicated escape corridor certification. No current producer certifies CLEAR.
+# rear_clear remains a legacy bool and an additional veto; it alone never enables base Recovery.
+uint8 REAR_UNKNOWN=0
+uint8 REAR_CLEAR=1
+uint8 REAR_BLOCKED=2
+uint8 rear_corridor_state
+bool rear_sensor_valid
+builtin_interfaces/Time rear_reference_stamp

@@ -16,16 +16,17 @@ find_package(rclcpp REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(fma_interfaces REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 # ── MGM 로직 코어 (§5.5) — ROS 의존성 없는 정적 라이브러리.
 # 여기에 rclcpp/fma_interfaces를 링크하는 순간 §5.5 위반 — 절대 추가 금지.
-add_library(mgm_core STATIC core/mgm_step.cpp)
+add_library(mgm_core STATIC core/mgm_step.cpp core/manager_step.cpp core/zone_step.cpp core/reference_safety.cpp core/mission_step.cpp core/route_step.cpp)
 target_include_directories(mgm_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ── ROS 2 wrapper 노드
 add_executable(mgm_node src/mgm_node.cpp src/decision_backend.cpp src/transition_log.cpp)
 target_link_libraries(mgm_node mgm_core)
-ament_target_dependencies(mgm_node rclcpp rcl_interfaces fma_interfaces std_msgs)
+ament_target_dependencies(mgm_node rclcpp rcl_interfaces fma_interfaces std_msgs sensor_msgs)
 
 # ── back-to-back 하네스 (ROS 무관 — 코어만 링크)
 add_executable(core_replay tools/core_replay.cpp)
@@ -125,6 +126,81 @@ if(BUILD_TESTING OR ADAS_MGM_ENABLE_GENERATED_BACKEND)
 endif()
 
 if(BUILD_TESTING)
+  add_executable(last_mission_test test/last_mission_test.cpp)
+  target_link_libraries(last_mission_test mgm_core)
+  add_test(NAME last_mission_test COMMAND last_mission_test)
+  add_executable(wall_plan_input_test test/wall_plan_input_test.cpp)
+  target_link_libraries(wall_plan_input_test mgm_core)
+  ament_target_dependencies(wall_plan_input_test fma_interfaces)
+  add_test(NAME wall_plan_input_test COMMAND wall_plan_input_test)
+  add_executable(sensor_only_safe_stop_test test/sensor_only_safe_stop_test.cpp)
+  target_link_libraries(sensor_only_safe_stop_test mgm_core)
+  add_test(NAME sensor_only_safe_stop_test COMMAND sensor_only_safe_stop_test)
+
+  add_executable(avoid_main_compat_test test/avoid_main_compat_test.cpp)
+  target_link_libraries(avoid_main_compat_test mgm_core)
+  add_test(NAME avoid_main_compat_test COMMAND avoid_main_compat_test)
+
+  add_executable(avoid_zone_entry_test test/avoid_zone_entry_test.cpp)
+  target_link_libraries(avoid_zone_entry_test mgm_core)
+  add_test(NAME avoid_zone_entry_test COMMAND avoid_zone_entry_test)
+
+  add_executable(parking_entry_test test/parking_entry_test.cpp)
+  target_link_libraries(parking_entry_test mgm_core)
+  add_test(NAME parking_entry_test COMMAND parking_entry_test)
+
+  add_executable(traffic_zone_speed_test test/traffic_zone_speed_test.cpp)
+  target_link_libraries(traffic_zone_speed_test mgm_core)
+  add_test(NAME traffic_zone_speed_test COMMAND traffic_zone_speed_test)
+
+  add_executable(fixed_speed_test test/fixed_speed_test.cpp)
+  target_link_libraries(fixed_speed_test mgm_core)
+  add_test(NAME fixed_speed_test COMMAND fixed_speed_test)
+  add_executable(avoidance_disabled_test test/avoidance_disabled_test.cpp)
+  target_link_libraries(avoidance_disabled_test mgm_core)
+  add_test(NAME avoidance_disabled_test COMMAND avoidance_disabled_test)
+
+  add_executable(route_sequence_test test/route_sequence_test.cpp)
+  target_link_libraries(route_sequence_test mgm_core)
+  add_test(NAME route_sequence_test COMMAND route_sequence_test)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(stabilization_test test/stabilization_test.cpp)
+  target_link_libraries(stabilization_test mgm_core)
+  add_test(NAME stabilization_test COMMAND stabilization_test)
+
+  add_executable(reference_safety_test test/reference_safety_test.cpp)
+  target_link_libraries(reference_safety_test mgm_core)
+  add_test(NAME reference_safety_test COMMAND reference_safety_test)
+
+  add_executable(zone_manager_test test/zone_manager_test.cpp)
+  target_link_libraries(zone_manager_test mgm_core)
+  add_test(NAME zone_manager_test COMMAND zone_manager_test)
+
+  add_executable(mission_preparation_test test/mission_preparation_test.cpp)
+  target_link_libraries(mission_preparation_test mgm_core)
+  add_test(NAME mission_preparation_test COMMAND mission_preparation_test)
+  add_executable(mission_zone_search_test test/mission_zone_search_test.cpp)
+  target_link_libraries(mission_zone_search_test mgm_core)
+  add_test(NAME mission_zone_search_test COMMAND mission_zone_search_test)
+
+  add_executable(lidar_only_estop_test test/lidar_only_estop_test.cpp)
+  target_link_libraries(lidar_only_estop_test mgm_core)
+  add_test(NAME lidar_only_estop_test COMMAND lidar_only_estop_test)
+
+  add_executable(halla_stopline_test test/halla_stopline_test.cpp)
+  target_link_libraries(halla_stopline_test mgm_core)
+  add_test(NAME halla_stopline_test COMMAND halla_stopline_test)
+
+  add_executable(traffic_gps_release_test test/traffic_gps_release_test.cpp)
+  target_link_libraries(traffic_gps_release_test mgm_core)
+  add_test(NAME traffic_gps_release_test COMMAND traffic_gps_release_test)
+
+  add_executable(manager_state_test test/manager_state_test.cpp)
+  target_link_libraries(manager_state_test mgm_core)
+  add_test(NAME manager_state_test COMMAND manager_state_test)
+
   # Compile this target without ADAS_MGM_HAS_GENERATED_BACKEND even when the
   # package opt-in is ON. It proves that an unavailable generated request
   # fails at startup instead of silently falling back to the production core.
@@ -173,9 +249,23 @@ if(BUILD_TESTING)
     COMMAND transition_log_test)
 endif()
 
+if(BUILD_TESTING)
+  add_executable(revised_v2_test test/revised_v2_test.cpp)
+  target_include_directories(revised_v2_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(revised_v2_test mgm_core)
+  add_test(NAME revised_v2_test COMMAND revised_v2_test)
+  add_executable(dump_contract_test test/dump_contract_test.cpp)
+  target_include_directories(dump_contract_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME dump_contract_test COMMAND dump_contract_test)
+
+  add_executable(startup_navigation_test test/startup_navigation_test.cpp)
+  target_link_libraries(startup_navigation_test mgm_core)
+  add_test(NAME startup_navigation_test COMMAND startup_navigation_test)
+endif()
+
 install(TARGETS mgm_node core_replay make_sample_dump DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS tools/go tools/state tools/can_watchdog_check.py
-  tools/straight_lane_publisher.py
+install(PROGRAMS tools/estop_recovery_node.py tools/estop_recovery_core.py tools/go tools/start_readiness.py tools/state tools/can_watchdog_check.py
+  tools/straight_lane_publisher.py tools/analyze_mission_calibration.py tools/integration_view.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 

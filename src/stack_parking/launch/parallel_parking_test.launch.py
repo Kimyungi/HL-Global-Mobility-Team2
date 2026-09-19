@@ -45,6 +45,7 @@ def generate_launch_description():
     reverse_speed_mps = LaunchConfiguration('reverse_speed_mps')
     preview_distance_m = LaunchConfiguration('preview_distance_m')
     direction_change_hold_s = LaunchConfiguration('direction_change_hold_s')
+    far_m = LaunchConfiguration('far_m')
     rectangle_wall_length_m = LaunchConfiguration('rectangle_wall_length_m')
     rectangle_inward_depth_m = LaunchConfiguration('rectangle_inward_depth_m')
     parallel_turn_radius_m = LaunchConfiguration('parallel_turn_radius_m')
@@ -83,6 +84,9 @@ def generate_launch_description():
         DeclareLaunchArgument('reverse_speed_mps', default_value='0.5'),
         DeclareLaunchArgument('preview_distance_m', default_value='1.0'),
         DeclareLaunchArgument('direction_change_hold_s', default_value='1.0'),
+        DeclareLaunchArgument(
+            'far_m', default_value='3.0',
+            description='Maximum side distance for initial parallel wall acquisition'),
         DeclareLaunchArgument('rectangle_wall_length_m', default_value='1.5'),
         DeclareLaunchArgument('rectangle_inward_depth_m', default_value='0.7'),
         DeclareLaunchArgument('parallel_turn_radius_m', default_value='2.0'),
@@ -165,6 +169,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'search_side': 'left',
+                'far_m': ParameterValue(far_m, value_type=float),
                 'enable_control': ParameterValue(
                     enable_control, value_type=bool),
                 'search_speed_mps': ParameterValue(

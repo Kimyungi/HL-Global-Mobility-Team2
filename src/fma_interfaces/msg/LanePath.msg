@@ -2,3 +2,8 @@
 std_msgs/Header header
 RefPoint[] points
 float32 confidence   # 0.0~1.0 — lane↔waypoint 전이 판정 입력 (판정은 MGM 스테이트 머신에서)
+
+# Actual sensor-input generation backing these points, not publication time.
+# Held on republish; zero means unproven/no generated reference. MGM applies
+# the existing provider timeout to this stamp, including transport delay.
+builtin_interfaces/Time reference_stamp

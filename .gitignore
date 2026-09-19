@@ -16,3 +16,10 @@ field_logs/
 mgm.log
 .cache/
 datasets/
+
+# integration/v2_main isolated workspace outputs
+build_v2/
+install_v2/
+log_v2/
+# setuptools build_ext --inplace through the colcon package symlink
+src/stack_avoid/stack_avoid/_footprint_native*.so

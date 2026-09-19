@@ -1,0 +1,50 @@
+[
+  {
+    "hz": 5,
+    "phase": 0.0,
+    "samples_in_zone": 4,
+    "zone_entry_events": 0
+  },
+  {
+    "hz": 5,
+    "phase": 0.25,
+    "samples_in_zone": 3,
+    "zone_entry_events": 0
+  },
+  {
+    "hz": 5,
+    "phase": 0.5,
+    "samples_in_zone": 3,
+    "zone_entry_events": 0
+  },
+  {
+    "hz": 5,
+    "phase": 0.75,
+    "samples_in_zone": 3,
+    "zone_entry_events": 0
+  },
+  {
+    "hz": 10,
+    "phase": 0.0,
+    "samples_in_zone": 7,
+    "zone_entry_events": 1
+  },
+  {
+    "hz": 10,
+    "phase": 0.25,
+    "samples_in_zone": 6,
+    "zone_entry_events": 1
+  },
+  {
+    "hz": 10,
+    "phase": 0.5,
+    "samples_in_zone": 6,
+    "zone_entry_events": 1
+  },
+  {
+    "hz": 10,
+    "phase": 0.75,
+    "samples_in_zone": 6,
+    "zone_entry_events": 1
+  }
+]

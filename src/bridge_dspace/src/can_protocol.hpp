@@ -61,7 +61,7 @@ struct RefPointPayload  // 0x101 + i
 struct TargetHeaderPayload  // 0x100 — point 프레임들 뒤에 마지막으로 송신 (latch 트리거)
 {
   uint16_t counter;   // watchdog 판정 입력, wrap
-  uint8_t state;      // 0=lane 1=waypoint 2=avoid 3=parking 4=traffic
+  uint8_t state;      // 0=lane 1=waypoint 2=avoid 3=parking 4=traffic 5=estop
   uint8_t n_points;
   int16_t v_ref;      // kVelScale
   uint16_t reserved;
@@ -96,7 +96,8 @@ struct MpcTargetFdPayload  // 0x101 MPC_TARGET_FD — 64 B
   double yaw;        // [rad]
   double curvature;  // [1/m]
   // Consecutive valid localization poses: translation in the previous
-  // vehicle frame, wrapped yaw difference, and source sample sequence.
+  // vehicle frame, negated wrapped yaw difference (clockwise positive),
+  // and source sample sequence. Internal ROS deltas remain CCW positive.
   // LANE/WAYPOINT/TRAFFIC use GNSS; PARKING may use LiDAR SLAM.
   double dx;
   double dy;
@@ -108,6 +109,18 @@ inline bool stateUsesPoseDelta(uint8_t state)
 {
   // TargetRef constants: 0=LANE, 1=WAYPOINT, 3=PARKING, 4=TRAFFIC.
   return state == 0U || state == 1U || state == 3U || state == 4U;
+}
+
+inline void setCanPoseDelta(
+  MpcTargetFdPayload & payload, uint8_t state,
+  double dx, double dy, double dyaw, uint64_t update)
+{
+  const bool enabled = stateUsesPoseDelta(state);
+  payload.dx = enabled ? dx : 0.0;
+  payload.dy = enabled ? dy : 0.0;
+  // Match the CAN-bound parking target yaw convention at this boundary only.
+  payload.dyaw = enabled ? -dyaw : 0.0;
+  payload.update = enabled ? update : 0U;
 }
 
 class PoseDeltaUpdateGate

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+echo "Retired avoidance entry excluded. Use scripts/v2 prepare; see RUN_BOOK_HALLA_FINAL.md." >&2
+exit 2
+
+# Historical implementation below is intentionally unreachable.
+# Captured temporary entry, original 01 -> 03 -> 04 -> 05 -> 07 geometry, 1 m/s.
+set -eo pipefail
+AVOID_ZONE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+if [[ $# -ne 0 ]]; then
+  echo 'Usage: scripts/avoid-zone-drive-test (fixed captured zone, 01 -> 07, 1 m/s)' >&2
+  exit 2
+fi
+for AVOID_ZONE_SIDE in front rear left right; do
+  if [[ ! -c /dev/lidar_$AVOID_ZONE_SIDE || ! -r /dev/lidar_$AVOID_ZONE_SIDE || ! -w /dev/lidar_$AVOID_ZONE_SIDE ]]; then
+    echo 'Lidar device links/access are not ready.' >&2
+    exit 1
+  fi
+done
+exec "$AVOID_ZONE_ROOT/scripts/v2" vehicle \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  route_sequence_file:="$AVOID_ZONE_ROOT/tools/avoid_reference_lab/temp_zone_20260915/route_selected.yaml" \
+  gps_link_mode:=persistent \
+  avoidance_enabled:=true avoid_zone_only:=true \
+  avoid_v2_enabled:=false avoid_planner_mode:=fixed_goals avoid_compute_backend:=native \
+  v_base:=1.0 v_avoid:=1.0 avoid_target_speed_mps:=1.0 \
+  gps_only:=true lane_enabled:=false traffic_enabled:=false \
+  parking_enabled:=true escape_after_cycles:=0 record:=true

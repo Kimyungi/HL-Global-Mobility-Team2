@@ -1,0 +1,50 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>주행 로그 · 위치와 상태</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101721;color:#e5edf6;font:14px system-ui,sans-serif}main{max-width:1450px;margin:auto;padding:24px}h1{font-size:25px;margin:0 0 8px}p{line-height:1.6;color:#acbdce}button,select{background:#243348;color:#edf4ff;border:1px solid #476078;border-radius:6px;padding:9px;cursor:pointer}button.active{background:#23675f;border-color:#52d5b7}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px}canvas{width:100%;background:#142130;border-radius:10px;display:block}aside{background:#182536;padding:17px;border-radius:10px;overflow:auto;max-height:750px}#detail{white-space:pre-wrap;line-height:1.75}#events button{text-align:left;width:100%;font-size:12px;margin:4px 0}.controls{display:flex;align-items:center;gap:12px;margin:12px 0}input[type=range]{flex:1;min-width:80px}#legend{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0;font-size:12px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}.note{background:#2f2930;color:#f3d4ae;padding:12px;border-radius:8px;font-size:13px}#speed{height:130px;margin-top:12px}a{color:#8fd9ff}#status{color:#75ddc3}label{white-space:nowrap} @media(max-width:900px){.layout{display:block}aside{max-height:none;margin-top:15px}main{padding:12px}}
+</style><main>
+<h1>주행 로그 · 차량 위치에 따른 상태</h1>
+<p>2026년 9월 14일 · 한국시간 · 네 실행을 선택하고 재생하거나 시간 막대를 움직이세요. 지도 위 궤적을 누르면 해당 시각으로 이동합니다.</p>
+<div class="tabs" id="tabs"></div>
+<div class="note"><b>표시 범위:</b> 차량 궤적과 상태는 로그 기록값입니다. 분홍 점은 저장된 회피 제어점을 GPS에 투영한 위치입니다. <b>전체 레퍼런스 곡선은 기록되지 않아 정확히 재생할 수 없습니다.</b> A·B·C 점선은 연결 개념선, 빨간 점선은 제어기 잔여거리로 추정한 정지선입니다.</div>
+<div class="controls"><button id="play">▶ 재생</button><input type="range" id="time" min="0" step="1"><b id="clock"></b><select id="color"><option value="safety">안전 상태</option><option value="signal">신호 상태</option><option value="avoidance">회피 상태</option><option value="reference_source">참조 소스</option></select></div>
+<div id="legend"></div><div class="layout"><div><canvas id="map" width="1000" height="760"></canvas><canvas id="speed" width="1000" height="130"></canvas><p id="note"></p></div>
+<aside><b id="status"></b><div id="detail"></div><hr><label><input type="checkbox" id="estimates" checked> 추정 정지선 / A·B·C 개념선</label><p><a id="raw">플래너 / MGM 원본 로그</a> · <a href="overview.png">전체 요약 이미지</a></p><b>주요 이벤트</b><div id="events"></div></aside></div>
+</main><script>
+const runs=__DATA__;
+const $=id=>document.getElementById(id),canvas=$('map'),ctx=canvas.getContext('2d'),sc=$('speed').getContext('2d');
+const palette={NORMAL:'#46c9aa',AUTO_ESTOP:'#ff6969',SAFE_STOP:'#c58aef',REVERSE_RECOVERY:'#f0b34e',SIGNAL_IDLE:'#7993ac',RED_DETECTED:'#ff7474',APPROACH_STOP_LINE:'#ffb854',STOPPED_WAIT:'#d893ff',INACTIVE:'#7993ac',AVOID_ACTIVE:'#e36bda',CLEAR_CONFIRM:'#f0b34e',GPS_RETURN:'#68b7fc',LANE:'#46c9aa',GPS:'#f0b34e',AVOID:'#e36bda',PARKING:'#68b7fc',ESCAPE:'#ff7474'};
+let run,idx=0,playing=false,last=0,playhead=0,X,Y,scale;
+function line(points,color,width=2,dash=[]){if(points.length<2)return;ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);points.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.stroke();ctx.setLineDash([])}
+function dot(p,color,r=4,label=''){ctx.fillStyle=color;ctx.beginPath();ctx.arc(X(p[0]),Y(p[1]),r,0,7);ctx.fill();if(label){ctx.font='14px sans-serif';ctx.fillText(label,X(p[0])+9,Y(p[1])-9)}}
+function selectRun(i){playing=false;$('play').textContent='▶ 재생';run=runs[i];idx=run.selected;$('time').max=run.frames.length-1;$('time').value=idx;
+ [...$('tabs').children].forEach((b,j)=>b.classList.toggle('active',i===j));
+ const pts=run.frames.map(f=>f.xy).concat(run.frames.filter(f=>f.point).map(f=>f.point));if(run.anchors)pts.push(...run.anchors.xy);if(run.stopline)pts.push(...run.stopline.xy);
+ let xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),loX=Math.min(...xs)-3,hiX=Math.max(...xs)+3,loY=Math.min(...ys)-3,hiY=Math.max(...ys)+3;
+ scale=Math.min(900/(hiX-loX),660/(hiY-loY));let midX=(loX+hiX)/2,midY=(loY+hiY)/2;X=x=>500+(x-midX)*scale;Y=y=>380-(y-midY)*scale;
+ $('events').replaceChildren();run.events.forEach(e=>{const b=document.createElement('button');b.textContent=e.time+' · '+e.text;b.onclick=()=>{idx=e.index;playhead=run.frames[idx].t;$('time').value=idx;draw()};$('events').append(b)});
+ $('raw').href=run.log;$('note').textContent=run.note+' 좌표 원점: 이 실행 첫 GPS ('+run.origin.join(', ')+'). 회색 웨이포인트는 현재 저장소 파일이며 당시 원본 보존본이 아닙니다.';draw()}
+function draw(){const f=run.frames[idx],key=$('color').value;ctx.clearRect(0,0,1000,760);
+ ctx.font='12px sans-serif';for(let px=50;px<1000;px+=100){ctx.strokeStyle='#233447';ctx.beginPath();ctx.moveTo(px,20);ctx.lineTo(px,730);ctx.stroke()}for(let py=30;py<760;py+=100){ctx.beginPath();ctx.moveTo(30,py);ctx.lineTo(970,py);ctx.stroke()}
+ for(const r of run.routes)line(r.xy,'#526375',1.5,[5,5]);
+ line(run.frames.map(p=>p.xy),'#2c4155',2);
+ for(let j=1;j<=idx;j++)line([run.frames[j-1].xy,run.frames[j].xy],palette[run.frames[j].state[key]]||'#999',3);
+ for(let j=0;j<=idx;j++){const p=run.frames[j];if(p.point&&p.reference_age<=p.reference_timeout)dot(p.point,'#aa4e9f',2)}
+ if($('estimates').checked){if(run.anchors&&f.t>=run.anchors.t){line(run.anchors.xy,'#e9a1e4',2,[7,6]);run.anchors.xy.forEach((p,j)=>dot(p,'#e9a1e4',5,'ABC'[j]+' (개념)'))}if(run.stopline&&f.t>=run.stopline.t){line(run.stopline.xy,'#ff7777',4,[8,6]);dot(run.stopline.xy[0],'#ff9999',2,'정지선 추정')}}
+ if(f.point){line([f.xy,f.point],'#f089e4',1,[3,4]);dot(f.point,f.reference_age<=f.reference_timeout?'#ff9bf2':'#797079',7,'기록 제어점')}
+ ctx.save();ctx.translate(X(f.xy[0]),Y(f.xy[1]));ctx.rotate(-f.yaw);ctx.fillStyle='#f2f7ff';ctx.strokeStyle='#1a2737';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(15,0);ctx.lineTo(-10,-7);ctx.lineTo(-6,0);ctx.lineTo(-10,7);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+ ctx.fillStyle='#bacbdd';ctx.font='13px sans-serif';ctx.fillText('북 ↑  /  동 →',30,25);ctx.fillText('E '+f.xy[0].toFixed(2)+' m / N '+f.xy[1].toFixed(2)+' m',30,745);
+ const metres=scale>70?1:5;ctx.strokeStyle='#ccd9e5';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(790,720);ctx.lineTo(790+metres*scale,720);ctx.stroke();ctx.fillText(metres+' m',790,710);
+ $('clock').textContent=f.time;$('status').textContent=run.title+' · '+run.mode;
+ $('detail').textContent=`\n${f.time} KST | Path ${f.route} / idx ${f.idx}\nGPS station ${f.station.toFixed(2)} m\n실측 속도 ${f.v===null?'미수신':f.v.toFixed(3)+' m/s'}\n전이 행 v_ref ${f.v_transition.toFixed(3)} m/s ※\n신호: red=${f.red} / green=${f.green}\n정지선 검출: ${f.stopline_detected===null?"off / 미기록":f.stopline_detected}${f.stopline_age_s===null?" (MGM 입력)":" (카메라 로그 "+f.stopline_age_s.toFixed(2)+"초 전)"}\n\n최상위: ${f.state.top}\n주행: ${f.state.navigation}\n회피: ${f.state.avoidance}\n신호: ${f.state.signal}\n안전: ${f.state.safety}\n속도 소유자: ${f.state.speed_owner}\n참조 소스: ${f.state.reference_source}\n정지 사유 비트: ${f.stop_reasons}\n\n회피 참조 개수: ${f.n}\n회피 참조 age: ${f.reference_age.toFixed(3)} s\nGPS quality: ${f.quality}\n헤딩: ${(f.yaw*180/Math.PI).toFixed(1)}° (${f.heading_source})\nMGM tick ${f.tick} / 시각 차 ${f.age_ms} ms\n\n※ v_ref는 직전 상태 전이 행의 기록값입니다. 중간 속도 램프를 재현하지 않습니다.\n`+(run.stopline?'\n'+run.stopline.note:'\n이 구간의 정지선 지도 좌표는 미기록입니다.');
+ const vals=[...new Set(run.frames.map(p=>p.state[key]))];$('legend').replaceChildren();for(const v of vals){const s=document.createElement('span'),d=document.createElement('i');d.className='dot';d.style.background=palette[v];s.append(d,document.createTextNode(v));$('legend').append(s)}const legend=document.createElement('span');legend.textContent='회색 점선: GPS 웨이포인트 · 분홍 점: 회피 제어점 투영 · 흰 화살표: 차량';$('legend').append(legend);
+ sc.clearRect(0,0,1000,130);const t0=run.frames[0].t,t1=run.frames.at(-1).t,tx=t=>45+(t-t0)/(t1-t0)*915,vy=v=>90-v*23;
+ sc.strokeStyle='#38536b';sc.beginPath();sc.moveTo(45,vy(0));sc.lineTo(970,vy(0));sc.stroke();sc.strokeStyle='#67d9c1';sc.lineWidth=2;sc.beginPath();let pen=false;for(const p of run.frames){if(p.v===null){pen=false;continue}if(pen)sc.lineTo(tx(p.t),vy(p.v));else sc.moveTo(tx(p.t),vy(p.v));pen=true}sc.stroke();sc.strokeStyle='#fff';sc.beginPath();sc.moveTo(tx(f.t),10);sc.lineTo(tx(f.t),112);sc.stroke();sc.fillStyle='#b6ccdf';sc.font='12px sans-serif';sc.fillText('실측 속도 (m/s) / 시간 막대 · 0',15,16);sc.fillText(run.frames[0].time,45,125);sc.fillText(run.frames.at(-1).time,880,125);
+}
+runs.forEach((r,i)=>{const b=document.createElement('button');b.textContent=(i+1)+'. '+r.title;b.onclick=()=>selectRun(i);$('tabs').append(b)});
+$('time').oninput=()=>{idx=+$('time').value;playhead=run.frames[idx].t;draw()};$('color').onchange=draw;$('estimates').onchange=draw;
+$('play').onclick=()=>{playing=!playing;if(idx===run.frames.length-1)idx=0;playhead=run.frames[idx].t;last=performance.now();$('play').textContent=playing?'❚❚ 일시정지':'▶ 재생'};
+function animate(now){if(playing){playhead+=(now-last)/1000;while(idx<run.frames.length-1&&run.frames[idx+1].t<=playhead)idx++;last=now;$('time').value=idx;draw();if(idx===run.frames.length-1){playing=false;$('play').textContent='▶ 재생'}}requestAnimationFrame(animate)}
+canvas.onclick=e=>{const b=canvas.getBoundingClientRect(),x=(e.clientX-b.left)*1000/b.width,y=(e.clientY-b.top)*760/b.height;let best=Infinity;run.frames.forEach((f,i)=>{let d=(X(f.xy[0])-x)**2+(Y(f.xy[1])-y)**2;if(d<best){best=d;idx=i}});playhead=run.frames[idx].t;$('time').value=idx;draw()};
+selectRun(0);requestAnimationFrame(animate);
+</script></html>

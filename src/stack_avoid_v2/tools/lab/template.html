@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New Avoid v2 · 레퍼런스 패스 실험실</title>
+<style>__STYLE__</style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <div><div class="eyebrow"><span class="live-dot"></span> NEW_AVOID_V2 <span class="slash">/</span> PATH EXPLORER</div>
+    <h1>레퍼런스 패스는 어떻게 만들어질까?</h1>
+    <p class="lead">zone 진입 → 연석·장애물 벽 관측 → 통로 중간점 연결 → 레퍼런스 패스</p></div>
+    <div class="hero-meta"><span class="chip">C++ 코어 실제 출력</span><span class="chip">10Hz 기록 재생</span><span class="chip">오프라인 HTML</span></div>
+  </header>
+  <div class="scope"><b>합성 기하 시험</b><span>자유 공간을 명시적으로 제공한 시나리오입니다. 이동은 선택 경로의 앞부분을 이상적으로 실행한 재생이며, 실제 LiDAR·dSPACE 추종 시험은 아닙니다.</span></div>
+  <div class="test-conditions"><strong id="testConditions"></strong><span>좌우 연석 사이 1차로 · 도로와 차량의 가로·세로 축척 동일</span><div class="view-buttons"><button id="cases2">차량 2대</button><button id="cases3">차량 3대</button><button id="casesAll">전체</button></div></div>
+  <nav id="scenarios" class="scenarios" aria-label="시나리오 선택"></nav>
+  <section class="workbench">
+    <div class="map-panel panel">
+      <div class="panel-head"><div><div class="kicker" id="scenarioIndex"></div><h2 id="sceneTitle"></h2></div><div class="view-buttons"><button id="overview" class="selected">전체 코스</button><button id="focus">차량 확대</button></div></div>
+      <p id="sceneDescription" class="scene-description"></p>
+      <div class="map-wrap"><svg id="map" viewBox="0 0 960 440" role="img" aria-label="도로, 장애물, 탐색 구간 및 선택 경로"></svg>
+        <div class="map-hud"><span id="phaseBadge" class="state"></span><span id="frameNote"></span></div>
+        <div class="map-hint">경로 위에 마우스를 올리면 각 점의 좌표와 곡률을 볼 수 있습니다.</div>
+        <div id="tooltip" class="tooltip" hidden></div>
+      </div>
+      <div class="legend"><span><i class="line route"></i>GPS 중심선</span><span><i class="line curb"></i>통과 불가 연석</span><span><i class="line" style="border-color:#c39dff"></i>벽 중앙 안내선</span><span><i class="line chosen"></i>선택 경로</span><span><i class="dot target"></i>1m 앞 목표점</span><span><i class="square obstacle"></i>자차와 같은 크기의 차량</span><span><i class="square unknown"></i>미관측</span><span><i class="line history"></i>지나온 위치</span></div>
+      <div class="transport"><button id="first" title="처음으로" aria-label="처음으로">↤</button><button id="previous" title="이전 프레임" aria-label="이전 프레임">‹</button><button id="play" class="play">재생</button><button id="next" title="다음 프레임" aria-label="다음 프레임">›</button><button id="last" title="마지막으로" aria-label="마지막으로">↦</button><input id="timeline" type="range" min="0" max="0" value="0" aria-label="재생 시점"><span id="clock" class="clock"></span><select id="speed" aria-label="재생 속도"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select></div>
+      <div class="timeline-bottom"><span id="frameLabel"></span><div id="milestones"></div><span>← → 한 프레임 · Space 재생</span></div>
+      <div class="switches"><label><input type="checkbox" id="showGrid" checked>점유 격자</label><label><input type="checkbox" id="showEnvelope" checked>차체 검사 영역</label><label><input type="checkbox" id="showTrace">운동 검증 구간</label><label><input type="checkbox" id="showHistory" checked>지나온 위치</label></div>
+    </div>
+    <aside class="inspector panel">
+      <div class="panel-head"><div><div class="kicker">HOW IT WORKS</div><h2>생성 과정</h2></div><button id="allSteps" class="small-button">전체 보기</button></div>
+      <p class="inspector-intro">단계를 누르면 해당 요소가 강조됩니다.</p>
+      <div id="steps" class="steps">
+        <button data-step="0"><span class="step-number">01</span><span><b>도로와 관측 공간</b><small>경계 · 자유 공간 · 장애물 · 미관측</small></span></button>
+        <button data-step="1"><span class="step-number">02</span><span><b>벽 사이 중간점</b><small>연결되는 통로 선택 · 양쪽 경계의 중앙</small></span></button>
+        <button data-step="2"><span class="step-number">03</span><span><b>연결선·차체·제동 검사</b><small>통로 안에서 평활화 · 차량 운동 검증</small></span></button>
+        <button data-step="3"><span class="step-number">04</span><span><b>레퍼런스 패스 선택</b><small>여러 점으로 이어진 실제 출력 경로</small></span></button>
+        <button data-step="4"><span class="step-number">05</span><span><b>1m 앞 목표점 추출</b><small>경로 길이 기준 x · y · yaw · curvature</small></span></button>
+      </div>
+      <div class="explanation"><div id="stepTitle"></div><p id="stepText"></p></div>
+      <div class="metrics"><div><span>현재 주행 속도</span><strong id="actualSpeed">—</strong></div><div><span>0.1초 후 요청 속도</span><strong id="targetSpeed">—</strong></div><div><span>경로 점</span><strong id="pointCount">—</strong></div><div><span>추가 검사 여유</span><strong id="clearance">—</strong></div><div><span>코어 계산 시간</span><strong id="compute">—</strong></div><div><span>정지 거리 요구</span><strong id="stopDistance">—</strong></div></div>
+      <div class="detail-label">목표점 · 현재 차량 좌표계</div><div id="reference" class="reference"></div>
+    </aside>
+  </section>
+  <section class="analysis-row">
+    <div class="panel chart-panel"><div class="panel-head"><h3>선택 경로의 곡률</h3><span>후축부터의 경로 길이 [m]</span></div><svg id="curvature" viewBox="0 0 740 145" aria-label="경로 길이에 따른 곡률 그래프"></svg></div>
+    <div class="panel results-panel"><div class="panel-head"><h3>이번 프레임의 판단</h3><span id="outcome"></span></div><div id="reason" class="reason"></div><div id="counts" class="counts"></div><p class="fineprint">노란 선은 선택한 양쪽 경계, 보라색 점은 그 중간점입니다. 검증 구간 선은 차량 운동 검사의 일부(최대 96개)입니다.</p></div>
+  </section>
+  <details class="notes panel"><summary>그림을 읽는 방법과 현재 구현의 범위</summary><div class="notes-content">
+    <div><h3>색과 좌표</h3><p>청록색은 선택된 다점 경로, 노란 원은 누적 경로 길이가 1m 이상이 되는 첫 표본입니다(약 5cm 간격). 주황색은 차량, 빗금은 미관측 영역입니다. 지도는 고정 좌표계의 +X가 오른쪽, +Y가 위쪽입니다.</p><p>1차로 폭은 3.0m로 가정했습니다. <a href="https://law.go.kr/lsInfoP.do?ancYnChk=0&amp;lsId=007080" target="_blank" rel="noopener">도로의 구조·시설 기준에 관한 규칙 제10조</a>의 설계속도 60km/h 미만 차로 최소 폭을 참고했으며 실측 코스 폭은 아닙니다. S자도 각 GPS 구간의 법선 방향으로 폭을 유지합니다. 차폭 0.62m는 차로 폭의 약 20.7%입니다.</p><p>옅은 청록 영역은 빠른 검사용 3원 근사입니다. 이 근사로 확인이 어려운 좁은 공간은 차량 사각형과 점유 셀을 직접 검사합니다. 기본 0.15m 여유와 표본 사이 이동 여유를 적용합니다. 속도가 낮아져도 이 여유는 줄이지 않습니다.</p></div>
+    <div><h3>벽 사이를 따라 진행</h3><p>zone 밖에서는 기존 GPS 주행이 계속됩니다. zone 안에서는 연석과 장애물을 같은 점유 경계로 취급해 관측된 자유 통로의 중앙을 연결합니다. GPS는 진행 방향·통로 선택·출구 확인에 쓰입니다. 장애물별 추월 상태는 사용하지 않습니다.</p><p>연결되는 자유 폭이 부족하거나 차체·조향·제동 검사를 통과하지 못하면 HOLD합니다. 미관측을 자유 공간으로 채우지 않습니다. HOLD 이후 실제 제동은 재생하지 않습니다.</p></div>
+    <div><h3>시간과 검증 범위</h3><p>최대 1m/s이며 통로 폭·곡률·필요 조향 속도에 따라 0.2m/s까지 감속합니다. 기록의 속도 프로파일을 0.1초씩 실행하므로 이동 거리가 달라집니다. 가속 0.35m/s²·감속 0.70m/s²와 조향 속도 한계 0.8rad/s를 적용합니다. 화면의 1×·2×·4×는 재생 배속입니다. 도로 좌우의 노란 연석 선을 차체가 넘으면 실패입니다. 장애물은 길이 0.85m·폭 0.62m의 고정 차량이며 자세는 지도 +X 방향입니다.</p><p>경로 표본과 실행 구간의 차체 사각형을 차량·연석에 대조합니다. 코어는 표본 사이 자세·속도·조향 변화가 만드는 제동 영역도 보수적으로 검사하며, 불확실하면 구간을 세분하거나 후보를 거부합니다. 계산 시간에는 진단 기록이 포함되며 ROS 전달·CAN 송신은 제외됩니다. 20ms 코어 예산과 전체 50ms 목표는 별개입니다. 화면 속 완주는 실측 코스나 dSPACE 제어기의 완주 보장이 아닙니다.</p></div>
+  </div></details>
+  <footer><span id="provenance"></span><span>Source: stack_avoid_v2 / core.cpp</span></footer>
+</main>
+<script id="replay-data" type="application/json">__DATA__</script>
+<script>__SCRIPT__</script>
+</body>
+</html>

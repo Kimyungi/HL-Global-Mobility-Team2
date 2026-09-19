@@ -1,0 +1,10 @@
+# User-requested 01 -> 03 obstacle-only test; original CSV geometry retained.
+routes:
+  - id: '01'
+    file: ../../src/stack_gps/waypoints/waypoints_halla_reference_path_01.csv
+    zones_file: ../../src/stack_gps/waypoints/zones_halla_reference_path_01.yaml
+    completion: endpoint_and_missions
+  - id: '03'
+    file: ../../src/stack_gps/waypoints/waypoints_halla_reference_path_03.csv
+    zones_file: zones_03_avoid_test.yaml
+    completion: endpoint_and_missions

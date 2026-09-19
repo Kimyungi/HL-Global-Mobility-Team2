@@ -1,0 +1,16 @@
+track: yongin_reference_path_05.csv
+stop_points: []
+avoid_zones: []
+gps_only_zones: []
+parking_points: []
+turn_zones:
+- zone_id: 1
+  index_ranges:
+  - - 10
+    - 83
+zones:
+- zone_id: 2
+  zone_type: LAST_MISSION_ZONE
+  index_ranges:
+  - - 84
+    - 103

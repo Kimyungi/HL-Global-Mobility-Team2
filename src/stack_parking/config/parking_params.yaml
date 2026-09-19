@@ -1,4 +1,4 @@
-# stack_parking front/rear ICP + mapping + localization + parking parameters.
+# stack_parking vehicle/GPS localization + LiDAR mapping + parking parameters.
 #
 # Vehicle constants are copies for ROS parameter injection only. Their single
 # project source is stack_avoid/config/params.yaml; measurement rationale is in
@@ -31,8 +31,8 @@
       # Same rear-axle body box and margin as fusion_params.yaml.
       self_filter_margin_m: 0.02
 
-    # Prediction is an ICP initial guess only. VehicleVector.x/y/yaw are not
-    # consumed. dSPACE RX v+str drive a kinematic-bicycle prior; the measured
+    # VehicleVector.x/y/yaw are not consumed. dSPACE RX v+str drive a
+    # kinematic-bicycle pose corrected by GPS position; the measured
     # str sign is opposite ROS +yaw, as verified in stack_avoid field logs.
     prior:
       velocity_timeout_s: 0.25
@@ -50,11 +50,14 @@
       max_steering_deg: 30.0
 
     gps:
-      # GpsPath delta is previous-base_link -> current-base_link. Only exact
-      # RTK FIXED quality 4 + HEADING_FUSED is accepted; FLOAT(5), tangent and
-      # reverse-ambiguous COG are intentionally rejected.
-      use_position_correction: false
-      use_yaw_fallback: false
+      # GpsPath position_x/y use waypoint ENU: east/north metres, yaw CCW
+      # from east. A fixed SE(2) alignment maps them into parking_map using
+      # the first trusted position + fused vehicle heading. CSV yaw is not
+      # assumed to be vehicle heading. Alignment survives RTK/update gaps.
+      # Accept only fresh RTK FIXED + valid position + HEADING_FUSED.
+      timeout_s: 0.5
+      use_position_correction: true
+      use_yaw_fallback: true
       fix_quality: 4
       position_gain: 0.15
       innovation_gate_m: 1.50
@@ -67,19 +70,23 @@
     # Mapping starts at node startup and normally survives a parking trigger.
     reset_map_on_mission_start: false
 
-    # Endpoint clouds contain no explicit no-return rays. Free-space clearing
-    # therefore requires a farther measured endpoint; empty angular bins are
-    # treated as unknown. Padding lets a thin foreground cone occlude nearby
-    # bins too, preventing aligned cones behind it from being erased.
+    # LiDAR endpoints only build the map; ground returns cannot pull the pose.
+    icp.map_correction_enabled: false
+    # Positive N: delete any cell after N consecutive missing observations.
+    # Zero retains the legacy farther-return clearing policy.
+    icp.unobserved_delete_misses: 5
+
+    # Clearing applies within 4m. With unobserved_delete_misses=5, empty and
+    # occluded bearings count as misses too. The angular settings below only
+    # affect the legacy farther-return policy (unobserved_delete_misses=0).
     icp.freespace_clear_enabled: true
     icp.freespace_clear_radius_m: 4.0
     icp.freespace_bin_width_deg: 1.0
     icp.freespace_margin_m: 0.02
     icp.freespace_occlusion_padding_deg: 1.5
-    # Voxel occupancy state: new cells are tentative, become confirmed after
-    # three observations, and confirmed-free rays remove them after 1/3 misses.
-    # Missing or nearer (occluding) rays do not count as misses.
-    icp.observation_match_radius_m: 0.06
+    # New cells become confirmed after three observations. Both states expire
+    # after five misses; the separate 1/3 thresholds only apply in legacy mode.
+    icp.observation_match_radius_m: 0.02
     icp.tentative_confirm_hits: 3
     icp.tentative_delete_misses: 1
     icp.confirmed_delete_misses: 3
@@ -130,11 +137,24 @@
 
     space:
       boundary_near_m: 0.42
-      boundary_far_m: 1.05
+      # User-selected field search limit for side-wall candidates.
+      boundary_far_m: 3.0
       # Parallel space includes the two minimum-radius S arcs and vehicle
       # front/rear clearances; it is intentionally longer than body length.
       parallel_min_length_m: 2.90
+      # Parallel-only decision landmark: the right side wall ends in a very
+      # short 90deg tab which points left/toward the driving lane. Two mapped
+      # point 8cm inward is accepted only with corner continuity, angle,
+      # direction and the common 3-frame stability checks.
+      parallel_decision_wall_min_length_m: 0.08
+      parallel_decision_wall_min_points: 1
+      parallel_decision_wall_x_tolerance_m: 0.10
+      parallel_corner_connect_tolerance_m: 0.14
+      parallel_corner_max_angle_error_deg: 35.0
+      parallel_side_wall_min_length_m: 0.50
       perpendicular_min_width_m: 0.86
+      # Independent of boundary_far_m: a T-bay back wall may be inside the
+      # 3m side-wall search band and still counts once it is this deep.
       perpendicular_min_depth_m: 1.35
       stable_frames: 3
 

@@ -304,12 +304,7 @@ private:
       pt.y = p.y;
       pt.yaw = p.yaw;
       pt.curvature = p.curvature;
-      if (stateUsesPoseDelta(msg.state)) {
-        pt.dx = msg.dx;
-        pt.dy = msg.dy;
-        pt.dyaw = msg.dyaw;
-        pt.update = msg.update;
-      }
+      setCanPoseDelta(pt, msg.state, msg.dx, msg.dy, msg.dyaw, msg.update);
       if (!sendCanFrame(*socket, kIdRefPointBase + i, pt, can_fd_, can_fd_brs_)) {
         const int error_number = errno;
         tx_frames_ += i + 1;

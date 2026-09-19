@@ -2,14 +2,18 @@ track: waypoints_halla_reference_path_04.csv
 stop_points: []
 avoid_zones: []
 gps_only_zones:
-- start: {lat: 37.30381051, lon: 127.90710090, note: rectangle zone 2 entry}
-  end: {lat: 37.30376514, lon: 127.90704653, note: rectangle zone 2 exit}
-- start: {lat: 37.30357394, lon: 127.90681739, note: rectangle zone 1 entry}
-  end: {lat: 37.30352422, lon: 127.90679021, note: rectangle zone 1 exit}
+- start: {lat: 37.30381039, lon: 127.90710083, note: rectangle zone 2 entry}
+  end: {lat: 37.30376484, lon: 127.90704637, note: rectangle zone 2 exit}
+- start: {lat: 37.30357453, lon: 127.90681880, note: rectangle zone 1 entry}
+  end: {lat: 37.30352609, lon: 127.90682171, note: path end inside rectangle zone 1}
 parking_points:
 - mode: parallel
-  lat: 37.30358042
-  lon: 127.90682516
-  east_m: -62.7363
-  north_m: -65.911
+  lat: 37.30357615
+  lon: 127.90682074
+  east_m: -63.127912
+  north_m: -66.384294
   note: 평행 주차
+
+# Revised v2: shared left/right-turn GPS-only + traffic activation zones.
+# Legacy gps_only_zones above are excluded by turn_zone_policy. Configure later.
+turn_zones: []

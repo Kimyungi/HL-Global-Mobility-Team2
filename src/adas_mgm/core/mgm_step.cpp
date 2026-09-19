@@ -3,8 +3,10 @@
 // 구조는 CLAUDE.md 그대로 세 단계:
 //   판단(스테이트 머신, §4 — 시스템에서 유일한 곳)
 //   → 실행 1: ref 조립 (§5.1/§5.6 — 포맷 변환·전환 연속 처리만)
-//   → 실행 2: 종방향 병합 (§5.6 — rate limit만, immediate_stop은 우회)
+//   → 실행 2: 속도 출력 (v2 목표 직접 전달 / legacy rate limit, immediate_stop 우회)
 #include "mgm_step.hpp"
+#include "manager_step.hpp"
+#include "reference_safety.hpp"
 
 #include <cmath>
 
@@ -57,6 +59,65 @@ bool paths_equal(const CorePoint * a, const CorePoint * b, int32_t n)
   }
   return true;
 }
+
+}  // namespace
+
+// Shared existing recovery entry/exit conditions; managers only supply eligibility.
+bool update_escape(const CoreSnapshot & s, CoreState & st, bool eligible)
+{
+  const bool escape_usable =
+    st.params.escape_after_cycles > 0 &&
+    st.params.escape_max_cycles > 0 &&
+    st.params.v_escape < 0.0f;
+
+  // 주행 무장 — 직전 틱의 명령 속도가 0을 넘은 적이 있는가(transition 시점의
+  // st.v 는 아직 이전 틱 값이다). 벽을 마주 보고 launch 하면 첫 틱부터 실제
+  // estop 이 참이라 v 가 0 에서 벗어나지 못하고, 그래서 영원히 무장되지 않는다.
+  if (st.v > kStoppedSpeed) {
+    st.escape_armed = true;
+  }
+
+  // 실제 estop 연속 틱. wrapper 보정이 섞인 s.estop 이 아니라 s.estop_latch_release
+  // 를 쓰는 것이 ④의 핵심이다 — 이 필드는 "신선한 실제 EstopRequest 의 estop 값"이다.
+  if (eligible && s.estop_latch_release) {
+    ++st.estop_hold_cnt;
+  } else {
+    st.estop_hold_cnt = 0;
+  }
+
+  // 후방 여유 게이트 — 진입뿐 아니라 **후진 중에도 매 틱 다시 본다**.
+  // 후진하는 동안 뒤에 뭔가 들어오면 그 자리에서 멈춰야 한다.
+  const bool rear_ok =
+    (st.params.escape_require_rear_clear == 0) || s.estop_rear_clear;
+
+  if (st.escape_phase == MGM_ESCAPE_REVERSING) {
+    ++st.escape_ticks;
+    // 종료 조건 4개: 시간 상한 · 후방 막힘 · estop 해제(장애물이 사라짐) ·
+    // 기능이 런타임에 꺼짐. 어느 쪽이든 페이즈를 닫고 카운터를 리셋한다 —
+    // 리셋 덕분에 다시 갇히면 escape_after_cycles 를 새로 채워야 후진한다
+    // (연속 후진으로 트랙에서 무한히 멀어지는 것을 시간으로 막는다).
+    if (!eligible || !escape_usable || !rear_ok || !s.estop_latch_release ||
+      st.escape_ticks >= st.params.escape_max_cycles)
+    {
+      st.escape_phase = MGM_ESCAPE_NONE;
+      st.escape_ticks = 0;
+      st.estop_hold_cnt = 0;
+    }
+  }
+
+  // 진입 판정 — 위 5개 불변식 + 연속 유지 시간. PARKING 은 제외한다(주차는
+  // parking_v_suggest 로 자체 후진을 하며, 그 판단은 stack_parking 소관이다).
+  const bool escape_entry =
+    escape_usable && st.escape_armed && rear_ok &&
+    st.escape_phase == MGM_ESCAPE_NONE &&
+    eligible &&
+    st.estop_hold_cnt >= st.params.escape_after_cycles;
+
+  return escape_entry;
+}
+
+namespace
+{
 
 // ── 판단: 스테이트 전이 (§4 전이 조건표)
 void transition(const CoreSnapshot & s, CoreState & st)
@@ -176,54 +237,8 @@ void transition(const CoreSnapshot & s, CoreState & st)
   //  ④ estop_latch_release — **실제** EstopRequest 만 센다. §5.7 watchdog 보정이나
   //                          wait_go 대기로 걸린 estop 은 교착이 아니라 안전 장치다
   //  ⑤ 후방 여유           — escape_require_rear_clear 가 켜져 있으면 rear_clear 필수
-  const bool escape_usable =
-    st.params.escape_after_cycles > 0 &&
-    st.params.escape_max_cycles > 0 &&
-    st.params.v_escape < 0.0f;
-
-  // 주행 무장 — 직전 틱의 명령 속도가 0을 넘은 적이 있는가(transition 시점의
-  // st.v 는 아직 이전 틱 값이다). 벽을 마주 보고 launch 하면 첫 틱부터 실제
-  // estop 이 참이라 v 가 0 에서 벗어나지 못하고, 그래서 영원히 무장되지 않는다.
-  if (st.v > kStoppedSpeed) {
-    st.escape_armed = true;
-  }
-
-  // 실제 estop 연속 틱. wrapper 보정이 섞인 s.estop 이 아니라 s.estop_latch_release
-  // 를 쓰는 것이 ④의 핵심이다 — 이 필드는 "신선한 실제 EstopRequest 의 estop 값"이다.
-  if (s.estop_latch_release) {
-    ++st.estop_hold_cnt;
-  } else {
-    st.estop_hold_cnt = 0;
-  }
-
-  // 후방 여유 게이트 — 진입뿐 아니라 **후진 중에도 매 틱 다시 본다**.
-  // 후진하는 동안 뒤에 뭔가 들어오면 그 자리에서 멈춰야 한다.
-  const bool rear_ok =
-    (st.params.escape_require_rear_clear == 0) || s.estop_rear_clear;
-
-  if (st.escape_phase == MGM_ESCAPE_REVERSING) {
-    ++st.escape_ticks;
-    // 종료 조건 4개: 시간 상한 · 후방 막힘 · estop 해제(장애물이 사라짐) ·
-    // 기능이 런타임에 꺼짐. 어느 쪽이든 페이즈를 닫고 카운터를 리셋한다 —
-    // 리셋 덕분에 다시 갇히면 escape_after_cycles 를 새로 채워야 후진한다
-    // (연속 후진으로 트랙에서 무한히 멀어지는 것을 시간으로 막는다).
-    if (!escape_usable || !rear_ok || !s.estop_latch_release ||
-      st.escape_ticks >= st.params.escape_max_cycles)
-    {
-      st.escape_phase = MGM_ESCAPE_NONE;
-      st.escape_ticks = 0;
-      st.estop_hold_cnt = 0;
-    }
-  }
-
-  // 진입 판정 — 위 5개 불변식 + 연속 유지 시간. PARKING 은 제외한다(주차는
-  // parking_v_suggest 로 자체 후진을 하며, 그 판단은 stack_parking 소관이다).
-  const bool escape_entry =
-    escape_usable && st.escape_armed && rear_ok &&
-    st.escape_phase == MGM_ESCAPE_NONE &&
-    st.state != MGM_STATE_PARKING &&
-    st.state != MGM_STATE_TRAFFIC &&
-    st.estop_hold_cnt >= st.params.escape_after_cycles;
+  const bool escape_entry = update_escape(
+    s, st, st.state != MGM_STATE_PARKING && st.state != MGM_STATE_TRAFFIC);
 
   // avoid 복귀 보류 카운터 — waypoint에서 GPS 트랙에 재합류할 시간을 벌어준다
   if (st.return_hold_left > 0) {
@@ -470,7 +485,7 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
         // (immediate_stop 아님 → a_down rate limit 적용). 판정·타이머는
         // transition()에 있고 여기서는 그 결정을 속도로 옮기기만 한다.
         out.v_ref = 0.0f;
-      } else if (s.gps_accel_zone) {
+      } else if (s.gps_accel_zone && !st.params.base_state_machine_enabled) {
         out.v_ref = st.params.v_accel_zone;
       } else {
         out.v_ref = st.params.v_base;
@@ -500,10 +515,16 @@ void prioritize(const CoreSnapshot & s, const CoreState & st, CoreOutput & out)
       }
       out.path_source = MGM_SRC_AVOID;
       // 기동 완료 우선 — 신호등 정지 요구는 기동 이탈 후 적용 (여기서 참조하지 않음).
-      // 안전 바닥: TTC < 임계 또는 긴급 정지 → 즉시 정지 (우선권 표 최상위).
-      if (s.estop || s.avoid_ttc < st.params.ttc_stop) {
+      // v2 gets E-stop only from the independent LiDAR via its manager.
+      // Keep the TTC floor only for the historical legacy state machine.
+      if (s.estop || (!st.params.base_state_machine_enabled &&
+        s.avoid_ttc < st.params.ttc_stop)) {
         out.v_ref = 0.0f;
         out.immediate_stop = true;
+      } else if (!std::isfinite(s.avoid_v_suggest)) {
+        // Preserve invalid-input evidence for the v2 final gate; min() must
+        // not turn a NaN suggestion into a finite speed cap.
+        out.v_ref = s.avoid_v_suggest;
       } else {
         // 종방향은 회피 기하가 결정, 여유 폭 좁으면 감속
         out.v_ref = s.avoid_narrow_gap ?
@@ -589,10 +610,11 @@ const CorePath * select_path(uint8_t src, const CoreSnapshot & s)
 // 곧게 빼는 것이 후진 탈출에서 유일하게 예측 가능한 기하다.
 constexpr float kEscapeRefSpanM = 1.5f;
 
-void build_escape_ref(CorePoint * out)
+void build_escape_ref(CorePoint * out, bool single_point)
 {
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
-    const float t = static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
+    const float t = single_point ? 1.0f :
+      static_cast<float>(i + 1) / static_cast<float>(MGM_NUM_POINTS);
     out[i].x = kEscapeRefSpanM * t;
     out[i].y = 0.0f;
     out[i].yaw = 0.0f;
@@ -612,10 +634,11 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   // 출력 유효분은 n_out개 (와이어에는 유효 점만 실린다 — PROTOCOL.md)
   CorePoint target[MGM_NUM_POINTS];
   const bool escape = (src == MGM_SRC_ESCAPE);
+  const bool single_point = st.params.base_state_machine_enabled;
   if (escape) {
-    build_escape_ref(target);
+    build_escape_ref(target, single_point);
   }
-  const int32_t n = escape ? MGM_NUM_POINTS :
+  const int32_t n = single_point ? MGM_CONTROL_POINTS : escape ? MGM_NUM_POINTS :
     (path->n < MGM_NUM_POINTS ? path->n : MGM_NUM_POINTS);
   const int32_t last = n - 1;
   if (!escape) {
@@ -624,13 +647,10 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     }
   }
 
-  // 단일 목표점 소스(avoid)는 원점→목표 직선 보간으로 20점 경로화 (§5.1 포맷 변환).
-  // 근거 (2026-08-12 실차, run_0812_234253): 같은 run·같은 속도(v_ref 0.44)에서
-  // 20점(gps)=조향 정상 / 1점(avoid)=str 무반응으로 콘에 직진 → estop. 2026-08-08
-  // "1점=str 무반응" 실측의 재확인이며, "원인은 저속"이라는 2026-08-10 재해석을 반증.
-  // dSPACE 수정 없이 PC 조립에서 해결 — 와이어에는 항상 다점이 실린다.
+  // v2 providers already return their station preview. Preserve its full
+  // geometry (including AVOID station+1m); only legacy expands a singleton.
   int32_t n_wire = n;
-  if (n == 1) {
+  if (n == 1 && !single_point) {
     const CorePoint tgt = path->pts[0];
     const float yaw = atan2f(tgt.y, tgt.x);
     // ★ 등간격(첫 점 = 목표/20 ≈ 7.5cm)은 **의도적으로 유지한다.** 첫 점이
@@ -663,7 +683,8 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     (src == MGM_SRC_GPS) ? s.gps_updated :
     (src == MGM_SRC_AVOID) ? s.avoid_updated :
     (src == MGM_SRC_ESCAPE) ? true : false;
-  const bool is_stale_repeat = !src_updated && st.has_raw_target && st.raw_n == n &&
+  const bool source_changed = src != st.last_src;
+  const bool is_stale_repeat = !source_changed && !src_updated && st.has_raw_target && st.raw_n == n &&
     paths_equal(target, st.last_raw_target, n);
 
   st.n_out = n_wire;
@@ -672,7 +693,13 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
     for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
       st.blend_from[i] = st.ref_out[i];
     }
-    st.blend_left = st.params.blend_cycles;
+    // Restore main's blend on avoidance entry/return. Parking and recovery
+    // keep their v2 exclusive-ownership handoff.
+    const bool exclusive_owner = st.params.base_state_machine_enabled &&
+      (src == MGM_SRC_PARKING || src == MGM_SRC_ESCAPE ||
+       (st.params.avoid_unblended && (src == MGM_SRC_AVOID || st.last_src == MGM_SRC_AVOID)));
+    const bool legacy_avoid_entry = !st.params.base_state_machine_enabled && src == MGM_SRC_AVOID;
+    st.blend_left = (exclusive_owner || legacy_avoid_entry) ? 0 : st.params.blend_cycles;
     st.last_src = src;
   }
 
@@ -704,11 +731,19 @@ void assemble(const CoreSnapshot & s, uint8_t src, CoreState & st)
   }
 }
 
-// ── 실행 2: 종방향 병합 — rate limit만. immediate_stop은 스테이트의 결정으로 우회.
+// v2 publishes the decided speed unchanged; only legacy applies a command ramp.
 float merge(const CoreOutput & d, CoreState & st)
 {
   if (d.immediate_stop) {
     st.v = 0.0f;  // 긴급 정지·TTC 바닥은 램프 없이 즉시 (스테이트 머신이 결정)
+    return st.v;
+  }
+  if (st.params.base_state_machine_enabled)
+  {
+    // The lower controller owns acceleration/deceleration. Keep zero requests,
+    // Signal profiles and avoidance handoffs intact, including their stop points.
+    // st.v remains the previous command for guards; it is not measured speed.
+    st.v = d.v_ref;
     return st.v;
   }
   const float lo = st.v - st.params.a_down * MGM_PERIOD_S;
@@ -722,29 +757,119 @@ float merge(const CoreOutput & d, CoreState & st)
 
 }  // namespace
 
+CoreOutput existing_source_request(
+  const CoreSnapshot & s, const CoreState & st, uint8_t state)
+{
+  CoreState view = st;
+  view.state = state;
+  CoreOutput out{};
+  prioritize(s, view, out);
+  return out;
+}
+
 void mgm_init(CoreState & st, const CoreParams & params)
 {
   st = CoreState{};
   st.params = params;
-  st.state = MGM_STATE_LANE;
-  st.traffic_entry_state = MGM_STATE_LANE;
-  st.last_src = MGM_SRC_LANE;
+  // State v09.16 has no separate Mission preparation state.
+  if (st.params.revised_v2_enabled) {st.params.parking_zone_entry_active = 1;}
+  st.managers.recovery.measured_distance_complete = true;
+  st.state = st.params.revised_v2_enabled ? MGM_STATE_WAYPOINT : MGM_STATE_LANE;
+  st.traffic_entry_state = st.state;
+  st.last_src = st.params.revised_v2_enabled ? MGM_SRC_GPS : MGM_SRC_LANE;
+  if (st.params.revised_v2_enabled) {st.managers.nav = NavState::GPS_BACKUP;}
   st.n_out = 1;
   // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)
 }
 
-CoreOutput mgm_step(const CoreSnapshot & in, CoreState & st)
+CoreOutput mgm_step(const CoreSnapshot & input, CoreState & st)
 {
+  CoreSnapshot in = input;
+  in.gps_handoff_cached = false;
+  in.revised_v2 = st.params.revised_v2_enabled != 0;
+  if (in.revised_v2 && !in.new_session) {
+    const auto & route = st.managers.route;
+    const bool waiting = route.phase == RoutePhase::WAIT_ACK;
+    const bool current = in.route.index == route.index && in.route.connecting == route.connecting &&
+      (waiting ? in.route.acknowledged_request < route.request_id : in.route.acknowledged_request == route.request_id);
+    const bool ready = provider_reference(in, MGM_SRC_GPS).valid &&
+      in.route.index == route.requested_index && in.route.connecting == route.requested_connecting &&
+      in.route.acknowledged_request == route.request_id &&
+      in.references[MGM_SRC_GPS].generation > route.request_generation;
+    if ((!waiting || current) && provider_reference(in, MGM_SRC_GPS).valid) {
+      st.handoff_gps_path = in.gps_path;
+      st.handoff_gps_reference = in.references[MGM_SRC_GPS];
+      st.handoff_gps_saved_ns = in.monotonic_ns;
+      st.handoff_gps_known = true;
+    } else if (waiting && !ready) {
+      // Never expose an unacknowledged new route to the steering assembler.
+      in.gps_path.n = 0;
+      if (st.handoff_gps_known && in.gps_fix_quality == 4 && in.gps_valid) {
+        const double elapsed = (in.monotonic_ns - st.handoff_gps_saved_ns) * 1e-9;
+        auto sample = st.handoff_gps_reference;
+        sample.age_s += static_cast<float>(elapsed);
+        if (elapsed >= 0 && sample.age_s <= sample.timeout_s) {
+          in.gps_path = st.handoff_gps_path;
+          in.references[MGM_SRC_GPS] = sample;
+          in.gps_updated = false;
+          in.gps_handoff_cached = true;
+        }
+      }
+    }
+  }
   CoreOutput out{};
-
-  transition(in, st);        // 판단: 전이
-  prioritize(in, st, out);   // 판단: 우선권 → v_ref 요구·경로 소스·immediate_stop
-  assemble(in, out.path_source, st);  // 실행: 조립
-  out.v_ref = merge(out, st);         // 실행: 병합 (rate limit)
+  if (st.params.base_state_machine_enabled) {
+    manager_transition(in, st);
+    out = manager_decision(in, st);
+    st.state = out.state;  // legacy CAN/log projection, never manager input
+  } else {
+    transition(in, st);
+    prioritize(in, st, out);
+  }
+  CoreSnapshot execution = in;
+  if (in.revised_v2 && st.managers.estop_active && out.path_source == MGM_SRC_ESCAPE) {
+    // PR108 recovery provider supplies geometry; do not run the old straight reverse generator.
+    execution.parking_path = in.recovery_path;
+  }
+  if (out.route.changed) {
+    st.has_raw_target = false;
+    st.blend_left = 0;
+    st.last_src = out.path_source;  // never blend geometry from different route frames
+    st.v = 0.0f;
+  }
+  if (st.params.base_state_machine_enabled && out.mission == MissionState::MISSION_ACTIVE) {
+    if (out.mission_start) {
+      // Discard general navigation geometry on exclusive mission handoff.
+      for (auto & point : st.ref_out) {point = CorePoint{};}
+      st.n_out = 1;
+      st.has_raw_target = false;
+    }
+    if (!st.managers.mission_feedback_seen) {execution.parking_path.n = 0;}
+  }
+  // Invalid providers retain authority but cannot feed malformed/new geometry
+  // to the assembler. Existing finite hold/initial stop buffer stays untouched.
+  if (!st.params.base_state_machine_enabled || out.selected_reference.valid) {
+    if (in.revised_v2 && st.managers.estop_active && out.path_source == MGM_SRC_ESCAPE) {
+      st.n_out = in.recovery_path.n;
+      for (int i = 0; i < MGM_NUM_POINTS; ++i) {st.ref_out[i] = in.recovery_path.pts[i];}
+      st.has_raw_target = false;
+    } else {assemble(execution, out.path_source, st);}
+  }
+  out.v_ref = merge(out, st);         // v2 pass-through / legacy rate limit
 
   out.n_points = st.n_out;
   for (int32_t i = 0; i < MGM_NUM_POINTS; ++i) {
     out.ref_points[i] = st.ref_out[i];
+  }
+  if (st.params.base_state_machine_enabled) {
+    final_reference_gate(out, st);
+    st.managers.previous_reverse_command = out.path_source == MGM_SRC_ESCAPE && out.v_ref < 0;
+    if (out.path_source == MGM_SRC_ESCAPE && !out.selected_reference.valid) {
+      st.managers.recovery.last_reason = RecoveryReason::REFERENCE_INVALID;
+      st.managers.recovery.eligible = false;
+      st.managers.recovery.block_reason = RecoveryBlockReason::FORCED_STOP;
+    }
+    out.recovery = st.managers.recovery;
   }
   return out;
 }

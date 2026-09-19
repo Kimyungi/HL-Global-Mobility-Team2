@@ -3,11 +3,18 @@ stop_points: []
 avoid_zones: []
 gps_only_zones:
 - start: {lat: 37.30408780, lon: 127.90742776, note: rectangle zone 3 entry}
-  end: {lat: 37.30398659, lon: 127.90730870, note: rectangle zone 3 exit}
+  end: {lat: 37.30394414, lon: 127.90725877, note: user-extended zone 3 exit}
+# Path 03 parking approach: idx 133..145, 2.983425 m along the CSV.
+- start: {lat: 37.30391639, lon: 127.90722613, note: parking approach GPS-only entry}
+  end: {lat: 37.30389680, lon: 127.90720308, note: parking approach GPS-only exit}
 parking_points:
 - mode: perpendicular
-  lat: 37.30387291
-  lon: 127.90717306
-  east_m: -31.8932
-  north_m: -33.4497
+  lat: 37.30389680
+  lon: 127.90720308
+  east_m: -29.231453
+  north_m: -30.797922
   note: T자 주차
+
+# Revised v2: shared left/right-turn GPS-only + traffic activation zones.
+# Legacy gps_only_zones above are excluded by turn_zone_policy. Configure later.
+turn_zones: []

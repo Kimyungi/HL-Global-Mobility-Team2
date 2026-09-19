@@ -1,0 +1,76 @@
+"""Keep the camera process running; gate only perception inside the child node."""
+import os
+import signal
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+
+class ProcessGate:
+    """Nonblocking process lifecycle; at most one detector process at a time."""
+    def __init__(self, command, *, popen=subprocess.Popen, kill=os.killpg, clock=time.monotonic):
+        self.command, self.popen, self.kill, self.clock = command, popen, kill, clock
+        self.child = None
+        self.stopping_since = None
+        self.retry_at = 0.0
+
+    def update(self, enabled):
+        now = self.clock()
+        if self.child is not None and self.child.poll() is not None:
+            self.child = None
+            self.stopping_since = None
+            self.retry_at = now + .5
+        if self.child is not None and not enabled and self.stopping_since is None:
+            self._signal(signal.SIGTERM)
+            self.stopping_since = now
+        if self.child is not None and self.stopping_since is not None and now-self.stopping_since >= 2.0:
+            self._signal(signal.SIGKILL)
+        if enabled and self.child is None and now >= self.retry_at:
+            self.child = self.popen(self.command, start_new_session=True)
+
+    def _signal(self, sig):
+        try:
+            self.kill(self.child.pid, sig)
+        except ProcessLookupError:
+            pass
+
+    def close(self):
+        if self.child is not None:
+            self._signal(signal.SIGTERM)
+            try:
+                self.child.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                self._signal(signal.SIGKILL)
+                self.child.wait(timeout=2.0)
+
+
+def main(args=None):
+    # Importing the supervisor does not load a model or open an OAK camera.
+    import rclpy
+    import yaml
+    from rclpy.node import Node
+
+    rclpy.init(args=args)
+    node = Node('traffic_zone_supervisor', automatically_declare_parameters_from_overrides=True)
+    params = {name: parameter.value
+              for name, parameter in node.get_parameters_by_prefix('').items()}
+    params['traffic_zone_gated'] = True
+    handle = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', prefix='traffic_zone_', delete=False)
+    with handle:
+        yaml.safe_dump({'/**': {'ros__parameters': params}}, handle)
+    gate = ProcessGate(['ros2', 'run', 'stack_traffic', 'stack_traffic_node',
+                       '--ros-args', '--params-file', handle.name])
+    gate.update(True)
+    # Keep traffic video available across zones and exit mission phases.
+    node.create_timer(.1, lambda: gate.update(True))
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+        pass
+    finally:
+        gate.close()
+        Path(handle.name).unlink(missing_ok=True)
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()

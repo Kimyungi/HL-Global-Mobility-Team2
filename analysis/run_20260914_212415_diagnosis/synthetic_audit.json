@@ -1,0 +1,66 @@
+[
+  {
+    "scene": "one_obstacle_2m",
+    "profiled_seconds": 0.05607998399500502,
+    "reason": "cubic waypoint anchor -> side point -> waypoint return",
+    "target": true,
+    "counts": {
+      "candidates": 26,
+      "goals_ms": 6.568,
+      "footprint": 8,
+      "safe": 8,
+      "curvature": 4
+    },
+    "unprofiled_seconds": 0.02459482499398291
+  },
+  {
+    "scene": "one_obstacle_3_3m",
+    "profiled_seconds": 0.05123721699783346,
+    "reason": "cubic waypoint anchor -> side point -> waypoint return",
+    "target": true,
+    "counts": {
+      "candidates": 26,
+      "goals_ms": 6.796,
+      "footprint": 8,
+      "safe": 8
+    },
+    "unprofiled_seconds": 0.021833484999660868
+  },
+  {
+    "scene": "wall_2m",
+    "profiled_seconds": 0.009411299004568718,
+    "reason": "no collision-free cubic path with waypoint return at +2.7m",
+    "target": false,
+    "counts": {
+      "candidates": 0,
+      "goals_ms": 7.79
+    },
+    "unprofiled_seconds": 0.003656758002762217
+  },
+  {
+    "scene": "diagonal",
+    "profiled_seconds": 0.05812049499945715,
+    "reason": "cubic waypoint anchor -> side point -> waypoint return",
+    "target": true,
+    "counts": {
+      "candidates": 20,
+      "goals_ms": 10.816,
+      "footprint": 4,
+      "safe": 8
+    },
+    "unprofiled_seconds": 0.03161605499917641
+  },
+  {
+    "scene": "two_obstacles",
+    "profiled_seconds": 0.09973390300001483,
+    "reason": "cubic waypoint anchor -> side point -> waypoint return",
+    "target": true,
+    "counts": {
+      "candidates": 39,
+      "goals_ms": 11.573,
+      "safe": 12,
+      "footprint": 16
+    },
+    "unprofiled_seconds": 0.044496955000795424
+  }
+]

@@ -1,7 +1,7 @@
 import os
 from glob import glob
 
-from setuptools import find_packages, setup
+from setuptools import Extension, find_packages, setup
 
 package_name = 'stack_avoid'
 
@@ -9,6 +9,12 @@ setup(
     name=package_name,
     version='0.1.0',
     packages=find_packages(exclude=['test']),
+    ext_modules=[Extension(
+        'stack_avoid._footprint_native',
+        sources=['stack_avoid/native/footprint.cpp', 'stack_avoid/native/module.cpp'],
+        language='c++',
+        extra_compile_args=['-O3', '-std=c++17', '-fno-fast-math', '-ffp-contract=off'],
+    )],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -19,7 +25,7 @@ setup(
     ],
     install_requires=['setuptools'],
     tests_require=['pytest'],
-    zip_safe=True,
+    zip_safe=False,
     maintainer='이기돈',
     maintainer_email='kyg100800@gmail.com',
     description='장애물 인지, 회피 가능 판정 재료(TTC·측방), 회피 경로',
@@ -27,6 +33,9 @@ setup(
     entry_points={
         'console_scripts': [
             'stack_avoid_node = stack_avoid.node:main',
+            'waypoint_avoid_node = stack_avoid.waypoint_node:main',
+            'main_gap_trial = stack_avoid.main_gap_trial:main',
+            'main_gap_path_trial = stack_avoid.main_gap_path_trial:main',
             'fake_scan = stack_avoid.fake_scan:main',        # 테스트: 합성 스캔
             'avoid_viz = stack_avoid.avoid_viz:main',        # 테스트: 회피 출력 RViz 마커
             'angle_labels = stack_avoid.angle_labels:main',  # 테스트: 각도 눈금(방향 확인)

@@ -1,0 +1,2 @@
+family,scene,initial_speed,cruise_speed,spacing,cars,result,time,x,y,speed_min,vehicle_contact,curb_contact,max_ms,reason
+cruise_speed,s_center_gap_3,0.2,0.2,0,3,hold,23.4,5.584503615,1.023236995,0.2,0,0,6.200394,current braking envelope blocked or unknown

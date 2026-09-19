@@ -1,0 +1,26 @@
+         252486 function calls (249586 primitive calls) in 0.058 seconds
+
+   Ordered by: cumulative time
+   List reduced from 201 to 18 due to restriction <18>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.058    0.058 node.py:245(on_scan)
+        1    0.000    0.000    0.057    0.057 path_io.py:164(_station_reference)
+        1    0.000    0.000    0.046    0.046 gps_cubic_path.py:155(step)
+        3    0.000    0.000    0.043    0.014 gps_cubic_path.py:134(_curve)
+       12    0.006    0.000    0.024    0.002 gps_cubic_path.py:51(cubic_connector)
+       12    0.000    0.000    0.019    0.002 offline_audit.py:22(check)
+       12    0.000    0.000    0.018    0.001 gps_cubic_path.py:107(_safe)
+       12    0.015    0.001    0.017    0.001 station_path.py:127(footprint_clear)
+    19242    0.007    0.000    0.013    0.000 {built-in method builtins.sum}
+        1    0.000    0.000    0.011    0.011 offline_audit.py:27(count_goals)
+        1    0.000    0.000    0.011    0.011 path_io.py:141(_path_goals)
+       60    0.000    0.000    0.009    0.000 node.py:340(_target_clear)
+     3207    0.001    0.000    0.006    0.000 gps_cubic_path.py:74(<listcomp>)
+       50    0.002    0.000    0.006    0.000 node.py:314(_behind_surface)
+     3207    0.001    0.000    0.006    0.000 gps_cubic_path.py:75(<listcomp>)
+     3207    0.001    0.000    0.005    0.000 gps_cubic_path.py:76(<listcomp>)
+6431/3531    0.001    0.000    0.004    0.000 {built-in method builtins.min}
+       50    0.000    0.000    0.003    0.000 surfaces.py:221(surface_clearance)
+
+

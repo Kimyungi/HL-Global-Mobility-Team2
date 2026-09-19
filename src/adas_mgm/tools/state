@@ -7,11 +7,11 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from fma_interfaces.msg import TargetRef
+from fma_interfaces.msg import TargetRef, MgmState
 
 NAMES = {
     0: 'LANE(차선)', 1: 'WAYPOINT(GPS)', 2: 'AVOID(회피)',
-    3: 'PARKING(주차)', 4: 'TRAFFIC(신호등)',
+    3: 'PARKING(주차)', 4: 'TRAFFIC(신호등)', 5: 'ESTOP(회복)',
 }
 
 
@@ -21,6 +21,8 @@ def main():
     last = {}
     node.create_subscription(TargetRef, '/adas/target_ref',
                              lambda m: last.update(m=m), 1)
+    node.create_subscription(MgmState, '/adas/mgm_state',
+                             lambda m: last.update(manager=m), 1)
     print('스테이트 감시 중 (Ctrl+C 종료)', flush=True)
     prev_print = 0.0
     try:
@@ -30,7 +32,13 @@ def main():
             if 'm' in last and now - prev_print >= 1.0:
                 m = last['m']
                 y0 = m.ref_points[0].y if m.ref_points else 0.0
-                print(f"{NAMES.get(m.state, m.state):14s}  v_ref {m.v_ref:.2f} m/s"
+                manager = last.get('manager')
+                name = 'ESTOP(회복)' if manager is not None and manager.estop_active else NAMES.get(m.state, m.state)
+                last_phase = getattr(manager, 'last_mission_phase', 0)
+                if last_phase and not manager.estop_active:
+                    phase = {1:'STOPPING',2:'JUDGING',3:'SELECTED',4:'WAIT_ROUTE',5:'DONE',6:'APPROACH'}.get(last_phase,'?')
+                    name += f' | LAST {phase} route={manager.last_mission_route_id:02d}'
+                print(f"{name:14s}  v_ref {m.v_ref:.2f} m/s"
                       f"  조향목표 y {y0:+.2f} m", flush=True)
                 prev_print = now
     except KeyboardInterrupt:

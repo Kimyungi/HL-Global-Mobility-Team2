@@ -1,0 +1,11 @@
+{
+  "latitude": 37.30413433333333,
+  "longitude": 127.90747616666667,
+  "fix_quality": 4,
+  "fix_monotonic": 14213.383047006,
+  "fix_age_s_at_read": 0.049176127000464476,
+  "purpose": "User-requested temporary avoidance start, captured before moving to route start",
+  "route_start": "01",
+  "route_end": "07",
+  "target_speed_mps": 1.0
+}

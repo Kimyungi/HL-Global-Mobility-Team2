@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+echo "Retired avoidance entry excluded. Use scripts/v2 prepare; see RUN_BOOK_HALLA_FINAL.md." >&2
+exit 2
+
+# Historical implementation below is intentionally unreachable.
+# Live 1 m/s obstacle test; the existing MGM GO/readiness and E-stop gates apply.
+set -eo pipefail
+AVOID_DRIVE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+if [[ $# -ne 0 ]]; then
+  echo 'Usage: scripts/avoid-drive-test (route 01 -> 03, 1 m/s, explicit GO required)' >&2
+  exit 2
+fi
+for AVOID_DRIVE_SIDE in front rear left right; do
+  if [[ ! -c /dev/lidar_$AVOID_DRIVE_SIDE || ! -r /dev/lidar_$AVOID_DRIVE_SIDE || ! -w /dev/lidar_$AVOID_DRIVE_SIDE ]]; then
+    echo 'Lidar links/access missing. Run: sudo /usr/bin/python3 scripts/v2_recover_lidars.py --apply' >&2
+    exit 1
+  fi
+done
+echo 'Obstacle test: route 01 -> 03, 1 m/s, detection-based AVOID entry, waiting for GO.'
+exec "$AVOID_DRIVE_ROOT/scripts/v2" vehicle \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  route_sequence_file:="$AVOID_DRIVE_ROOT/tools/avoid_reference_lab/route_01_03.yaml" \
+  gps_link_mode:=persistent \
+  avoidance_enabled:=true avoid_zone_only:=false \
+  avoid_v2_enabled:=false avoid_planner_mode:=fixed_goals avoid_compute_backend:=native \
+  v_base:=1.0 v_avoid:=1.0 avoid_target_speed_mps:=1.0 \
+  gps_only:=true lane_enabled:=false traffic_enabled:=false \
+  parking_enabled:=true escape_after_cycles:=0 record:=true

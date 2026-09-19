@@ -39,6 +39,7 @@ const char * stateName(uint8_t state)
     case MGM_STATE_AVOID: return "AVOID";
     case MGM_STATE_PARKING: return "PARKING";
     case MGM_STATE_TRAFFIC: return "TRAFFIC";
+    case MGM_STATE_ESTOP: return "ESTOP";
     default: return "?";
   }
 }
@@ -93,18 +94,36 @@ TransitionRecord explainTransition(
   } else if (from == MGM_STATE_TRAFFIC &&
     (to == MGM_STATE_LANE || to == MGM_STATE_WAYPOINT))
   {
-    r.rule = to == MGM_STATE_WAYPOINT ?
-      "traffic→waypoint: 확정 초록 + 진입 전 상태 복귀" :
-      "traffic→lane: 확정 초록 + 진입 전 상태 복귀";
-    r.spec_match = s.traffic_green_active;
+    if (p.base_state_machine_enabled) {
+      r.rule = "traffic→waypoint: 적색 해제 + GPS 주행 선택";
+      r.spec_match = !s.traffic_red_active && to == MGM_STATE_WAYPOINT;
+    } else {
+      r.rule = to == MGM_STATE_WAYPOINT ?
+        "traffic→waypoint: 확정 초록 + 진입 전 상태 복귀" :
+        "traffic→lane: 확정 초록 + 진입 전 상태 복귀";
+      r.spec_match = s.traffic_green_active;
+    }
   } else if (to == MGM_STATE_AVOID) {
-    r.rule = "→avoid: 장애물 감지 + 회피 가능 (+ 회피 허용 구간)";
-    r.spec_match = s.avoid_obstacle_detected && s.avoid_avoidable &&
-      (p.avoid_zone_only == 0 || s.gps_avoid_zone);
+    if (p.base_state_machine_enabled && p.avoid_zone_only) {
+      r.rule = "→avoid: GPS 회피 시작 구간 확인 (CSV state=4), waypoint 복귀까지 유지";
+      r.spec_match = s.gps_valid && s.gps_avoid_zone;
+    } else {
+      r.rule = "→avoid: 장애물 감지 + 회피 가능 (+ 회피 허용 구간)";
+      r.spec_match = s.avoid_obstacle_detected && s.avoid_avoidable &&
+        (p.avoid_zone_only == 0 || s.gps_avoid_zone);
+    }
   } else if (from == MGM_STATE_AVOID) {
-    r.rule = "avoid→waypoint: 기동 완료 또는 avoid_max_cycles 초과";
-    r.spec_match = s.avoid_maneuver_done ||
-      (p.avoid_max_cycles > 0 && avoid_ticks_before >= p.avoid_max_cycles);
+    if (p.base_state_machine_enabled && p.avoid_zone_only) {
+      r.rule = "avoid→navigation: waypoint 복귀 완료 후 GPS station 0.1m/20도 정렬";
+      r.spec_match = s.gps_valid && s.gps_heading_valid && s.gps_station_error_valid &&
+        std::isfinite(s.gps_cross_track) && std::isfinite(s.gps_station_yaw_error) &&
+        std::fabs(s.gps_cross_track) <= .1f &&
+        std::fabs(s.gps_station_yaw_error) <= 20.f * 3.14159265358979323846f / 180.f;
+    } else {
+      r.rule = "avoid→waypoint: 기동 완료 또는 avoid_max_cycles 초과";
+      r.spec_match = s.avoid_maneuver_done ||
+        (p.avoid_max_cycles > 0 && avoid_ticks_before >= p.avoid_max_cycles);
+    }
   } else if (to == MGM_STATE_PARKING) {
     r.rule = "lane→parking: GPS 주차구간 + 주차공간 인식";
     r.spec_match = s.gps_parking_zone && s.parking_space_found;

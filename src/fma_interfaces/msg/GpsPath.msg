@@ -2,7 +2,7 @@
 std_msgs/Header header
 RefPoint[] points
 bool accel_zone      # 가속구간 (종방향 ↑ 요구의 원천 — 적용 여부는 스테이트 우선권이 결정)
-bool parking_zone    # GPS 주차구간 (lane→parking 전이 조건의 절반)
+bool parking_zone    # legacy/generated 입력; 병행 Mission은 zones entry에서 PREPARE
 # GPS parking-zone type. NONE preserves the legacy boolean-only contract;
 # stack_parking then uses its configured gps_default_mode.
 uint8 PARKING_NONE = 0
@@ -21,6 +21,10 @@ uint8 fix_quality    # 0=invalid, 1=GPS, 2=DGPS, 4=RTK fixed, 5=RTK float
 # 뒤에만** 허용돼야 하는데(2026-08-14), 시간 게이트만으로는 이탈한 채 lane으로
 # 넘어가 버린다. stack_gps가 이미 내부에서 쓰던 값을 계약에 노출한 것.
 float32 cross_track_m
+# Current station tangent minus measured vehicle heading, wrapped to [-pi, pi].
+# Separate from the +2.5m preview point yaw. False for tangent-fallback heading.
+float32 station_yaw_error_rad
+bool station_error_valid
 
 # 헤딩 추정 소스 (2026-08-16 신설). MGM이 "이 헤딩을 믿어도 되는가"를 알아야 하는데
 # 종전 계약엔 그 정보가 없었다 — fix_quality가 위치 신뢰도만 알려주듯, 헤딩에도
@@ -57,10 +61,46 @@ uint8 stop_zone
 # 회피 허용 구간 안인가. MGM의 avoid_zone_only 게이트 입력 — 켜면 이 구간
 # 밖에서는 AVOID 전이를 하지 않는다(장애물은 stack_estop 정지로만 대응).
 # fix 상실 시 false = 보수적(회피 금지) 쪽으로 떨어진다.
+bool exit_stop_reached  # current station >= CSV state=3; not preview
 bool avoid_zone
 
-# GPS 전용 구간 안인가 (2026-08-18). 이 구간에서는 MGM 이 LANE 전이를 하지 않고
+# GPS 전용 구간 안인가 (2026-08-18). 현재 station 또는 station preview에 가장
+# 가까운 CSV 웨이포인트가 구간 안이면 true다. 이 구간에서는 MGM 이 LANE 전이를 하지 않고
 # WAYPOINT 로 고정한다 — 차선 검출을 믿기 어려운 구간(역광·노면 표시 혼재 등)을
 # 코스 단위가 아니라 **구간 단위**로 지정하기 위한 것. launch 의 gps_only:=true 는
 # run 전체에 걸리는 반면 이쪽은 그 구간에서만 걸린다.
 bool gps_only_zone
+
+# Complete configured membership snapshot. False on invalid fix; an empty but
+# valid snapshot means NORMAL_ZONE. Existing zone booleans remain for legacy clients.
+bool zone_valid
+ZoneContext[] zones
+
+# Actual sensor-input generation backing these points, not publication time.
+# Held on republish; zero means unproven/no generated reference. MGM applies
+# the existing provider timeout to this stamp, including transport delay.
+builtin_interfaces/Time reference_stamp
+
+# Existing GNSS ENU position and current-position track index, for mission logs.
+# Same sample/freshness as reference_stamp. No new path/zone geometry.
+bool position_valid
+float64 position_x
+float64 position_y
+int32 track_index
+
+# Observations for calibration; change only on independent GNSS fix.
+int32 previous_track_index -1
+float64 position_step_m
+float64 vehicle_heading_rad
+bool vehicle_heading_valid
+RouteFeedback route
+
+# Ordered waypoint window for scan-by-scan avoidance. Uses the same vehicle
+# frame, pose and reference_stamp as points; stations are cumulative CSV arc
+# length (metres), not waypoint indices or distance along an avoidance path.
+# Empty/false means unavailable; consumers must not invent a GPS path from
+# the single navigation preview. Window covers station-2m through station+8m.
+bool waypoint_window_valid
+float64 waypoint_station_m
+float64[] waypoint_stations
+RefPoint[] waypoint_points

@@ -1,12 +1,7 @@
-"""전체 파이프라인: 차선 이진 마스크 -> BEV -> 슬라이딩 윈도우 -> 중심선 ->
-경로 다점(多點, x,y,yaw,curvature) + confidence.
+"""차선 마스크 -> BEV -> 다점 중심선 피팅 -> station +2.5m 목표점 1개.
 
-⚠️ 2026-08-08 설계 변경: REQUIREMENTS.md/PROTOCOL.md는 원래 "점 1개"로 합의됐었으나
-(2026-07-29), 실차 조향 진단 결과 dSPACE MPC가 실제로는 다점(최대 20, CLAUDE.md의
-"예측 지평 200ms/N=20"과 일치)을 받아야 궤적 추종을 시작하는 것으로 확인됨 — GPS
-성공 로그(gps_run_20260806_scurve) 내에서 n_points=1 구간은 str 변동폭 0.1°(무반응),
-n_points=20 구간은 55.6°(정상 반응)로 같은 세션 안에서 직접 대조됨. 이 문서 갱신은
-팀 논의 후 진행 예정 — 지금은 실측 검증 우선.
+차량 원점의 중심선 최근접 투영을 현재 station으로 삼는다. 내부 다점 검사는
+유지하지만 반환은 같은 곡선의 x/y/yaw/curvature 한 점뿐이다 (2026-09-12).
 """
 from __future__ import annotations
 
@@ -16,6 +11,7 @@ import numpy as np
 
 from stack_lane.bev import BevGrid, warp_to_bev
 from stack_lane.lane_fit import LANE_WIDTH_M, LaneFitResult, SideFit, fit_lane
+from stack_lane.station_preview import CAMERA_PREVIEW_STATION_M, station_preview_x
 
 # 물리적 타당성 상한 (2026-08-08, 조향 진단).
 #
@@ -57,16 +53,15 @@ class LaneEstimate:
     curvature: float
     confidence: float
     mode: str  # 'both' | 'left_only' | 'right_only' | 'none'
-    points: list[PathPoint] = field(default_factory=list)  # 근거리->원거리 순, 1개 이상
-    # REF_POINT_00 근거리 치환 실험 로깅용 (2026-08-08, 조향 게인 진단) — 이 프레임에서
-    # 실제로 치환이 적용됐는지·points[0]의 최종 x가 얼마였는지. 실차 로그로 세 완화
-    # 방법(접선 외삽/신뢰도 게이팅/거리)의 효과를 사후 판단하기 위한 필드.
+    points: list[PathPoint] = field(default_factory=list)  # 반환 목표점 1개
+    # 기존 CSV 필드 이름 유지: 유효 station preview 여부와 실제 목표점 x를 기록한다.
+    # ref_point0_x는 station 거리(항상 +2.5m)와 다르다.
     ref_point0_applied: bool = False
     ref_point0_x: float = 0.0
     # 'none'이 된 이유 분류 (2026-08-10, 오실레이션 3계층 진단용) — 카메라/인식
     # 계층에서 "애초에 검출 실패"인지 "검출은 됐지만 우리 필터가 거부"인지 로그로
     # 구분하기 위함. 값: '' | 'no_fit'(fit_lane 자체가 none) | 'implausible'(y 폭주)
-    # | 'discontinuous'(직전값 대비 과도한 점프, 연속성 체크).
+    # | 'discontinuous'(직전값 대비 과도한 점프) | 'invalid_preview'(station 계산/기하 무효).
     reject_reason: str = ""
 
 
@@ -125,7 +120,7 @@ def _point_from_fit(center_coeffs: np.ndarray, x: float) -> PathPoint:
 
 
 def lookahead_from_fit(center_coeffs: np.ndarray, lookahead_m: float) -> tuple[float, float, float, float]:
-    """단일 지점 버전 — 하위호환용(디버그 시각화 등). 다점 출력은 sample_path_points 참조."""
+    """지정 x에서 평가. 기존 raw 연속성 검사의 기준점이며 station preview와 별개."""
     p = _point_from_fit(center_coeffs, lookahead_m)
     return p.x, p.y, p.yaw, p.curvature
 
@@ -134,8 +129,7 @@ def sample_path_points(center_coeffs: np.ndarray, x_start: float, x_end: float,
                         n_points: int) -> list[PathPoint]:
     """근거리(x_start)~원거리(x_end) 구간을 n_points개로 등간격 샘플링.
 
-    dSPACE MPC가 다점 지평을 요구하는 것으로 실측 확인됨(모듈 docstring 참조) —
-    GPS 실측 범위(x≈1~6m, 최대 20점)를 참고해 기본값을 잡음.
+    내부 다항식 타당성 검사 표본이다. 이 배열을 제어 출력으로 반환하지 않는다.
     """
     n_points = max(1, n_points)
     if n_points == 1:
@@ -143,104 +137,16 @@ def sample_path_points(center_coeffs: np.ndarray, x_start: float, x_end: float,
     else:
         xs = [x_start + (x_end - x_start) * i / (n_points - 1) for i in range(n_points)]
     return [_point_from_fit(center_coeffs, x) for x in xs]
-
-
-def _linear_extrapolate(center_coeffs: np.ndarray, x_ref: float, x_target: float) -> PathPoint:
-    """x_ref 지점의 접선(기울기 고정)으로 x_target을 선형 추정.
-
-    완화안 1(접선 외삽) — 2차항(c2)이 실측 범위(x_ref) 밖에서 오차를 빠르게
-    키우는 걸 피하려고, x_ref에서의 기울기만 가져와 직선으로 연장한다.
-    곡률 정보가 없는 근사라 curvature는 명시적으로 0.
-    """
-    c2, c1, c0 = center_coeffs
-    y_ref = c2 * x_ref * x_ref + c1 * x_ref + c0
-    dy = 2 * c2 * x_ref + c1
-    y = y_ref + dy * (x_target - x_ref)
-    yaw = float(np.arctan(dy))
-    return PathPoint(x=float(x_target), y=float(y), yaw=yaw, curvature=0.0)
-
-
-def _compute_ref_point0(center_coeffs: np.ndarray, *, x_start: float, lookahead_m: float | None,
-                         extrap_mode: str, confidence: float, min_confidence: float) -> PathPoint | None:
-    """REF_POINT_00(dSPACE가 실제 조향 계산에 쓰는 유일한 점, avoid_to_ref.py 주석 근거)을
-    카메라 가시 범위(x_start) 밖의 더 가까운 지점으로 당길지 결정.
-
-    완화안 2(신뢰도 게이팅) — 피팅이 불안정할 때(confidence 낮음) 근거리 외삽은
-    노이즈를 오히려 증폭시키므로, confidence가 충분할 때만 적용하고 아니면
-    None을 반환해 원래(x_start) 배열을 그대로 쓰게 한다.
-    완화안 3(거리) — lookahead_m을 얼마로 줄지는 호출부(파라미터)가 결정 —
-    작을수록 조향 게인은 커지지만(κ=2y/(x²+y²)) 외삽 거리도 늘어남.
-    """
-    if lookahead_m is None or lookahead_m <= 0.0 or lookahead_m >= x_start:
-        return None  # 비활성 또는 당길 필요 없음 — 기존 동작 그대로
-    if confidence < min_confidence:
-        return None  # 완화안 2: 신뢰도 부족 — 원래 x_start 배열 유지
-    if extrap_mode == "linear":
-        return _linear_extrapolate(center_coeffs, x_start, lookahead_m)
-    return _point_from_fit(center_coeffs, lookahead_m)  # 'quadratic' (또는 그 외 값) 기본 동작
-
-
-def _dynamic_ref_point0_lookahead(coeffs: np.ndarray, *, x_start: float,
-                                   base_lookahead_m: float,
-                                   c0_safe_m: float, c0_unsafe_m: float,
-                                   min_turn_radius_m: float,
-                                   step_m: float = 0.05) -> float:
-    """REF_POINT_00을 얼마나 가깝게 당길지, 현재 프레임 상황에 맞춰 매번 다시 정한다
-    (2026-08-16, 곡선 대응 설계).
-
-    고정 거리 하나로는 두 상황을 동시에 만족 못 시킨다: 직선에서 실제로 이탈했을
-    때(c0 큼) 세게 당기면 조향이 포화돼 위험하고(stack_gps PathEngine의
-    run_0814_195116 사례와 같은 원리 — 이탈이 클수록 가까운 점을 조준하면 도달
-    불가능한 곡률을 요구하게 됨), 반대로 S자·급커브에서는 도로 곡률(c2) 때문에
-    y가 자연히 커지는 것뿐인데 이걸 "이탈"로 오인해서 게인을 낮추면 코너를 못 돈다.
-
-    그래서 두 신호를 분리한다:
-      - c0(다항식 상수항, x=0에서의 y) = "지금 차가 차선 중심에서 얼마나 벗어나
-        있는가"의 근사치. 곡률(c2)·기울기(c1)와 분리된 순수 오프셋이라 도로가
-        휘어도 잘 따라가고 있으면(=차가 그 곡선의 중심에 있으면) 작게 유지된다.
-        c0가 `c0_safe_m` 이하면 가장 공격적인 `base_lookahead_m`을 그대로 쓰고,
-        `c0_unsafe_m` 이상이면 당기지 않고 `x_start`(안전한 원래 값)까지 물러선다.
-        그 사이는 선형보간.
-      - 그렇게 고른 거리에서의 실제 y(곡률까지 반영된 값)로 최소회전반경
-        (`min_turn_radius_m`, WHEELTEC 실측 1.5m — stack_gps
-        PathEngine.MIN_TURN_RADIUS_M과 동일 물리 상수) 도달가능성
-        (|2y|·R_min ≤ d²)을 확인해서, 넘으면 이유 불문하고 x_start 쪽으로
-        밀어낸다 — 이건 이탈이든 진짜 곡선이든 항상 지켜야 하는 하드 안전장치.
-    """
-    c2, c1, c0 = coeffs
-    drift = abs(c0)
-    if drift <= c0_safe_m:
-        candidate = base_lookahead_m
-    elif drift >= c0_unsafe_m:
-        candidate = x_start
-    else:
-        frac = (drift - c0_safe_m) / (c0_unsafe_m - c0_safe_m)
-        candidate = base_lookahead_m + frac * (x_start - base_lookahead_m)
-
-    d = candidate
-    while d < x_start:
-        y_d = c2 * d * d + c1 * d + c0
-        if abs(2.0 * y_d) * min_turn_radius_m <= d * d:
-            break
-        d += step_m
-    return min(d, x_start)
-
-
 def _is_plausible(points: list[PathPoint]) -> bool:
     """다항식 외삽이 물리적으로 타당한 범위 안에 있는지. yaw는 검사 안 함(근거는
     모듈 상단 주석 — 급커브와 오검출을 각도만으론 구분 못 함)."""
-    return all(abs(p.y) <= MAX_ABS_Y_M for p in points)
+    return all(np.isfinite([p.x, p.y, p.yaw, p.curvature]).all()
+               and abs(p.y) <= MAX_ABS_Y_M for p in points)
 
 
 def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
                         lookahead_m: float = 3.0,
                         n_points: int = 20, points_x_start: float = 2.5, points_x_end: float | None = None,
-                        ref_point0_lookahead_m: float | None = None,
-                        ref_point0_extrap_mode: str = "quadratic",
-                        ref_point0_min_confidence: float = 0.5,
-                        ref_point0_c0_safe_m: float = 0.3,
-                        ref_point0_c0_unsafe_m: float = 1.0,
-                        ref_point0_min_turn_radius_m: float = 1.5,
                         prev_y: float | None = None, max_y_jump_m: float = 1.0,
                         prev_coeffs: np.ndarray | None = None, coeff_smoothing_alpha: float = 1.0,
                         fit_kwargs: dict | None = None,
@@ -249,14 +155,9 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
     그보다 가까운 구간은 실측 근거 없이 다항식을 외삽하는 것이라 신뢰도가 낮음.
     points_x_end 기본값은 grid.x_max(현재 6.0m, GPS 실측 범위와 유사).
 
-    ref_point0_lookahead_m은 이제 **고정 거리가 아니라 "차가 차선 중심에
-    잘 있을 때(c0 작을 때) 쓰는 가장 공격적인 기준값"**이다(2026-08-16 개정 —
-    근거·수식은 `_dynamic_ref_point0_lookahead()` docstring 참조). 실제로 매
-    프레임 적용되는 거리는 c0(드리프트)·c2(도로 곡률)를 반영해 base_lookahead_m
-    ~ points_x_start 사이에서 매번 다시 계산된다. ref_point0_c0_safe_m/
-    ref_point0_c0_unsafe_m/ref_point0_min_turn_radius_m이 그 계산의 나머지
-    입력값. 기본값(ref_point0_lookahead_m=None)은 기존 동작과 완전히 동일 —
-    명시적으로 켜야 적용된다.
+    반환 points와 estimate의 x/y/yaw/curvature는 station +2.5m의 한 점이다.
+    n_points는 내부 검사 표본 수, lookahead_m은 raw 연속성 검사의 x 기준이다.
+    confidence/곡률/횡오차로 preview 거리를 조절하거나 다점 배열을 반환하지 않는다.
 
     prev_y/max_y_jump_m: 프레임 간 연속성 체크 (2026-08-08, 편측 오검출 진단) —
     fit_lane()은 매 프레임 후보를 처음부터 새로 찾기 때문에(직전 프레임 기억 없음),
@@ -323,25 +224,22 @@ def estimate_lane_path(lane_mask: np.ndarray, H: np.ndarray, grid: BevGrid, *,
     else:
         smoothed_coeffs = coeffs
 
-    x, y, yaw, curvature = lookahead_from_fit(smoothed_coeffs, lookahead_m)
-    points = sample_path_points(smoothed_coeffs, points_x_start, x_end, n_points)
+    debug = {"bev_mask": bev_mask, "fit": result, "raw_y": raw_y,
+             "smoothed_coeffs": smoothed_coeffs}
+    try:
+        projection_x, target_x = station_preview_x(smoothed_coeffs)
+        point = _point_from_fit(smoothed_coeffs, target_x)
+        if not _is_plausible([point]):
+            raise ValueError("invalid station preview geometry")
+    except (ValueError, OverflowError, np.linalg.LinAlgError):
+        neutral = PathPoint(x=lookahead_m, y=0.0, yaw=0.0, curvature=0.0)
+        estimate = LaneEstimate(x=neutral.x, y=neutral.y, yaw=neutral.yaw, curvature=neutral.curvature,
+                                confidence=0.0, mode="none", points=[neutral],
+                                ref_point0_x=neutral.x, reject_reason="invalid_preview")
+        return estimate, debug
 
-    effective_lookahead_m = None
-    if ref_point0_lookahead_m is not None and ref_point0_lookahead_m > 0.0:
-        effective_lookahead_m = _dynamic_ref_point0_lookahead(
-            smoothed_coeffs, x_start=points_x_start, base_lookahead_m=ref_point0_lookahead_m,
-            c0_safe_m=ref_point0_c0_safe_m, c0_unsafe_m=ref_point0_c0_unsafe_m,
-            min_turn_radius_m=ref_point0_min_turn_radius_m)
-
-    near_pt = _compute_ref_point0(
-        smoothed_coeffs, x_start=points_x_start, lookahead_m=effective_lookahead_m,
-        extrap_mode=ref_point0_extrap_mode, confidence=confidence,
-        min_confidence=ref_point0_min_confidence)
-    ref_point0_applied = near_pt is not None
-    if ref_point0_applied:
-        points = [near_pt] + points[:-1]  # 맨 앞 치환, 총 개수(n_points)는 유지
-
-    estimate = LaneEstimate(x=x, y=y, yaw=yaw, curvature=curvature, confidence=confidence,
-                             mode=result.mode, points=points,
-                             ref_point0_applied=ref_point0_applied, ref_point0_x=points[0].x)
-    return estimate, {"bev_mask": bev_mask, "fit": result, "raw_y": raw_y, "smoothed_coeffs": smoothed_coeffs}
+    debug.update(preview_projection_x=projection_x, preview_station_m=CAMERA_PREVIEW_STATION_M)
+    estimate = LaneEstimate(x=point.x, y=point.y, yaw=point.yaw, curvature=point.curvature,
+                            confidence=confidence, mode=result.mode, points=[point],
+                            ref_point0_applied=True, ref_point0_x=point.x)
+    return estimate, debug

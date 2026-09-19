@@ -1,0 +1,188 @@
+[
+  {
+    "branch": "main",
+    "gap": 3.3,
+    "cross": 0.0,
+    "yaw": 0.0,
+    "seconds": 0.0002990560024045408,
+    "target": [
+      4.059999952316284,
+      -0.6329456701389581,
+      0.0,
+      0.0
+    ],
+    "reason": "gap target"
+  },
+  {
+    "branch": "v2",
+    "gap": 3.3,
+    "cross": 0.0,
+    "yaw": 0.0,
+    "seconds": 0.022310138003376778,
+    "target": [
+      4.060000094540313,
+      -0.6829456701389478,
+      0.0,
+      0.26678609091002076
+    ],
+    "reason": "cubic waypoint anchor -> side point -> waypoint return"
+  },
+  {
+    "branch": "main",
+    "gap": 2.0,
+    "cross": 0.0,
+    "yaw": 0.0,
+    "seconds": 0.00029662399902008474,
+    "target": [
+      2.759999945630443,
+      -0.6349773245629776,
+      0.0,
+      0.0
+    ],
+    "reason": "gap target"
+  },
+  {
+    "branch": "v2",
+    "gap": 2.0,
+    "cross": 0.0,
+    "yaw": 0.0,
+    "seconds": 0.025776431000849698,
+    "target": [
+      2.7600000428497493,
+      -0.6849773245629756,
+      0.0,
+      0.3252602787304727
+    ],
+    "reason": "cubic waypoint anchor -> side point -> waypoint return"
+  },
+  {
+    "branch": "main",
+    "gap": 0.7,
+    "cross": 0.0,
+    "yaw": 0.0,
+    "seconds": 0.0003386669995961711,
+    "target": [
+      1.4599999730050635,
+      -0.6475644274685133,
+      0.0,
+      0.0
+    ],
+    "reason": "gap target"
+  },
+  {
+    "branch": "v2",
+    "gap": 0.7,
+    "cross": 0.0,
+    "yaw": 0.0,
+    "seconds": 0.2554319420014508,
+    "target": null,
+    "reason": "no collision-free cubic path with waypoint return at +2.7m"
+  },
+  {
+    "branch": "main",
+    "gap": 3.3,
+    "cross": 0.8,
+    "yaw": 0.3,
+    "seconds": 0.0003192139993188903,
+    "target": [
+      4.059999952316284,
+      -0.6329456701389581,
+      0.0,
+      0.0
+    ],
+    "reason": "gap target"
+  },
+  {
+    "branch": "v2",
+    "gap": 3.3,
+    "cross": 0.8,
+    "yaw": 0.3,
+    "seconds": 0.041333533998113126,
+    "target": [
+      4.060000094540312,
+      -0.7329456701389476,
+      -0.3,
+      -0.032853947200886614
+    ],
+    "reason": "cubic waypoint anchor -> side point -> waypoint return"
+  },
+  {
+    "branch": "main",
+    "gap": 2.0,
+    "cross": 0.8,
+    "yaw": 0.3,
+    "seconds": 0.0003065860000788234,
+    "target": [
+      2.759999945630443,
+      -0.6349773245629776,
+      0.0,
+      0.0
+    ],
+    "reason": "gap target"
+  },
+  {
+    "branch": "v2",
+    "gap": 2.0,
+    "cross": 0.8,
+    "yaw": 0.3,
+    "seconds": 0.03585517799365334,
+    "target": [
+      2.7600000428497493,
+      -0.7349773245629755,
+      -0.3,
+      0.11212760340853986
+    ],
+    "reason": "cubic waypoint anchor -> side point -> waypoint return"
+  },
+  {
+    "branch": "main",
+    "gap": 0.7,
+    "cross": 0.8,
+    "yaw": 0.3,
+    "seconds": 0.0003361409981152974,
+    "target": [
+      1.4599999730050635,
+      -0.6475644274685133,
+      0.0,
+      0.0
+    ],
+    "reason": "gap target"
+  },
+  {
+    "branch": "v2",
+    "gap": 0.7,
+    "cross": 0.8,
+    "yaw": 0.3,
+    "seconds": 0.20769152299908455,
+    "target": null,
+    "reason": "no collision-free cubic path with waypoint return at +2.7m"
+  },
+  {
+    "branch": "main",
+    "gap": 2.0,
+    "cross": -0.8,
+    "yaw": -0.3,
+    "seconds": 0.0003279000011389144,
+    "target": [
+      2.759999945630443,
+      -0.6349773245629776,
+      0.0,
+      0.0
+    ],
+    "reason": "gap target"
+  },
+  {
+    "branch": "v2",
+    "gap": 2.0,
+    "cross": -0.8,
+    "yaw": -0.3,
+    "seconds": 0.04034237999439938,
+    "target": [
+      2.7600000428497493,
+      0.7349773245629758,
+      0.3,
+      -0.11212760340854
+    ],
+    "reason": "cubic waypoint anchor -> side point -> waypoint return"
+  }
+]

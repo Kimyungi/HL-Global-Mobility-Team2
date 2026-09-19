@@ -130,7 +130,7 @@ def detect_stop_line_from_yolo_result(
     result,
     frame_shape: Tuple[int, ...],
     roi_bbox: BBox,
-    confidence_threshold: float = 0.35,
+    confidence_threshold: float = 0.30,
     class_name: str = "stop_line",
     tracked_bbox: Optional[BBox] = None,
     tracking_confidence_threshold: float = 0.20,
