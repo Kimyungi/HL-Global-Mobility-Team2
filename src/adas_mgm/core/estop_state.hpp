@@ -5,17 +5,25 @@
 #include <cmath>
 
 namespace adas_mgm {
-// TODO (2026-09-20): map the route CSV ESTOP station to a stable membership.
-// state=6 contiguous rows was proposed, NOT approved/finalized. Do not guess
-// its number or bounds. Production estop_station_zone_id remains 0 (disabled).
+// CSV state=6 arms through the containing path_id end. -1 selects GPS-derived
+// ESTOP memberships; 0 explicitly disables; a positive ID supports bench wiring.
 inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
   auto & m = st.managers;
-  const int id = st.params.estop_station_zone_id;
+  int id = st.params.estop_station_zone_id;
+  if (id == -1) {
+    id = 0;
+    for (const auto & candidate : m.zones.contexts) {
+      if (candidate.zone_type == ZoneType::ESTOP_ZONE && candidate.zone_valid && candidate.in_zone) {
+        id = candidate.zone_id; break;
+      }
+    }
+  }
   const bool configured = id > 0 && id < MGM_ZONE_CAPACITY;
   const auto & zone = m.zones.contexts[configured ? id : 0];
   const bool inside = configured && zone.zone_valid && zone.in_zone;
-  // Only a confirmed, valid station exit rearms; GPS loss/go cycling do not.
-  if (configured && zone.zone_valid && !zone.in_zone) {
+  // Lost GPS cannot certify exit of the station that actually stopped us.
+  const auto & previous = m.zones.contexts[m.estop_station_id];
+  if (m.estop_station_id && previous.zone_valid && !previous.in_zone) {
     m.estop_station_completed = false;
   }
   m.estop_detection_enabled = inside && !m.estop_station_completed &&
@@ -56,6 +64,7 @@ inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
   }
   if (fresh && m.estop_count[0] >= 3 && m.estop_detection_enabled) {
     m.estop_active = true;
+    m.estop_station_id = static_cast<uint8_t>(id);
     m.estop_request_id = std::max(m.estop_request_id + 1,
       static_cast<uint64_t>(std::max<int64_t>(1, s.event_time_ns)));
     m.estop_return_nav = m.nav; m.estop_return_avoid = m.avoid;

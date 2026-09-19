@@ -333,7 +333,7 @@ struct CoreParams
   int32_t parking_zone_entry_active;  // enter Parking/search on Zone, GPS until ready; done/current CSV end releases
   int32_t avoidance_enabled;  // parallel Manager: 0 disables ordinary avoidance and LiDAR fallback
   int32_t safe_stop_all_sensors_only;  // legacy policy; revised v2 excludes rear from health
-  int32_t estop_station_zone_id;  // 0 disables detection pending CSV station mapping
+  int32_t estop_station_zone_id;  // -1 selects CSV ESTOP zones, 0 disables, positive selects an explicit zone
   int32_t revised_v2_enabled;  // runbook v2 policy; legacy fixtures/backends retain their own semantics
 
 };

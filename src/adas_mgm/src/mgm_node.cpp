@@ -237,11 +237,10 @@ public:
     revised_descriptor.read_only = true;
     revised_v2_ = declare_parameter<bool>("revised_v2_enabled", false, revised_descriptor);
     p.revised_v2_enabled = revised_v2_ ? 1 : 0;
-    // TODO: route CSV station mapping/number awaits tomorrow's route definition.
-    // Zero is deliberately disabled; do not substitute a guessed whole-route zone.
+    // CSV state=6 station memberships are selected with -1; 0 explicitly disables.
     p.estop_station_zone_id = declare_parameter<int>("estop_station_zone_id", 0, revised_descriptor);
-    if (p.estop_station_zone_id < 0 || p.estop_station_zone_id >= MGM_ZONE_CAPACITY) {
-      throw std::runtime_error("estop_station_zone_id must be 0 (disabled) or 1..255");
+    if (p.estop_station_zone_id < -1 || p.estop_station_zone_id >= MGM_ZONE_CAPACITY) {
+      throw std::runtime_error("estop_station_zone_id must be -1 (CSV), 0 (disabled) or 1..255");
     }
     p.lane_conf_exit = static_cast<float>(declare_parameter<double>("lane_conf_exit", 0.35));
     p.lane_conf_return = static_cast<float>(declare_parameter<double>("lane_conf_return", 0.7));

@@ -31,6 +31,20 @@ struct V2 : Run {
   }
 };
 int main() {
+  { V2 r; r.st.params.estop_station_zone_id=-1;
+    r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
+    check(!r.st.managers.estop_active,"CSV auto mode without station never arms");
+    r.zone(12,ZoneType::ESTOP_ZONE);r.tick(5);
+    r.scan(0,.3f,4);r.scan(0,.3f,5);r.scan(0,.3f,6);
+    check(r.st.managers.estop_active && r.st.managers.estop_station_id==12,
+      "auto-selected CSV station enters on obstacle");
+    r.scan(0,0,7);r.scan(0,0,8);r.scan(0,0,9);
+    r.scan(0,.3f,10);r.scan(0,.3f,11);r.scan(0,.3f,12);
+    check(!r.st.managers.estop_active,"auto station is consumed until confirmed exit");
+    r.zone(12,ZoneType::ESTOP_ZONE,MissionType::NONE,0,false);r.tick(5);
+    check(!r.st.managers.estop_station_completed,"auto station exit rearms");
+  }
+
   { V2 r;
     r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
     check(!r.st.managers.estop_active,"unconfigured production station disables detection");

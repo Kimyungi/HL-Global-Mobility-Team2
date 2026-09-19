@@ -19,6 +19,7 @@ class ZoneType(IntEnum):
     GPS_ONLY_ZONE = 1
     MISSION_ZONE = 2
     LAST_MISSION_ZONE = 3
+    ESTOP_ZONE = 4
 
 
 class MissionType(IntEnum):
@@ -78,12 +79,13 @@ class ZoneMap:
         """All memberships, including false levels for configured zones.
 
         Current station memberships take precedence over preview-only zones.
-        Overlapping candidates select only the lowest zone_id, regardless of type.
+        Ordinary overlapping candidates select the lowest zone_id. ESTOP
+        membership is independent and never masks mission/traffic membership.
         Preview can enter GPS-only zones only outside all current station zones.
         station_priority also covers stop/avoid ranges carried outside ZoneContext.
         """
         current = [zone for zone in self.definitions
-                   if zone.contains(current_position_index)]
+                   if zone.zone_type != ZoneType.ESTOP_ZONE and zone.contains(current_position_index)]
         candidates = current
         if not current and not station_priority and preview_position_index is not None:
             candidates = [zone for zone in self.definitions
@@ -91,7 +93,9 @@ class ZoneMap:
                           and zone.contains(preview_position_index)]
         # Definitions are sorted by zone_id: one deterministic station winner.
         selected = candidates[0] if candidates else None
-        return tuple((zone, zone == selected) for zone in self.definitions)
+        return tuple((zone, zone.contains(current_position_index)
+                      if zone.zone_type == ZoneType.ESTOP_ZONE else zone == selected)
+                     for zone in self.definitions)
 
     @classmethod
     def from_engine(cls, engine, explicit=()):
@@ -114,6 +118,7 @@ class ZoneMap:
             raise ValueError('Zone/Mission ID capacity exceeded')
 
         for ranges, zone_type, mission_type in (
+            (getattr(engine, "estop_ranges", ()), ZoneType.ESTOP_ZONE, MissionType.NONE),
             (engine.gps_only_ranges, ZoneType.GPS_ONLY_ZONE, MissionType.NONE),
             (engine.parking_ranges, ZoneType.MISSION_ZONE, MissionType.T_PARKING),
             (engine.parallel_parking_ranges, ZoneType.MISSION_ZONE, MissionType.PARALLEL_PARKING),

@@ -45,7 +45,7 @@ from stack_gps.route_plan import RoutePlan, copy_geometry
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
 from stack_gps.imu_link import ImuLink
-from stack_gps.path_engine import PathEngine, PoseDeltaTracker, load_waypoints_csv, wrap_angle, avoidance_marker_range, csv_zone_ranges, exit_stop_index
+from stack_gps.path_engine import PathEngine, PoseDeltaTracker, load_waypoints_csv, wrap_angle, avoidance_marker_range, csv_zone_ranges, exit_stop_index, estop_station_ranges
 
 
 def _pair_ranges(flat, name, logger):
@@ -878,6 +878,7 @@ class StackGpsNode(Node):
             log.info(f"회피 허용 구간 {len(avoid_ranges)}: idx {a_lead}~{b} "
                      f"(찍은 구간 {a}~{b} + 앞쪽 {lead:.1f}m 확장 — "
                      f"감지 거리 안에서 미리 무장해야 회피가 성립한다, 스냅 {d1:.2f}/{d2:.2f}m)")
+        self.engine.estop_ranges = estop_station_ranges(p('waypoint_csv').value)
         self.engine.avoid_ranges = avoid_ranges
         self.engine.avoid_preview_ranges = avoid_preview_ranges
         self.engine.exit_stop_index = exit_stop_index(p('waypoint_csv').value)
