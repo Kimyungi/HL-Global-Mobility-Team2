@@ -162,7 +162,7 @@ def generate_launch_description(route_profile='yongin'):
         traffic_depth_enabled='false', traffic_yolo_image_size='640',
         traffic_yolo_inference_interval='2', traffic_red_phase_yolo_inference_interval='3',
         traffic_stopline_yolo_image_size='320', traffic_require_stop_gate='false',
-        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='4', v_base='2.0', v_avoid='1.0', v_accel_zone='0.5', record='false')
+        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-9', v_base='2.0', v_avoid='1.0', v_accel_zone='0.5', record='false')
     obstacle = route_profile == 'obstacle'
     if obstacle:
         profile['t_reference_enabled'] = 'false'
