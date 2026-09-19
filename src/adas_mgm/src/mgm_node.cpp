@@ -237,6 +237,12 @@ public:
     revised_descriptor.read_only = true;
     revised_v2_ = declare_parameter<bool>("revised_v2_enabled", false, revised_descriptor);
     p.revised_v2_enabled = revised_v2_ ? 1 : 0;
+    // TODO: route CSV station mapping/number awaits tomorrow's route definition.
+    // Zero is deliberately disabled; do not substitute a guessed whole-route zone.
+    p.estop_station_zone_id = declare_parameter<int>("estop_station_zone_id", 0, revised_descriptor);
+    if (p.estop_station_zone_id < 0 || p.estop_station_zone_id >= MGM_ZONE_CAPACITY) {
+      throw std::runtime_error("estop_station_zone_id must be 0 (disabled) or 1..255");
+    }
     p.lane_conf_exit = static_cast<float>(declare_parameter<double>("lane_conf_exit", 0.35));
     p.lane_conf_return = static_cast<float>(declare_parameter<double>("lane_conf_return", 0.7));
     p.n_cycles = static_cast<int32_t>(declare_parameter<int>("n_cycles", 50));
@@ -505,9 +511,14 @@ public:
             body_clearance(scan->ranges, scan->angle_min, scan->angle_increment,
               scan->range_min, scan->range_max, estop_mounts_[direction],
               body_front_, body_rear_, body_half_width_) : std::numeric_limits<float>::quiet_NaN();
+          const auto corridor = revised_v2_ && direction == 0 && valid ?
+            front_corridor(scan->ranges, scan->angle_min, scan->angle_increment,
+              scan->range_min, scan->range_max, estop_mounts_[0], body_front_, body_half_width_) :
+            FrontCorridorObservation{};
           std::lock_guard<std::mutex> lk(mtx_);
+          if (revised_v2_ && direction == 0) {raw_estop_front_ = corridor;}
           if (revised_v2_ && direction >= 0) {
-            raw_estop_stamp_[direction] = valid && !std::isnan(clearance) ?
+            raw_estop_stamp_[direction] = valid && (direction == 0 ? corridor.valid : !std::isnan(clearance)) ?
               static_cast<int64_t>(scan->header.stamp.sec)*1'000'000'000 + scan->header.stamp.nanosec : 0;
             raw_estop_clearance_[direction] = clearance;
           }
@@ -801,6 +812,7 @@ private:
     std::vector<int64_t> lidar_stamps;
     int64_t raw_estop_stamp[3]{};
     float raw_estop_clearance[3]{};
+    FrontCorridorObservation raw_estop_front;
     int64_t estop_rx_ns;
     int64_t lane_rx_ns;
     int64_t gps_rx_ns;
@@ -819,6 +831,7 @@ private:
       lidar_stamps = required_lidar_stamps_;
       std::copy(raw_estop_stamp_, raw_estop_stamp_ + 3, raw_estop_stamp);
       std::copy(raw_estop_clearance_, raw_estop_clearance_ + 3, raw_estop_clearance);
+      raw_estop_front = raw_estop_front_;
       m = msgs_;  // pull — 이후 인지가 갱신해도 이번 틱은 일관된 스냅샷 사용
       estop_rx_ns = last_estop_rx_ns_;
       lane_rx_ns = last_lane_rx_ns_;
@@ -1027,6 +1040,10 @@ private:
       for (int i = 0; i < 3; ++i) {
         s.estop_scans[i] = raw_estop_clocks_[i].observe(raw_estop_stamp[i], s.event_time_ns, s.monotonic_ns, 350'000'000);
         s.estop_clearance_m[i] = raw_estop_clearance[i];
+        if (i == 0) {
+          s.estop_front_obstacle_width_m = raw_estop_front.obstacle_width_m;
+          s.estop_front_clear = raw_estop_front.clear;
+        }
       }
       const auto & stamp = m.recovery.reference_stamp;
       s.recovery_reference = recovery_clock_.observe(
@@ -1537,6 +1554,7 @@ private:
   double body_front_{.760}, body_rear_{.090}, body_half_width_{.310};
   int64_t raw_estop_stamp_[3]{};
   float raw_estop_clearance_[3]{};
+  FrontCorridorObservation raw_estop_front_;
   ReferenceClock raw_estop_clocks_[3], recovery_clock_, exit_clock_;
   rclcpp::Subscription<fma_interfaces::msg::ExitDetection>::SharedPtr sub_exit_;
   rclcpp::Subscription<fma_interfaces::msg::EstopRecovery>::SharedPtr sub_recovery_;

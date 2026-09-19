@@ -111,15 +111,18 @@ int main() {
     check(r.out.v_ref==0 && r.out.last_mission.phase==LastMissionPhase::STOPPING, "operator stop suspends judgment");
     r.s.external_stop=false; r.tick();
     check(r.out.last_mission.right_votes==0, "resume starts a new observation window");
-    r.s.vehicle_speed=.03f; r.tick(201); r.s.vehicle_speed=0;
+    r.st.params.estop_station_zone_id=20;
+    r.s.vehicle_speed=0;
     for (int i=0;i<3;++i) {
       r.s.estop_scans[0]=ReferenceSample{static_cast<uint64_t>(100+i),0,.35f};
-      r.s.estop_clearance_m[0]=.1f; r.tick();
+      r.s.estop_front_obstacle_width_m=.2f; r.tick();
     }
     check(r.out.estop_active && r.out.last_mission.phase==LastMissionPhase::STOPPING, "upper ESTOP preempts last mission");
-    r.s.recovery_request_id=r.out.estop_request_id;
-    r.s.recovery_reference=ReferenceSample{r.out.estop_request_id,0,.35f}; r.s.recovery_done=true; r.tick();
-    r.tick(); check(!r.out.estop_active && r.out.last_mission.phase==LastMissionPhase::JUDGING, "recovery returns to stationary judgment");
+    for (int i=0;i<3;++i) {
+      r.s.estop_scans[0]=ReferenceSample{static_cast<uint64_t>(200+i),0,.35f};
+      r.s.estop_front_obstacle_width_m=0; r.s.estop_front_clear=true; r.tick();
+    }
+    r.tick(); check(!r.out.estop_active && r.out.last_mission.phase==LastMissionPhase::JUDGING, "clear corridor returns to stationary judgment");
   }
   {
     Run r; setup(r); r.tick(2); r.s.route.instance_id++; r.tick();

@@ -64,7 +64,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v38: upper ESTOP arms two seconds after authorized measured forward motion.
 // v39: exit detection on zone entry; stop only at CSV state=3.
 // v40: persist the optional, default-off Halla stopline test parameter.
-constexpr uint32_t kDumpVersion = 40;
+// v41: front corridor width/clear snapshot and stop-only station ESTOP contract.
+constexpr uint32_t kDumpVersion = 41;
 
 struct DumpHeader
 {

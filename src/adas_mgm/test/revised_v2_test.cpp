@@ -10,7 +10,8 @@ struct V2 : Run {
     s.start_lidar_ready = true; s.traffic_status_fresh = true;
   }
   void arm_estop() {
-    s.vehicle_speed=.03f; tick(); tick(200); s.vehicle_speed=0;
+    st.params.estop_station_zone_id=9;
+    zone(9, ZoneType::NORMAL_ZONE); tick(5);
   }
   void traffic(bool red, bool line) {
     s.traffic_red_active = red; s.traffic_stopline_detected = line;
@@ -19,6 +20,7 @@ struct V2 : Run {
   }
   void scan(int sensor, float clearance, uint64_t generation) {
     s.estop_clearance_m[sensor] = clearance;
+    if (sensor == 0) {s.estop_front_obstacle_width_m=clearance; s.estop_front_clear=clearance==0;}
     s.estop_scans[sensor] = ReferenceSample{generation,0,.35f}; tick();
   }
   void recovered(bool done=false) {
@@ -30,33 +32,14 @@ struct V2 : Run {
 };
 int main() {
   { V2 r;
-    r.s.autonomous_enabled=false; r.s.vehicle_speed=.03f;
-    r.scan(0,.1f,1); r.scan(0,.1f,2); r.scan(0,.1f,3); r.tick(300);
-    check(!r.st.managers.estop_motion_seen && !r.st.managers.estop_active,"no authorization cannot start ESTOP timer");
-    r.s.autonomous_enabled=true;
-    for (float speed : {0.f,.02f,-.03f,std::numeric_limits<float>::quiet_NaN()}) {
-      r.s.vehicle_speed=speed; r.tick(250);
-      check(!r.st.managers.estop_motion_seen,"zero, threshold, reverse and NaN do not arm");
-    }
-    r.s.vehicle_speed=.03f; r.s.vehicle_speed_valid=false; r.tick(250);
-    check(!r.st.managers.estop_motion_seen,"invalid actual speed does not arm");
-    r.s.vehicle_speed_valid=true; r.tick();
-    r.s.vehicle_speed=0; r.tick(198); r.scan(0,.1f,4);
-    check(!r.st.managers.estop_detection_enabled && !r.st.managers.estop_active,"1.99 seconds still ignores hazards");
-    r.scan(0,.1f,5);
-    check(r.st.managers.estop_detection_enabled && !r.st.managers.estop_active,"two seconds arms and discards boundary scan");
-    r.tick(10); r.scan(0,.1f,6); r.scan(0,.1f,7);
-    check(!r.st.managers.estop_active,"preactivation hits cannot contribute");
-    r.scan(0,.1f,8); check(r.st.managers.estop_active,"three new hits trigger even when stopped after activation");
-  }
-  { V2 r; r.s.vehicle_speed=.03f; r.tick(); r.tick(100);
-    r.s.autonomous_enabled=false; r.tick(); r.s.autonomous_enabled=true;
-    r.s.vehicle_speed=0; r.tick(300);
-    check(!r.st.managers.estop_detection_enabled && !r.st.managers.estop_motion_seen,"revoked go resets pending timer");
-    r.arm_estop(); r.s.external_stop=true; r.tick(); r.s.external_stop=false; r.tick(300);
-    check(!r.st.managers.estop_detection_enabled,"operator stop resets an enabled gate");
-    r.arm_estop(); r.s.new_session=true; r.tick(); r.s.new_session=false;
-    check(!r.st.managers.estop_detection_enabled,"new session requires fresh forward motion");
+    r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
+    check(!r.st.managers.estop_active,"unconfigured production station disables detection");
+    r.st.params.estop_station_zone_id=9;
+    r.scan(0,.3f,4);r.scan(0,.3f,5);r.scan(0,.3f,6);
+    check(!r.st.managers.estop_active,"outside configured station cannot enter");
+    r.arm_estop();r.s.autonomous_enabled=false;
+    r.scan(0,.3f,7);r.scan(0,.3f,8);r.scan(0,.3f,9);
+    check(!r.st.managers.estop_active,"authorization required");
   }
 
   { V2 r;
@@ -111,25 +94,39 @@ int main() {
     r.zone(3, ZoneType::GPS_ONLY_ZONE, MissionType::NONE, 0, false); r.tick(); check(!r.st.managers.traffic_zone_active && !r.st.traffic_distance_latched,"zone exit resets signal distance"); }
   { V2 r; r.s.vehicle_speed_valid=false; r.zone(3, ZoneType::GPS_ONLY_ZONE); r.tick(); r.traffic(true,true); r.traffic(true,false); r.tick();
     check(r.out.traffic_remaining_m<1.5f && r.out.v_ref>0,"no actual history integrates previous output command"); }
-  { V2 r; r.arm_estop(); r.scan(0,.25f,1); r.tick(20); check(!r.st.managers.estop_active,"held scan never counts as new detection");
-    r.scan(1,.15f,1); r.scan(2,.15f,1); check(!r.st.managers.estop_active,"different sensors do not sum");
-    r.scan(0,.25f,2); r.s.estop_scans[0].age_s=.36f; r.tick(); r.scan(0,.25f,3);
-    check(r.out.safety==SafetyState::ESTOP && r.out.v_ref==0,"third same-sensor hit enters ESTOP; missing executor holds zero");
-    r.s.recovery_request_id=1; r.s.recovery_done=true; r.tick(); check(r.st.managers.estop_active,"wrong episode done ignored");
-    r.recovered(); check(near(r.out.v_ref,-.2f) && r.out.ref_points[0].x==-1,"executor geometry/speed used without legacy reverse generator");
-    r.s.sensor_alive_mask=0; r.tick(); check(r.out.state==MGM_STATE_ESTOP && r.out.v_ref<0 && r.out.safety==SafetyState::ESTOP,"all sensor loss does not interrupt recovery");
-    r.s.external_stop=true; r.tick(); check(r.out.v_ref==0,"operator/CAN stop overrides recovery");
-    r.s.external_stop=false; r.s.sensor_alive_mask=1; r.recovered(true);
-    check(!r.st.managers.estop_active && r.out.nav==NavState::GPS_BACKUP,"completion returns previous state");
-    r.scan(0,.2f,4); r.scan(0,.2f,5); r.scan(0,.2f,6); check(!r.st.managers.estop_active,"continuing front condition cannot retrigger");
-    r.scan(1,.5f,2); r.scan(1,.1f,3); r.scan(1,.1f,4); r.scan(1,.1f,5);
-    check(r.st.managers.estop_active,"another rearmed sensor can trigger"); }
+  { V2 r; r.arm_estop(); r.scan(0,.18f,1); r.tick(20);
+    check(!r.st.managers.estop_active,"held scan never counts twice");
+    r.scan(1,.3f,1);r.scan(2,.3f,1);
+    check(!r.st.managers.estop_active,"side scans never trigger");
+    r.scan(0,.18f,2);r.s.estop_scans[0].age_s=.36f;r.tick();r.scan(0,.18f,3);
+    check(r.out.state==MGM_STATE_ESTOP && r.out.v_ref==0,"three front width hits enter stop-only ESTOP");
+    r.recovered();check(r.out.v_ref==0,"old recovery reverse ignored");
+    r.recovered(true);check(r.st.managers.estop_active,"old recovery done ignored");
+    r.s.sensor_alive_mask=0;r.s.estop_scans[0].age_s=.36f;r.tick(100);
+    check(r.st.managers.estop_active && r.out.v_ref==0,"stale/all-lost sensors keep stopped");
+    r.s.sensor_alive_mask=0x77;r.scan(0,.05f,4);r.scan(0,.05f,5);r.scan(0,.05f,6);
+    check(r.st.managers.estop_active,"remaining narrow obstacle prevents clear");
+    r.scan(0,0,7);r.tick(20);check(r.st.managers.estop_active,"held clear scan cannot release");
+    r.scan(0,0,8);r.s.external_stop=true;r.scan(0,0,9);
+    check(r.st.managers.estop_active && r.out.v_ref==0,"operator stop prevents release");
+    r.s.external_stop=false;r.scan(0,0,10);r.scan(0,0,11);r.scan(0,0,12);
+    check(!r.st.managers.estop_active && r.st.managers.estop_station_completed,
+      "three fresh empty scans restore previous navigation");
+    r.scan(0,.3f,13);r.scan(0,.3f,14);r.scan(0,.3f,15);
+    check(!r.st.managers.estop_active,"station completion prevents reentry");
+    r.s.zones.zone_valid=false;r.tick();r.s.external_stop=true;r.tick();
+    r.s.external_stop=false;r.s.zones.zone_valid=true;r.tick();
+    check(r.st.managers.estop_station_completed,"GPS loss or go cycling cannot rearm");
+    r.zone(9,ZoneType::NORMAL_ZONE,MissionType::NONE,0,false);r.tick(5);
+    check(!r.st.managers.estop_station_completed,"confirmed station exit rearms");
+    r.arm_estop();r.scan(0,.3f,16);r.scan(0,.3f,17);r.scan(0,.3f,18);
+    check(r.st.managers.estop_active,"new station visit can trigger again"); }
   { V2 r; r.arm_estop(); r.st.managers.mission=MissionState::MISSION_ACTIVE;
     // Preserve an active parking episode while ESTOP owns the output.
     r.st.managers.request.active=true; r.st.managers.request.request_id=10;
     r.st.managers.mission_type=MissionType::T_PARKING;
     r.s.parking_request_id=10;
-    r.scan(0,.1f,1); r.scan(0,.1f,2); r.scan(0,.1f,3);
+    r.scan(0,.2f,1); r.scan(0,.2f,2); r.scan(0,.2f,3);
     check(r.st.managers.estop_active && r.st.managers.estop_return_mission==MissionState::MISSION_ACTIVE,"parking permits ESTOP"); }
   { V2 r; r.st.managers.route.phase=RoutePhase::FAULT; r.tick();
     check(r.out.v_ref==0 && (r.out.safe_stop_reasons & SAFE_STOP_ROUTE_SEQUENCE),"route fault stops even with healthy camera"); }

@@ -193,6 +193,8 @@ struct CoreSnapshot
   bool traffic_status_fresh;
   int64_t traffic_status_stamp_ns;
   ReferenceSample estop_scans[3];  // front, left, right: independent scan stamps
+  float estop_front_obstacle_width_m;  // largest contiguous cluster lateral span in front corridor
+  bool estop_front_clear;  // observed empty corridor; invalid rays never prove clear
   float estop_clearance_m[3];      // measured from body exterior; +inf = clear
   uint64_t recovery_request_id;
   bool recovery_done;
@@ -331,6 +333,7 @@ struct CoreParams
   int32_t parking_zone_entry_active;  // enter Parking/search on Zone, GPS until ready; done/current CSV end releases
   int32_t avoidance_enabled;  // parallel Manager: 0 disables ordinary avoidance and LiDAR fallback
   int32_t safe_stop_all_sensors_only;  // legacy policy; revised v2 excludes rear from health
+  int32_t estop_station_zone_id;  // 0 disables detection pending CSV station mapping
   int32_t revised_v2_enabled;  // runbook v2 policy; legacy fixtures/backends retain their own semantics
 
 };
