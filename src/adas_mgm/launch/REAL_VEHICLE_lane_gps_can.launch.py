@@ -552,8 +552,8 @@ def build_launch_description(
         # 신호등용 OAK-D MxID (CLAUDE.md §6 정본표). 차선용과 반드시 달라야 한다 —
         # 핀닝이 없거나 겹치면 어느 노드가 어느 카메라를 잡을지 부팅 순서에 좌우된다.
         DeclareLaunchArgument('traffic_mxid', default_value='14442C10B167CFD200'),
-        # 신호등 RGB 자동 노출 보정: 기본 -2=두 단계 어둡게 (SDK -9..9).
-        DeclareLaunchArgument('traffic_exposure_compensation', default_value='-2'),
+        # 신호등 RGB 자동 노출 보정: 기본 -4=네 단계 어둡게 (SDK -9..9).
+        DeclareLaunchArgument('traffic_exposure_compensation', default_value='-4'),
         # ⚠ USB2 공유 대역폭 — 두 카메라가 같은 허브(2026-08-27 확정 배치의 허브 A)에
         #   물려 있고 둘 다 USB2(480Mbps, 실효 ~40MB/s)다. 비압축 BGR 3B/px 기준:
         #     차선   1280x720@10 = 27.65 MB/s
@@ -829,14 +829,11 @@ def build_launch_description(
         Node(
             package='stack_exit_decision', executable='exit_detector', name='exit_detector',
             condition=IfCondition(LaunchConfiguration('last_mission_enabled')),
-            parameters=[{'oak_mxid': LaunchConfiguration('traffic_mxid'),
-                         'oak_usb_speed': LaunchConfiguration('usb_speed'),
-                         'oak_exposure_compensation': ParameterValue(
-                             LaunchConfiguration('traffic_exposure_compensation'), value_type=int)}],
+            parameters=[{'image_topic': '/perception/traffic_image_raw'}],
             respawn=True, respawn_delay=2.0, output='screen',
         ),
 
-        # 신호등·정지선 — 2번째 OAK-D. traffic_enabled:=true 일 때만 뜬다.
+        # 신호등·출구 공유 영상 — traffic 또는 출구 미션이 필요하면 2번째 OAK-D 유지.
         # revised v2는 카메라/영상을 상시 유지하고 traffic zone 안에서만 판단한다.
         # MGM 은 /perception/traffic_stop 을 구독만 하고(§5.7 ③), 이 노드가
         # 없으면 watchdog 도 잠들어 있으므로 껐을 때 거동은 지금과 동일하다.
@@ -844,7 +841,9 @@ def build_launch_description(
             package='stack_traffic',
             executable='traffic_zone_supervisor' if revised_v2_enabled else 'stack_traffic_node',
             name='traffic_zone_supervisor' if revised_v2_enabled else 'stack_traffic_node',
-            condition=IfCondition(LaunchConfiguration('traffic_enabled')),
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration('traffic_enabled'), "' == 'true' or '",
+                LaunchConfiguration('last_mission_enabled'), "' == 'true'"])),
             # lane/traffic OAK-D를 동시에 열 때 DepthAI 장치 열거 경쟁으로 traffic이
             # 시작 직후 exit 1 하는 실차 사례가 있다. MGM watchdog은 traffic을 한 번도
             # 수신하지 못한 시작 실패에는 개입하지 못하므로 launch가 반드시 복구한다.

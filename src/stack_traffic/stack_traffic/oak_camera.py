@@ -237,6 +237,7 @@ class OakRgbdCamera:
             self.last_read_status = "empty"
             return False, None, None
 
+        self.last_capture_monotonic = None
         try:
             if self.depth_enabled:
                 rgb_message = message_group["rgb"]
@@ -244,7 +245,8 @@ class OakRgbdCamera:
                 frame = rgb_message.getCvFrame()
                 depth_mm = depth_message.getFrame()
             else:
-                frame = message_group.getCvFrame()
+                rgb_message = message_group
+                frame = rgb_message.getCvFrame()
                 depth_mm = None
         except (KeyError, RuntimeError, TypeError, AttributeError):
             self.last_read_status = "error"
@@ -269,6 +271,14 @@ class OakRgbdCamera:
         elif depth_mm is not None:
             self.depth_native_shape = tuple(depth_mm.shape[:2])
             self.depth_resized = False
+        # DepthAI timestamps share the host monotonic clock through dai.Clock.
+        # Missing timestamps must not make queued images look newly captured.
+        try:
+            age = (dai.Clock.now() - rgb_message.getTimestamp()).total_seconds()
+            if age >= 0.0:
+                self.last_capture_monotonic = time.monotonic() - age
+        except (AttributeError, RuntimeError, TypeError):
+            pass
         self.last_read_status = "ok"
         return True, frame, depth_mm
 

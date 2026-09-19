@@ -198,7 +198,7 @@ zone [1]·[3]은 현재 station 또는 허용된 preview로 진입을 관측합�
 
 #### 신호등·정지선
 
-신호등·출구 판단 카메라 노출 보정은 `traffic_exposure_compensation=-2`입니다. 변경은 런처 재시작 후 적용되며 라인 카메라는 그대로입니다.
+신호등·출구 판단 카메라 노출 보정은 `traffic_exposure_compensation=-4`입니다. 변경은 런처 재시작 후 적용되며 라인 카메라는 그대로입니다.
 
 - zone [3]에서 검출·최대 1m/s 제한을 적용합니다. 이탈 후 다른 제한이 없으면 `v_base`로 복귀합니다.
 - 신호등 bbox YOLO와 HSV 색상 판단, 정지선 segmentation을 사용합니다.
@@ -206,7 +206,7 @@ zone [1]·[3]은 현재 station 또는 허용된 preview로 진입을 관측합�
 - 적색 확정 후 정지선 판단을 시작합니다. 적색+정지선 → 접근 → 정지선 소실 후 추정 이동거리로 정차합니다.
 - 적색 해제로 재출발하며 초록 필수 확인 방식은 아닙니다. 적색·정지선 미검출만으로 정차를 보장하지 않습니다.
 - 용인 런처는 한라대 정지선 단독 시험 옵션 `halla_stopline_test_enabled=false`입니다.
-- 신호등 카메라는 일반 구간에서도 유지하고 판단만 구역 제한합니다. 출구 미션 동안 같은 OAK를 출구 검출기에 넘깁니다.
+- 신호등 카메라는 일반 구간에서도 유지하고 판단만 구역 제한합니다. 출구 미션에도 카메라를 유지하고, 출구 YOLO는 `/perception/traffic_image_raw` 원본 영상을 구독합니다.
 
 #### 회피
 
@@ -337,7 +337,7 @@ ros2 topic echo /adas/target_ref --once
 | FIXED인데 주차 준비가 안 됨 | IMU/헤딩 유효성, 현재 주차 요청 ID, ready·참조·차속 수신 |
 | GO 후 목표속도 0 | `reference_motion_blocked`, 정지 사유, 주차 준비, 신호 상태, 경로 ACK, 상위 ESTOP |
 | zone 밖 신호등 메시지가 없음 | 구역 제한에 따른 정상 동작; 카메라 영상과 판단 메시지를 구분 |
-| 출구에서 06만 선택됨 | `last_mission_fallback`, 좌우 표수, 모델·영상 수신 및 카메라 인계 |
+| 출구에서 06만 선택됨 | `last_mission_fallback`, 좌우 표수, 모델·원본 영상 토픽 수신 |
 | 변경한 CSV/코드가 안 보임 | 실행 런처 종료 → 필요한 빌드 → 새 prepare. GPS 표시만 재시작하는 것으로는 불충분 |
 
 참조: [용인 경로 통합](docs/YONGIN_ROUTE_INTEGRATION.md),

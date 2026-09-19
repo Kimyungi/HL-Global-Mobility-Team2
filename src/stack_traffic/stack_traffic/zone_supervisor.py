@@ -7,10 +7,6 @@ import time
 from pathlib import Path
 
 
-def exit_camera_requested(msg):
-    return msg.last_mission_phase not in (msg.LAST_IDLE, msg.LAST_DONE)
-
-
 class ProcessGate:
     """Nonblocking process lifecycle; at most one detector process at a time."""
     def __init__(self, command, *, popen=subprocess.Popen, kill=os.killpg, clock=time.monotonic):
@@ -53,7 +49,6 @@ def main(args=None):
     # Importing the supervisor does not load a model or open an OAK camera.
     import rclpy
     import yaml
-    from fma_interfaces.msg import MgmState
     from rclpy.node import Node
 
     rclpy.init(args=args)
@@ -67,14 +62,8 @@ def main(args=None):
     gate = ProcessGate(['ros2', 'run', 'stack_traffic', 'stack_traffic_node',
                        '--ros-args', '--params-file', handle.name])
     gate.update(True)
-    exit_camera = [False]
-    def status(msg):
-        # Exit detector uses the same OAK. Keep it released through the mission,
-        # including temporary authorization loss, until IDLE/DONE is reported.
-        exit_camera[0] = exit_camera_requested(msg)
-        gate.update(not exit_camera[0])
-    node.create_subscription(MgmState, '/adas/mgm_state', status, 1)
-    node.create_timer(.1, lambda: gate.update(not exit_camera[0]))
+    # Exit YOLO consumes our raw images; camera ownership never changes.
+    node.create_timer(.1, lambda: gate.update(True))
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):

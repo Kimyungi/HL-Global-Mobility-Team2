@@ -57,7 +57,11 @@ def test_main_initializes_real_ros_node_and_forwards_parameters(monkeypatch):
 
     def spin_once(node):
         assert node.get_name() == 'traffic_zone_supervisor'
-        rclpy.spin_once(node, timeout_sec=0.15)
+        from fma_interfaces.msg import MgmState
+        publisher = node.create_publisher(MgmState, '/adas/mgm_state', 1)
+        for phase in range(7):
+            publisher.publish(MgmState(last_mission_phase=phase))
+            rclpy.spin_once(node, timeout_sec=0.15)
         captured['initialized'] = True
 
     monkeypatch.setattr(zone_supervisor, 'ProcessGate', NoHardwareGate)
@@ -73,11 +77,3 @@ def test_main_initializes_real_ros_node_and_forwards_parameters(monkeypatch):
         assert captured['params'][key] == expected
     assert not captured['path'].exists()
     assert not rclpy.ok()
-
-
-def test_exit_mission_releases_shared_camera_from_approach_until_done():
-    from types import SimpleNamespace
-    from stack_traffic.zone_supervisor import exit_camera_requested
-    for phase in range(7):
-        status = SimpleNamespace(last_mission_phase=phase, LAST_IDLE=0, LAST_DONE=5)
-        assert exit_camera_requested(status) == (phase not in (0,5))

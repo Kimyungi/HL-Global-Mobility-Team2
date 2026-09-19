@@ -64,12 +64,19 @@ class TestNodeInitialization(unittest.TestCase):
             node.raw_image_pub.get_subscription_count.return_value = 1
             node.debug_image_pub = Mock()
             node.debug_image_pub.get_subscription_count.return_value = 1
+            import time
+            camera.last_capture_monotonic = time.monotonic() - 0.4
             warmup_calls = node.model.predict_calls
             for _ in range(3):
                 node.tick()
             self.assertEqual(node.model.predict_calls, warmup_calls)
             self.assertEqual(node.camera_pub.publish.call_count, 3)
             self.assertEqual(node.raw_image_pub.publish.call_count, 3)
+            raw = node.raw_image_pub.publish.call_args.args[0]
+            captured_ns = raw.header.stamp.sec * 1_000_000_000 + raw.header.stamp.nanosec
+            self.assertGreaterEqual(node.get_clock().now().nanoseconds - captured_ns, 400_000_000)
+            self.assertEqual(raw.encoding, 'bgr8')
+            self.assertEqual(bytes(raw.data), camera.frame.tobytes())
             self.assertEqual(node.debug_image_pub.publish.call_count, 3)
             node.publisher.publish.assert_not_called()
             node._publish(True, -1.)  # Fault reports also stay gated outside.
@@ -238,7 +245,7 @@ class TestNodeInitialization(unittest.TestCase):
                 "traffic-oak-mxid",
             )
             self.assertEqual(FakeOakCamera.last_kwargs["usb_speed"], "high")
-            self.assertEqual(FakeOakCamera.last_kwargs["exposure_compensation"], -2)
+            self.assertEqual(FakeOakCamera.last_kwargs["exposure_compensation"], -4)
             self.assertTrue(node.describe_parameter("oak_exposure_compensation").read_only)
             self.assertIn(
                 "mxid=traffic-oak-mxid",

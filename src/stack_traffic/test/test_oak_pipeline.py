@@ -1113,3 +1113,23 @@ class TestOakPipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_rgb_acquisition_time_preserves_queued_frame_age():
+    from datetime import timedelta
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    frame = np.zeros((2, 2, 3), dtype=np.uint8)
+    packet = FakeRgbMessage(frame)
+    packet.getTimestamp = lambda: timedelta(seconds=9.6)
+    camera = make_camera(packet)
+    camera.depth_enabled = False
+    clock = SimpleNamespace(Clock=SimpleNamespace(now=lambda: timedelta(seconds=10)))
+    with patch('stack_traffic.oak_camera.dai', clock), \
+         patch('stack_traffic.oak_camera.time.monotonic', return_value=100.):
+        assert camera.read()[0]
+    assert abs(camera.last_capture_monotonic - 99.6) < 1e-6
+    # A subsequent frame without metadata cannot reuse the previous timestamp.
+    camera.queue = FakeQueue(FakeRgbMessage(frame))
+    assert camera.read()[0]
+    assert camera.last_capture_monotonic is None
