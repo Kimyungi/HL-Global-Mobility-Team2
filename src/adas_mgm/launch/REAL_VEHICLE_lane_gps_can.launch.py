@@ -219,6 +219,8 @@ def validate(context, log_dir=LOG_DIR, lidar_estop_enabled=True, revised_v2_enab
         plan = RoutePlan(route_file, start_id, end_id)
         if plan.exit_branches and not revised_v2_enabled:
             raise RuntimeError('Last_mission_state requires the revised v2 MGM backend')
+        if plan.exit_branches and LaunchConfiguration('lane_enabled').perform(context).lower() != 'true':
+            raise RuntimeError('Exit decision uses the lane camera; lane_enabled:=true is required')
         context.launch_configurations['last_mission_enabled'] = 'true' if plan.exit_branches else 'false'
         first = plan.files[0]
         if waypoint_csv and os.path.realpath(waypoint_csv) != str(first.csv):
@@ -829,11 +831,11 @@ def build_launch_description(
         Node(
             package='stack_exit_decision', executable='exit_detector', name='exit_detector',
             condition=IfCondition(LaunchConfiguration('last_mission_enabled')),
-            parameters=[{'image_topic': '/perception/traffic_image_raw'}],
+            parameters=[{'image_topic': '/perception/lane_image_raw'}],
             respawn=True, respawn_delay=2.0, output='screen',
         ),
 
-        # 신호등·출구 공유 영상 — traffic 또는 출구 미션이 필요하면 2번째 OAK-D 유지.
+        # 신호등 영상 — traffic_enabled일 때 2번째 OAK-D 유지. 출구는 라인 영상 사용.
         # revised v2는 카메라/영상을 상시 유지하고 traffic zone 안에서만 판단한다.
         # MGM 은 /perception/traffic_stop 을 구독만 하고(§5.7 ③), 이 노드가
         # 없으면 watchdog 도 잠들어 있으므로 껐을 때 거동은 지금과 동일하다.
@@ -841,9 +843,7 @@ def build_launch_description(
             package='stack_traffic',
             executable='traffic_zone_supervisor' if revised_v2_enabled else 'stack_traffic_node',
             name='traffic_zone_supervisor' if revised_v2_enabled else 'stack_traffic_node',
-            condition=IfCondition(PythonExpression([
-                "'", LaunchConfiguration('traffic_enabled'), "' == 'true' or '",
-                LaunchConfiguration('last_mission_enabled'), "' == 'true'"])),
+            condition=IfCondition(LaunchConfiguration('traffic_enabled')),
             # lane/traffic OAK-D를 동시에 열 때 DepthAI 장치 열거 경쟁으로 traffic이
             # 시작 직후 exit 1 하는 실차 사례가 있다. MGM watchdog은 traffic을 한 번도
             # 수신하지 못한 시작 실패에는 개입하지 못하므로 launch가 반드시 복구한다.

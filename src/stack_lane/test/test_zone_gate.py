@@ -63,9 +63,13 @@ def test_disabled_inference_keeps_latest_camera_frame_and_heartbeat(monkeypatch)
     node.warmup_frames = 0
     node._capture_monotonic = Mock(return_value=123.)
     node._publish_camera_status = Mock()
+    node.raw_image_pub = Mock()
+    node.raw_image_pub.get_subscription_count.return_value = 1
     node.debug_pub = Mock()
     node.bridge = Mock()
-    node.get_clock = Mock(return_value=SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: 'stamp')))
+    from rclpy.time import Time
+    node.get_clock = Mock(return_value=SimpleNamespace(now=lambda: Time(seconds=200.)))
+    monkeypatch.setattr('stack_lane.node.time.monotonic', lambda: 123.4)
     node.pub = Mock()
     monkeypatch.setattr('stack_lane.node.preprocess', lambda *a: pytest.fail('inference ran outside normal zone'))
     node.tick()
@@ -74,6 +78,11 @@ def test_disabled_inference_keeps_latest_camera_frame_and_heartbeat(monkeypatch)
     node.debug_pub.publish.assert_called_once()
     node.pub.publish.assert_not_called()
     assert node._frames_dropped == 1
+    raw = node.raw_image_pub.publish.call_args.args[0]
+    assert bytes(raw.data) == image.tobytes()
+    assert raw.encoding == 'bgr8'
+    assert raw.header.stamp.sec == 199
+    assert abs(raw.header.stamp.nanosec - 600_000_000) <= 1
 
 
 def test_physical_waypoint_zone_disables_lane_without_traffic_zone():

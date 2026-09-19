@@ -138,6 +138,7 @@ class StackLaneNode(Node):
         self._frames_dropped = 0         # 큐에서 버린 낡은 프레임 누계
 
         self.publish_debug_image = bool(self.get_parameter('publish_debug_image').value)
+        self.raw_image_pub = self.create_publisher(Image, '/perception/lane_image_raw', 1)
         self.debug_pub = None
         self.bridge = None
         if self.publish_debug_image:
@@ -350,19 +351,19 @@ class StackLaneNode(Node):
             pkt = newer
             self._frames_dropped += 1
 
-        self._publish_camera_status(self._capture_monotonic(pkt))
+        cap_mono = self._capture_monotonic(pkt)
+        frame = pkt.getCvFrame()
+        self._publish_camera_status(cap_mono)
+        self._publish_raw_image(frame, cap_mono)
         self._frames_seen += 1
         if not self._lane_enabled or self._frames_seen <= self.warmup_frames:
-            self._publish_idle_frame(pkt.getCvFrame())
+            self._publish_idle_frame(frame)
             return  # 노출 적응 대기 중 — 오검출 위험 있는 콜드스타트 프레임 스킵
 
         # 프레임 **캡처 시각**을 붙잡아 둔다 (아래 header.stamp 용).
         # depthai의 getTimestamp()는 호스트 steady_clock(=CLOCK_MONOTONIC) 기준이라
         # time.monotonic()과 기준선이 같다 — 두 값의 **차이**만 쓰므로 ROS 시각과의
         # 에폭 오프셋을 알 필요가 없다.
-        cap_mono = self._capture_monotonic(pkt)
-
-        frame = pkt.getCvFrame()
         canvas, tensor = preprocess(frame, self.img_size, self.device, self.half)
         t0 = self.get_clock().now()
         _da_mask, ll_mask = infer(self.model, tensor)
@@ -472,6 +473,23 @@ class StackLaneNode(Node):
         ref.curvature = float(point.curvature)
         msg.confidence = float(estimate.confidence)
         msg.points = [ref]
+
+    def _publish_raw_image(self, frame, cap_mono):
+        # Exit YOLO needs untouched pixels even when lane inference is gated.
+        if self.raw_image_pub.get_subscription_count() == 0:
+            return
+        msg = Image()
+        msg.header.frame_id = 'lane_camera'
+        if cap_mono is not None:
+            age = time.monotonic() - cap_mono
+            if math.isfinite(age) and age >= 0.:
+                msg.header.stamp = (self.get_clock().now() - Duration(seconds=age)).to_msg()
+        # Unknown capture time remains zero and cannot enter the exit vote window.
+        msg.height, msg.width = frame.shape[:2]
+        msg.encoding = 'bgr8'
+        msg.step = msg.width * 3
+        msg.data = frame.tobytes()
+        self.raw_image_pub.publish(msg)
 
     def _publish_camera_status(self, cap_mono):
         # A fresh frame certifies camera availability even during warmup/no lane.

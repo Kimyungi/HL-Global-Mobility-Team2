@@ -62,7 +62,7 @@ def main(args=None):
     gate = ProcessGate(['ros2', 'run', 'stack_traffic', 'stack_traffic_node',
                        '--ros-args', '--params-file', handle.name])
     gate.update(True)
-    # Exit YOLO consumes our raw images; camera ownership never changes.
+    # Keep traffic video available across zones and exit mission phases.
     node.create_timer(.1, lambda: gate.update(True))
     try:
         rclpy.spin(node)
