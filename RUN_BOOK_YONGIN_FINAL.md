@@ -198,7 +198,7 @@ zone [1]·[3]은 현재 station 또는 허용된 preview로 진입을 관측합�
 
 #### 신호등·정지선
 
-신호등·출구 판단 카메라 노출 보정은 `traffic_exposure_compensation=-4`입니다. 변경은 런처 재시작 후 적용되며 라인 카메라는 그대로입니다.
+신호등·출구 판단 카메라 노출 보정은 `traffic_exposure_compensation=4`입니다. 변경은 런처 재시작 후 적용되며 라인 카메라는 그대로입니다.
 
 - zone [3]에서 검출·최대 1m/s 제한을 적용합니다. 이탈 후 다른 제한이 없으면 `v_base`로 복귀합니다.
 - 신호등 bbox YOLO와 HSV 색상 판단, 정지선 segmentation을 사용합니다.
