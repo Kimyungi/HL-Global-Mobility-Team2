@@ -1081,7 +1081,7 @@ private:
     s.gps_track_index = s.gps_position_valid ? m.gps.track_index : -1;
     s.external_stop = external_stop;
     // Sensor/message availability stays separate from drivable path validity.
-    s.camera_line_valid = !lane_stale;
+    s.camera_line_valid = !revised_v2_ && !lane_stale;
     s.gps_valid = !gps_stale && m.gps.fix_quality != 0;
     s.route_metadata_fresh = !gps_stale;
     const auto camera_stamp = m.camera_frame.stamp;
@@ -1126,7 +1126,7 @@ private:
     }
     s.lidar_valid = missing_lidars.empty();
     s.start_lidar_ready = s.lidar_valid;
-    start_ready_ = s.start_lidar_ready && (s.camera_available || s.gps_fixed_ready);
+    start_ready_ = s.start_lidar_ready && (s.gps_fixed_ready || (!revised_v2_ && s.camera_available));
     s.auto_estop = !revised_v2_ && estop_real && m.estop.scan_valid;
     s.parking_valid = !parking_stale;
     s.parking_mission_active = m.parking.mission_active;
@@ -1269,7 +1269,7 @@ private:
       status.gps_fixed_ready = s.gps_fixed_ready;
       status.lidar_ready = s.start_lidar_ready;
       status.lidar_missing_topics = missing_lidars;
-      status.start_ready = s.start_lidar_ready && (s.camera_available || s.gps_fixed_ready);
+      status.start_ready = start_ready_;
       status.go_authorized = go;
       status.top = static_cast<uint8_t>(out.top);
       status.navigation = static_cast<uint8_t>(out.nav);

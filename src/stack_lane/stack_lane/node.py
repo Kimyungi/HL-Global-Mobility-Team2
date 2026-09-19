@@ -109,6 +109,8 @@ class StackLaneNode(Node):
         self.declare_parameter('warmup_frames', 30)
         self.declare_parameter('poll_period_sec', 0.02)
         self.declare_parameter('zone_gated', False)
+        self.declare_parameter('camera_only', False)
+        self._camera_only = bool(self.get_parameter('camera_only').value)
         self.declare_parameter('publish_debug_image', False)
         self.declare_parameter('log_csv', '')
 
@@ -148,24 +150,25 @@ class StackLaneNode(Node):
         log_csv_path = str(self.get_parameter('log_csv').value)
         self.logger_csv = None
 
-        device_arg = str(self.get_parameter('device').value)
-        self.device, self.half = resolve_device(device_arg)
-        weights = str(self.get_parameter('weights').value)
-        self.model = load_model(weights, self.device, self.half)
-        self._warmup_model()
+        if not self._camera_only:
+            device_arg = str(self.get_parameter('device').value)
+            self.device, self.half = resolve_device(device_arg)
+            weights = str(self.get_parameter('weights').value)
+            self.model = load_model(weights, self.device, self.half)
+            self._warmup_model()
 
-        homography_path = str(self.get_parameter('homography_path').value) or None
-        self.H, self.is_placeholder, meta = load_homography(homography_path)
-        if self.is_placeholder:
-            self.get_logger().warn(
-                '실측 호모그래피 없음 — placeholder 사용 중 '
-                f'(실좌표 정확도 보장 안 됨): {meta.get("placeholder_params")}')
-        self.H_inv = np.linalg.inv(self.H)
-        self.grid = BevGrid()
+            homography_path = str(self.get_parameter('homography_path').value) or None
+            self.H, self.is_placeholder, meta = load_homography(homography_path)
+            if self.is_placeholder:
+                self.get_logger().warn(
+                    '실측 호모그래피 없음 — placeholder 사용 중 '
+                    f'(실좌표 정확도 보장 안 됨): {meta.get("placeholder_params")}')
+            self.H_inv = np.linalg.inv(self.H)
+            self.grid = BevGrid()
 
-        if log_csv_path:
-            self.logger_csv = CsvFrameLogger(log_csv_path, is_placeholder_homography=self.is_placeholder)
-            self.get_logger().info(f'CSV 로깅: {log_csv_path}')
+            if log_csv_path:
+                self.logger_csv = CsvFrameLogger(log_csv_path, is_placeholder_homography=self.is_placeholder)
+                self.get_logger().info(f'CSV 로깅: {log_csv_path}')
 
         self._setup_camera(int(self.get_parameter('camera_fps').value))
 
@@ -174,7 +177,7 @@ class StackLaneNode(Node):
         self._zone_gated = bool(self.get_parameter('zone_gated').value)
         self._mgm_blocks_lane = False
         self._gps_blocks_lane = False
-        self._lane_enabled = True
+        self._lane_enabled = not self._camera_only
         if self._zone_gated:
             self._mgm_sub = self.create_subscription(
                 MgmState, '/adas/mgm_state', self._on_mgm_state, 1)
@@ -201,7 +204,7 @@ class StackLaneNode(Node):
         self._update_lane_gate()
 
     def _update_lane_gate(self):
-        enabled = not (self._mgm_blocks_lane or self._gps_blocks_lane)
+        enabled = not self._camera_only and not (self._mgm_blocks_lane or self._gps_blocks_lane)
         if enabled != self._lane_enabled:
             self._prev_y = self._prev_coeffs = self._held_estimate = None
             self._reference_stamp = None

@@ -45,7 +45,15 @@ def test_no_lidar_rejects_even_with_navigation_ready(camera,gps):
 
 
 def test_revised_zone_off_does_not_require_traffic_heartbeat():
-    msg = state(True)
+    msg = state(True, True)
     msg.revised_v2 = True
     msg.traffic_zone_active = False
     assert module.readiness({'state': msg}, 100_100_000_000, require_traffic=True)[0]
+
+
+@pytest.mark.parametrize('camera,gps', [(True,False),(False,True),(True,True),(False,False)])
+def test_v2_requires_gps_even_with_camera(camera, gps):
+    msg = state(camera, gps)
+    msg.revised_v2 = True
+    assert module.readiness({'state': msg}, 100_100_000_000)[0] == gps
+    assert not module.readiness({'state': msg}, 100_100_000_000, skip_gps=True)[0]

@@ -774,9 +774,10 @@ void mgm_init(CoreState & st, const CoreParams & params)
   // State v09.16 has no separate Mission preparation state.
   if (st.params.revised_v2_enabled) {st.params.parking_zone_entry_active = 1;}
   st.managers.recovery.measured_distance_complete = true;
-  st.state = MGM_STATE_LANE;
-  st.traffic_entry_state = MGM_STATE_LANE;
-  st.last_src = MGM_SRC_LANE;
+  st.state = st.params.revised_v2_enabled ? MGM_STATE_WAYPOINT : MGM_STATE_LANE;
+  st.traffic_entry_state = st.state;
+  st.last_src = st.params.revised_v2_enabled ? MGM_SRC_GPS : MGM_SRC_LANE;
+  if (st.params.revised_v2_enabled) {st.managers.nav = NavState::GPS_BACKUP;}
   st.n_out = 1;
   // ref_out은 전부 (0,0,0,0) — 인지 도착 전: 제자리 점 1개 (v_ref가 어차피 속도를 지배)
 }

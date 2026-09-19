@@ -77,13 +77,17 @@ def main():
         try:
             muted.add(scans[1]); pump(1.)
             expect(lambda s,r: s.revised_v2 and not s.start_ready,'rear required for departure')
-            muted.clear(); expect(lambda s,r: s.start_ready,'all four raw sensors plus actual camera frame ready')
+            muted.clear(); pump(1.)
+            expect(lambda s,r: not s.start_ready,'camera with FLOAT cannot authorize departure')
+            gps.fix_quality=4
+            expect(lambda s,r: s.start_ready,'all four raw sensors plus FIXED GPS ready')
             go.publish(Bool(data=True))
-            expect(lambda s,r: s.go_authorized and r.v_ref>0 and s.navigation==0,'camera drives on FLOAT; independent estop ignored')
-            lane.confidence=.1
-            expect(lambda s,r:r.v_ref==0 and s.navigation==1,'FLOAT backup stopped')
+            expect(lambda s,r: s.go_authorized and r.v_ref>0 and s.navigation==1,'GPS drives despite good lane')
+            gps.fix_quality=5
+            expect(lambda s,r:r.v_ref==0 and s.navigation==1,'FLOAT stops without lane fallback')
             lane.confidence=.9
-            expect(lambda s,r:r.v_ref>0 and s.navigation==0,'lane recovery resumes without go or FIXED')
+            pump(1.)
+            expect(lambda s,r:r.v_ref==0 and not s.line_ref_valid,'high lane confidence cannot resume driving')
             zone=ZoneContext(zone_id=3,zone_type=1,zone_valid=True,in_zone=True)
             gps.zones=[zone]
             expect(lambda s,r:s.traffic_zone_active and r.v_ref==0,'FLOAT enters turn zone but cannot drive')

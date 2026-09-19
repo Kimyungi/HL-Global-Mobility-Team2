@@ -106,7 +106,7 @@ int main()
   lane.st.params.revised_v2_enabled = 1; lane.s.revised_v2 = true;
   lane.s.gps_fix_quality = 4;
   lane.tick(lane.st.params.n_cycles);
-  check(lane.st.lane_high_cnt == lane.st.params.n_cycles, "normal lane confidence is evaluated");
+  check(lane.st.lane_high_cnt == 0, "v2 ignores lane confidence in normal driving");
   lane.s.gps_avoid_zone = true; lane.tick();
   check(lane.out.avoid == AvoidState::AVOID_ACTIVE && lane.st.lane_high_cnt == 0 &&
     lane.st.lane_low_cnt == 0, "avoid entry discards prior confidence immediately");
@@ -125,9 +125,9 @@ int main()
   check(lane.out.avoid == AvoidState::INACTIVE && lane.out.nav == NavState::GPS_BACKUP &&
     lane.st.lane_high_cnt == 0, "alignment resumes GPS without reusing avoidance-time confidence");
   lane.tick(lane.st.params.n_cycles - 1);
-  check(lane.out.nav == NavState::GPS_BACKUP, "lane return waits for a fresh post-avoidance confirmation window");
+  check(lane.out.nav == NavState::GPS_BACKUP, "GPS remains selected after avoidance");
   lane.tick();
-  check(lane.out.nav == NavState::LINE, "normal lane confidence confirmation resumes after avoidance");
+  check(lane.out.nav == NavState::GPS_BACKUP && lane.st.lane_high_cnt == 0, "lane never resumes after avoidance");
   Run next; configure(next);
   next.gps_zone(true); next.s.gps_track_index = 336;
   next.s.gps_avoid_zone = true; next.obstacle();

@@ -95,7 +95,10 @@ bool line_return_ready(const CoreSnapshot & s, const CoreState & st)
 }
 void nav_reselect(const CoreSnapshot & s, CoreState & st)
 {
-  if (s.revised_v2 && st.managers.avoid == AvoidState::AVOID_ACTIVE) {return;}
+  if (s.revised_v2) {
+    st.managers.nav = st.managers.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
+    return;  // Camera frames belong to perception, never to v2 navigation.
+  }
   if (mission_searches_along_gps(st) || st.managers.avoid == AvoidState::GPS_RETURN) {
     st.managers.nav = st.managers.gps_only_context ? NavState::GPS_ONLY_NAV : NavState::GPS_BACKUP;
   } else if (!s.revised_v2 && st.managers.route.enabled && st.managers.route.connecting) {
@@ -254,7 +257,7 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.recovery.eligible = false; m.recovery.block_reason = RecoveryBlockReason::NOT_DRIVING;
     return;
   }
-  const bool starting_ready = !s.start_gate_enabled || ((s.revised_v2 ? s.start_lidar_ready : s.lidar_valid) && (s.camera_available || s.gps_fixed_ready));
+  const bool starting_ready = !s.start_gate_enabled || ((s.revised_v2 ? s.start_lidar_ready : s.lidar_valid) && (s.gps_fixed_ready || (!s.revised_v2 && s.camera_available)));
   const bool already_driving = m.top == TopState::AUTONOMOUS_DRIVE;
   m.top = s.autonomous_enabled && (already_driving || starting_ready) ?
     TopState::AUTONOMOUS_DRIVE : TopState::AUTONOMOUS_ENABLE;
@@ -270,11 +273,12 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
     m.safety = m.safe_stop_reasons ? SafetyState::SAFE_STOP : SafetyState::NORMAL;
     return;
   }
-  // v09.17: the whole avoidance episode (including GPS_RETURN) owns control.
-  // Ignore lane confidence and discard its pre-entry hysteresis until it ends.
-  const bool suspend_lane = s.revised_v2 && st.params.avoidance_enabled &&
-    (m.avoid != AvoidState::INACTIVE || (st.params.avoid_zone_only &&
-      m.avoid_zone_inside && !m.avoid_zone_completed && m.mission == MissionState::MISSION_IDLE));
+  // v2 never evaluates lane confidence, including outside mission/avoidance zones.
+  const bool suspend_lane = s.revised_v2;
+  if (s.revised_v2) {
+    nav_reselect(s, st);
+    m.lane_recovery_required = false;
+  }
   const bool line = !suspend_lane && line_valid(s);
   const bool gps = gps_valid(s);
   st.lane_low_cnt = line && s.lane_confidence < st.params.lane_conf_exit ?

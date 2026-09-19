@@ -68,21 +68,30 @@ int main() {
     check(r.out.mission == MissionState::MISSION_ACTIVE,
       "missing readiness cannot fall back to removed PREPARE state"); }
 
-  { V2 r; r.s.gps_fix_quality=5; r.s.lane_confidence=.1f; r.tick(50);
-    check(r.out.v_ref==0 && r.out.nav==NavState::GPS_BACKUP,"low lane + FLOAT stops");
-    r.s.lane_confidence=.5f; r.tick(60); check(r.out.v_ref==0,"mid-confidence cannot bypass recovery hysteresis");
-    r.s.lane_confidence=.8f; r.tick(49); check(r.out.v_ref==0,"49 high ticks still waiting");
-    r.tick(); check(r.out.nav==NavState::LINE && r.out.v_ref>0,"50 high ticks resume lane without FIXED/go"); }
-  { V2 r; r.s.lane_confidence=.1f; r.s.gps_fix_quality=5; r.tick(50);
-    r.s.gps_fix_quality=4; r.tick(); check(r.out.v_ref>0 && r.out.path_source==MGM_SRC_GPS,"one FIXED resumes GPS");
-    r.s.gps_fix_quality=5; r.s.lane_confidence=.8f; r.tick();
-    check(r.out.v_ref>0 && r.out.nav==NavState::LINE,"after GPS recovery, a new GPS loss uses ordinary immediate valid-lane fallback"); }
-  { V2 r; r.s.lane_confidence=.1f; r.tick(50);
-    r.s.gps_fix_quality=5; r.tick(); r.s.lane_confidence=.5f; r.tick(60);
-    check(r.out.v_ref==0,"low lane at GPS quality loss also requires full lane recovery");
+  { V2 r;
+    r.tick(100);
+    check(r.out.nav==NavState::GPS_BACKUP && r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0,
+      "normal navigation always selects GPS even with high confidence lane");
+    check(!r.out.references[MGM_SRC_LANE].valid && r.st.lane_high_cnt==0 && r.st.lane_low_cnt==0,
+      "lane provider and confidence counters disabled");
+    for (float confidence : {.1f, .5f, .9f, std::numeric_limits<float>::quiet_NaN()}) {
+      r.s.gps_fix_quality=5; r.s.lane_confidence=confidence; r.tick(100);
+      check(r.out.nav==NavState::GPS_BACKUP && r.out.v_ref==0,
+        "FLOAT never falls back to any camera confidence");
+      r.s.gps_fix_quality=4; r.tick();
+      check(r.out.path_source==MGM_SRC_GPS && r.out.v_ref>0,
+        "FIXED resumes GPS independently of lane confidence");
+    }
+    r.s.gps_valid=false; r.tick(100);
+    check(r.out.v_ref==0 && r.out.path_source!=MGM_SRC_LANE,"GPS outage never selects lane");
   }
-  { V2 r; r.st.managers.nav=NavState::GPS_BACKUP; r.s.gps_fix_quality=5; r.tick();
-    check(r.out.nav==NavState::LINE && r.out.v_ref>0,"ordinary GPS loss permits immediate valid lane"); }
+  { V2 r; r.s.start_gate_enabled=true; r.s.camera_available=true;
+    r.s.gps_fixed_ready=false; r.s.gps_fix_quality=5; r.tick();
+    check(r.out.top==TopState::AUTONOMOUS_ENABLE && r.out.v_ref==0,"camera alone cannot authorize v2 start");
+    r.s.gps_fixed_ready=true; r.s.gps_fix_quality=4; r.tick();
+    check(r.out.top==TopState::AUTONOMOUS_DRIVE && r.out.path_source==MGM_SRC_GPS,
+      "GPS FIXED authorizes v2 start");
+  }
   { V2 r; r.zone(3, ZoneType::GPS_ONLY_ZONE); r.s.gps_fix_quality=5; r.tick(60);
     check(r.out.zones.in_gps_only_zone && r.out.v_ref==0,"FLOAT classifies zone but cannot drive even with good lane");
     r.s.gps_fix_quality=4; r.tick(); check(r.out.v_ref>0 && r.out.path_source==MGM_SRC_GPS,"turn zone resumes FIXED"); }
@@ -111,7 +120,7 @@ int main() {
     r.s.sensor_alive_mask=0; r.tick(); check(r.out.state==MGM_STATE_ESTOP && r.out.v_ref<0 && r.out.safety==SafetyState::ESTOP,"all sensor loss does not interrupt recovery");
     r.s.external_stop=true; r.tick(); check(r.out.v_ref==0,"operator/CAN stop overrides recovery");
     r.s.external_stop=false; r.s.sensor_alive_mask=1; r.recovered(true);
-    check(!r.st.managers.estop_active && r.out.nav==NavState::LINE,"completion returns previous state");
+    check(!r.st.managers.estop_active && r.out.nav==NavState::GPS_BACKUP,"completion returns previous state");
     r.scan(0,.2f,4); r.scan(0,.2f,5); r.scan(0,.2f,6); check(!r.st.managers.estop_active,"continuing front condition cannot retrigger");
     r.scan(1,.5f,2); r.scan(1,.1f,3); r.scan(1,.1f,4); r.scan(1,.1f,5);
     check(r.st.managers.estop_active,"another rearmed sensor can trigger"); }
@@ -134,11 +143,11 @@ int main() {
     r.s.route.enabled=true; r.s.route.sequence_id=11; r.s.route.instance_id=22; r.s.route.count=2;
     auto fix = [&](bool end) {++r.s.references[MGM_SRC_GPS].generation; r.s.gps_at_end=end; r.tick();};
     fix(false); r.s.vehicle_speed_valid=false; fix(true);
-    check(r.out.route.phase==RoutePhase::WAIT_ACK && r.out.v_ref>0,"middle CSV needs no stationary feedback; camera continues");
+    check(r.out.route.phase==RoutePhase::WAIT_ACK && r.out.v_ref>0,"middle CSV needs no stationary feedback; GPS continues");
     const auto id=r.out.route.request_id; r.tick(500);
-    check(r.out.route.request_id==id && r.out.v_ref>0,"no ACK timeout and no camera stop");
+    check(r.out.route.request_id==id && r.out.v_ref>0,"no ACK timeout and no GPS stop");
     r.s.route.index=1; r.s.route.acknowledged_request=id; fix(false);
-    check(r.out.route.changed && r.out.nav==NavState::LINE && r.out.v_ref>0,"ACK preserves camera ownership");
+    check(r.out.route.changed && r.out.nav==NavState::GPS_BACKUP && r.out.v_ref>0,"ACK preserves GPS ownership");
     fix(false); fix(true);
     check(r.out.route.phase==RoutePhase::WAIT_STOP && r.out.v_ref==0,"last CSV commands zero but waits for actual speed");
     r.s.vehicle_speed_valid=true; r.s.vehicle_speed=.5f; fix(true);
@@ -166,7 +175,7 @@ int main() {
     r.s.route.index=1; r.s.route.connecting=true; r.s.route.next_connecting=false;
     r.s.route.acknowledged_request=r.out.route.request_id; ++r.s.references[MGM_SRC_GPS].generation;
     r.s.gps_at_end=false; r.tick(60);
-    check(r.out.route.connecting && r.out.nav==NavState::LINE,"CSV connector outside turn zone allows camera");
+    check(r.out.route.connecting && r.out.nav==NavState::GPS_BACKUP,"CSV connector uses GPS outside turn zone");
   }
   std::printf("revised v2: %d checks, %d failures\n",checks,failures);
   return failures ? 1 : 0;

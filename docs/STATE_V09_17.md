@@ -17,7 +17,7 @@ YOLO 관측 노드, GPS 분기 인계와 종료 처리를 추가한 버전이다
 |---|---|---|
 | CAN 출력 | 0 LANE / 1 WAYPOINT / 2 AVOID / 3 PARKING / 4 TRAFFIC / 5 ESTOP | 0~5 연속 정의. 각 출력·참조 경로 선택 구현됨 |
 | 최상위 | AUTONOMOUS_ENABLE / AUTONOMOUS_DRIVE / FINISH | 준비·인가, 주행, 완료 정지 처리 있음 |
-| 주행 | LINE / GPS_BACKUP / GPS_ONLY_NAV | 카메라·FIXED GPS 선택 및 복귀, 불충족 정지 처리 있음 |
+| 주행 | GPS_BACKUP / GPS_ONLY_NAV | FIXED GPS 사용. LINE은 v2에서 사용하지 않음. 유효 GPS 참조가 없으면 일반 주행 정지 |
 | 회피 | INACTIVE / AVOID_ACTIVE / GPS_RETURN | waypoint_avoid_node 연결, 회피 완료 후 GPS 정렬 복귀 조건 있음 |
 | 회피 | CLEAR_CONFIRM | **현재 enum에서 삭제. 진입·처리 없음** |
 | 신호 | SIGNAL_IDLE / RED_DETECTED / APPROACH_STOP_LINE / STOPPED_WAIT | zone [3] 모듈 활성화, 적색·정지선·거리 감속·정차·적색 해제 전이 있음 |
@@ -31,16 +31,18 @@ YOLO 관측 노드, GPS 분기 인계와 종료 처리를 추가한 버전이다
 
 용인 T·평행 주차는 같은 참조 경로 실행기를 사용한다. state=1은 주차 경로 01·02와 별도 탈출 경로, state=2는 03·04를 사용하고 진입 경로로 되돌아 나온다.
 
-## 회피 중 차선 신뢰도 판정 중단 (2026-09-17)
+## 라인 주행 전면 중지 (2026-09-19)
 
-`AVOID_ACTIVE`와 `GPS_RETURN`에서는 MGM 차선 신뢰도 판정 및 고·저신뢰도
-카운터 누적을 중단한다. 회피 진입 시 기존 카운터도 0으로 초기화하므로
-회피 중 관측으로 배경 주행 상태가 바뀌거나 차선 복귀가 미리 확정되지 않는다.
-회피 경로 완료 후 GPS 정렬 또는 다음 zone [1] 진입으로 회피가 종료되면 정상 신뢰도 판정을 0부터 재개한다.
-GPS가 유효한 경우 차선 복귀는 기존 `n_cycles` 확인 기간을 다시 충족해야 한다.
-차선 카메라와 노드는 계속 실행한다. 2026-09-18부터 revised_v2에서는 영상·수신 상태를
-계속 발행하면서 GPS 전용·신호등·주차·회피 zone 및 활성 주차·회피 미션에서 차선 추론을 중단한다.
-일반 구간 복귀 시 추적 이력을 초기화한다. [zone 점검 결과](LANE_ZONE_GATE_AND_ZONE_CHECK.md)를 참고한다.
+사용자 지시로 revised_v2 전체 구간에서 라인 추론·경로 발행·신뢰도 판정과
+LINE 전이 및 GPS 소실 시 카메라 대체 주행을 중지했다. 일반 주행과 CSV 연결은
+GPS를 사용하며, 유효 GPS 참조가 없으면 라인으로 대체하지 않고 정지한다.
+출발 인가는 기존 필수 LiDAR 수신과 GPS FIXED 준비를 요구한다.
+회피·주차·신호·상위 ESTOP 및 마지막 미션의 기존 실행 권한은 유지한다.
+
+차선 카메라 노드는 `camera_only=true`로 실행한다. 차선 모델·호모그래피를
+로드하지 않으며 일반 구간에서도 라인 추론을 재개하지 않는다.
+`/perception/lane_image_raw`와 `/perception/lane_camera`는 계속 제공하므로
+마지막 미션 출구 검출기의 원본 영상 입력은 유지된다.
 
 ## Last_mission_state 통합 (2026-09-17)
 

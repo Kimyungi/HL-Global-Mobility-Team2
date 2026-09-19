@@ -86,7 +86,8 @@ scripts/v2 state
 |---|---|
 | `revised_v2` | `true` |
 | `lidar_ready`, `lidar_missing_topics` | `true`, `[]` |
-| `camera_available`, `gps_fixed_ready` | 카메라 영상 또는 GPS FIXED 준비가 참 |
+| `gps_fixed_ready` | `true`: GPS FIXED와 유효 경로 필수 |
+| `camera_available` | 마지막 미션용 원본 영상 수신 상태 |
 | `start_ready` | `true` |
 | `go_authorized` | GO 전 `false`, 인가 후 `true` |
 | `selected_reference_valid`, `selected_reference_fresh` | 실제 사용할 참조의 유효성·신선도 |
@@ -218,7 +219,7 @@ state=4에서 회피를 시작합니다. **회피 경로를 끝낸 후** 다음 
 2. 회피 시작 이후 다음 zone [1] 진입. 시작 당시의 [1]은 종료 근거가 아닙니다.
 
 회피 종료 시 인지 모듈의 장애물 세션 표시도 해제합니다. [1]에서는 GPS 주행을 유지하고,
-일반 구간에서는 차선 검출과 정상 차선 복귀 판단을 재개합니다.
+일반 구간에서도 GPS 주행을 유지합니다. 라인 추론·신뢰도 판정·라인 복귀는 전 구간에서 중지하며, 원본 영상 수신만 마지막 미션용으로 유지합니다.
 
 #### 주차와 탈출
 

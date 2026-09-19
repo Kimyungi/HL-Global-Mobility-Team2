@@ -29,6 +29,7 @@ def test_runbook_profile_excludes_legacy_estop_and_starts_traffic_supervisor():
     assert traffic.node_executable == 'traffic_zone_supervisor'
     lane=next(n for n in nodes if n.node_package=='stack_lane')
     assert evaluate_parameters(context,lane._Node__parameters)[0]['zone_gated'] is True
+    assert evaluate_parameters(context,lane._Node__parameters)[0]['camera_only'] is True
     mgm=next(n for n in nodes if n.node_package=='adas_mgm')
     params=evaluate_parameters(context,mgm._Node__parameters)[1]
     assert list(params['required_lidar_topics'])==topics

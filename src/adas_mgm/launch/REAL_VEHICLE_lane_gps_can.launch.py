@@ -306,12 +306,14 @@ def validate(context, log_dir=LOG_DIR, lidar_estop_enabled=True, revised_v2_enab
     else:
         print('[launch] avoid_zone_only=false — 장애물 검출 기반 일반 회피')
     # 카메라를 안 띄우는 run(lane_enabled:=false)에선 호모그래피 유무가 무의미
-    if LaunchConfiguration('lane_enabled').perform(context) == 'true':
+    if not revised_v2_enabled and LaunchConfiguration('lane_enabled').perform(context) == 'true':
         homography = LaunchConfiguration('homography_path').perform(context)
         if not os.path.isfile(homography):
             raise RuntimeError(
                 f'호모그래피 파일 없음: {homography} — placeholder 실주행 금지 '
                 '(stack_lane CALIBRATION_GUIDE.md)')
+    elif revised_v2_enabled and LaunchConfiguration('lane_enabled').perform(context) == 'true':
+        print('[launch] 카메라 영상 수신 유지, 라인 추론·주행 중지 — GPS 주행')
     else:
         print('[launch] ⚠ stack_lane 미기동 (lane_enabled:=false) — '
               '차선 전이 없음, 출발 인가는 `ros2 run adas_mgm go --skip-lane`')
@@ -793,7 +795,7 @@ def build_launch_description(
                 'route_end_id': ParameterValue(LaunchConfiguration('route_end_id'), value_type=str),
             }],
             output='screen',
-            # GPS process loss is an input outage: MGM can select camera navigation.
+            # GPS process loss blocks v2 navigation until a valid GPS reference returns.
             # Reconnection restarts the route node, never the persistent physical link.
             respawn=True, respawn_delay=3.0,
         ),
@@ -807,6 +809,7 @@ def build_launch_description(
             parameters=[{
                 'homography_path': LaunchConfiguration('homography_path'),
                 'zone_gated': revised_v2_enabled,
+                'camera_only': revised_v2_enabled,
                 'weights': LaunchConfiguration('lane_weights'),
                 'camera_mxid': LaunchConfiguration('camera_mxid'),
                 'camera_fps': ParameterValue(

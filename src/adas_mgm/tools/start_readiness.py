@@ -18,4 +18,5 @@ def readiness(latest, now_ns, *, skip_gps=False, skip_camera=False, require_traf
     if current and getattr(state, 'revised_v2', False) and not getattr(state, 'traffic_zone_active', False):
         require_traffic = False
     traffic_ok = not require_traffic or (traffic is not None and fresh(traffic.header.stamp, now_ns))
-    return bool(current and lidar and (camera or gps) and traffic_ok), bool(camera), bool(gps), bool(current), bool(traffic_ok)
+    navigation = gps if current and getattr(state, 'revised_v2', False) else (camera or gps)
+    return bool(current and lidar and navigation and traffic_ok), bool(camera), bool(gps), bool(current), bool(traffic_ok)

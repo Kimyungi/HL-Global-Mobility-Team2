@@ -10,6 +10,7 @@ from stack_lane.node import StackLaneNode
 
 def lane():
     node = object.__new__(StackLaneNode)
+    node._camera_only = False
     node._mgm_blocks_lane = node._gps_blocks_lane = False
     node._lane_enabled = True
     node._prev_y = 1.
@@ -51,9 +52,11 @@ def test_parking_and_actual_avoidance_gate_but_consumed_marker_does_not():
     assert node._lane_enabled
 
 
-def test_disabled_inference_keeps_latest_camera_frame_and_heartbeat(monkeypatch):
+@pytest.mark.parametrize("camera_only", [False, True])
+def test_disabled_inference_keeps_latest_camera_frame_and_heartbeat(monkeypatch, camera_only):
     node = lane()
-    node._on_mgm_state(MgmState(in_gps_only_zone=True))
+    node._camera_only = camera_only
+    node._on_mgm_state(MgmState(in_gps_only_zone=not camera_only))
     image = np.ones((8, 8, 3), dtype=np.uint8)
     old, latest = Mock(), Mock()
     latest.getCvFrame.return_value = image
@@ -92,3 +95,32 @@ def test_physical_waypoint_zone_disables_lane_without_traffic_zone():
     assert not node._lane_enabled
     node._on_gps_zone(GpsPath(zone_valid=True, gps_only_zone=False))
     assert node._lane_enabled
+
+
+def test_camera_only_never_reenables_lane_in_normal_zone():
+    node = lane()
+    node._camera_only = True
+    node._on_mgm_state(MgmState())
+    node._on_gps_zone(GpsPath(zone_valid=True, gps_only_zone=False))
+    assert not node._lane_enabled
+    assert node._held_estimate is None
+
+
+def test_camera_only_initialization_skips_model_and_homography(monkeypatch):
+    import rclpy
+    for name in ('resolve_device', 'load_model', 'load_homography'):
+        monkeypatch.setattr('stack_lane.node.' + name,
+                            lambda *a: pytest.fail('camera-only mode loaded lane resources'))
+    monkeypatch.setattr(StackLaneNode, '_setup_camera', lambda *a: None)
+    rclpy.init(args=['--ros-args', '-p', 'camera_only:=true'])
+    node = None
+    try:
+        node = StackLaneNode()
+        assert not node._lane_enabled
+        assert not hasattr(node, 'model')
+        assert node.raw_image_pub.topic_name == '/perception/lane_image_raw'
+        assert node.camera_pub.topic_name == '/perception/lane_camera'
+    finally:
+        if node is not None:
+            node.destroy_node()
+        rclpy.shutdown()

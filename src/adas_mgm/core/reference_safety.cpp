@@ -21,7 +21,7 @@ ReferenceStatus provider_reference(const CoreSnapshot & s, uint8_t source)
   if (source >= MGM_SRC_ESCAPE) {return r;}  // Escape is certified by its active phase + assembler
   const CorePath * paths[] = {&s.lane_path, &s.gps_path, &s.avoid_path, &s.parking_path};
   const bool usable[] = {
-    s.camera_line_valid && std::isfinite(s.lane_confidence) &&
+    !s.revised_v2 && s.camera_line_valid && std::isfinite(s.lane_confidence) &&
     s.lane_confidence >= 0.0f && s.lane_confidence <= 1.0f,
     s.gps_valid && (!s.revised_v2 || s.gps_fix_quality == 4), s.lidar_valid, s.parking_valid};
   const auto & sample = s.references[source];

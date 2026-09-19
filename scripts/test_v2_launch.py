@@ -105,8 +105,8 @@ def route_context(tmp_path):
 @pytest.mark.parametrize('end', ['06','07'])
 def test_sequence_resolves_first_csv_and_enables_mgm_without_starting_nodes(tmp_path, start, end):
     module, context = route_context(tmp_path)
-    context.launch_configurations.update(route_start_id=start, route_end_id=end)
-    for setting in module.validate(context, str(tmp_path / 'run')):
+    context.launch_configurations.update(route_start_id=start, route_end_id=end, lane_enabled='true')
+    for setting in module.validate(context, str(tmp_path / 'run'), revised_v2_enabled=True):
         assert not isinstance(setting, Node)
         setting.execute(context)
     assert context.launch_configurations['waypoint_csv'].endswith(f'path_{start}.csv')

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""출발 인가: 라이다 정상 수신 AND (실제 카메라 영상 OR GPS FIXED(4)).
+"""출발 인가: v2는 라이다 정상 수신 AND GPS FIXED(4).
 
-카메라 기동과 차선 검출은 별개다. MGM 상태가 알리는 영상 수신/GPS 준비 중
+v2의 카메라 영상은 마지막 미션에 사용하며 출발 준비를 대신하지 않는다.
+과거 프로파일에서는 MGM 상태가 알리는 영상 수신/GPS 준비 중
 하나와 필수 라이다 입력이 모두 준비되면 인가하고, 조향 경로·E-stop·CAN·미션 조건은 MGM이 별도로 적용한다.
 stop 뒤 go는 중지를 해제하고 재인가한다. GPS 상주 서비스는 건드리지 않는다.
 """
@@ -19,7 +20,7 @@ from start_readiness import readiness
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--timeout', type=float, default=8.)
-    parser.add_argument('--skip-gps', action='store_true', help='카메라만으로 준비 판단')
+    parser.add_argument('--skip-gps', action='store_true', help='과거 프로파일 전용: 카메라만으로 준비 판단 (v2 출발 불가)')
     parser.add_argument('--skip-lane', action='store_true', help='GPS만으로 준비 판단')
     parser.add_argument('--skip-avoid', action='store_true', help='호환 옵션: 라이다 필수 검사는 생략하지 않음')
     parser.add_argument('--require-traffic', action='store_true', help='신호등 heartbeat를 추가로 요구')
@@ -48,7 +49,8 @@ def main():
         state = latest.get('state')
         print(f'라이다 정상={bool(state and state.lidar_ready)} | 미수신/무효={list(state.lidar_missing_topics) if state else ["MGM 미수신"]}')
         if not result[0] and not args.force:
-            print('출발 대기: 라이다 정상 수신 AND (카메라 영상 OR GPS FIXED)가 필요합니다.')
+            navigation = 'GPS FIXED' if state and state.revised_v2 else '(카메라 영상 OR GPS FIXED)'
+            print(f'출발 대기: 라이다 정상 수신 AND {navigation}가 필요합니다.')
             return 1
         # Repetition handles discovery loss; success is the MGM acknowledgment.
         sent_after_ns = node.get_clock().now().nanoseconds
