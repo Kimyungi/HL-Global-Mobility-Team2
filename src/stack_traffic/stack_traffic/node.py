@@ -691,9 +691,9 @@ class StackTrafficNode(Node):
         #   HDOP 도 RTCM 도 정상으로 보이는 채 FIXED 만 안 잡혀 원인을 찾기 어렵다.
         #   안전한 쪽을 기본으로 두고, USB3 가 필요하면 그때 명시적으로 올린다.
         self.declare_parameter("oak_usb_speed", "high")
-        # 신호등 RGB 센서 자동 노출 보정. SDK -9..9, 기본 0=보정 없음.
+        # 신호등 RGB 센서 자동 노출 보정. SDK -9..9, 기본 -2.
         self.declare_parameter(
-            "oak_exposure_compensation", 0,
+            "oak_exposure_compensation", -2,
             ParameterDescriptor(
                 read_only=True,
                 description="RGB auto-exposure compensation (-9..9); restart to apply",
