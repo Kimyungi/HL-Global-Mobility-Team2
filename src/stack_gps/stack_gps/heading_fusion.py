@@ -28,7 +28,8 @@ class HeadingFusion:
     def __init__(self, alpha=0.1, imu_timeout=0.5, sign=1.0,
                  gyro_gate=0.15, inn_gate=math.radians(60.0),
                  seed_n=5, seed_width=1.0, seed_spread=math.radians(25.0),
-                 reseed_after=30, min_turn_radius=3.0, turn_settle=0.5):
+                 reseed_after=30, min_turn_radius=3.0, turn_settle=0.5,
+                 steering_recovery=None, recovery_max_gap=10.0):
         """alpha: offset 저역통과 이득 (COG 갱신 1회당).
         imu_timeout: IMU 샘플 신선도 한계 [s].
         sign: IMU yaw 부호 (+1 = CCW+, ENU와 동일 — HandsFree 기본).
@@ -82,6 +83,17 @@ class HeadingFusion:
         self.rejected = 0            # 잔차 게이트 거부 누계 — 진단용
         self.reseeds = 0             # 오염 판정 재정렬 횟수 — 진단용
         self.arc_blocked = 0         # 회전 반경 게이트 차단 누계 — 진단용
+        self.steering_recovery = steering_recovery
+        self.recovery_max_gap = float(recovery_max_gap)
+        if not math.isfinite(self.recovery_max_gap) or self.recovery_max_gap <= 0:
+            raise ValueError('recovery_max_gap must be finite and positive')
+        self._imu_generation = None
+        self.steering_recoveries = 0
+        self.steering_recovery_failures = 0
+
+    def _anchor_steering(self):
+        if self.steering_recovery is not None and self._imu is not None and self.aligned:
+            self.steering_recovery.anchor(self._imu[0] + self._offset, self._imu[1])
 
     @property
     def offset(self):
@@ -93,13 +105,14 @@ class HeadingFusion:
         return self._offset is not None
 
     def reset_alignment(self):
-        """IMU 재연결(전원 재인가 가능성) 시 호출 — yaw 기준점이 바뀌었을 수
-        있으므로 기존 offset을 폐기하고 다음 직진 COG로 재정렬한다.
-        리셋 직후 heading()은 None → 호출자는 COG/접선 폴백으로 안전."""
+        """Discard the IMU datum. Reconnection can restore it from continuous
+        measured steering/speed; otherwise existing COG alignment is required."""
         self._offset = None
         self._seed_buf = []
         self._reject_streak = 0
         self.last_innovation = None
+        if self.steering_recovery is not None:
+            self.steering_recovery.pose = None
 
     def initialize_from_waypoint(self, yaw, t):
         """Seed once assuming the vehicle faces the initial course tangent.
@@ -114,6 +127,7 @@ class HeadingFusion:
         self._offset = wrap_angle(yaw - self._imu[0])
         self._waypoint_seed_available = False
         self._seed_buf.clear()
+        self._anchor_steering()
         return True
 
     def _try_seed(self, target, t):
@@ -134,13 +148,38 @@ class HeadingFusion:
         self._waypoint_seed_available = False
         self.last_innovation = 0.0
         buf.clear()
+        self._anchor_steering()
 
-    def update_imu(self, yaw_rad, t, gyro_z=None):
+    def update_imu(self, yaw_rad, t, gyro_z=None, generation=None):
+        if not math.isfinite(yaw_rad) or not math.isfinite(t):
+            self.reset_alignment()
+            return
+        changed = (generation is not None and self._imu_generation is not None
+                   and generation != self._imu_generation)
+        if self.steering_recovery is not None and self._imu is not None:
+            gap = t - self._imu[1]
+            if gap == 0 and not changed:
+                return
+            if changed or gap > self._imu_timeout or gap < 0:
+                recovered = (self.steering_recovery.project(t)
+                             if self.aligned and 0 < gap <= self.recovery_max_gap
+                             and math.isfinite(yaw_rad) else None)
+                self.reset_alignment()
+                if recovered is not None:
+                    self._offset = wrap_angle(recovered - self._sign * yaw_rad)
+                    self.steering_recoveries += 1
+                    self._last_turn_t = t  # Do not correct the restored datum with pre-outage COG.
+                else:
+                    self.steering_recovery_failures += 1
+        elif changed:
+            self.reset_alignment()
+        self._imu_generation = generation
         self._imu = (self._sign * yaw_rad, t)
         if gyro_z is not None:
             self._gyro_z = gyro_z
             if abs(gyro_z) > self._gyro_gate:
                 self._last_turn_t = t   # 선회 중 — turn_settle 기산점
+        self._anchor_steering()
 
     def update_cog(self, cog_yaw, t, speed=None):
         """이동 중 유효한 COG(ENU rad)로 offset 추정. 유효성(속도·나이)
@@ -180,6 +219,7 @@ class HeadingFusion:
             return
         self._reject_streak = 0
         self._offset = wrap_angle(self._offset + self._alpha * inn)
+        self._anchor_steering()
 
     def heading(self, t):
         """융합 헤딩(ENU rad) 또는 None (IMU 부재·정렬 전)."""

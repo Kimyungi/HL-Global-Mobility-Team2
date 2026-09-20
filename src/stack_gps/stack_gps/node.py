@@ -11,8 +11,8 @@
 fix가 없거나 오래되면(stale_timeout) points를 비우고 fix_quality=0으로
 발행한다 — GPS를 신뢰할지 판단은 MGM 스테이트 머신의 몫.
 
-TODO(2단계): /vehicle/vector(dSPACE 상태 추정) 구독 dead-reckoning으로
-GGA 사이(수백 ms)를 보간 — dSPACE 프레임과 ENU 정렬 방법 확정 후.
+/vehicle/vector의 실제 속도·조향각은 IMU 재연결 헤딩 복구에만 사용한다.
+GPS 위치 보간이나 dSPACE yaw를 ENU 절대각으로 사용하는 기능은 아니다.
 
 실행 예:
   ros2 run stack_gps stack_gps_node --ros-args \
@@ -31,12 +31,12 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.duration import Duration
 
-from fma_interfaces.msg import EstopRequest, GpsPath, GpsRoute, RefPoint, ZoneContext, MgmState, TargetRef
+from fma_interfaces.msg import EstopRequest, GpsPath, GpsRoute, RefPoint, ZoneContext, MgmState, TargetRef, VehicleVector
 from rcl_interfaces.msg import SetParametersResult, ParameterDescriptor
 from std_msgs.msg import Bool
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Path
-from rclpy.qos import DurabilityPolicy, QoSProfile
+from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, NavSatFix
 from tf2_ros import TransformBroadcaster
 
@@ -44,6 +44,7 @@ from stack_gps.zones import ZoneMap, ZoneType, load_zone_definitions
 from stack_gps.route_plan import RoutePlan, copy_geometry
 from stack_gps.gga_link import GgaLink
 from stack_gps.heading_fusion import HeadingFusion
+from stack_gps.steering_heading import SteeringHeadingRecovery
 from stack_gps.imu_link import ImuLink
 from stack_gps.path_engine import PathEngine, PoseDeltaTracker, load_waypoints_csv, wrap_angle, avoidance_marker_range, csv_zone_ranges, exit_stop_index, estop_station_ranges
 
@@ -197,6 +198,13 @@ class StackGpsNode(Node):
         self.declare_parameter('imu_frame_id', 'imu_link')
         self.declare_parameter('imu_publish_stale_s', 0.25)
         self.declare_parameter('fusion_alpha', 0.1)   # offset 저역통과 이득
+        self.declare_parameter('imu_steering_recovery_enabled', False)
+        self.declare_parameter('imu_recovery_wheelbase_m', 0.595)
+        self.declare_parameter('imu_recovery_steering_sign', -1.0)
+        self.declare_parameter('imu_recovery_feedback_timeout_s', 0.2)
+        self.declare_parameter('imu_recovery_max_gap_s', 10.0)
+        self.declare_parameter('imu_recovery_max_speed_mps', 3.0)
+        self.declare_parameter('imu_recovery_max_steering_deg', 30.0)
         self.initial_heading_from_waypoint = self.declare_parameter(
             'initial_heading_from_waypoint', False).value
         self.declare_parameter('accel_zone_ranges', [0])    # [start,end,...] 인덱스 쌍
@@ -328,12 +336,23 @@ class StackGpsNode(Node):
         imu_port = p('imu_port').value
         self.imu = None
         self.fusion = None
+        self.steering_recovery = None
+        if p('imu_steering_recovery_enabled').value:
+            self.steering_recovery = SteeringHeadingRecovery(
+                wheelbase=float(p('imu_recovery_wheelbase_m').value),
+                steering_sign=float(p('imu_recovery_steering_sign').value),
+                timeout=float(p('imu_recovery_feedback_timeout_s').value),
+                max_speed=float(p('imu_recovery_max_speed_mps').value),
+                max_steering=math.radians(float(p('imu_recovery_max_steering_deg').value)))
+        self._vehicle_feedback_stamp = 0
         if imu_port and imu_port.lower() not in ('off', 'none'):
             self.imu = ImuLink(imu_port, baud=int(p('imu_baud').value),
                                log=lambda m: self.get_logger().info(f"[imu] {m}"))
             self.imu.start()
             self.fusion = HeadingFusion(alpha=float(p('fusion_alpha').value),
-                                        sign=float(p('imu_yaw_sign').value))
+                                        sign=float(p('imu_yaw_sign').value),
+                                        steering_recovery=self.steering_recovery,
+                                        recovery_max_gap=float(p('imu_recovery_max_gap_s').value))
         else:
             self.get_logger().warn(
                 "IMU 꺼짐 — 헤딩은 COG/접선만 사용 (정지 시 절대 헤딩 없음)")
@@ -371,6 +390,9 @@ class StackGpsNode(Node):
         self._station_target_received = None
         self._station_target_age = 0.0
         self.sub_target = self.create_subscription(TargetRef, '/adas/target_ref', self._on_target_ref, 1)
+        self.sub_vehicle = self.create_subscription(
+            VehicleVector, '/vehicle/vector', self._on_vehicle_feedback,
+            qos_profile_sensor_data) if self.steering_recovery is not None else None
         self.sub_session = self.create_subscription(Bool, '/operator/start_session', self._on_start_session, 1)
         self.pub = self.create_publisher(GpsPath, '/perception/gps_path', 1)
         self.sub_route = self.create_subscription(MgmState, '/adas/mgm_state', self._on_route_control, 1) if self._route_plan or self.turn_zone_policy else None
@@ -416,6 +438,34 @@ class StackGpsNode(Node):
         route.points = [RefPoint(x=p.pose.position.x, y=p.pose.position.y,
                                 yaw=float(self.engine.yaw[i])) for i, p in enumerate(track.poses)]
         self.pub_route_geometry.publish(route)
+
+    def _on_vehicle_feedback(self, msg):
+        stamp = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        age = (self.get_clock().now().nanoseconds - stamp) * 1e-9
+        if stamp <= 0 or not 0 <= age <= self.steering_recovery.timeout:
+            self.steering_recovery.invalidate()
+            return
+        if stamp == self._vehicle_feedback_stamp:
+            return
+        if stamp < self._vehicle_feedback_stamp:
+            self.steering_recovery.invalidate()
+            self._vehicle_feedback_stamp = stamp
+            return
+        self._vehicle_feedback_stamp = stamp
+        # counter echoes PC TX and may stay constant; header identifies RX samples.
+        self.steering_recovery.observe(msg.v, msg.str, time.monotonic() - age)
+
+    def _update_imu_heading(self, now):
+        sample = self.imu.heading_sample()
+        if sample is None or not 0 <= now - sample[1] <= .5:
+            return
+        recovered, failed = self.fusion.steering_recoveries, self.fusion.steering_recovery_failures
+        self.fusion.update_imu(sample[0], sample[1], gyro_z=sample[2], generation=sample[3])
+        self._imu_gen = sample[3]
+        if self.fusion.steering_recoveries != recovered:
+            self.get_logger().info('IMU 재연결 헤딩 복구: 실제 조향각·실속도 적분으로 오프셋 재정렬')
+        elif self.fusion.steering_recovery_failures != failed:
+            self.get_logger().warn('IMU 헤딩 복구 불가: CAN 연속성·유효값·단절시간 확인, COG 재정렬 대기')
 
     def _on_target_ref(self, msg):
         stamp = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
@@ -546,6 +596,8 @@ class StackGpsNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'base_link'
         self._publish_imu(msg.header.stamp)
+        if self.fusion is not None and self.imu is not None:
+            self._update_imu_heading(time.monotonic())
         msg.dx, msg.dy, msg.dyaw = self._pose_delta_tracker.delta
         msg.update = self._pose_delta_tracker.update
 
@@ -577,19 +629,6 @@ class StackGpsNode(Node):
             self._cog_ok = cog[0] >= self.cog_min_speed
         cog_valid = self._cog_ok and not (self.fusion is not None and self.fusion.cog_hold)
         if self.fusion is not None and self.imu is not None:
-            gen = self.imu.generation()
-            if gen != self._imu_gen:
-                self._imu_gen = gen
-                if self.fusion.aligned:
-                    self.get_logger().warn(
-                        "IMU 재연결 감지 — yaw 기준점 리셋 가능성, 헤딩 오프셋 폐기 "
-                        "(다음 직진에서 자동 재정렬)")
-                self.fusion.reset_alignment()
-            yawg = self.imu.latest_yaw_gyro()
-            if yawg is not None:
-                gz = self.imu.latest_gyro_z()
-                self.fusion.update_imu(yawg[0], now - yawg[1],
-                                       gyro_z=gz[0] if gz else None)
             self._initialize_waypoint_heading(lat, lon, quality, now)
             if cog_valid:
                 self.fusion.update_cog(cog[1], now - cog[2], speed=cog[0])

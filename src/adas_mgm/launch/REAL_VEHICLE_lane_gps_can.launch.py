@@ -771,6 +771,7 @@ def build_launch_description(
                 'waypoint_csv': LaunchConfiguration('waypoint_csv'),
                 'turn_zone_policy': revised_v2_enabled,
                 'initial_heading_from_waypoint': revised_v2_enabled,
+                'imu_steering_recovery_enabled': revised_v2_enabled,
                 'rtcm_host': LaunchConfiguration('rtcm_host'),
                 'link_mode': LaunchConfiguration('gps_link_mode'),
                 'error_log_csv': LaunchConfiguration('gps_error_log_csv'),

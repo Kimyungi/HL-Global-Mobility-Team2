@@ -55,3 +55,5 @@ def test_no_parking_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,mo
     lane=next(n for n in nodes if n.node_package=='stack_lane')
     assert evaluate_parameters(context,lane._Node__parameters)[0]['camera_only']
     assert context.launch_configurations['traffic_enabled']=='true'
+    gps=next(n for n in nodes if n.node_package=='stack_gps')
+    assert evaluate_parameters(context,gps._Node__parameters)[0]['imu_steering_recovery_enabled']

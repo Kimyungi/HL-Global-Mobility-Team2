@@ -109,6 +109,27 @@ GO 전 목표속도 0은 정상입니다.
 가까운 웨이포인트 방향에 초기 헤딩을 정렬합니다. 이후 IMU 회전량과 GPS COG를 사용합니다.
 `웨이포인트 초기 헤딩 정렬: idx …` 로그를 확인합니다.
 
+### IMU USB 재연결 시 헤딩 복구
+
+용인 `prepare/drive`는 IMU 단절 중 `/vehicle/vector`의 **실제 조향각 `str`과
+실속도 `v`**로 회전량을 누적하고, 새 IMU 샘플 수신 시 그 헤딩에 오프셋을
+맞춥니다. 명령 조향각 `str_ref`나 dSPACE의 절대 yaw는 사용하지 않습니다.
+모델은 기존 차량 설정과 같은 축거 0.595m, 조향 부호 −1이며,
+`yaw_rate = v × tan(−str) / 0.595`입니다. 후진 속도 부호도 유지합니다.
+
+- 최초 경로 방향 정렬이 끝난 뒤의 재연결 복구입니다. 처음부터 헤딩이 없으면 만들지 않습니다.
+- 단절 10초 이내, CAN 관측 공백 0.2초 이하, 실제 속도 절댓값 3m/s 이하,
+  실제 조향각 절댓값 30° 이하의 유효한 연속 입력에서만 복구합니다.
+- IMU 미수신 동안 조향 추정만으로 GPS의 헤딩 유효성을 연장하지 않습니다.
+  재연결 후 `IMU 재연결 헤딩 복구: 실제 조향각·실속도 적분으로 오프셋 재정렬` 로그를 확인합니다.
+- CAN까지 끊김·입력 무효·시간 역행·복구 시간 초과면 정렬을 복구하지 않고 기존 COG 재정렬을 기다립니다.
+  복구 성공해도 기존 CAN 고장 래치·운전자 정지·GO·GPS FIXED 조건은 그대로 적용됩니다.
+- 이는 조향 기반 운동 모델의 추정입니다. 미끄러짐·외력 회전은 복원하지 못합니다.
+
+설정은 GPS 노드의 `imu_steering_recovery_enabled`, `imu_recovery_wheelbase_m`,
+`imu_recovery_steering_sign`, `imu_recovery_feedback_timeout_s`,
+`imu_recovery_max_gap_s`, `imu_recovery_max_speed_mps`, `imu_recovery_max_steering_deg`입니다.
+
 ### 3-1. 실행 시점
 
 1번의 FIXED 수신과 2번 장치 확인을 마친 뒤 터미널 1에서 GPS 표시를 Ctrl+C로 닫습니다.
