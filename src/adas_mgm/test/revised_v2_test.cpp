@@ -31,6 +31,26 @@ struct V2 : Run {
   }
 };
 int main() {
+  { V2 r;
+    r.st.params.zone_enter_confirm_samples = r.st.params.zone_exit_confirm_samples = 5;
+    r.obstacle();
+    check(r.out.avoid == AvoidState::INACTIVE, "obstacles outside zone [5] cannot claim avoidance");
+    r.s.avoid_obstacle_detected = false; r.s.gps_avoid_zone = true; r.tick();
+    check(r.out.avoid == AvoidState::AVOID_ACTIVE, "one valid zone [5] fix enters without obstacle");
+    r.s.avoid_maneuver_done = true; r.gps_zone(true); r.tick(100);
+    check(r.out.avoid == AvoidState::AVOID_ACTIVE, "maneuver done and other zones cannot end zone [5]");
+    r.s.gps_avoid_zone = false; r.s.gps_position_valid = false; r.tick();
+    check(r.out.avoid == AvoidState::AVOID_ACTIVE, "invalid position cannot certify exit");
+    r.s.gps_position_valid = true; r.s.zones.zone_valid = false; r.tick();
+    check(r.out.avoid == AvoidState::AVOID_ACTIVE, "invalid membership cannot certify exit");
+    r.s.zones.zone_valid = true; r.s.avoid_maneuver_done = false;
+    r.s.avoid_obstacle_detected = true; r.s.gps_cross_track = 1.f; r.tick();
+    check(r.out.avoid == AvoidState::INACTIVE && r.out.path_source == MGM_SRC_GPS,
+      "first valid outside fix cancels even unfinished avoidance and selects GPS");
+    r.s.gps_avoid_zone = true; r.tick();
+    check(r.out.avoid == AvoidState::AVOID_ACTIVE, "later zone [5] can enter again");
+  }
+
   { V2 r; r.st.params.estop_station_zone_id=-1;
     r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
     check(!r.st.managers.estop_active,"CSV auto mode without station never arms");

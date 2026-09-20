@@ -66,7 +66,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v40: persist the optional, default-off Halla stopline test parameter.
 // v41: front corridor width/clear snapshot and stop-only station ESTOP contract.
 // v42: CSV state=6 independent ESTOP_ZONE membership and auto selection.
-constexpr uint32_t kDumpVersion = 42;
+// v43: revised v2 avoidance follows current CSV zone [5] membership only.
+constexpr uint32_t kDumpVersion = 43;
 
 struct DumpHeader
 {

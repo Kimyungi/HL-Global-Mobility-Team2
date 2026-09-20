@@ -32,7 +32,7 @@ def main():
         scan = messages[name]; scan.angle_min=0.; scan.angle_increment=.1
         scan.range_min=.1; scan.range_max=12.; scan.ranges=[float('inf')]*10
     gps, lane = messages['/perception/gps_path'], messages['/perception/lane_path']
-    gps.fix_quality=5; gps.points=[RefPoint(x=2.5,y=.2)]
+    gps.fix_quality=4; gps.points=[RefPoint(x=2.5,y=.2)]
     gps.position_valid=True; gps.zone_valid=True
     lane.confidence=.9; lane.points=[RefPoint(x=2.5,y=.1)]
     messages['/bridge/can_health'].link_up=True
@@ -79,11 +79,8 @@ def main():
             expect(lambda s,r: s.revised_v2 and not s.start_ready,'rear required for departure')
             muted.clear(); expect(lambda s,r: s.start_ready,'all four raw sensors plus actual camera frame ready')
             go.publish(Bool(data=True))
-            expect(lambda s,r: s.go_authorized and r.v_ref>0 and s.navigation==0,'camera drives on FLOAT; independent estop ignored')
-            lane.confidence=.1
-            expect(lambda s,r:r.v_ref==0 and s.navigation==1,'FLOAT backup stopped')
-            lane.confidence=.9
-            expect(lambda s,r:r.v_ref>0 and s.navigation==0,'lane recovery resumes without go or FIXED')
+            expect(lambda s,r: s.go_authorized and r.v_ref>0 and s.navigation==1,'GPS drives; independent estop ignored')
+            gps.fix_quality=5
             zone=ZoneContext(zone_id=3,zone_type=1,zone_valid=True,in_zone=True)
             gps.zones=[zone]
             expect(lambda s,r:s.traffic_zone_active and r.v_ref==0,'FLOAT enters turn zone but cannot drive')
@@ -106,7 +103,9 @@ def main():
             avoid.points=[RefPoint(x=.8,y=.6,yaw=.2,curvature=.1)];avoid.avoidable=True;avoid.ttc=1.e9;avoid.v_suggest=1.
             expect(lambda s,r:s.avoidance==1 and r.v_ref>0,'valid fixed geometry resumes within AVOID')
             avoid.obstacle_detected=False;avoid.maneuver_done=True
-            expect(lambda s,r:s.avoidance==3,'completed maneuver enters GPS_RETURN')
+            expect(lambda s,r:s.avoidance==1,'completed maneuver stays active inside zone [5]')
+            gps.avoid_zone=False; avoid.maneuver_done=False; avoid.obstacle_detected=True
+            expect(lambda s,r:s.avoidance==0 and r.v_ref>0,'zone exit cancels unfinished avoidance and selects GPS')
         finally:
             proc.terminate(); proc.wait(timeout=5); log.close()
             node.destroy_node(); rclpy.try_shutdown()

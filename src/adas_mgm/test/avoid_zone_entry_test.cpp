@@ -119,9 +119,9 @@ int main()
     "high lane confidence is also ignored throughout avoidance");
   lane.obstacle(); lane.s.avoid_obstacle_detected = false;
   lane.s.avoid_maneuver_done = true; lane.s.gps_cross_track = .31f; lane.tick(100);
-  check(lane.out.avoid == AvoidState::GPS_RETURN && lane.st.lane_high_cnt == 0 &&
-    lane.st.lane_low_cnt == 0, "GPS return still suppresses lane confidence evaluation");
-  lane.s.gps_cross_track = 0; lane.tick();
+  check(lane.out.avoid == AvoidState::AVOID_ACTIVE && lane.st.lane_high_cnt == 0 &&
+    lane.st.lane_low_cnt == 0, "completed maneuver inside zone keeps AVOID and suppresses lane confidence");
+  lane.s.gps_avoid_zone = false; lane.s.gps_cross_track = 0; lane.tick();
   check(lane.out.avoid == AvoidState::INACTIVE && lane.out.nav == NavState::GPS_BACKUP &&
     lane.st.lane_high_cnt == 0, "alignment resumes GPS without reusing avoidance-time confidence");
   lane.tick(lane.st.params.n_cycles - 1);

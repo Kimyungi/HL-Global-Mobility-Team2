@@ -74,6 +74,13 @@ void update_avoid_zone(const CoreSnapshot & s, CoreState & st)
   }
   if (s.zones.generation == m.avoid_zone_generation) {return;}
   m.avoid_zone_generation = s.zones.generation;
+  if (s.revised_v2) {
+    // A fresh current-position observation is the entire zone [5] contract.
+    m.avoid_zone_inside = s.gps_avoid_zone;
+    m.avoid_zone_completed = false;
+    m.avoid_zone_enter_count = m.avoid_zone_exit_count = 0;
+    return;
+  }
   if (s.gps_avoid_zone) {
     m.avoid_zone_exit_count = 0;
     if (!m.avoid_zone_inside && ++m.avoid_zone_enter_count >= st.params.zone_enter_confirm_samples) {
@@ -350,6 +357,12 @@ void manager_transition(const CoreSnapshot & s, CoreState & st)
       st.return_hold_left = 0;
       if (was_avoiding) {nav_reselect(s, st);}
     }
+  } else if (s.revised_v2 && st.params.avoid_zone_only) {
+    m.avoid = m.avoid_zone_inside ? AvoidState::AVOID_ACTIVE : AvoidState::INACTIVE;
+    m.avoid_zone_completed = m.avoid_zone_maneuver_seen = false;
+    m.avoid_fallback_only = false;
+    m.clear_count = st.return_hold_left = 0;
+    if (was_avoiding && !m.avoid_zone_inside) {nav_reselect(s, st);}
   } else if (next_return_zone && !s.auto_estop && st.escape_phase == MGM_ESCAPE_NONE) {
     // A later physical CSV zone [1] is an alternative to the geometric rejoin.
     m.avoid = AvoidState::INACTIVE;

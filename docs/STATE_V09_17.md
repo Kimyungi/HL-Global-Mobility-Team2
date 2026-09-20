@@ -1,3 +1,5 @@
+> 2026-09-20 회피: 현재 CSV zone [5]에서만 AVOID_ACTIVE, 유효 위치가 구역 밖이면 즉시 종료. state=4와 경로 정렬 완료 조건은 v2에서 사용하지 않음.
+
 > 2026-09-20: CSV state=6부터 같은 path_id 끝까지 ESTOP 감지 구간으로 연결. 마커가 없는 경로는 비활성화. [현재 계약](ESTOP_STATION_20260919.md) 참조.
 
 > 2026-09-19 ESTOP 변경: [스테이션 계약](ESTOP_STATION_20260919.md)이 아래 과거 후진 회복 설명보다 우선합니다. 현재 런처는 스테이션 지정 전까지 ESTOP 감지 비활성화이며, 새 내부 동작은 장애물 소실까지 정지 유지입니다.
@@ -22,7 +24,8 @@ YOLO 관측 노드, GPS 분기 인계와 종료 처리를 추가한 버전이다
 | CAN 출력 | 0 LANE / 1 WAYPOINT / 2 AVOID / 3 PARKING / 4 TRAFFIC / 5 ESTOP | 0~5 연속 정의. 각 출력·참조 경로 선택 구현됨 |
 | 최상위 | AUTONOMOUS_ENABLE / AUTONOMOUS_DRIVE / FINISH | 준비·인가, 주행, 완료 정지 처리 있음 |
 | 주행 | GPS_BACKUP / GPS_ONLY_NAV | FIXED GPS 사용. LINE은 v2에서 사용하지 않음. 유효 GPS 참조가 없으면 일반 주행 정지 |
-| 회피 | INACTIVE / AVOID_ACTIVE / GPS_RETURN | waypoint_avoid_node 연결, 회피 완료 후 GPS 정렬 복귀 조건 있음 |
+| 회피 | INACTIVE / AVOID_ACTIVE | 현재 zone [5] 진입·이탈로 전이. 구역 안에서 기동이 끝나도 유지 |
+| 회피 | GPS_RETURN | 과거 프로파일용 선언 보존. 현재 v2 zone [5] 모드에서는 진입하지 않음 |
 | 회피 | CLEAR_CONFIRM | **현재 enum에서 삭제. 진입·처리 없음** |
 | 신호 | SIGNAL_IDLE / RED_DETECTED / APPROACH_STOP_LINE / STOPPED_WAIT | zone [3] 모듈 활성화, 적색·정지선·거리 감속·정차·적색 해제 전이 있음 |
 | 미션 | MISSION_IDLE / MISSION_ACTIVE | 요청 ID, 준비 응답, 실행 인계, 완료/취소 처리 있음 |
