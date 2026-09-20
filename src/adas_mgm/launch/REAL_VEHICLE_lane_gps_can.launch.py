@@ -558,6 +558,7 @@ def build_launch_description(
         DeclareLaunchArgument('traffic_mxid', default_value='14442C10B167CFD200'),
         # 신호등 RGB 자동 노출 보정: 기본 -9=최소 노출 보정 (SDK -9..9).
         DeclareLaunchArgument('traffic_exposure_compensation', default_value='-9'),
+        DeclareLaunchArgument('traffic_image_brightness_scale', default_value='1.0'),
         # ⚠ USB2 공유 대역폭 — 두 카메라가 같은 허브(2026-08-27 확정 배치의 허브 A)에
         #   물려 있고 둘 다 USB2(480Mbps, 실효 ~40MB/s)다. 비압축 BGR 3B/px 기준:
         #     차선   1280x720@10 = 27.65 MB/s
@@ -860,6 +861,8 @@ def build_launch_description(
                 'show_debug': ParameterValue(
                     LaunchConfiguration('traffic_show_debug'), value_type=bool),
                 'oak_mxid': LaunchConfiguration('traffic_mxid'),
+                'image_brightness_scale': ParameterValue(
+                    LaunchConfiguration('traffic_image_brightness_scale'), value_type=float),
                 'oak_exposure_compensation': ParameterValue(
                     LaunchConfiguration('traffic_exposure_compensation'), value_type=int),
                 # 차선 카메라와 같은 대책을 공유한다 — USB3 로 열거되면 GNSS L1 이

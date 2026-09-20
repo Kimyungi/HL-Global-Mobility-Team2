@@ -162,6 +162,7 @@ def start_stack(context, route_profile='yongin'):
     if value('rviz') == 'true':
         actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(
             str(share / 'launch/integration_v2_view.launch.py'))))
+    print(f'[v2 drive] traffic camera: AE={value("traffic_exposure_compensation")}; brightness_scale={value("traffic_image_brightness_scale")}; exit camera: lane raw, unfiltered')
     print('[v2 drive] course: ' + (value('course') if route_profile == 'yongin' else route_profile))
     print('[v2 drive] route: ' + ' -> '.join(r['id'] for r in manifest['routes']))
     print(f'[v2 drive] avoid planner: {mode}; backend={backend}; zone_only={value("avoid_zone_only")}')
@@ -181,7 +182,7 @@ def generate_launch_description(route_profile='yongin'):
         traffic_depth_enabled='false', traffic_yolo_image_size='640',
         traffic_yolo_inference_interval='2', traffic_red_phase_yolo_inference_interval='3',
         traffic_stopline_yolo_image_size='320', traffic_require_stop_gate='false',
-        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-9', v_base='2.0', v_avoid='1.0', v_accel_zone='0.5', record='false')
+        traffic_stop_y_ratio='0.0', traffic_exposure_compensation='-9', traffic_image_brightness_scale='0.7', v_base='2.0', v_avoid='1.0', v_accel_zone='0.5', record='false')
     obstacle = route_profile == 'obstacle'
     if obstacle:
         profile['t_reference_enabled'] = 'false'
