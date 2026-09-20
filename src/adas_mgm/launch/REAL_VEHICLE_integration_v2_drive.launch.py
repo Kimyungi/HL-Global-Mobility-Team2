@@ -180,7 +180,7 @@ def generate_launch_description(route_profile='yongin'):
     start_options = {'default_value': route_id} if obstacle else {}
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
-        DeclareLaunchArgument('course', default_value='yongin',
+        DeclareLaunchArgument('course', default_value='yongin_no_parking',
                               choices=['yongin','yongin_no_parking'],
                               description='Yongin original or edited no-parking CSV'),
         DeclareLaunchArgument('start_waypoint',
