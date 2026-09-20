@@ -5,9 +5,10 @@
 2026-09-20 · `integration/v2_main` · 이 PC 기준 용인 전체 주행 런북입니다.
 한라 런북과 동일하게 **GPS 연결 → 센서 연결 확인 → 주행 런처 → GO → 종료** 순서로 설명합니다.
 모든 실행 명령은 `/home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main`의 `scripts/v2`를 사용합니다.
-기본 경로는 **저장된 `src/stack_gps/waypoints/yongin_no_parking.csv`**입니다.
-`prepare/drive`에서 `course`를 생략해도 `yongin_no_parking`이 선택되며,
-실행 시 경로 01~07로 분리하여 사용합니다. 주차 미션은 수행하지 않습니다.
+기본 경로는 **저장된 `src/stack_gps/waypoints/yongin_0920.csv`**입니다.
+`prepare/drive`에서 `course`를 생략해도 `yongin_0920`이 선택되며,
+실행 시 경로 01~07로 분리하여 **T자·평행주차를 포함**해 주행합니다.
+PR #124의 CSV를 그대로 사용하며, 기존 주차 제외 코스는 `course:=yongin_no_parking`으로 선택합니다.
 문서의 하드웨어 명령은 작성 중 실행하지 않았습니다.
 
 ## 1. GPS 연결 코드
@@ -109,6 +110,27 @@ GO 전 목표속도 0은 정상입니다.
 가까운 웨이포인트 방향에 초기 헤딩을 정렬합니다. 이후 IMU 회전량과 GPS COG를 사용합니다.
 `웨이포인트 초기 헤딩 정렬: idx …` 로그를 확인합니다.
 
+### IMU USB 재연결 시 헤딩 복구
+
+용인 `prepare/drive`는 IMU 단절 중 `/vehicle/vector`의 **실제 조향각 `str`과
+실속도 `v`**로 회전량을 누적하고, 새 IMU 샘플 수신 시 그 헤딩에 오프셋을
+맞춥니다. 명령 조향각 `str_ref`나 dSPACE의 절대 yaw는 사용하지 않습니다.
+모델은 기존 차량 설정과 같은 축거 0.595m, 조향 부호 −1이며,
+`yaw_rate = v × tan(−str) / 0.595`입니다. 후진 속도 부호도 유지합니다.
+
+- 최초 경로 방향 정렬이 끝난 뒤의 재연결 복구입니다. 처음부터 헤딩이 없으면 만들지 않습니다.
+- 단절 10초 이내, CAN 관측 공백 0.2초 이하, 실제 속도 절댓값 3m/s 이하,
+  실제 조향각 절댓값 30° 이하의 유효한 연속 입력에서만 복구합니다.
+- IMU 미수신 동안 조향 추정만으로 GPS의 헤딩 유효성을 연장하지 않습니다.
+  재연결 후 `IMU 재연결 헤딩 복구: 실제 조향각·실속도 적분으로 오프셋 재정렬` 로그를 확인합니다.
+- CAN까지 끊김·입력 무효·시간 역행·복구 시간 초과면 정렬을 복구하지 않고 기존 COG 재정렬을 기다립니다.
+  복구 성공해도 기존 CAN 고장 래치·운전자 정지·GO·GPS FIXED 조건은 그대로 적용됩니다.
+- 이는 조향 기반 운동 모델의 추정입니다. 미끄러짐·외력 회전은 복원하지 못합니다.
+
+설정은 GPS 노드의 `imu_steering_recovery_enabled`, `imu_recovery_wheelbase_m`,
+`imu_recovery_steering_sign`, `imu_recovery_feedback_timeout_s`,
+`imu_recovery_max_gap_s`, `imu_recovery_max_speed_mps`, `imu_recovery_max_steering_deg`입니다.
+
 ### 3-1. 실행 시점
 
 1번의 FIXED 수신과 2번 장치 확인을 마친 뒤 터미널 1에서 GPS 표시를 Ctrl+C로 닫습니다.
@@ -118,7 +140,7 @@ GPS 연결은 유지됩니다. 이미 주행 런처가 실행 중이면 5번 순
 ### 3-2. 시작 경로와 속도를 질문받아 실행 — 기본 사용법
 
 ```bash
-scripts/v2 prepare course:=yongin_no_parking REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
+scripts/v2 prepare course:=yongin_0920 REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
 ```
 
 시작 경로 번호와 일반 속도를 차례로 입력합니다. 예: `01`, `2.0`.
@@ -129,7 +151,7 @@ scripts/v2 prepare course:=yongin_no_parking REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_
 ```bash
 scripts/v2 prepare \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-  course:=yongin_no_parking start_waypoint:=01 v_base:=2.0
+  course:=yongin_0920 start_waypoint:=01 v_base:=2.0
 ```
 
 다른 출발 위치는 `start_waypoint:=02`로 지정합니다. `2.0`은 일반 주행 2m/s의 예시값입니다.
@@ -144,29 +166,29 @@ scripts/v2 prepare \
 런처의 `selected start CSV`, `general driving v_base`, `route`, `logs` 출력을 확인합니다.
 경로 목록에는 분기 사전 로딩 때문에 06·07이 함께 표시될 수 있습니다.
 
-### 3-3a. 기본 no-parking 경로 확인
+### 3-3a. 기본 용인 0920·주차 포함 경로 확인
 
-기본값도 no-parking이며, 아래 명령은 코스를 명시해 실행합니다.
+- 원본: `src/stack_gps/waypoints/yongin_0920.csv` (2,584행).
+- 매 prepare에서 저장된 원본을 읽고 로그의 `yongin_0920_route/`에 경로 01~07,
+  zone 파일, 원본 스냅샷·SHA256을 생성합니다.
+- 경로 03 idx 683의 state=1은 T자 주차, 경로 04 idx 984의 state=2는 평행주차입니다.
+- 기존 주차 진입·탈출 참조 CSV도 `parking_references/`에 복사합니다.
+  생성된 `parking_courses.yaml`은 **GPS와 같은 세션 경로 03·04**를 가리킵니다.
+  런처는 주차 시작·탈출 연결 기하를 검증한 뒤 하드웨어 준비로 진행합니다.
+- 01 또는 02 출발 → 03 → 04 → 05 → 마지막 미션의 06/07 선택을 유지합니다.
+- 신호등 [3], 회피 [5], 출구 [2]·state=3은 새 CSV의 좌표·구역을 사용합니다.
+- **경로 04 idx 621~828의 zone [6]**에서만 ESTOP 감지를 활성화합니다.
+- `course` 생략 시에도 새 주차 포함 코스입니다. 기존 분리 CSV 코스는 `course:=yongin`입니다.
+
+주차를 제외하려는 경우에만 아래처럼 별도 선택합니다.
 
 ```bash
-scripts/v2 prepare \
-  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-  course:=yongin_no_parking start_waypoint:=01 v_base:=2.0
+scripts/v2 prepare course:=yongin_no_parking \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
 ```
 
-- 원본: `src/stack_gps/waypoints/yongin_no_parking.csv` (현재 2497개 행).
-- 매 prepare에서 저장된 원본을 읽고 해당 실행 로그 폴더의 `no_parking_route/`에
-  경로 01~07, zone 파일, 원본 스냅샷·SHA256을 생성합니다. 편집기의 저장 전 내용은 반영되지 않습니다.
-- 01 또는 02 출발, 03 → 04 → 05, 마지막 미션의 06/07 선택은 유지합니다.
-- 주차 state=1/2가 없는 경로이며 T·평행 주차 참조 실행을 끕니다.
-- 신호등 [3], 회피 [5], 출구 [2]·state=3은 CSV의 현재 좌표·구역을 따라 연결합니다.
-- **경로 04 원본 idx 622~828의 zone [6] 안에서만 ESTOP 감지 활성화**.
-  구역 진입만으로 정지하지 않고, 장애물 감지 시 한 번 정지합니다.
-- `course` 생략 시에도 `yongin_no_parking.csv`가 선택됩니다.
-- 기존 주차 포함 코스는 `course:=yongin`을 명시했을 때만 선택됩니다.
-
-런처의 `course: yongin_no_parking`과 `selected start CSV`를 확인합니다.
-아래 주행 순서와 구간 표도 저장된 no-parking CSV 기준입니다.
+런처의 `course: yongin_0920`, `selected start CSV`, 주차 포함 경로 목록을 확인합니다.
+아래 주행 순서와 구간 표는 새 `yongin_0920.csv` 기준입니다.
 
 ### 3-4. 실제 적용되는 CSV와 주행 순서
 
@@ -176,8 +198,10 @@ CMD에서 출발 01 또는 02, 일반 주행 속도 지정
   → 03 합류
   → 신호등 [3] → 웨이포인트 [1] → 회피 [5] (저장된 CSV 기준)
   → 회피 [5] 이탈 시 GPS 복귀 → [1] → 신호등 [3] → [1]
+  → 03: [4]·state=1 → T자 주차 → 탈출 후 04 인계
   → 04: 신호등 [3] → [1] → ESTOP 감지 [6]
-  → [6]에서 장애물 감지 시 정지, 실속도 정차 후 7초 대기하여 재출발 → [1] (주차 없음)
+  → [6]에서 장애물 감지 시 정지, 실속도 정차 후 7초 대기하여 재출발 → [1]
+  → 04: [4]·state=2 → 평행주차 → 탈출 후 05 인계
   → 05: [1] → 출구 검출 [2]에서 계속 주행
   → state=3 지점에서 정차 → 실제 정차 후 3초 판단
   → Left: 06 / Right: 07 / 무검출·동률: 06
@@ -189,12 +213,12 @@ CMD에서 출발 01 또는 02, 일반 주행 속도 지정
 
 | 용도 | 현재 파일 |
 |---|---|
-| 원본 웨이포인트 | `src/stack_gps/waypoints/yongin_no_parking.csv` |
-| 전체 순서 | 실행 로그 폴더의 `no_parking_route/route_sequence.yaml` |
-| 실행 웨이포인트 | `no_parking_route/yongin_no_parking_01.csv` ~ `07.csv` |
-| 경로별 구역 | `no_parking_route/zones_no_parking_01.yaml` ~ `07.yaml` |
+| 원본 웨이포인트 | `src/stack_gps/waypoints/yongin_0920.csv` |
+| 전체 순서 | 실행 로그 폴더의 `yongin_0920_route/route_sequence.yaml` |
+| 실행 웨이포인트 | `yongin_0920_route/yongin_0920_01.csv` ~ `07.csv` |
+| 경로별 구역 | `yongin_0920_route/zones_yongin_0920_01.yaml` ~ `07.yaml` |
 | 실제 선택 경로 목록 | 실행 로그 폴더의 `route_selected.yaml` |
-| 주차 미션 | 비활성화 |
+| 주차 미션 | T자·평행주차 활성, `parking_references/parking_courses.yaml` |
 | 출구 YOLO | `src/stack_exit_decision/models/exit_decision_yolo26n.pt` |
 
 GPS·회피는 선택한 시작 CSV의 첫 위도·경도를 공통 원점으로 사용합니다.
@@ -205,8 +229,8 @@ CSV를 변경하면 저장 후 런처를 다시 실행해야 새 실행 스냅�
 | 경로 | CSV 기준 구간·마커 |
 |---|---|
 | 01 / 02 | state=5: 각각 idx 90 / 88. 현재 YAML 정지점과 연결되어 실제 정차 후 5초 대기 |
-| 03 | [3] 160~177 → [1] 178~222, 270~336 → [5] 337~462 → [1] 463~557 → [3] 558~581 → [1] 582~671 |
-| 04 | [3] 298~314 → [1] 315~362 → [6] 622~828 → [1] 959~984 |
+| 03 | [3] 160~177 → [1] 178~222, 270~336 → [5] 337~462 → [1] 463~496 → [3] 565~579 → [1] 580~675 → [4] 676~683·state=1: 683 |
+| 04 | [1] 0~39 → [3] 298~314 → [1] 315~362 → [6] 621~828 → [1] 959~979 → [4] 980~984·state=2: 984 |
 | 05 | [1] 10~83 → [2] 84~103 → state=3: 92 |
 | 06 / 07 | [1] 0~24 → 각 경로 종점 |
 
@@ -268,7 +292,7 @@ state=5의 5초 대기는 유효 차속으로 실제 정차를 확인한 동안 
 런처 초기 위치가 이미 같은 정지 구간 안이면 중복 정지를 막는 예외가 있으므로,
 해당 지점의 정차를 수행하려면 정지 구간 앞에서 세션을 시작합니다.
 
-#### 기존 주차 코스 참고 — 기본 no-parking에서는 실행하지 않음
+#### 주차 — 기본 용인 0920 코스에서 실행
 
 state=1은 T자, state=2는 평행 주차입니다. 후보 선택·준비 응답을 기다리는 동안
 정차할 수 있으며, 미완료 상태로 주행 CSV 종점에 도달했다고 주차를 건너뛰지 않습니다.
@@ -299,8 +323,10 @@ zone [2]에서는 `APPROACH=6`으로 검출하면서 주행합니다. idx 92의 
 현재는 **후진 회복 없이 정지 유지**하는 스테이션 방식입니다.
 
 - CSV zone [6] (`inside_zone=1`)에서 현재 위치로 감지 활성화합니다. 구역 없는 경로는 비활성화입니다. state=6은 사용하지 않습니다. 구역 이탈은 감지를 끄지만 이미 정지한 ESTOP을 해제하지 않습니다.
-- 전방 LiDAR의 차체 앞끝부터 **3m × 차폭 0.62m** 사각형에서 한 장애물의 폭 **18cm 이상**을
-  새 유효 스캔 3회 확인하면 ESTOP에 진입합니다. 좌·우 센서 거리로는 진입하지 않습니다.
+- 전방 LiDAR의 차체 앞끝부터 **5m × 차폭 0.62m** 사각형에서 **한 군집의 유효 점 5개 이상**을
+  새 유효 스캔 3회 확인하면 ESTOP에 진입합니다. 인접 점 간 거리가 **5cm 초과**이면
+  다른 군집으로 분리하며, 빠진 빔을 건너뛰어 서로 다른 물체의 점을 합산하지 않습니다.
+  기존 18cm 최소 폭 조건은 사용하지 않습니다. 좌·우 센서 거리로는 진입하지 않습니다.
 - 실제 차속 `|v| ≤ 0.001m/s`가 7초 연속 유지되면 ESTOP을 해제합니다.
   장애물 소실은 해제 조건이 아니므로 장애물이 남아 있어도 해제됩니다.
 - 이동·차속 무효·운전자/CAN 정지 또는 제어 시간 불연속 시 7초를 다시 계산합니다.
@@ -363,14 +389,13 @@ scripts/v2 check
 `V2_INSTALL_READY`는 설치 확인이며 센서 수신 확인은 아닙니다.
 소프트웨어 회귀시험이 필요하면 `scripts/v2 test`를 실행합니다.
 
-**함께 커밋한 주차 변경:** 주차 실행기·테스트·문서와 주차 참조 경로 03/04의
-수정을 사용자 요청으로 함께 보관했습니다. 기본 경로는 `yongin_no_parking`으로
-유지하며 T·평행 주차 참조 실행은 계속 비활성화합니다. 기존 `course:=yongin`을
-명시적으로 선택할 때만 주차 포함 코스를 사용합니다.
-
-`parking_enabled=true`는 4-LiDAR 연결과 공통 인지 구성에도 사용하므로
-no-parking이라는 이유로 false로 바꾸지 않습니다. 실제 주차 참조 실행은
-`t_reference_enabled=false`, 빈 `parking_course_catalog`, 주차 state=1/2 없는 CSV로 제외됩니다.
+기본 코스 `yongin_0920`에서는 `parking_enabled=true`, `t_reference_enabled=true`이며,
+새 세션의 `parking_course_catalog`로 T자·평행주차를 실행합니다.
+정차 확인 후 위치 판단을 시작하고 3초 내 확정하지 못하면 T자는 01, 평행은 03 주차 위치를 선택합니다.
+스캔 없음·빈 스캔·중복 스캔·판단 불확정에도 적용하며, 차량이 움직이거나 시간이 역행하면 판단 대기를 다시 시작합니다.
+3초 전에 확정한 위치는 유지하고, 선택 후 기존 상위 제어의 주차 실행 승인 절차를 따릅니다.
+`course:=yongin_no_parking`을 명시하면 주차 참조 실행을 끄고 빈 주차 카탈로그를 사용합니다.
+`parking_enabled`는 공통 4-LiDAR 연결에도 사용하므로 두 코스 모두 true를 유지합니다.
 
 ```bash
 git diff -- src/stack_parking/stack_parking/t_reference_parking.py
@@ -399,7 +424,7 @@ ros2 topic echo /adas/target_ref --once
 `route_selected.yaml`, `transitions.csv`, `zone_observations.csv`, `mission_events.csv`,
 `vehicle_vector.csv`, `mgm_snapshots.bin`을 함께 보관합니다.
 기본 `record=false`는 rosbag만 끄며 CSV·스냅샷은 남습니다. bag이 필요하면 준비 명령에 `record:=true`를 추가합니다.
-현재 스냅샷은 **v45**이며 동일 버전 replay를 사용합니다.
+현재 스냅샷은 **v46**이며 동일 버전 replay를 사용합니다.
 
 | 증상 | 확인할 항목 |
 |---|---|
@@ -413,12 +438,9 @@ ros2 topic echo /adas/target_ref --once
 참조: [용인 경로 통합](docs/YONGIN_ROUTE_INTEGRATION.md),
 [스테이트 v09.17](docs/STATE_V09_17.md), [CAN 계약](src/bridge_dspace/PROTOCOL.md).
 
-## 2026-09-20 재검토 결과
+## 2026-09-20 용인 0920 연결
 
-기본/명시 코스의 런처 연결, no-parking CSV 분할, state=5의 500틱(5초),
-회피 [5]·감지 대역 0.75±0.25m, ESTOP [6], 카메라 원본 유지와 주차 실행 제외를
-설치된 설정 및 소스와 대조했습니다. 신호등 모델 SHA256도 위 기록과 일치합니다.
-독립 E-stop을 없애고 상위 ESTOP으로 통합하는 요구는 이미 적용됐습니다.
-검증: 런처·시작 입력·GPS 테스트 278개, MGM CTest 33개 통과.
-설치된 런처 파일과 소스 일치, 회피 YAML, 저장 CSV의 [5]/[6] 범위 및 `scripts/v2 check`도 확인했습니다.
-실차 센서/CAN을 시작하지 않은 소프트웨어 검토이며, 실제 주행 시험 결과는 아닙니다.
+PR #124 `d485cf9000b055469f4c735262f009f14b61e8b4`의 CSV를 그대로 추가했습니다.
+SHA256: `64cb0552288c737373b74545a864d56f9c35748c6bd87036405e1c149f67c567`.
+기본/명시 코스 선택과 경로 분할·주차 카탈로그 연결은 하드웨어를 모의한 시험으로 검증합니다.
+실차 주차·주행 성능은 별도 검증 대상입니다.

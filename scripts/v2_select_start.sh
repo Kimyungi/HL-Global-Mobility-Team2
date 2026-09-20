@@ -33,7 +33,7 @@ v2_select_start() {
       echo '시작 CSV를 선택해야 합니다. start_waypoint:=01 등 01~07 경로를 지정하세요.' >&2
       return 2
     fi
-    echo '시작 경로 선택: 01~07 (기본 코스: yongin_no_parking)' >&2
+    echo '시작 경로 선택: 01~07 (기본 코스: yongin_0920, 주차 포함)' >&2
     while :; do
       if ! read -r -p '시작 경로 번호 (기본값 없음): ' v2_start; then
         echo '시작 경로 입력이 종료되어 실행을 취소합니다.' >&2; return 2

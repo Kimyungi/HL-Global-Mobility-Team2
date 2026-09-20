@@ -1,4 +1,4 @@
-"""Create immutable per-session route files from the edited no-parking CSV."""
+"""Create per-session route files from a combined Yongin CSV, preserving metadata."""
 import csv
 import hashlib
 import io
@@ -11,6 +11,10 @@ from .route_plan import RoutePlan
 
 
 def prepare_no_parking_catalog(source, output):
+    return prepare_csv_catalog(source, output, parking=False)
+
+
+def prepare_csv_catalog(source, output, *, parking):
     source, output = Path(source).resolve(), Path(output).resolve()
     data = source.read_bytes()
     reader = csv.DictReader(io.StringIO(data.decode('utf-8-sig')))
@@ -20,18 +24,24 @@ def prepare_no_parking_catalog(source, output):
     groups = {str(i): [] for i in range(1, 8)}
     for row in reader:
         path_id = str(int(row['path_id']))
-        if path_id not in groups or int(row['state']) in (1, 2):
+        if path_id not in groups or (not parking and int(row['state']) in (1, 2)):
             raise ValueError('no-parking course requires paths 01..07 without parking states 1/2')
         groups[path_id].append(row)
     if any(len(rows) < 10 for rows in groups.values()):
         raise ValueError('all seven no-parking paths require at least ten points')
+    if parking:
+        markers = [(int(pid), int(row['state'])) for pid, rows in groups.items()
+                   for row in rows if int(row['state']) in (1, 2)]
+        if markers != [(3, 1), (4, 2)]:
+            raise ValueError('parking course requires one T marker on 03 and one parallel marker on 04')
+    stem = source.stem if parking else 'yongin_no_parking'
     output.mkdir(parents=True, exist_ok=False)
     (output/'source.csv').write_bytes(data)
     routes = []
     station_info = []
     for i in range(1, 8):
         route_id = f'{i:02}'
-        csv_path = output/f'yongin_no_parking_{route_id}.csv'
+        csv_path = output/f'{stem}_{route_id}.csv'
         with csv_path.open('w', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader(); writer.writerows(groups[str(i)])
@@ -43,6 +53,10 @@ def prepare_no_parking_catalog(source, output):
             if state == 5:
                 lat, lon = points[index]
                 zones['stop_points'].append(dict(lat=lat, lon=lon))
+            elif parking and state in (1, 2):
+                lat, lon = points[index]
+                zones['parking_points'].append(dict(
+                    mode='perpendicular' if state == 1 else 'parallel', lat=lat, lon=lon))
         for zid in (1, 3, 4):
             ranges = csv_zone_ranges(csv_path, zid)
             if ranges:
@@ -53,7 +67,7 @@ def prepare_no_parking_catalog(source, output):
                 raise ValueError('exit zone [2] must belong to path 05')
             zones['zones'].append(dict(zone_id=2, zone_type='LAST_MISSION_ZONE',
                                        index_ranges=[list(r) for r in exit_ranges]))
-        zone_file = output/f'zones_no_parking_{route_id}.yaml'
+        zone_file = output/f'zones_{stem if parking else "no_parking"}_{route_id}.yaml'
         zone_file.write_text(yaml.safe_dump(zones, sort_keys=False))
         routes.append(dict(id=route_id, file=csv_path.name, zones_file=zone_file.name,
                            completion='endpoint_and_missions'))

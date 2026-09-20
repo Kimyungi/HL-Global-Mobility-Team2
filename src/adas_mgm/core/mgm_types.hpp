@@ -193,7 +193,7 @@ struct CoreSnapshot
   bool traffic_status_fresh;
   int64_t traffic_status_stamp_ns;
   ReferenceSample estop_scans[3];  // front, left, right: independent scan stamps
-  float estop_front_obstacle_width_m;  // largest contiguous cluster lateral span in front corridor
+  uint32_t estop_front_obstacle_points;  // point count of largest contiguous cluster in 5m front corridor
   bool estop_front_clear;  // observed empty corridor; invalid rays never prove clear
   float estop_clearance_m[3];      // measured from body exterior; +inf = clear
   uint64_t recovery_request_id;

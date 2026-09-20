@@ -44,3 +44,54 @@ def test_t_uses_paired_exit_parallel_retraces_driven_prefix():
                 assert core.exit_path[-1].x==candidate.path[0].x
                 assert core.exit_path[-1].y==candidate.path[0].y
                 assert core.exit_path[0].x==candidate.path[index].x
+
+
+def test_selection_timeout_defaults_to_01_and_03(monkeypatch):
+    from stack_parking.t_reference_parking import Scan
+    import stack_parking.t_parking_sequence as sequence
+    monkeypatch.setattr(sequence, 'inspect_candidate', lambda *args: (False, 0.))
+    for mode, course in courses().items():
+        for scan_kind in ('missing', 'empty', 'duplicate', 'unresolved'):
+            core = TParkingSequence(*course.course, exits=course.exits)
+            point = course.course[1][0]
+            pose = Pose2(point.x, point.y, point.yaw)
+
+            def tick(now, speed=0.):
+                scan = None if scan_kind == 'missing' else Scan(
+                    0. if scan_kind == 'duplicate' else now,
+                    np.empty((0, 2)) if scan_kind == 'empty' else np.array([[10., 10.]]),
+                    (0., 0.))
+                return core.tick(now, pose, now, speed, now, scan, None, None, owned=False)
+
+            assert tick(0.).selected is None
+            assert tick(.5).selected is None  # stopped: selection timer starts
+            assert tick(3.499).selected is None
+            result = tick(3.5)
+            assert result.phase == 'ADVANCE_3' and result.speed == 0.
+            assert result.reason == 'candidate_timeout_default'
+            assert core.candidates[result.selected].name == (
+                'yongin_parking_ref_01' if mode == 1 else 'yongin_parking_ref_03')
+            assert tick(4.).selected == 0
+
+
+def test_selection_timeout_restarts_after_motion_or_clock_rollback():
+    course = courses()[1]
+    for interruption in ('motion', 'rollback'):
+        core = TParkingSequence(*course.course, exits=course.exits)
+        point = course.course[1][0]
+        pose = Pose2(point.x, point.y, point.yaw)
+
+        def tick(now, speed=0.):
+            return core.tick(now, pose, now, speed, now, None, None, None, owned=False)
+
+        tick(0.); tick(.5); tick(3.)
+        if interruption == 'motion':
+            assert tick(3.1, .2).selected is None
+            tick(4.)
+            start = 4.5
+        else:
+            assert tick(1.).selected is None
+            start = 1.5
+        assert tick(start).selected is None
+        assert tick(start+2.999).selected is None
+        assert tick(start+3.).selected == 0

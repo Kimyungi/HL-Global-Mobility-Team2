@@ -36,12 +36,11 @@ inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
   }
   const auto & scan = s.estop_scans[0];
   const bool fresh = scan.generation && scan.generation > m.estop_generation[0] &&
-    std::isfinite(scan.age_s) && scan.age_s >= 0 && scan.age_s <= .35f &&
-    std::isfinite(s.estop_front_obstacle_width_m) && s.estop_front_obstacle_width_m >= 0;
+    std::isfinite(scan.age_s) && scan.age_s >= 0 && scan.age_s <= .35f;
   if (fresh) {
     m.estop_generation[0] = scan.generation;
     if (!m.estop_active) {
-      m.estop_count[0] = s.estop_front_obstacle_width_m >= .18f ?
+      m.estop_count[0] = s.estop_front_obstacle_points >= 5 ?
         std::min(3, m.estop_count[0] + 1) : 0;
     }
   }

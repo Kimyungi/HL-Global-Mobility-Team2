@@ -44,6 +44,7 @@ def main():
     stop=node.create_publisher(Bool,'/operator/stop',1)
     recovery=node.create_publisher(EstopRecovery,'/planning/estop_recovery',1)
     params = dict(revised_v2_enabled=True, wait_go=True, lidar_estop_enabled=False,
+        estop_station_zone_id=-1,
         escape_after_cycles=0, v_base=2., required_lidar_topics=scans,
         zone_enter_confirm_samples=5,zone_exit_confirm_samples=5, avoid_zone_only=True)
     # Test-only aligned mounts, explicit frame; production launch reads calibration YAML.
@@ -103,6 +104,26 @@ def main():
             messages[scans[0]].ranges=[.2]*10
             pump(.5)
             assert not states[-1].estop_active, 'station not configured: ESTOP detection disabled'
+            gps.zones=[ZoneContext(zone_id=6,zone_type=4,zone_valid=True,in_zone=True)]
+            front=messages[scans[0]]
+            front.angle_min=-.01;front.angle_increment=.005
+            front.ranges=[4.8]*4
+            pump(.6)
+            assert not states[-1].estop_active, 'four points cannot enter ESTOP'
+            front.ranges=[5.1]*5
+            pump(.4)
+            assert not states[-1].estop_active, 'five points beyond front 5m excluded'
+            front.angle_min=-.04;front.angle_increment=.02
+            front.ranges=[4.8]*5
+            pump(.4)
+            assert not states[-1].estop_active, 'point spacing over 5cm splits the cluster'
+            front.angle_min=-.01;front.angle_increment=.005
+            front.ranges=[4.8]*5
+            expect(lambda s,r:s.estop_active and r.v_ref==0,
+                   'five close points at 4.8m enter upper ESTOP')
+            pump(7.3)
+            expect(lambda s,r:not s.estop_active and r.v_ref>0,
+                   'seven-second actual stop releases even with five-point obstacle remaining')
             stop.publish(Bool(data=True))
             expect(lambda s,r:not s.go_authorized and r.v_ref==0,'operator stop overrides and revokes go')
         finally:

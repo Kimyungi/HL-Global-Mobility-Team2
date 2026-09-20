@@ -138,6 +138,14 @@ class ImuLink:
         with self._lock:
             return self._gen
 
+    def heading_sample(self):
+        """Atomic yaw/time/gyro/generation; never label an old sample as reconnected."""
+        with self._lock:
+            if self._yaw_gyro_t is None:
+                return None
+            return (self._yaw_gyro, self._yaw_gyro_t,
+                    self._gyro_z[0] if self._gyro_z is not None else 0., self._gen)
+
     def _run(self):
         ser, buf = None, b""
         while not self._stop.is_set():
@@ -147,6 +155,8 @@ class ImuLink:
                                         timeout=0.2)
                     with self._lock:
                         self._gen += 1
+                        self._last_ts_us = None
+                        self._yaw_gyro_t = self._gyro_z = self._euler = None
                     self._log(f"IMU 시리얼 연결: {self._serial_port}")
                 buf += ser.read(ser.in_waiting or 1)
                 frames, buf, crc_err = parse_stream(buf)

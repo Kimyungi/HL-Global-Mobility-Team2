@@ -771,6 +771,7 @@ def build_launch_description(
                 'waypoint_csv': LaunchConfiguration('waypoint_csv'),
                 'turn_zone_policy': revised_v2_enabled,
                 'initial_heading_from_waypoint': revised_v2_enabled,
+                'imu_steering_recovery_enabled': revised_v2_enabled,
                 'rtcm_host': LaunchConfiguration('rtcm_host'),
                 'link_mode': LaunchConfiguration('gps_link_mode'),
                 'error_log_csv': LaunchConfiguration('gps_error_log_csv'),
@@ -984,7 +985,7 @@ def build_launch_description(
                              '목표값 송신 중단 — can_zero로 0 복귀 후 전체 종료'),
         ),
 
-        # Upper ESTOP now holds zero until the front corridor clears.
+        # Upper ESTOP holds zero until seven seconds of measured standstill.
         # The former reverse recovery executor must not run in this profile.
 
         # ── rosbag — 버그 사후 분석·재생용. 토픽 명시 목록(RECORD_TOPICS)만 기록
