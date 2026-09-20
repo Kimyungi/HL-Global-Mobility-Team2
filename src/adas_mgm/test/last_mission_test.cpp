@@ -115,12 +115,12 @@ int main() {
     r.s.vehicle_speed=0;
     for (int i=0;i<3;++i) {
       r.s.estop_scans[0]=ReferenceSample{static_cast<uint64_t>(100+i),0,.35f};
-      r.s.estop_front_obstacle_width_m=.2f; r.tick();
+      r.s.estop_front_obstacle_points=5; r.tick();
     }
     check(r.out.estop_active && r.out.last_mission.phase==LastMissionPhase::STOPPING, "upper ESTOP preempts last mission");
     for (int i=0;i<3;++i) {
       r.s.estop_scans[0]=ReferenceSample{static_cast<uint64_t>(200+i),0,.35f};
-      r.s.estop_front_obstacle_width_m=0; r.s.estop_front_clear=true; r.tick();
+      r.s.estop_front_obstacle_points=0; r.s.estop_front_clear=true; r.tick();
     }
     r.tick(701); check(!r.out.estop_active && r.out.last_mission.phase==LastMissionPhase::JUDGING, "seven-second actual stop returns to stationary judgment");
   }

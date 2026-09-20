@@ -2,6 +2,7 @@
 #define ADAS_MGM_ESTOP_SCAN_HPP
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <vector>
 namespace adas_mgm {
@@ -34,13 +35,13 @@ inline float body_clearance(const std::vector<float> & ranges, double angle_min,
   return observed ? best : std::numeric_limits<float>::quiet_NaN();
 }
 struct FrontCorridorObservation {
-  float obstacle_width_m{0};
+  uint32_t obstacle_points{0};
   bool valid{false};
   bool clear{false};
 };
-// Vehicle-frame rectangle: [front, front+3m] x [-half_width,+half_width].
-// Width is the lateral span of ONE contiguous scan cluster, not the sum of
-// unrelated objects. A 10cm adjacent-point gap splits clusters. All ray/point
+// Vehicle-frame rectangle: [front, front+5m] x [-half_width,+half_width].
+// Count points in ONE contiguous cluster, never sum unrelated objects.
+// An adjacent-point gap over 5cm splits clusters. All ray/point
 // transforms use the same measured mount/FOV/range offset as body_clearance.
 inline FrontCorridorObservation front_corridor(
   const std::vector<float> & ranges, double angle_min, double increment,
@@ -69,7 +70,7 @@ inline FrontCorridorObservation front_corridor(
     }
     return false;
   };
-  for (double x : {front+1e-4,front+3.}) {
+  for (double x : {front+1e-4,front+5.}) {
     for (double y : {-half_width,0.,half_width}) {clear &= angle_covered(x,y);}
   }
   for (size_t i=0;i<ranges.size();++i) {
@@ -86,7 +87,7 @@ inline FrontCorridorObservation front_corridor(
       enter=std::max(enter,t1);leave=std::min(leave,t2);
       return leave>=enter;
     };
-    if (!slab(mount[0],dx,front,front+3.) || !slab(mount[1],dy,-half_width,half_width) || leave<=0) {continue;}
+    if (!slab(mount[0],dx,front,front+5.) || !slab(mount[1],dy,-half_width,half_width) || leave<=0) {continue;}
     ++corridor_rays;
     const float raw=ranges[i];
     const double maximum=std::min(range_max,mount[7]);
@@ -99,18 +100,18 @@ inline FrontCorridorObservation front_corridor(
     const double r=raw+mount[5];
     if (r<=leave) {clear=false;} // includes occlusion before the corridor
     const double x=mount[0]+r*dx,y=mount[1]+r*dy;
-    if (x>=front && x<=front+3. && std::fabs(y)<=half_width) {
+    if (x>=front && x<=front+5. && std::fabs(y)<=half_width) {
       points.push_back({x,y,std::atan2(y-mount[1],x-mount[0])});
     }
   }
   std::sort(points.begin(),points.end(),[](const Point&a,const Point&b){return a.angle<b.angle;});
-  double min_y=0,max_y=0;
+  uint32_t cluster_points=0;
   for (size_t i=0;i<points.size();++i) {
     const auto & p=points[i];
-    const bool connected=i && std::hypot(p.x-points[i-1].x,p.y-points[i-1].y)<=.10 &&
+    const bool connected=i && std::hypot(p.x-points[i-1].x,p.y-points[i-1].y)<=.05+1e-7 &&
       p.angle-points[i-1].angle<=1.5*std::fabs(increment);
-    if (!connected) {min_y=max_y=p.y;} else {min_y=std::min(min_y,p.y);max_y=std::max(max_y,p.y);}
-    out.obstacle_width_m=std::max(out.obstacle_width_m,static_cast<float>(max_y-min_y));
+    cluster_points=connected ? cluster_points+1 : 1;
+    out.obstacle_points=std::max(out.obstacle_points,cluster_points);
   }
   out.valid=observed>0 && corridor_rays>0;
   out.clear=out.valid && clear;

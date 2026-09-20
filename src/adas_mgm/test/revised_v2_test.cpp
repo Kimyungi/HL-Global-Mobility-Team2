@@ -18,9 +18,9 @@ struct V2 : Run {
     s.traffic_status_stamp_ns = s.event_time_ns + 10'000'000;
     tick();
   }
-  void scan(int sensor, float clearance, uint64_t generation) {
-    s.estop_clearance_m[sensor] = clearance;
-    if (sensor == 0) {s.estop_front_obstacle_width_m=clearance; s.estop_front_clear=clearance==0;}
+  void scan(int sensor, uint32_t points, uint64_t generation) {
+    s.estop_clearance_m[sensor] = points ? .3f : INFINITY;
+    if (sensor == 0) {s.estop_front_obstacle_points=points; s.estop_front_clear=points==0;}
     s.estop_scans[sensor] = ReferenceSample{generation,0,.35f}; tick();
   }
   void recovered(bool done=false) {
@@ -31,15 +31,25 @@ struct V2 : Run {
   }
 };
 int main() {
+  { V2 r; r.arm_estop();
+    r.scan(0,4,1);r.scan(0,4,2);r.scan(0,4,3);
+    check(!r.st.managers.estop_active,"four-point clusters never enter ESTOP");
+    r.scan(0,5,4);r.scan(0,5,5);r.scan(0,4,6);
+    check(!r.st.managers.estop_active,"subthreshold scan resets consecutive hits");
+    r.scan(0,5,7);r.scan(0,5,8);
+    check(!r.st.managers.estop_active,"two qualifying scans insufficient");
+    r.scan(0,5,9);
+    check(r.st.managers.estop_active,"five points in three fresh scans enter ESTOP");
+  }
   { V2 r; r.arm_estop(); r.s.vehicle_speed=.5f;
-    r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
+    r.scan(0,8,1);r.scan(0,8,2);r.scan(0,8,3);
     r.tick(800);check(r.st.managers.estop_active,"zero target is not actual stop");
     r.s.vehicle_speed=0; r.tick(); r.tick(699);
     check(r.st.managers.estop_active,"6.99 seconds cannot release");
     r.tick();check(!r.st.managers.estop_active && r.st.managers.estop_station_completed,
       "exact seven seconds release even with obstacle present");
   }
-  { V2 r; r.arm_estop();r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
+  { V2 r; r.arm_estop();r.scan(0,8,1);r.scan(0,8,2);r.scan(0,8,3);
     r.tick(600);r.s.vehicle_speed_valid=false;r.tick();
     r.s.vehicle_speed_valid=true;r.tick(600);
     check(r.st.managers.estop_active,"speed loss resets seven-second hold");
@@ -57,16 +67,16 @@ int main() {
   { V2 r; r.st.params.estop_station_zone_id=-1;
     r.st.params.zone_enter_confirm_samples=r.st.params.zone_exit_confirm_samples=5;
     r.zone(6,ZoneType::ESTOP_ZONE);r.tick(5);
-    r.scan(0,.3f,1);r.scan(0,.3f,2);
+    r.scan(0,8,1);r.scan(0,8,2);
     r.zone(6,ZoneType::ESTOP_ZONE,MissionType::NONE,0,false);
-    r.scan(0,.3f,3);
+    r.scan(0,8,3);
     check(!r.st.managers.estop_active && !r.st.managers.estop_detection_enabled,
       "raw zone exit immediately disarms pending obstacle detection");
     r.zone(6,ZoneType::ESTOP_ZONE);r.tick(5);
-    r.scan(0,.3f,4);r.scan(0,.3f,5);r.scan(0,.3f,6);
+    r.scan(0,8,4);r.scan(0,8,5);r.scan(0,8,6);
     check(r.st.managers.estop_active,"zone [6] obstacle enters ESTOP");
     r.zone(6,ZoneType::ESTOP_ZONE,MissionType::NONE,0,false);r.tick(5);
-    r.scan(0,.3f,7);
+    r.scan(0,8,7);
     check(r.st.managers.estop_active && r.out.v_ref==0,
       "leaving zone cannot release active stop with obstacle present");
     r.scan(0,0,8);r.scan(0,0,9);
@@ -96,27 +106,27 @@ int main() {
   }
 
   { V2 r; r.st.params.estop_station_zone_id=-1;
-    r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
+    r.scan(0,8,1);r.scan(0,8,2);r.scan(0,8,3);
     check(!r.st.managers.estop_active,"CSV auto mode without station never arms");
     r.zone(12,ZoneType::ESTOP_ZONE);r.tick(5);
-    r.scan(0,.3f,4);r.scan(0,.3f,5);r.scan(0,.3f,6);
+    r.scan(0,8,4);r.scan(0,8,5);r.scan(0,8,6);
     check(r.st.managers.estop_active && r.st.managers.estop_station_id==12,
       "auto-selected CSV station enters on obstacle");
     r.scan(0,0,7);r.scan(0,0,8);r.scan(0,0,9);r.tick(701);
-    r.scan(0,.3f,10);r.scan(0,.3f,11);r.scan(0,.3f,12);
+    r.scan(0,8,10);r.scan(0,8,11);r.scan(0,8,12);
     check(!r.st.managers.estop_active,"auto station is consumed until confirmed exit");
     r.zone(12,ZoneType::ESTOP_ZONE,MissionType::NONE,0,false);r.tick(5);
     check(!r.st.managers.estop_station_completed,"auto station exit rearms");
   }
 
   { V2 r;
-    r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
+    r.scan(0,8,1);r.scan(0,8,2);r.scan(0,8,3);
     check(!r.st.managers.estop_active,"unconfigured production station disables detection");
     r.st.params.estop_station_zone_id=9;
-    r.scan(0,.3f,4);r.scan(0,.3f,5);r.scan(0,.3f,6);
+    r.scan(0,8,4);r.scan(0,8,5);r.scan(0,8,6);
     check(!r.st.managers.estop_active,"outside configured station cannot enter");
     r.arm_estop();r.s.autonomous_enabled=false;
-    r.scan(0,.3f,7);r.scan(0,.3f,8);r.scan(0,.3f,9);
+    r.scan(0,8,7);r.scan(0,8,8);r.scan(0,8,9);
     check(!r.st.managers.estop_active,"authorization required");
   }
 
@@ -172,39 +182,39 @@ int main() {
     r.zone(3, ZoneType::GPS_ONLY_ZONE, MissionType::NONE, 0, false); r.tick(); check(!r.st.managers.traffic_zone_active && !r.st.traffic_distance_latched,"zone exit resets signal distance"); }
   { V2 r; r.s.vehicle_speed_valid=false; r.zone(3, ZoneType::GPS_ONLY_ZONE); r.tick(); r.traffic(true,true); r.traffic(true,false); r.tick();
     check(r.out.traffic_remaining_m<1.5f && r.out.v_ref>0,"no actual history integrates previous output command"); }
-  { V2 r; r.arm_estop(); r.scan(0,.18f,1); r.tick(20);
+  { V2 r; r.arm_estop(); r.scan(0,5,1); r.tick(20);
     check(!r.st.managers.estop_active,"held scan never counts twice");
-    r.scan(1,.3f,1);r.scan(2,.3f,1);
+    r.scan(1,8,1);r.scan(2,8,1);
     check(!r.st.managers.estop_active,"side scans never trigger");
-    r.scan(0,.18f,2);r.s.estop_scans[0].age_s=.36f;r.tick();r.scan(0,.18f,3);
-    check(r.out.state==MGM_STATE_ESTOP && r.out.v_ref==0,"three front width hits enter stop-only ESTOP");
+    r.scan(0,5,2);r.s.estop_scans[0].age_s=.36f;r.tick();r.scan(0,5,3);
+    check(r.out.state==MGM_STATE_ESTOP && r.out.v_ref==0,"three front cluster hits enter stop-only ESTOP");
     r.recovered();check(r.out.v_ref==0,"old recovery reverse ignored");
     r.recovered(true);check(r.st.managers.estop_active,"old recovery done ignored");
     r.s.sensor_alive_mask=0;r.s.estop_scans[0].age_s=.36f;r.tick(100);
     check(r.st.managers.estop_active && r.out.v_ref==0,"stale/all-lost sensors keep stopped");
-    r.s.sensor_alive_mask=0x77;r.scan(0,.05f,4);r.scan(0,.05f,5);r.scan(0,.05f,6);
-    check(r.st.managers.estop_active,"remaining narrow obstacle prevents clear");
+    r.s.sensor_alive_mask=0x77;r.scan(0,4,4);r.scan(0,4,5);r.scan(0,4,6);
+    check(r.st.managers.estop_active,"seven-second hold not yet complete");
     r.scan(0,0,7);r.tick(20);check(r.st.managers.estop_active,"held clear scan cannot release");
     r.scan(0,0,8);r.s.external_stop=true;r.scan(0,0,9);
     check(r.st.managers.estop_active && r.out.v_ref==0,"operator stop prevents release");
     r.s.external_stop=false;r.scan(0,0,10);r.scan(0,0,11);r.scan(0,0,12);r.tick(701);
     check(!r.st.managers.estop_active && r.st.managers.estop_station_completed,
       "seven seconds of actual stop restore previous navigation");
-    r.scan(0,.3f,13);r.scan(0,.3f,14);r.scan(0,.3f,15);
+    r.scan(0,8,13);r.scan(0,8,14);r.scan(0,8,15);
     check(!r.st.managers.estop_active,"station completion prevents reentry");
     r.s.zones.zone_valid=false;r.tick();r.s.external_stop=true;r.tick();
     r.s.external_stop=false;r.s.zones.zone_valid=true;r.tick();
     check(r.st.managers.estop_station_completed,"GPS loss or go cycling cannot rearm");
     r.zone(9,ZoneType::NORMAL_ZONE,MissionType::NONE,0,false);r.tick(5);
     check(!r.st.managers.estop_station_completed,"confirmed station exit rearms");
-    r.arm_estop();r.scan(0,.3f,16);r.scan(0,.3f,17);r.scan(0,.3f,18);
+    r.arm_estop();r.scan(0,8,16);r.scan(0,8,17);r.scan(0,8,18);
     check(r.st.managers.estop_active,"new station visit can trigger again"); }
   { V2 r; r.arm_estop(); r.st.managers.mission=MissionState::MISSION_ACTIVE;
     // Preserve an active parking episode while ESTOP owns the output.
     r.st.managers.request.active=true; r.st.managers.request.request_id=10;
     r.st.managers.mission_type=MissionType::T_PARKING;
     r.s.parking_request_id=10;
-    r.scan(0,.2f,1); r.scan(0,.2f,2); r.scan(0,.2f,3);
+    r.scan(0,5,1); r.scan(0,5,2); r.scan(0,5,3);
     check(r.st.managers.estop_active && r.st.managers.estop_return_mission==MissionState::MISSION_ACTIVE,"parking permits ESTOP"); }
   { V2 r; r.st.managers.route.phase=RoutePhase::FAULT; r.tick();
     check(r.out.v_ref==0 && (r.out.safe_stop_reasons & SAFE_STOP_ROUTE_SEQUENCE),"route fault stops even with healthy camera"); }

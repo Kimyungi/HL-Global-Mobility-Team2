@@ -69,7 +69,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v43: revised v2 avoidance follows current CSV zone [5] membership only.
 // v44: ESTOP raw zone exit disarms detection; active stop still requires clear.
 // v45: ESTOP releases after seven seconds of measured standstill.
-constexpr uint32_t kDumpVersion = 45;
+// v46: 5m front corridor; five-point clusters with at most 5cm point spacing.
+constexpr uint32_t kDumpVersion = 46;
 
 struct DumpHeader
 {

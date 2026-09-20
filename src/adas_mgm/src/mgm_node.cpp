@@ -1040,7 +1040,7 @@ private:
         s.estop_scans[i] = raw_estop_clocks_[i].observe(raw_estop_stamp[i], s.event_time_ns, s.monotonic_ns, 350'000'000);
         s.estop_clearance_m[i] = raw_estop_clearance[i];
         if (i == 0) {
-          s.estop_front_obstacle_width_m = raw_estop_front.obstacle_width_m;
+          s.estop_front_obstacle_points = raw_estop_front.obstacle_points;
           s.estop_front_clear = raw_estop_front.clear;
         }
       }
