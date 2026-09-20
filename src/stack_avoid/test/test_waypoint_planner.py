@@ -147,7 +147,7 @@ class WaypointTests(unittest.TestCase):
         p = FixedPlanner(r)
         objects = [obstacle(p, 8, 1), obstacle(p, 10, -.5), obstacle(p, 12, 2)]
         cloud = np.concatenate([cloud_for(o) for o in objects])
-        d = Detector(r, Config())
+        d = Detector(r, replace(Config(), obstacle_offsets=(1.0,)))
         self.assertEqual(d.observe(cloud), [])
         self.assertEqual(len(d.observe(cloud)), 1)
         d = Detector(r, replace(Config(), obstacle_offsets=(.5, 1.0)))
@@ -314,3 +314,18 @@ def test_field_profile_pr117_curve_and_one_point_five_preview():
             t = np.clip((v*delta).sum(axis=1)/np.maximum((delta*delta).sum(axis=1),1e-12),0,1)
             assert np.linalg.norm(v-t[:,None]*delta,axis=1).min() < 1e-8
         assert planner.samples == frozen
+
+
+def test_detector_field_band_is_half_to_one_metre_on_both_sides():
+    import yaml
+    data = yaml.safe_load((SRC/'stack_avoid/config/waypoint_avoid.yaml').read_text())
+    field = Config(**data['/**']['ros__parameters']['waypoint_avoid'])
+    for cfg in (Config(), field):
+        r = route()
+        planner = FixedPlanner(r, cfg)
+        for side in (-1., 1.):
+            for distance, expected in ((.49, False), (.51, True), (.75, True), (.99, True), (1.01, False), (1.24, False)):
+                detector = Detector(r, cfg)
+                cloud = cloud_for(obstacle(planner, 8, side*distance))
+                assert detector.observe(cloud) == []
+                assert bool(detector.observe(cloud)) == expected, (side, distance)

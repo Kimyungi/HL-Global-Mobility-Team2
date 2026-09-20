@@ -13,7 +13,7 @@
       departure: 2.5
       preview: 1.5
       range_limit: 3.0
-      obstacle_offsets: [1.0]   # [0.5, 1.0] enables both placement bands
+      obstacle_offsets: [0.75]  # Both sides of the waypoint: 0.50–1.00 m
       lateral_tolerance: 0.25
       cluster_distance: 0.18
       min_points: 3

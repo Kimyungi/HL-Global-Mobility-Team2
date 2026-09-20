@@ -20,7 +20,7 @@ class Config:
     departure: float = 2.5
     preview: float = 1.0
     range_limit: float = 3.0
-    obstacle_offsets: tuple = (1.0,)
+    obstacle_offsets: tuple = (0.75,)
     lateral_tolerance: float = 0.25
     cluster_distance: float = 0.18
     min_points: int = 3
