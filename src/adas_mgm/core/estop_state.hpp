@@ -30,7 +30,7 @@ inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
     s.autonomous_enabled && !s.external_stop && m.top == TopState::AUTONOMOUS_DRIVE;
   if (!m.estop_active && !m.estop_detection_enabled) {
     m.estop_count[0] = 0;
-    m.estop_clear_count = 0;
+    m.estop_stopped_since_ns = m.estop_stopped_last_ns = 0;
     m.estop_generation[0] = s.estop_scans[0].generation;
     return false;
   }
@@ -40,25 +40,37 @@ inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
     std::isfinite(s.estop_front_obstacle_width_m) && s.estop_front_obstacle_width_m >= 0;
   if (fresh) {
     m.estop_generation[0] = scan.generation;
-    if (m.estop_active) {
-      m.estop_clear_count = s.estop_front_clear ? std::min(3, m.estop_clear_count + 1) : 0;
-    } else {
+    if (!m.estop_active) {
       m.estop_count[0] = s.estop_front_obstacle_width_m >= .18f ?
         std::min(3, m.estop_count[0] + 1) : 0;
     }
   }
   if (m.estop_active) {
     m.safety = SafetyState::ESTOP;
-    // Require a new clear observation after operator/CAN stop, never an old done.
-    if (s.external_stop || m.top != TopState::AUTONOMOUS_DRIVE) {m.estop_clear_count = 0;}
-    if (fresh && m.estop_clear_count >= 3 && !s.external_stop &&
-      m.top == TopState::AUTONOMOUS_DRIVE) {
+    // Actual stationary speed for seven continuous seconds, independent of
+    // obstacle clearance. Invalid speed, motion, stop authority or clock gaps
+    // restart the hold; old recovery done never releases it.
+    const bool stopped = s.vehicle_speed_valid && std::isfinite(s.vehicle_speed) &&
+      std::fabs(s.vehicle_speed) <= 1e-3f && s.autonomous_enabled &&
+      !s.external_stop && m.top == TopState::AUTONOMOUS_DRIVE;
+    const auto now = s.monotonic_ns;
+    if (!stopped || now <= 0) {
+      m.estop_stopped_since_ns = m.estop_stopped_last_ns = 0;
+    } else {
+      if (!m.estop_stopped_since_ns || now < m.estop_stopped_last_ns ||
+        now - m.estop_stopped_last_ns > 350'000'000LL) {
+        m.estop_stopped_since_ns = now;
+      }
+      m.estop_stopped_last_ns = now;
+    }
+    if (stopped && m.estop_stopped_since_ns > 0 &&
+      now - m.estop_stopped_since_ns >= 7'000'000'000LL) {
       m.estop_active = false;
       m.estop_station_completed = true;
       m.nav = m.estop_return_nav; m.avoid = m.estop_return_avoid;
       m.mission = m.estop_return_mission; m.signal = m.estop_return_signal;
       m.safety = SafetyState::NORMAL;
-      m.estop_count[0] = 0; m.estop_clear_count = 0;
+      m.estop_count[0] = 0; m.estop_stopped_since_ns = m.estop_stopped_last_ns = 0;
     }
     return true;
   }
@@ -70,7 +82,7 @@ inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
     m.estop_return_nav = m.nav; m.estop_return_avoid = m.avoid;
     m.estop_return_mission = m.mission; m.estop_return_signal = m.signal;
     m.safety = SafetyState::ESTOP;
-    m.estop_clear_count = 0;
+    m.estop_stopped_since_ns = m.estop_stopped_last_ns = 0;
     st.escape_phase = MGM_ESCAPE_NONE;
     return true;
   }

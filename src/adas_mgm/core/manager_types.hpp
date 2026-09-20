@@ -240,7 +240,8 @@ struct ManagerState
   bool estop_active;
   bool estop_station_completed;
   uint8_t estop_station_id;
-  int32_t estop_clear_count;
+  int64_t estop_stopped_since_ns;
+  int64_t estop_stopped_last_ns;
   bool estop_detection_enabled;
   bool estop_motion_seen;
   int64_t estop_motion_start_ns;

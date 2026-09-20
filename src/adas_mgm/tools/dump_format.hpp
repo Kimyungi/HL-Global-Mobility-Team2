@@ -68,7 +68,8 @@ constexpr uint32_t kDumpMagic = 0x314D474D;  // little-endian 바이트열 "MGM1
 // v42: CSV state=6 independent ESTOP_ZONE membership and auto selection.
 // v43: revised v2 avoidance follows current CSV zone [5] membership only.
 // v44: ESTOP raw zone exit disarms detection; active stop still requires clear.
-constexpr uint32_t kDumpVersion = 44;
+// v45: ESTOP releases after seven seconds of measured standstill.
+constexpr uint32_t kDumpVersion = 45;
 
 struct DumpHeader
 {

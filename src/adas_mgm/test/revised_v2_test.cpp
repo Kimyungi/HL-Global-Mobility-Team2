@@ -31,6 +31,29 @@ struct V2 : Run {
   }
 };
 int main() {
+  { V2 r; r.arm_estop(); r.s.vehicle_speed=.5f;
+    r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
+    r.tick(800);check(r.st.managers.estop_active,"zero target is not actual stop");
+    r.s.vehicle_speed=0; r.tick(); r.tick(699);
+    check(r.st.managers.estop_active,"6.99 seconds cannot release");
+    r.tick();check(!r.st.managers.estop_active && r.st.managers.estop_station_completed,
+      "exact seven seconds release even with obstacle present");
+  }
+  { V2 r; r.arm_estop();r.scan(0,.3f,1);r.scan(0,.3f,2);r.scan(0,.3f,3);
+    r.tick(600);r.s.vehicle_speed_valid=false;r.tick();
+    r.s.vehicle_speed_valid=true;r.tick(600);
+    check(r.st.managers.estop_active,"speed loss resets seven-second hold");
+    r.s.vehicle_speed=.01f;r.tick();r.s.vehicle_speed=0;r.tick(600);
+    check(r.st.managers.estop_active,"motion resets seven-second hold");
+    r.s.external_stop=true;r.tick();r.s.external_stop=false;r.tick(600);
+    check(r.st.managers.estop_active,"operator stop resets hold");
+    r.s.monotonic_ns+=8'000'000'000LL;r.tick();
+    check(r.st.managers.estop_active,"clock gap cannot count unobserved standstill");
+    r.s.monotonic_ns-=1'000'000'000LL;r.tick();
+    check(r.st.managers.estop_active,"backward clock resets hold");
+    r.tick(700);check(!r.st.managers.estop_active,"fresh continuous hold finally releases");
+  }
+
   { V2 r; r.st.params.estop_station_zone_id=-1;
     r.st.params.zone_enter_confirm_samples=r.st.params.zone_exit_confirm_samples=5;
     r.zone(6,ZoneType::ESTOP_ZONE);r.tick(5);
@@ -48,8 +71,8 @@ int main() {
       "leaving zone cannot release active stop with obstacle present");
     r.scan(0,0,8);r.scan(0,0,9);
     check(r.st.managers.estop_active,"two clear scans cannot release stop");
-    r.scan(0,0,10);
-    check(!r.st.managers.estop_active,"three fresh clear scans release outside zone too");
+    r.scan(0,0,10); r.tick(701);
+    check(!r.st.managers.estop_active,"seven stopped seconds release outside zone too");
   }
 
   { V2 r;
@@ -79,7 +102,7 @@ int main() {
     r.scan(0,.3f,4);r.scan(0,.3f,5);r.scan(0,.3f,6);
     check(r.st.managers.estop_active && r.st.managers.estop_station_id==12,
       "auto-selected CSV station enters on obstacle");
-    r.scan(0,0,7);r.scan(0,0,8);r.scan(0,0,9);
+    r.scan(0,0,7);r.scan(0,0,8);r.scan(0,0,9);r.tick(701);
     r.scan(0,.3f,10);r.scan(0,.3f,11);r.scan(0,.3f,12);
     check(!r.st.managers.estop_active,"auto station is consumed until confirmed exit");
     r.zone(12,ZoneType::ESTOP_ZONE,MissionType::NONE,0,false);r.tick(5);
@@ -164,9 +187,9 @@ int main() {
     r.scan(0,0,7);r.tick(20);check(r.st.managers.estop_active,"held clear scan cannot release");
     r.scan(0,0,8);r.s.external_stop=true;r.scan(0,0,9);
     check(r.st.managers.estop_active && r.out.v_ref==0,"operator stop prevents release");
-    r.s.external_stop=false;r.scan(0,0,10);r.scan(0,0,11);r.scan(0,0,12);
+    r.s.external_stop=false;r.scan(0,0,10);r.scan(0,0,11);r.scan(0,0,12);r.tick(701);
     check(!r.st.managers.estop_active && r.st.managers.estop_station_completed,
-      "three fresh empty scans restore previous navigation");
+      "seven seconds of actual stop restore previous navigation");
     r.scan(0,.3f,13);r.scan(0,.3f,14);r.scan(0,.3f,15);
     check(!r.st.managers.estop_active,"station completion prevents reentry");
     r.s.zones.zone_valid=false;r.tick();r.s.external_stop=true;r.tick();
