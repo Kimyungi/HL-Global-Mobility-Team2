@@ -31,7 +31,6 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
-            'traffic_label = stack_traffic.labeling:main',
             'traffic_zone_supervisor = stack_traffic.zone_supervisor:main',
             'stack_traffic_node = stack_traffic.node:main',
             'stack_traffic_ml_preflight = stack_traffic.ml_preflight:main',

@@ -1,0 +1,27 @@
+{
+  "session": "v2_20260918_211819_564358",
+  "route": "04",
+  "end_rule": "first route_index > 0, before route 05",
+  "duration_s": 148.95751357078552,
+  "ticks": 14897,
+  "idx_range": [
+    78,
+    204
+  ],
+  "transition_value_checks": 252,
+  "transition_mismatches": 0,
+  "states": [
+    "출발 대기",
+    "회피 ref 정지",
+    "회피 주행"
+  ],
+  "target_zero_duration_s": 89.25736784934998,
+  "notes": [
+    "목표속도 및 상태는 기록 당시 파라미터와 로컬 빌드 core_replay로 복원하고 transitions.csv와 대조함.",
+    "05 구간 ESTOP은 범위 밖이므로 제외.",
+    "map 좌표는 해당 세션 GPS 원점 기준. CSV east/north와 원점을 동일하다고 가정하지 않음.",
+    "LiDAR +inf는 유한 장애물 거리 없음. 미수신/무효 입력은 별도 validity로 확인.",
+    "주차 세부 phase 및 원시 영상/점군은 이 스냅샷에 없어 복원하지 않음. lane_frames.csv와 mission_events.csv는 헤더만 있어 그래프 없음.",
+    "입력 스냅샷 수신값에는 이전 메시지의 유지값이 포함될 수 있음. age/valid와 함께 해석."
+  ]
+}

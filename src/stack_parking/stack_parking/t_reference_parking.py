@@ -36,7 +36,7 @@ class Config:
     min_scan_points: int = 12
     observed_fraction: float = 0.7
     ray_tolerance: float = math.radians(1.0)
-    rear_stop: float = 0.50  # distance from rear LiDAR, not rear bumper
+    rear_stop: float = 0.20  # distance from rear LiDAR, not rear bumper
     wall_min_points: int = 6
     wall_min_width: float = 0.25
     wall_residual: float = 0.025
@@ -204,11 +204,12 @@ def inspect_candidate(candidate: Candidate, pose: Pose2, scan: Scan,
 def rear_observation(scan: Scan, cfg: Config) -> tuple[float, float | None]:
     """Nearest rear obstruction + supported transverse wall clearance.
 
-    Both measured longitudinally from rear LiDAR. A cone/isolated return can
-    request stop but cannot declare success. Fit x=a*y+b to rear-facing support.
+    Both measured longitudinally from rear LiDAR. Parking completion uses the
+    nearest return; the optional wall fit is retained for diagnostics.
     """
     pts = scan.points - scan.origin
-    pts = pts[(pts[:, 0] < 0) & (abs(pts[:, 1]) <= cfg.width / 2 + cfg.margin)]
+    pts = pts[np.isfinite(pts).all(axis=1) & (pts[:, 0] < 0)
+              & (abs(pts[:, 1]) <= cfg.width / 2 + cfg.margin)]
     if not len(pts):
         return math.inf, None
     nearest = float(np.min(-pts[:, 0]))
@@ -333,17 +334,22 @@ class TwoReferenceParking:
         search = candidate.path[self.index:max(self.index + 1, bound)]
         self.index += int(np.argmin([(p.x-pose.x)**2 + (p.y-pose.y)**2 for p in search]))
         remaining = candidate.s[-1] - candidate.s[self.index]
-        nearest, wall = rear_observation(rear, cfg) if rear is not None and len(rear.points) else (math.inf, None)
+        rear_fresh = rear is not None and fresh(rear.stamp, now, cfg.sensor_timeout)
+        nearest, _ = rear_observation(rear, cfg) if rear_fresh and len(rear.points) else (math.inf, None)
+        rear_close = nearest <= cfg.rear_stop
         docking = remaining <= cfg.dock_remaining and abs(candidate.path[self.index].curvature) <= 0.05
         if self.phase == 'WALL_STOP':
-            if rear is not None and rear.stamp > self.last_rear:
+            if not rear_fresh:
+                self.wall_votes = 0
+            elif rear.stamp > self.last_rear:
                 self.last_rear = rear.stamp
-                self.wall_votes = self.wall_votes + 1 if wall is not None and wall <= cfg.rear_stop else 0
-            if stationary and self.wall_votes >= cfg.confirm_frames:
-                self.phase, self.reason = 'SUCCESS', 'rear_wall_0_50m_and_stationary'
+                self.wall_votes = self.wall_votes + 1 if rear_close else 0
+            if (stationary and fresh(speed_stamp, now, cfg.feedback_timeout)
+                    and self.wall_votes >= cfg.confirm_frames):
+                self.phase, self.reason = 'SUCCESS', 'rear_distance_and_stationary'
             return self._out()
-        if docking and wall is not None and wall <= cfg.rear_stop:
-            self.phase, self.reason = 'WALL_STOP', 'rear_wall_stop'
+        if rear_close:
+            self.phase, self.reason = 'WALL_STOP', 'rear_distance_stop'
             self.last_rear, self.wall_votes = rear.stamp, 1
             self.stopped_since = None
             return self._out()

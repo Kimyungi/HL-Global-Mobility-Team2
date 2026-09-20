@@ -7,9 +7,6 @@ import statistics
 BBox = tuple[int, int, int, int]
 BBoxCandidate = tuple[BBox, float]
 
-# Shared by offline training crops and the opt-in ROS central profile.
-CENTRAL_TRAFFIC_ROI = (0.30, 0.0, 0.70, 0.50)
-
 
 def camera_poll_timed_out(
     read_status: str,

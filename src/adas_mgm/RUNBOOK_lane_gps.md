@@ -167,7 +167,7 @@ ros2 run adas_mgm go
 
 ## 참조
 
-- **신호등·정지선 측정:** `RUNBOOK_full_measurement_20260904.md`
+- **신호등 임계값 측정:** `RUNBOOK_full_measurement_20260830.md`
 - **검증된 임계값으로 실제 통합 운영:** `RUNBOOK_full_operation_20260904.md`
   — `traffic_enabled:=true`로 신호등·정지선이 추가되며, 운영 런북은 정지 게이트를 강제한다.
 - **회피 통합 실차 시험 (첫 검증 절차·판정 기준·튜닝 노브): `RUNBOOK_avoid_field_test.md`**

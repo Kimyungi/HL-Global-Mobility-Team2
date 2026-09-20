@@ -24,12 +24,6 @@ def build_node_parameters():
     resume_on_green = LaunchConfiguration("resume_on_green")
     show_debug = LaunchConfiguration("show_debug")
     return {
-        "central_traffic_only": ParameterValue(
-            LaunchConfiguration("central_traffic_only"), value_type=bool,
-        ),
-        "model_path": ParameterValue(
-            LaunchConfiguration("model_path"), value_type=str,
-        ),
         "camera_backend": "oak",
         "oak_width": ParameterValue(oak_width, value_type=int),
         "oak_height": ParameterValue(oak_height, value_type=int),
@@ -145,8 +139,6 @@ def generate_launch_description():
     parameters = build_node_parameters()
     return LaunchDescription(
         [
-            DeclareLaunchArgument("central_traffic_only", default_value="false"),
-            DeclareLaunchArgument("model_path", default_value=""),
             DeclareLaunchArgument(
                 "oak_mxid",
                 default_value=DEFAULT_TRAFFIC_OAK_MXID,

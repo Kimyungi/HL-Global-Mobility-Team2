@@ -61,12 +61,12 @@ class SequenceTests(unittest.TestCase):
         candidate = self.paths[self.free]
         for i,p in enumerate(candidate.path):
             self.pose = Pose2(p.x,p.y,p.yaw)
-            clearance = candidate.s[-1]-candidate.s[i]+.49
+            clearance = candidate.s[-1]-candidate.s[i]+.19
             out = self.tick(rear=rear(self.now+.1,clearance))
             self.assertIn(out.speed, (-1.0, 0.))
             self.assertNotEqual(out.phase,'FAULT',out.reason)
         for _ in range(8):
-            out = self.tick(rear=rear(self.now+.1,.49))
+            out = self.tick(rear=rear(self.now+.1,.19))
             if out.phase == 'WAIT_3': break
         self.assertEqual(out.phase,'WAIT_3')
         self.assertFalse(out.done)
@@ -77,12 +77,12 @@ class SequenceTests(unittest.TestCase):
                 self.setUp(); self.free=free; self.to_wait()
                 entered = self.core.wait_since
                 for _ in range(29):
-                    out = self.tick(rear=rear(self.now+.1,.49))
+                    out = self.tick(rear=rear(self.now+.1,.19))
                     self.assertEqual(out.phase,'WAIT_3')
                     self.assertEqual(out.speed,0)
                     self.assertFalse(out.done)
                 while self.core.phase == 'WAIT_3':
-                    out = self.tick(rear=rear(self.now+.1,.49))
+                    out = self.tick(rear=rear(self.now+.1,.19))
                 self.assertGreaterEqual(self.now-entered,3.)
                 self.assertEqual(out.speed,0)
                 for p in self.core.exit_path:
