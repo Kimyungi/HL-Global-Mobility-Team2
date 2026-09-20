@@ -762,19 +762,9 @@ class PathEngine:
 
 
 def estop_station_ranges(path):
-    """State 6 arms from the current waypoint to its contiguous path_id end.
+    """Only CSV zone [6] membership arms ESTOP, in filtered navigation indices.
 
-    Indices follow the same quality filtering and deduplication as navigation.
-    For single-path CSVs without path_id, the file end is the station end.
+    state=6 is obsolete. The zone ends at its last inside_zone row, never
+    implicitly at the end of the containing path. Membership is current-only.
     """
-    path_ids = []
-    _, _, states = load_waypoints_csv(path, include_states=True, path_ids=path_ids)
-    ranges = []
-    for index, state in enumerate(states):
-        if state != 6 or (ranges and index <= ranges[-1][1]):
-            continue
-        end = index
-        while end + 1 < len(states) and path_ids[end + 1] == path_ids[index]:
-            end += 1
-        ranges.append((index, end))
-    return ranges
+    return csv_zone_ranges(path, 6)

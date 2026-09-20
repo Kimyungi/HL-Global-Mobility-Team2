@@ -34,8 +34,11 @@ def test_snapshot_preserves_all_points_and_station_and_exit_branch(tmp_path):
         assert len(stations)==1
         station=stations[0]
         rows=list(csv.DictReader(plan.files[idx].csv.open()))
-        assert rows[station.start_index]['state']=='6'
-        assert station.end_index==len(plan.engines[idx].e)-1
+        assert rows[station.start_index]['zone_id']=='6'
+        assert rows[station.start_index]['idx']=='622'
+        assert rows[station.end_index]['idx']=='828'
+        assert station.end_index < len(plan.engines[idx].e)-1
+        assert not dict(plan.zone_maps[idx].snapshot(station.end_index+1))[station]
         assert not dict(plan.zone_maps[idx].snapshot(station.start_index-1,station.start_index))[station]
         assert dict(plan.zone_maps[idx].snapshot(station.start_index))[station]
     for i in range(1,8):

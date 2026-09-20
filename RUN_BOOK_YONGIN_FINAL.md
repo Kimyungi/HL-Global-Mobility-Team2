@@ -156,10 +156,10 @@ scripts/v2 prepare \
 - 01 또는 02 출발, 03 → 04 → 05, 마지막 미션의 06/07 선택은 유지합니다.
 - 주차 state=1/2가 없는 경로이며 T·평행 주차 참조 실행을 끕니다.
 - 신호등 [3], 회피 [5], 출구 [2]·state=3은 CSV의 현재 좌표·구역을 따라 연결합니다.
-- **경로 04 원본 idx 622(state=6)부터 idx 1021까지 ESTOP 감지 활성화**.
+- **경로 04 원본 idx 622~828의 zone [6] 안에서만 ESTOP 감지 활성화**.
   구역 진입만으로 정지하지 않고, 장애물 감지 시 한 번 정지합니다.
 - `course` 생략 시 기존 `yongin_reference_path_01..07`이 선택됩니다.
-  기존 경로에는 현재 state=6이 없으므로 해당 ESTOP 스테이션도 활성화되지 않습니다.
+  기존 경로에는 현재 zone [6]이 없으므로 해당 ESTOP 스테이션도 활성화되지 않습니다.
 
 런처의 `course: yongin_no_parking`과 `selected start CSV`를 확인합니다.
 아래 주차 순서·주차 구간 표는 기본 `course:=yongin`에 대한 설명입니다.
@@ -288,7 +288,7 @@ zone [2]에서는 `APPROACH=6`으로 검출하면서 주행합니다. idx 92의 
 독립 E-stop과 옛 시간 기반 후진을 실행하지 않으며 상위 MGM이 전이를 결정합니다.
 현재는 **후진 회복 없이 정지 유지**하는 스테이션 방식입니다.
 
-- CSV state=6부터 같은 path_id 끝까지 현재 위치로 감지 활성화합니다. 마커 없는 경로는 비활성화입니다.
+- CSV zone [6] (`inside_zone=1`)에서 현재 위치로 감지 활성화합니다. 구역 없는 경로는 비활성화입니다. state=6은 사용하지 않습니다. 구역 이탈은 감지를 끄지만 이미 정지한 ESTOP을 해제하지 않습니다.
 - 전방 LiDAR의 차체 앞끝부터 **3m × 차폭 0.62m** 사각형에서 한 장애물의 폭 **18cm 이상**을
   새 유효 스캔 3회 확인하면 ESTOP에 진입합니다. 좌·우 센서 거리로는 진입하지 않습니다.
 - 영역이 비었음을 새 유효 스캔 3회 확인할 때까지 목표 0으로 정지합니다.
@@ -378,7 +378,7 @@ ros2 topic echo /adas/target_ref --once
 `route_selected.yaml`, `transitions.csv`, `zone_observations.csv`, `mission_events.csv`,
 `vehicle_vector.csv`, `mgm_snapshots.bin`을 함께 보관합니다.
 기본 `record=false`는 rosbag만 끄며 CSV·스냅샷은 남습니다. bag이 필요하면 준비 명령에 `record:=true`를 추가합니다.
-현재 스냅샷은 **v43**이며 동일 버전 replay를 사용합니다.
+현재 스냅샷은 **v44**이며 동일 버전 replay를 사용합니다.
 
 | 증상 | 확인할 항목 |
 |---|---|

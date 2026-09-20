@@ -5,7 +5,7 @@
 #include <cmath>
 
 namespace adas_mgm {
-// CSV state=6 arms through the containing path_id end. -1 selects GPS-derived
+// CSV zone [6] defines the current-position station. -1 selects GPS-derived
 // ESTOP memberships; 0 explicitly disables; a positive ID supports bench wiring.
 inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
   auto & m = st.managers;
@@ -20,7 +20,7 @@ inline bool estop_transition(const CoreSnapshot & s, CoreState & st) {
   }
   const bool configured = id > 0 && id < MGM_ZONE_CAPACITY;
   const auto & zone = m.zones.contexts[configured ? id : 0];
-  const bool inside = configured && zone.zone_valid && zone.in_zone;
+  const bool inside = configured && zone.zone_valid && zone.in_zone && zone.raw_in_zone;
   // Lost GPS cannot certify exit of the station that actually stopped us.
   const auto & previous = m.zones.contexts[m.estop_station_id];
   if (m.estop_station_id && previous.zone_valid && !previous.in_zone) {

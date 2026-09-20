@@ -4,24 +4,40 @@ from stack_gps.path_engine import estop_station_ranges, load_waypoints_csv, Path
 from stack_gps.zones import ZoneMap, ZoneType, ZoneDefinition
 
 
-def test_marker_ends_at_containing_path_and_uses_filtered_indices(tmp_path):
+def test_zone_6_filters_quality_and_duplicates_and_ignores_state(tmp_path):
     p=tmp_path/'route.csv'
-    with p.open('w') as f:
-        writer=csv.writer(f);writer.writerow(['lat','lon','state','path_id','quality'])
-        writer.writerows([(37,127,0,3,4),(37.001,127,6,4,4),
-                          (37.002,127,0,4,5),(37.003,127,0,4,4),
-                          (37.004,127,0,5,4),(37.005,127,6,5,4)])
-    assert estop_station_ranges(p)==[(1,2),(4,4)]
+    p.write_text('lat,lon,state,path_id,quality,zone_id,inside_zone\n'
+                 '37,127,6,4,4,0,0\n'
+                 '37.001,127,0,4,4,6,1\n'
+                 '37.002,127,0,4,5,6,1\n'
+                 '37.003,127,0,4,4,6,1\n'
+                 '37.003,127,0,4,4,6,1\n'
+                 '37.004,127,0,4,4,6,0\n'
+                 '37.005,127,0,4,4,5,1\n'
+                 '37.006,127,0,4,4,6,1\n'
+                 '37.007,127,0,4,4,0,0\n')
+    assert estop_station_ranges(p)==[(1,2),(5,5)]
 
 
-def test_production_no_parking_marker():
+def test_state_6_alone_never_arms(tmp_path):
+    p=tmp_path/'route.csv'
+    p.write_text('lat,lon,state\n37,127,6\n37.001,127,0\n')
+    assert estop_station_ranges(p)==[]
+
+
+def test_production_no_parking_zone():
     p=Path(__file__).resolve().parents[1]/'waypoints/yongin_no_parking.csv'
     spans=estop_station_ranges(p)
+    membership={}
+    load_waypoints_csv(p,zone_indices=membership)
     assert len(spans)==1
-    ids=[];_,_,states=load_waypoints_csv(p,include_states=True,path_ids=ids)
     first,last=spans[0]
-    assert states[first]==6 and ids[first]==ids[last]=='4'
-    assert ids[last+1]=='5'
+    assert all(membership.get(i)==6 for i in range(first,last+1))
+    assert membership.get(first-1)!=6 and membership.get(last+1)!=6
+    rows=list(csv.DictReader(p.open()))
+    selected=[r for r in rows if r['zone_id']=='6' and r['inside_zone']=='1']
+    assert {r['path_id'] for r in selected}=={'4'}
+    assert (selected[0]['idx'],selected[-1]['idx'])==('622','828')
 
 
 def test_station_is_current_only_and_does_not_hide_other_memberships():
