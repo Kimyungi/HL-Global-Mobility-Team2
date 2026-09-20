@@ -5,9 +5,10 @@
 2026-09-20 · `integration/v2_main` · 이 PC 기준 용인 전체 주행 런북입니다.
 한라 런북과 동일하게 **GPS 연결 → 센서 연결 확인 → 주행 런처 → GO → 종료** 순서로 설명합니다.
 모든 실행 명령은 `/home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main`의 `scripts/v2`를 사용합니다.
-GPS 경로는 **용인 `yongin_reference_path_01.csv` ~ `07.csv`**이며,
-기본 `course:=yongin`은 경로·zone·주차 카탈로그를 용인 파일로 연결합니다.
-`course:=yongin_no_parking`을 선택하면 편집한 `yongin_no_parking.csv`를 사용하며 주차 미션을 수행하지 않습니다. 문서의 하드웨어 명령은 작성 중 실행하지 않았습니다.
+기본 경로는 **저장된 `src/stack_gps/waypoints/yongin_no_parking.csv`**입니다.
+`prepare/drive`에서 `course`를 생략해도 `yongin_no_parking`이 선택되며,
+실행 시 경로 01~07로 분리하여 사용합니다. 주차 미션은 수행하지 않습니다.
+문서의 하드웨어 명령은 작성 중 실행하지 않았습니다.
 
 ## 1. GPS 연결 코드
 
@@ -114,7 +115,7 @@ GPS 연결은 유지됩니다. 이미 주행 런처가 실행 중이면 5번 순
 ### 3-2. 시작 경로와 속도를 질문받아 실행 — 기본 사용법
 
 ```bash
-scripts/v2 prepare REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
+scripts/v2 prepare course:=yongin_no_parking REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
 ```
 
 시작 경로 번호와 일반 속도를 차례로 입력합니다. 예: `01`, `2.0`.
@@ -125,7 +126,7 @@ scripts/v2 prepare REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX
 ```bash
 scripts/v2 prepare \
   REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
-  start_waypoint:=01 v_base:=2.0
+  course:=yongin_no_parking start_waypoint:=01 v_base:=2.0
 ```
 
 다른 출발 위치는 `start_waypoint:=02`로 지정합니다. `2.0`은 일반 주행 2m/s의 예시값입니다.
@@ -140,9 +141,9 @@ scripts/v2 prepare \
 런처의 `selected start CSV`, `general driving v_base`, `route`, `logs` 출력을 확인합니다.
 경로 목록에는 분기 사전 로딩 때문에 06·07이 함께 표시될 수 있습니다.
 
-### 3-3a. 새 no-parking 경로 선택
+### 3-3a. 기본 no-parking 경로 확인
 
-수정한 `yongin_no_parking.csv`로 주차 없이 주행하려면 다음처럼 선택합니다.
+기본값도 no-parking이며, 아래 명령은 코스를 명시해 실행합니다.
 
 ```bash
 scripts/v2 prepare \
@@ -158,11 +159,11 @@ scripts/v2 prepare \
 - 신호등 [3], 회피 [5], 출구 [2]·state=3은 CSV의 현재 좌표·구역을 따라 연결합니다.
 - **경로 04 원본 idx 622~828의 zone [6] 안에서만 ESTOP 감지 활성화**.
   구역 진입만으로 정지하지 않고, 장애물 감지 시 한 번 정지합니다.
-- `course` 생략 시 기존 `yongin_reference_path_01..07`이 선택됩니다.
-  기존 경로에는 현재 zone [6]이 없으므로 해당 ESTOP 스테이션도 활성화되지 않습니다.
+- `course` 생략 시에도 `yongin_no_parking.csv`가 선택됩니다.
+- 기존 주차 포함 코스는 `course:=yongin`을 명시했을 때만 선택됩니다.
 
 런처의 `course: yongin_no_parking`과 `selected start CSV`를 확인합니다.
-아래 주차 순서·주차 구간 표는 기본 `course:=yongin`에 대한 설명입니다.
+아래 주행 순서와 구간 표도 저장된 no-parking CSV 기준입니다.
 
 ### 3-4. 실제 적용되는 CSV와 주행 순서
 
@@ -171,10 +172,9 @@ CMD에서 출발 01 또는 02, 일반 주행 속도 지정
   → GO → state=5 위치에서 실제 정차 후 3초 대기
   → 03 합류
   → 신호등 [3] → 웨이포인트 [1] → 회피 [5] (저장된 CSV 기준)
-  → 회피 경로 완료 후 복귀 → [1] → 신호등 [3] → [1]
-  → 주차 접근 [4] → T자 주차 state=1 → 완료 후 3초 → 별도 경로로 탈출
-  → 04: [1] → 신호등 [3] → [1] → 주차 접근 [4]
-  → 평행주차 state=2 → 완료 후 3초 → 진입 경로로 탈출
+  → 회피 [5] 이탈 시 GPS 복귀 → [1] → 신호등 [3] → [1]
+  → 04: 신호등 [3] → [1] → ESTOP 감지 [6] → [1]
+  → [6]에서 장애물 감지 시 정지, 소실 확인 후 재출발 (주차 없음)
   → 05: [1] → 출구 검출 [2]에서 계속 주행
   → state=3 지점에서 정차 → 실제 정차 후 3초 판단
   → Left: 06 / Right: 07 / 무검출·동률: 06
@@ -186,25 +186,24 @@ CMD에서 출발 01 또는 02, 일반 주행 속도 지정
 
 | 용도 | 현재 파일 |
 |---|---|
-| 전체 순서 | `src/stack_gps/waypoints/yongin_route_sequence.yaml` |
-| 실행 웨이포인트 | 같은 폴더의 `yongin_reference_path_01.csv` ~ `07.csv` |
-| 경로별 구역 | 같은 폴더의 `zones_yongin_path_01.yaml` ~ `07.yaml` |
-| 주차 카탈로그 | `src/stack_parking/config/yongin_parking_courses.yaml` |
-| T자 후보 | 같은 config 폴더의 `yongin_parking_ref_01.csv`, `02.csv` |
-| T자 전진 탈출 | `yongin_parking_ref_01_exit.csv`, `02_exit.csv` |
-| 평행 후보 | `yongin_parking_ref_03.csv`, `04.csv`; 별도 탈출 CSV 없이 진입 경로를 되짚음 |
+| 원본 웨이포인트 | `src/stack_gps/waypoints/yongin_no_parking.csv` |
+| 전체 순서 | 실행 로그 폴더의 `no_parking_route/route_sequence.yaml` |
+| 실행 웨이포인트 | `no_parking_route/yongin_no_parking_01.csv` ~ `07.csv` |
+| 경로별 구역 | `no_parking_route/zones_no_parking_01.yaml` ~ `07.yaml` |
+| 실제 선택 경로 목록 | 실행 로그 폴더의 `route_selected.yaml` |
+| 주차 미션 | 비활성화 |
 | 출구 YOLO | `src/stack_exit_decision/models/exit_decision_yolo26n.pt` |
 
-`parking_ref_01.csv`·`02.csv`, `parking_waypoint*.csv` 및 이전 코스 CSV는 이 용인 카탈로그에서 사용하지 않습니다.
-GPS·주차·회피는 선택한 시작 CSV의 첫 위도·경도를 공통 원점으로 사용합니다.
+GPS·회피는 선택한 시작 CSV의 첫 위도·경도를 공통 원점으로 사용합니다.
+CSV를 변경하면 저장 후 런처를 다시 실행해야 새 실행 스냅샷에 반영됩니다.
 
 ### 3-5. 용인 구간별 동작과 속도
 
 | 경로 | CSV 기준 구간·마커 |
 |---|---|
 | 01 / 02 | state=5: 각각 idx 90 / 88. 현재 YAML 정지점과 연결되어 실제 정차 후 3초 대기 |
-| 03 | [1] 14~30, 60~80 → [3] 160~177 → [1] 178~222, 270~336 → state=4: 336 → [1] 463~496 → [3] 565~579 → [1] 580~675 → [4] 676~683 → state=1: 683 |
-| 04 | [1] 0~39 → [3] 298~314 → [1] 315~362, 959~979 → [4] 980~984 → state=2: 984 |
+| 03 | [3] 160~177 → [1] 178~222, 270~336 → [5] 337~462 → [1] 463~557 → [3] 558~581 → [1] 582~671 |
+| 04 | [3] 298~314 → [1] 315~362 → [6] 622~828 → [1] 959~984 |
 | 05 | [1] 10~83 → [2] 84~103 → state=3: 92 |
 | 06 / 07 | [1] 0~24 → 각 경로 종점 |
 
@@ -212,15 +211,14 @@ GPS·주차·회피는 선택한 시작 CSV의 첫 위도·경도를 공통 원�
 |---|---|
 | 일반 주행 / [1] | CMD에서 지정한 `v_base` |
 | 신호등 [3] | 최대 1m/s. 더 낮은 세션 속도·정지 명령은 유지 |
-| 주차 접근 [4] | 최대 0.5m/s; 주차 실행기로 인계되면 주차 속도 적용 |
 | 회피 | 기본 1m/s; 회피 종료 후 일반 속도로 복귀 |
-| T·평행 주차 | 기본 후진 −1m/s, 전진 +1m/s, 절댓값은 `v_base` 이하 |
-| 주차 preview / 후진 원점 | preview 1.2m; 차량 x축 뒤 0.5m 가상 위치를 적용한 뒤 local 변환 |
+| ESTOP 감지 [6] | 감지 대기는 일반 주행 속도, 장애물로 ESTOP 진입 시 0 |
 | 출구 [2] 접근 | 일반 주행 속도로 계속 주행; state=3 도달 시 목표 0 |
 
 zone [1]·[3]은 현재 station 또는 허용된 preview로 진입을 관측합니다.
-현재 위치가 다른 특별 구간에 있으면 그 구간이 우선합니다. 회피 시작 마커 이후의
-유지 표시만으로 preview를 막지 않습니다. zone 확정은 독립 GPS 관측 5회씩 사용합니다.
+현재 위치가 다른 특별 구간에 있으면 그 구간이 우선합니다. 일반 zone 확정은
+독립 GPS 관측 5회씩 사용합니다. 회피 [5] 진입·이탈은 새 유효 위치 1회 기준이며,
+ESTOP [6]과 출구 [2]는 preview가 아닌 현재 위치로 판정합니다.
 주차 미션·출구 미션 진입 및 state=3 정차는 현재 위치 기준입니다.
 
 #### 신호등·정지선
@@ -258,7 +256,7 @@ state=4, 경로 복귀 오차, 다음 [1] 진입, 회피 완료 신호는 더 �
 진입·종료 조건이 아닙니다. [5]가 없는 CSV에서는 회피가 활성화되지 않습니다.
 구역 재진입 시 다시 활성화됩니다. 라인 주행은 사용하지 않습니다.
 
-#### 주차와 탈출
+#### 기존 주차 코스 참고 — 기본 no-parking에서는 실행하지 않음
 
 state=1은 T자, state=2는 평행 주차입니다. 후보 선택·준비 응답을 기다리는 동안
 정차할 수 있으며, 미완료 상태로 주행 CSV 종점에 도달했다고 주차를 건너뛰지 않습니다.

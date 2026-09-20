@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 
 import yaml
+import pytest
 from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import Node
@@ -11,17 +12,21 @@ from launch_ros.utilities import evaluate_parameters
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def test_no_parking_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,monkeypatch):
+@pytest.mark.parametrize('explicit_course', [False, True])
+def test_no_parking_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,monkeypatch,explicit_course):
     path=ROOT/'src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py'
     spec=importlib.util.spec_from_file_location('no_parking_launch_test',path)
     mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
     context=LaunchContext()
     context.launch_configurations.update(
         REAL_VEHICLE_CONFIRM='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX',
-        course='yongin_no_parking',start_waypoint='01',end_waypoint='06',
+        start_waypoint='01',end_waypoint='06',
         v_base='2.0',rviz='false',run_log_dir=str(tmp_path/'run'))
+    if explicit_course:
+        context.launch_configurations['course']='yongin_no_parking'
     for action in mod.generate_launch_description().entities:
         if isinstance(action,DeclareLaunchArgument):action.execute(context)
+    assert context.launch_configurations['course']=='yongin_no_parking'
     monkeypatch.setenv('FMA_V2_WORKSPACE',str(ROOT))
     monkeypatch.setattr(mod,'check_lidar_devices',lambda:None)
     import stack_gps.persistent_service as persistent
