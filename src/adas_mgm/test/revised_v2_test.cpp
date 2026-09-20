@@ -31,6 +31,27 @@ struct V2 : Run {
   }
 };
 int main() {
+  { V2 r; r.st.params.estop_station_zone_id=-1;
+    r.st.params.zone_enter_confirm_samples=r.st.params.zone_exit_confirm_samples=5;
+    r.zone(6,ZoneType::ESTOP_ZONE);r.tick(5);
+    r.scan(0,.3f,1);r.scan(0,.3f,2);
+    r.zone(6,ZoneType::ESTOP_ZONE,MissionType::NONE,0,false);
+    r.scan(0,.3f,3);
+    check(!r.st.managers.estop_active && !r.st.managers.estop_detection_enabled,
+      "raw zone exit immediately disarms pending obstacle detection");
+    r.zone(6,ZoneType::ESTOP_ZONE);r.tick(5);
+    r.scan(0,.3f,4);r.scan(0,.3f,5);r.scan(0,.3f,6);
+    check(r.st.managers.estop_active,"zone [6] obstacle enters ESTOP");
+    r.zone(6,ZoneType::ESTOP_ZONE,MissionType::NONE,0,false);r.tick(5);
+    r.scan(0,.3f,7);
+    check(r.st.managers.estop_active && r.out.v_ref==0,
+      "leaving zone cannot release active stop with obstacle present");
+    r.scan(0,0,8);r.scan(0,0,9);
+    check(r.st.managers.estop_active,"two clear scans cannot release stop");
+    r.scan(0,0,10);
+    check(!r.st.managers.estop_active,"three fresh clear scans release outside zone too");
+  }
+
   { V2 r;
     r.st.params.zone_enter_confirm_samples = r.st.params.zone_exit_confirm_samples = 5;
     r.obstacle();
