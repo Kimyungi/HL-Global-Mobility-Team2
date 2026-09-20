@@ -105,13 +105,14 @@ def main():
             recovery.publish(old);pump(.4)
             assert states[-1].estop_active and refs[-1].v_ref==0,'old reverse/done ignored'
             muted.add(scans[0]);pump(.6)
-            assert states[-1].estop_active and refs[-1].v_ref==0,'front sensor loss cannot release'
+            assert states[-1].estop_active and refs[-1].v_ref==0,'front sensor loss before seven seconds does not release'
             muted.clear();front.ranges=[float('nan')]*1441;pump(.4)
-            assert states[-1].estop_active,'invalid scan cannot release'
+            assert states[-1].estop_active,'invalid scan before seven seconds does not release'
             obstacle(-.05,.05);pump(.4)
-            assert states[-1].estop_active,'narrow remnant keeps stop'
-            front.ranges=[float('inf')]*1441
-            expect(lambda s,r:not s.estop_active and r.v_ref>0,'new clear scans restore GPS')
+            assert states[-1].estop_active,'seven-second hold not yet completed'
+            obstacle()  # Release no longer requires disappearance.
+            pump(7.2)
+            expect(lambda s,r:not s.estop_active and r.v_ref>0,'seven seconds of measured stop restores GPS with obstacle present')
             obstacle();pump(.5)
             assert not states[-1].estop_active,'same station cannot retrigger'
             zone.in_zone=False;pump(.5)

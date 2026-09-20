@@ -122,7 +122,7 @@ int main() {
       r.s.estop_scans[0]=ReferenceSample{static_cast<uint64_t>(200+i),0,.35f};
       r.s.estop_front_obstacle_width_m=0; r.s.estop_front_clear=true; r.tick();
     }
-    r.tick(); check(!r.out.estop_active && r.out.last_mission.phase==LastMissionPhase::JUDGING, "clear corridor returns to stationary judgment");
+    r.tick(701); check(!r.out.estop_active && r.out.last_mission.phase==LastMissionPhase::JUDGING, "seven-second actual stop returns to stationary judgment");
   }
   {
     Run r; setup(r); r.tick(2); r.s.route.instance_id++; r.tick();
