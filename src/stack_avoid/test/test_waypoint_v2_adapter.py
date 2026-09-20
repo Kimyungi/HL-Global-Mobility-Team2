@@ -25,12 +25,12 @@ def adapter(monkeypatch):
     messages=[]
     node.pub=NS(publish=messages.append)
     node._test_messages=messages
-    def supply(station=10., cloud=None, active=True):
+    def supply(station=10., cloud=None, active=True, zone=True):
         stamp=node.get_clock().now().to_msg()
         gps=GpsPath()
         gps.header.stamp=gps.reference_stamp=stamp
         gps.fix_quality=4;gps.heading_source=GpsPath.HEADING_FUSED
-        gps.position_valid=gps.vehicle_heading_valid=True;gps.avoid_zone=True
+        gps.position_valid=gps.vehicle_heading_valid=True;gps.avoid_zone=zone
         gps.route.enabled=True;gps.route.route_id='04';gps.route.index=2
         gps.route.sequence_id=gps.route.instance_id=1;gps.route.waypoint_csv=str(route)
         node.on_gps(gps)
@@ -98,13 +98,33 @@ def test_route_changes_reset_planner_and_preserve_session_origin(adapter):
     assert (adapter.route._lat0,adapter.route._lon0)==(lat0,lon0)
 
 
-def test_next_zone_release_clears_producer_detection(adapter):
+def test_zone_exit_discards_unfinished_path_and_reentry_rearms(adapter):
     assert adapter._supply().obstacle_detected
-    msg=adapter._supply(active=False)
+    old_planner, old_detector = adapter.planner, adapter.detector
+    adapter.planner.samples=[(0,0,0,2.,0)]
+    msg=adapter._supply(zone=False)  # MGM can still carry previous AVOID authority
     assert not msg.obstacle_detected and not adapter.session.active
-    assert adapter.session.done
-    adapter.session.observe_zone(True)
-    assert not adapter.session.active  # consumed marker cannot restart this episode
+    assert not msg.points and not adapter.planner.samples
+    assert adapter.planner is not old_planner and adapter.detector is not old_detector
+    assert adapter._supply().obstacle_detected
+    assert adapter.session.active
+
+
+def test_delayed_mgm_exit_cannot_consume_new_zone_entry(adapter):
+    adapter._supply()
+    assert not adapter._supply(active=False).points
+    assert adapter.session.active
+    assert adapter._supply().avoidable
+
+
+def test_invalid_gps_does_not_clear_active_geometry(adapter):
+    adapter._supply()
+    planner = adapter.planner
+    adapter.gps.position_valid = False
+    adapter.gps.avoid_zone = False
+    adapter.tick()
+    assert adapter.session.active and adapter.planner is planner
+    assert not adapter._test_messages[-1].points
 
 
 def test_finished_path_reports_done_before_alignment(adapter):

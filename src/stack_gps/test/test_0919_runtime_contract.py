@@ -64,10 +64,33 @@ def test_csv_state_missions_and_distinct_exit_zone_are_connected():
     assert plan.required[indices['03']]  # CSV state=1 still owns T parking.
     assert plan.required[indices['04']] == ()
     assert plan.engines[indices['04']].parallel_parking_ranges == []
-    assert plan.engines[indices['04']].avoid_ranges == [(77, 205)]
+    assert plan.engines[indices['04']].avoid_ranges == []  # state=4 is ignored in v2
     zones = plan.zone_maps[indices['05']]
     exit_zone = next(z for z in zones.definitions if z.zone_id == 2)
     assert exit_zone.zone_type == ZoneType.LAST_MISSION_ZONE
     assert (exit_zone.start_index, exit_zone.end_index) == (300, 316)
     assert not any(active for z, active in zones.snapshot(299, 300))
     assert any(z.zone_id == 2 and active for z, active in zones.snapshot(300))
+
+
+def test_v2_avoidance_uses_only_current_csv_zone_5(tmp_path):
+    csv_file = tmp_path / 'route.csv'
+    csv_file.write_text('lat,lon,quality,yaw_rad,state,zone_id,inside_zone\n'
+                        '37,127,4,0,4,0,0\n'
+                        '37.00001,127,4,0,0,5,1\n'
+                        '37.00002,127,4,0,0,5,1\n'
+                        '37.00003,127,4,0,0,5,0\n'
+                        '37.00004,127,4,0,0,1,1\n')
+    from stack_gps.path_engine import load_waypoints_csv
+    params = dict(waypoint_csv=str(csv_file), zones_file='',
+                  stop_zone_snap_max_m=3., stop_zone_span_m=1., parking_zone_span_m=1.,
+                  stop_points_latlon='', avoid_zone_latlon='37,127,37.00004,127',
+                  gps_only_zone_latlon='', avoid_zone_lead_m=5.)
+    log = NS(info=lambda _: None, warn=lambda _: None, error=lambda _: None)
+    node = NS(engine=PathEngine(load_waypoints_csv(csv_file)), turn_zone_policy=True,
+              get_logger=lambda: log)
+    StackGpsNode._setup_zones(node, lambda key: NS(value=params[key]))
+    assert node.engine.avoid_ranges == [(1, 2)]
+    for i in range(5):
+        assert node.engine._in_ranges(i, node.engine.avoid_ranges) == (1 <= i <= 2)
+    assert node.engine.avoid_preview_ranges == [(1, 2)]

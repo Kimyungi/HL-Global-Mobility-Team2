@@ -853,31 +853,38 @@ class StackGpsNode(Node):
                          "연속으로 두 번 정차하게 된다 (의도한 것인지 확인)")
         self.engine.stop_ranges = stop_ranges
 
-        # A CSV state=4 marker has no geographic exit: retain its indication
-        # through this route and let MGM latch completion after waypoint return.
-        avoid_ranges = avoidance_marker_range(p('waypoint_csv').value)
-        # The held state=4 indication is an episode trigger, not a geographic
-        # zone extending to the route end. Only its entry station has priority.
-        avoid_preview_ranges = [(start, start) for start, _ in avoid_ranges]
-        if avoid_ranges:
-            log.info(f"CSV state=4 회피 시작: idx {avoid_ranges[0][0]}; 종료는 MGM waypoint 복귀 판정")
-        for lat1, lon1, lat2, lon2 in file_avoid + _parse_latlon_spec(
-                p('avoid_zone_latlon').value, 4, 'avoid_zone_latlon', log):
-            i1, d1 = self.engine.index_of(lat1, lon1)
-            i2, d2 = self.engine.index_of(lat2, lon2)
-            if max(d1, d2) > snap_max:
-                log.error(
-                    f"회피 구간 끝점이 트랙에서 {max(d1, d2):.1f}m 떨어져 있음 "
-                    f"(한계 {snap_max:.1f}m) — **무시**한다")
-                continue
-            a, b = min(i1, i2), max(i1, i2)
-            lead = float(p('avoid_zone_lead_m').value)
-            a_lead = self.engine.index_before(a, lead)
-            avoid_ranges.append((a_lead, b))
-            avoid_preview_ranges.append((a_lead, b))
-            log.info(f"회피 허용 구간 {len(avoid_ranges)}: idx {a_lead}~{b} "
-                     f"(찍은 구간 {a}~{b} + 앞쪽 {lead:.1f}m 확장 — "
-                     f"감지 거리 안에서 미리 무장해야 회피가 성립한다, 스냅 {d1:.2f}/{d2:.2f}m)")
+        if getattr(self, 'turn_zone_policy', False):
+            # v2: current CSV zone [5] alone owns avoidance; no state=4,
+            # coordinate overrides, lead distance or preview can extend it.
+            avoid_ranges = csv_zone_ranges(p('waypoint_csv').value, 5)
+            avoid_preview_ranges = list(avoid_ranges)
+            log.info(f"CSV zone [5] 회피 구간: {avoid_ranges}")
+        else:
+            # A CSV state=4 marker has no geographic exit: retain its indication
+            # through this route and let MGM latch completion after waypoint return.
+            avoid_ranges = avoidance_marker_range(p('waypoint_csv').value)
+            # The held state=4 indication is an episode trigger, not a geographic
+            # zone extending to the route end. Only its entry station has priority.
+            avoid_preview_ranges = [(start, start) for start, _ in avoid_ranges]
+            if avoid_ranges:
+                log.info(f"CSV state=4 회피 시작: idx {avoid_ranges[0][0]}; 종료는 MGM waypoint 복귀 판정")
+            for lat1, lon1, lat2, lon2 in file_avoid + _parse_latlon_spec(
+                    p('avoid_zone_latlon').value, 4, 'avoid_zone_latlon', log):
+                i1, d1 = self.engine.index_of(lat1, lon1)
+                i2, d2 = self.engine.index_of(lat2, lon2)
+                if max(d1, d2) > snap_max:
+                    log.error(
+                        f"회피 구간 끝점이 트랙에서 {max(d1, d2):.1f}m 떨어져 있음 "
+                        f"(한계 {snap_max:.1f}m) — **무시**한다")
+                    continue
+                a, b = min(i1, i2), max(i1, i2)
+                lead = float(p('avoid_zone_lead_m').value)
+                a_lead = self.engine.index_before(a, lead)
+                avoid_ranges.append((a_lead, b))
+                avoid_preview_ranges.append((a_lead, b))
+                log.info(f"회피 허용 구간 {len(avoid_ranges)}: idx {a_lead}~{b} "
+                         f"(찍은 구간 {a}~{b} + 앞쪽 {lead:.1f}m 확장 — "
+                         f"감지 거리 안에서 미리 무장해야 회피가 성립한다, 스냅 {d1:.2f}/{d2:.2f}m)")
         self.engine.estop_ranges = estop_station_ranges(p('waypoint_csv').value)
         self.engine.avoid_ranges = avoid_ranges
         self.engine.avoid_preview_ranges = avoid_preview_ranges
@@ -919,7 +926,7 @@ class StackGpsNode(Node):
             log.info("지정 정지 지점 없음")
         if not avoid_ranges:
             log.warn("회피 허용 구간 없음 — MGM avoid_zone_only 가 켜져 있으면 "
-                     "AVOID 전이가 어디서도 일어나지 않는다 (장애물은 estop 정지)")
+                     "AVOID 전이가 어디서도 일어나지 않는다")
 
     def _on_param(self, params):
         for prm in params:

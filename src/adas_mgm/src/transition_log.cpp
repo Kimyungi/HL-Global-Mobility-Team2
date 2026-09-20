@@ -104,7 +104,10 @@ TransitionRecord explainTransition(
       r.spec_match = s.traffic_green_active;
     }
   } else if (to == MGM_STATE_AVOID) {
-    if (p.base_state_machine_enabled && p.avoid_zone_only) {
+    if (p.revised_v2_enabled && p.avoid_zone_only) {
+      r.rule = "→avoid: 현재 GPS zone [5] 진입";
+      r.spec_match = s.gps_position_valid && s.zones.zone_valid && s.gps_avoid_zone;
+    } else if (p.base_state_machine_enabled && p.avoid_zone_only) {
       r.rule = "→avoid: GPS 회피 시작 구간 확인 (CSV state=4), waypoint 복귀까지 유지";
       r.spec_match = s.gps_valid && s.gps_avoid_zone;
     } else {
@@ -113,7 +116,10 @@ TransitionRecord explainTransition(
         (p.avoid_zone_only == 0 || s.gps_avoid_zone);
     }
   } else if (from == MGM_STATE_AVOID) {
-    if (p.base_state_machine_enabled && p.avoid_zone_only) {
+    if (p.revised_v2_enabled && p.avoid_zone_only) {
+      r.rule = "avoid→GPS: 현재 GPS zone [5] 이탈, 미완료 회피도 종료";
+      r.spec_match = s.gps_position_valid && s.zones.zone_valid && !s.gps_avoid_zone;
+    } else if (p.base_state_machine_enabled && p.avoid_zone_only) {
       r.rule = "avoid→navigation: waypoint 복귀 완료 후 GPS station 0.1m/20도 정렬";
       r.spec_match = s.gps_valid && s.gps_heading_valid && s.gps_station_error_valid &&
         std::isfinite(s.gps_cross_track) && std::isfinite(s.gps_station_yaw_error) &&

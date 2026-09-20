@@ -228,33 +228,30 @@ class WaypointTests(unittest.TestCase):
             self.assertAlmostEqual(math.hypot(preview[0]-pose[0], preview[1]-pose[1]), 1)
             self.assertLess(abs(p.route.project_station(*preview[:2])[1]), 1e-4)
 
-    def test_zone_session_waits_for_obstacle_then_rejoin_and_does_not_reenter(self):
+    def test_zone_session_ends_only_at_boundary_and_rearms(self):
         p = FixedPlanner(route())
         session = AvoidSession()
         session.observe_zone(False)
         self.assertFalse(session.active)
         session.observe_zone(True)
         self.assertTrue(session.active)
-        self.assertFalse(session.finish(p, (5, 0, 0)))  # no avoidance yet
         self.assertIsNotNone(p.preview((5, 0, 0)))
         p.accept(obstacle(p, 8, 1), 5)
         session.accepted()
-        session.observe_zone(False)  # marker pulse has ended
-        self.assertTrue(session.active)
-        self.assertFalse(session.finish(p, (8, 0, 0)))  # still on fixed path
         self.assertTrue(p.advance((11.5, .3, 0)))
         session.passed_path()
-        self.assertFalse(session.finish(p, (11.5, .31, 0)))
-        self.assertFalse(session.finish(p, (11.5, .09, math.radians(21))))
-        session.observe_zone(True)
-        self.assertTrue(session.finish(p, (11.5, .30, math.radians(20))))
-        self.assertTrue(session.done)
-        session.observe_zone(True)
-        self.assertFalse(session.active)
+        self.assertFalse(session.finish(p, (11.5, .30, math.radians(20))))
+        self.assertTrue(session.active)  # alignment is no longer an exit
         session.observe_zone(False)
+        self.assertFalse(session.active)
         session.observe_zone(True)
         self.assertTrue(session.active)
-        self.assertFalse(session.done)
+        p.accept(obstacle(p, 20, 1), 14)
+        session.accepted()
+        self.assertTrue(p.samples)
+        session.observe_zone(False)  # exit can truncate an unfinished maneuver
+        self.assertFalse(session.active)
+        self.assertFalse(session.returning)
 
     def test_csv_state_marker_survives_filter_duplicate_and_index_jump(self):
         with tempfile.TemporaryDirectory() as tmp:

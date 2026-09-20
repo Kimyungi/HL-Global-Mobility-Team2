@@ -395,22 +395,19 @@ class FixedPlanner:
 
 
 class AvoidSession:
-    """Latch zone entry until an actual avoidance and waypoint rejoin finish."""
+    """Active throughout zone [5]; maneuver completion never releases ownership."""
     def __init__(self):
         self.active = False
         self.returning = False
-        self.zone_consumed = False
         self.done = False
 
     def observe_zone(self, zone):
-        if not zone:
-            self.zone_consumed = False
-        elif not self.zone_consumed and not self.active:
+        if zone:
             self.active = True
             self.done = False
-            self.zone_consumed = True
-        elif zone:
-            self.zone_consumed = True
+        else:
+            self.active = self.returning = False
+            self.done = True
 
     def accepted(self):
         self.returning = False
@@ -418,13 +415,8 @@ class AvoidSession:
     def passed_path(self):
         self.returning = True
 
-    def complete(self):
-        self.active = self.returning = False
-        self.done = True
-        self.zone_consumed = True
-
     def finish(self, planner, pose):
+        # Continue following the GPS route and accepting new obstacles inside [5].
         if self.active and self.returning and not planner.samples and planner.rejoined(pose):
-            self.complete()
-            return True
+            self.returning = False
         return False
