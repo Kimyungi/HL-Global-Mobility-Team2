@@ -543,6 +543,7 @@ class StackTrafficNode(Node):
         self.get_logger().info(
             "traffic_red_binary ROS 2 started | "
             f"model={model_path} camera={self._camera_description()} "
+            f"image_brightness_scale={self.image_brightness_scale:.3f} "
             f"red_vote={self.vote_window}/{self.minimum_red_votes} "
             f"green_vote={self.vote_window}/{self.minimum_green_votes} "
             f"stopline={int(self.stopline_detection_enabled)} "
@@ -701,6 +702,13 @@ class StackTrafficNode(Node):
                 description="RGB auto-exposure compensation (-9..9); restart to apply",
             ),
         )
+        self.declare_parameter(
+            "image_brightness_scale", 1.0,
+            ParameterDescriptor(
+                read_only=True,
+                description="Post-capture pixel gain (0 < scale <= 1); 1 disables; restart to apply",
+            ),
+        )
         self.declare_parameter("oak_depth_enabled", True)
         # 작은 물체를 후처리가 지우는지 확인하는 raw 진단 기본값.
         self.declare_parameter("oak_depth_confidence_threshold", 245)
@@ -849,6 +857,11 @@ class StackTrafficNode(Node):
         self.oak_exposure_compensation = validate_exposure_compensation(
             self.get_parameter("oak_exposure_compensation").value
         )
+        self.image_brightness_scale = float(
+            self.get_parameter("image_brightness_scale").value
+        )
+        if not math.isfinite(self.image_brightness_scale) or not 0 < self.image_brightness_scale <= 1:
+            raise ValueError("image_brightness_scale must be finite and in (0, 1]")
         self.oak_depth_confidence_threshold = int(
             self.get_parameter("oak_depth_confidence_threshold").value
         )
@@ -1998,6 +2011,10 @@ class StackTrafficNode(Node):
             raw.step = raw.width * 3
             raw.data = frame.tobytes()
             self.raw_image_pub.publish(raw)
+        # Keep acquisition pixels on the raw topic; perception and its debug
+        # image share the same corrected frame (YOLO, HSV and template tracking).
+        if self.image_brightness_scale != 1.0:
+            frame = cv2.convertScaleAbs(frame, alpha=self.image_brightness_scale)
         if (
             self.camera_backend == "oak"
             and getattr(self.oak_camera, "depth_resized", False)

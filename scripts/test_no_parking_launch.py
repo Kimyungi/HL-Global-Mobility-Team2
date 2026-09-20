@@ -29,6 +29,7 @@ def test_yongin_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,monkey
     for action in mod.generate_launch_description().entities:
         if isinstance(action,DeclareLaunchArgument):action.execute(context)
     assert context.launch_configurations['course']==course
+    assert context.launch_configurations['traffic_image_brightness_scale']=='0.7'
     monkeypatch.setenv('FMA_V2_WORKSPACE',str(ROOT))
     monkeypatch.setattr(mod,'check_lidar_devices',lambda:None)
     import stack_gps.persistent_service as persistent
@@ -69,6 +70,12 @@ def test_yongin_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,monkey
     assert params['estop_station_zone_id']==-1
     assert params['revised_v2_enabled'] and not params['lidar_estop_enabled']
     assert not any(n.node_executable=='estop_recovery_node.py' for n in nodes)
+    traffic=next(n for n in nodes if n.node_package=='stack_traffic')
+    assert evaluate_parameters(context,traffic._Node__parameters)[0]['image_brightness_scale']==0.7
+    exit_detector=next(n for n in nodes if n.node_package=='stack_exit_decision')
+    exit_params=evaluate_parameters(context,exit_detector._Node__parameters)[0]
+    assert exit_params['image_topic']=='/perception/lane_image_raw'
+    assert 'image_brightness_scale' not in exit_params
     lane=next(n for n in nodes if n.node_package=='stack_lane')
     assert evaluate_parameters(context,lane._Node__parameters)[0]['camera_only']
     assert context.launch_configurations['traffic_enabled']=='true'

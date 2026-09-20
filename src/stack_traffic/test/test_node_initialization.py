@@ -47,6 +47,35 @@ class FakeOakCamera:
 
 
 class TestNodeInitialization(unittest.TestCase):
+    def test_brightness_filter_reaches_yolo_and_preserves_raw_pixels(self):
+        for scale in (0.7, 1.0):
+            with self.subTest(scale=scale):
+                rclpy.init(args=['--ros-args', '-p', 'camera_backend:=oak',
+                                '-p', f'image_brightness_scale:={scale}'])
+                node = None
+                try:
+                    with patch('stack_traffic.node.YOLO', FakeYolo), \
+                         patch('stack_traffic.node.OakRgbdCamera', FakeOakCamera):
+                        node = StackTrafficNode()
+                    frame = np.full((360, 640, 3), (100, 150, 200), dtype=np.uint8)
+                    node.oak_camera.frame = frame.copy()
+                    node.raw_image_pub = Mock()
+                    node.raw_image_pub.get_subscription_count.return_value = 1
+                    node.model.predict = Mock(return_value=[])
+                    node.tick()
+                    self.assertTrue(node.model.predict.called)
+                    corrected = node.model.predict.call_args.kwargs['source']
+                    expected = np.array((100, 150, 200)) * scale
+                    np.testing.assert_allclose(corrected.mean(axis=(0, 1)), expected, atol=0.5)
+                    raw = node.raw_image_pub.publish.call_args.args[0]
+                    self.assertEqual(bytes(raw.data), frame.tobytes())
+                    np.testing.assert_array_equal(node.oak_camera.frame, frame)
+                    self.assertTrue(node.describe_parameter('image_brightness_scale').read_only)
+                finally:
+                    if node is not None:
+                        node.destroy_node()
+                    rclpy.shutdown()
+
     def test_zone_gate_keeps_camera_live_and_resets_only_perception(self):
         from std_msgs.msg import Bool
         rclpy.init(args=['--ros-args', '-p', 'camera_backend:=oak',
