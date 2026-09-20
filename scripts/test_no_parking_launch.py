@@ -48,6 +48,7 @@ def test_no_parking_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,mo
     nodes=[n for n in actions if isinstance(n,Node)]
     mgm=next(n for n in nodes if n.node_package=='adas_mgm' and n.node_executable=='mgm_node')
     params=evaluate_parameters(context,mgm._Node__parameters)[1]
+    assert params['stop_zone_hold_cycles']==500  # 5 seconds at 10 ms.
     assert params['estop_station_zone_id']==-1
     assert params['revised_v2_enabled'] and not params['lidar_estop_enabled']
     assert not any(n.node_executable=='estop_recovery_node.py' for n in nodes)
