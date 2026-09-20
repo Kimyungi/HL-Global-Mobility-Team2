@@ -175,6 +175,7 @@ def generate_launch_description(route_profile='yongin'):
     else:
         profile['v_base'] = '0.5'
     if route_profile == 'yongin':
+        profile['stop_hold_sec'] = '5.0'  # CSV state=5: hold after actual stop.
         del profile['v_base']  # Explicit speed required for every full-course session.
     route_id = '01' if obstacle else '03'
     start_options = {'default_value': route_id} if obstacle else {}
