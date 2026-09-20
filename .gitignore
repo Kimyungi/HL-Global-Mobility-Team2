@@ -22,3 +22,6 @@ install_v2/
 log_v2/
 # setuptools build_ext --inplace through the colcon package symlink
 src/stack_avoid/stack_avoid/_footprint_native*.so
+
+# Raw camera photos remain local; do not upload captures.
+/captures/

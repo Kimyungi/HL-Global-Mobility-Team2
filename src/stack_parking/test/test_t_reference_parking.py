@@ -160,34 +160,68 @@ class ReferenceParkingTests(unittest.TestCase):
         self.assertIsNotNone(out.reference)
         self.assertFalse(out.parking_success)
 
-    def test_wall_50cm_stops_then_confirms_stationary_success(self):
+    def test_rear_20cm_stops_then_confirms_stationary_success(self):
         pose = self.near_end()
-        out = self.tick(.9, pose=pose, rear=rear(.9, .49), speed=-.15)
+        out = self.tick(.9, pose=pose, rear=rear(.9, .19), speed=-.15)
         self.assertEqual(out.phase, 'WALL_STOP')
         self.assertEqual(out.v_suggest, 0)
         for t in (1., 1.1, 1.2, 1.6):
-            out = self.tick(t, pose=pose, rear=rear(t, .49))
+            out = self.tick(t, pose=pose, rear=rear(t, .19))
         self.assertTrue(out.parking_success)
         self.assertEqual(out.v_suggest, 0)
         self.assertTrue(out.request_stop)
         self.core.trigger()
         self.assertEqual(self.tick(2.).phase, 'SUCCESS')
 
-    def test_50cm_wall_before_docking_does_not_finish_or_stop(self):
+    def test_20cm_return_before_docking_stops_without_path_end_gate(self):
         self.select()
-        out = self.tick(.9, rear=rear(.9, .49))
-        self.assertEqual(out.phase, 'REVERSE')
-        self.assertLess(out.v_suggest, 0)
+        out = self.tick(.9, rear=rear(.9, .19), speed=-1.)
+        self.assertEqual(out.phase, 'WALL_STOP')
+        self.assertEqual(out.v_suggest, 0)
         self.assertFalse(out.parking_success)
 
-    def test_single_near_return_is_not_wall_success_or_local_stop(self):
+    def test_single_near_return_can_confirm_without_wall_fit(self):
+        self.select()
+        for t in (.9, 1., 1.1, 1.6):
+            scan = Scan(t, np.array([[-.30, 0.]]), (-.11, 0.))
+            out = self.tick(t, rear=scan)
+        self.assertTrue(out.parking_success)
+
+    def test_reverse_speed_is_one_from_start_through_docking(self):
+        self.select()
+        self.assertEqual(self.tick(.9).v_suggest, -1.0)
+        self.core.index = len(self.paths[0].path) - 4
+        p = self.paths[0].path[self.core.index]
+        out = self.tick(1., pose=Pose2(p.x, p.y, p.yaw))
+        self.assertEqual(out.v_suggest, -1.0)
+
+    def test_return_above_threshold_does_not_complete(self):
         pose = self.near_end()
-        far = rear(.9)
-        cone = Scan(.9, np.vstack((far.points, [-.5, 0.])), far.origin)
-        out = self.tick(.9, pose=pose, rear=cone)
+        out = self.tick(.9, pose=pose, rear=rear(.9, .201))
         self.assertEqual(out.phase, 'REVERSE')
-        self.assertLess(out.v_suggest, 0)
+        self.assertEqual(out.v_suggest, -1.0)
+        out = self.tick(1., pose=pose, rear=rear(1., .20))
+        self.assertEqual(out.phase, 'WALL_STOP')
+        self.assertEqual(out.v_suggest, 0.)
+
+    def test_stale_close_return_cannot_complete_parking(self):
+        self.select()
+        out = self.tick(2., rear=rear(.9, .19))
+        self.assertEqual(out.phase, 'REVERSE')
         self.assertFalse(out.parking_success)
+
+    def test_confirmed_distance_needs_fresh_speed_and_rear_at_success(self):
+        self.select()
+        for t in (.9, 1., 1.1):
+            self.tick(t, rear=rear(t, .19))
+        self.assertEqual(self.core.wall_votes, 3)
+        out = self.tick(1.7, rear=rear(1.1, .19))
+        self.assertFalse(out.parking_success)
+        self.assertEqual(out.v_suggest, 0.)
+        for t in (1.8, 1.9, 2.):
+            out = self.tick(t, rear=rear(t, .19), speed_stamp=1.)
+        self.assertFalse(out.parking_success)
+        self.assertTrue(self.tick(2.1, rear=rear(2.1, .19)).parking_success)
 
     def test_csv_end_succeeds_after_fresh_stationary_confirmation_without_wall(self):
         self.near_end()
@@ -223,16 +257,16 @@ class ReferenceParkingTests(unittest.TestCase):
 
     def test_wall_confirmation_needs_new_frames(self):
         pose = self.near_end()
-        self.tick(.9, pose=pose, rear=rear(.9, .49))
+        self.tick(.9, pose=pose, rear=rear(.9, .19))
         for t in (1., 1.1, 1.2):
-            out = self.tick(t, pose=pose, rear=rear(.9, .49))
+            out = self.tick(t, pose=pose, rear=rear(.9, .19))
         self.assertFalse(out.parking_success)
         self.assertEqual(self.core.wall_votes, 1)
 
     def test_wall_does_not_succeed_while_vehicle_is_moving(self):
         pose = self.near_end()
         for t in (.9, 1., 1.2, 1.5, 1.8):
-            out = self.tick(t, pose=pose, rear=rear(t, .49), speed=-.1)
+            out = self.tick(t, pose=pose, rear=rear(t, .19), speed=-.1)
         self.assertFalse(out.parking_success)
         self.assertEqual(out.v_suggest, 0)
 

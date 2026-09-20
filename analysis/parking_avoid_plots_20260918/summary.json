@@ -1,0 +1,41 @@
+{
+  "parking": {
+    "session": "v2_20260917_230818_739351",
+    "duration_s": 104.67895674705505,
+    "snapshot_count": 10469,
+    "vehicle_records": 10400,
+    "states": [
+      "출발 대기",
+      "GPS 주행",
+      "차선 주행",
+      "주차 제어",
+      "주차 선택 대기",
+      "주차 전진",
+      "후진 전환 대기",
+      "주차 후진",
+      "ESTOP"
+    ],
+    "target_speed_range": [
+      -0.5,
+      0.5
+    ]
+  },
+  "obstacle": {
+    "session": "v2_20260917_220254_439617",
+    "duration_s": 102.88909196853638,
+    "snapshot_count": 10290,
+    "vehicle_records": 10200,
+    "states": [
+      "출발 대기",
+      "GPS 주행",
+      "회피",
+      "GPS 복귀",
+      "차선 주행",
+      "주행 종료"
+    ],
+    "target_speed_range": [
+      0.0,
+      2.0
+    ]
+  }
+}

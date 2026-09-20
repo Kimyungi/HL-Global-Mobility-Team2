@@ -1,0 +1,9 @@
+{
+  "source": "/home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main/src/stack_gps/waypoints/yongin_no_parking.csv",
+  "sha256": "d0d03858e7e284c8c59502aa6bba5b356cfb3d65610411a93671eeb9250d3060",
+  "rows": 2497,
+  "origin_latlon": [
+    37.2889723,
+    127.1076515
+  ]
+}
