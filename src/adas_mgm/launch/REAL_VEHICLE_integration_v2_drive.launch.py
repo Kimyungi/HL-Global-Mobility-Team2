@@ -91,12 +91,17 @@ def start_stack(context, route_profile='yongin'):
            else root / 'drive_logs' / datetime.now().strftime('v2_%Y%m%d_%H%M%S_%f'))
     run.mkdir(parents=True, exist_ok=False)
     no_parking = route_profile == 'yongin' and value('course') == 'yongin_no_parking'
+    yongin_0920 = route_profile == 'yongin' and value('course') == 'yongin_0920'
     if route_profile == 'yongin':
         catalog = root / 'src/stack_gps/waypoints/yongin_route_sequence.yaml'
         if no_parking:
             from stack_gps.no_parking_route import prepare_no_parking_catalog
             catalog = prepare_no_parking_catalog(
                 root / 'src/stack_gps/waypoints/yongin_no_parking.csv', run/'no_parking_route')
+        elif yongin_0920:
+            from stack_gps.no_parking_route import prepare_csv_catalog
+            catalog = prepare_csv_catalog(
+                root / 'src/stack_gps/waypoints/yongin_0920.csv', run/'yongin_0920_route', parking=True)
         manifest = selected_manifest(catalog, value('start_waypoint'), value('end_waypoint'))
     else:
         manifest = obstacle_test_manifest(root, value('start_waypoint'), value('end_waypoint'))
@@ -112,6 +117,14 @@ def start_stack(context, route_profile='yongin'):
             root / f'src/stack_parking/config/yongin_parking_ref_{i:02}.csv')
     context.launch_configurations['parking_course_catalog'] = str(
         root / 'src/stack_parking/config/yongin_parking_courses.yaml') if route_profile == 'yongin' and not no_parking else ''
+    if yongin_0920:
+        from stack_parking.parking_courses import snapshot_catalog
+        route_csvs = {f'{i:02}': catalog.parent / f'yongin_0920_{i:02}.csv' for i in range(1, 8)}
+        context.launch_configurations['t_reference_enabled'] = 'true'
+        context.launch_configurations['t_reference_route_csv'] = str(route_csvs['03'])
+        context.launch_configurations['parking_course_catalog'] = str(snapshot_catalog(
+            root / 'src/stack_parking/config/yongin_parking_courses.yaml',
+            route_csvs, run/'parking_references', manifest['routes'][0]['file']))
     context.launch_configurations['avoid_waypoint_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['avoid_route_origin_csv'] = manifest['routes'][0]['file']
     # This entry owns route selection; avoid ambiguous overrides from the base launch.
@@ -149,7 +162,7 @@ def start_stack(context, route_profile='yongin'):
     if value('rviz') == 'true':
         actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(
             str(share / 'launch/integration_v2_view.launch.py'))))
-    print('[v2 drive] course: ' + ('yongin_no_parking' if no_parking else route_profile))
+    print('[v2 drive] course: ' + (value('course') if route_profile == 'yongin' else route_profile))
     print('[v2 drive] route: ' + ' -> '.join(r['id'] for r in manifest['routes']))
     print(f'[v2 drive] avoid planner: {mode}; backend={backend}; zone_only={value("avoid_zone_only")}')
     print(f'[v2 drive] logs: {run}; waiting for explicit go')
@@ -181,9 +194,9 @@ def generate_launch_description(route_profile='yongin'):
     start_options = {'default_value': route_id} if obstacle else {}
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
-        DeclareLaunchArgument('course', default_value='yongin_no_parking',
-                              choices=['yongin','yongin_no_parking'],
-                              description='Yongin original or edited no-parking CSV'),
+        DeclareLaunchArgument('course', default_value='yongin_0920',
+                              choices=['yongin_0920','yongin','yongin_no_parking'],
+                              description='Yongin 0920 with parking, original course, or no-parking CSV'),
         DeclareLaunchArgument('start_waypoint',
                               description=('PR117 obstacle course; fixed route 01' if obstacle else
                                            'Required each session; scripts/v2 prompts when omitted'),

@@ -87,6 +87,7 @@ def load_course(origin_csv, route_csv, parking_csvs, *, route_id=3, mission_stat
 
 class TParkingSequence:
     WAIT_SECONDS = 3.
+    SELECTION_TIMEOUT_SECONDS = 3.
 
     def __init__(self, candidates, approach, station, cfg=Config(), *, exits=None):
         self.candidates, self.approach, self.station, self.cfg = candidates, approach, station, cfg
@@ -95,6 +96,7 @@ class TParkingSequence:
         self.reason = 'await_stop_and_left_scan'
         self.selected = None
         self.stopped_since = self.wait_since = None
+        self.selection_since = None
         self.last_now = self.last_left = -math.inf
         self.vote, self.votes = None, 0
         self.index = None
@@ -130,11 +132,8 @@ class TParkingSequence:
             return self.out()
         if now < self.last_now:
             self.stopped_since = self.wait_since = None
+            self.selection_since = None
         self.last_now = now
-        # Initial selection needs actual left-scan points. Once selected, retain
-        # the candidate and track from the latest received pose/speed.
-        if self.selected is None and (left is None or not len(left.points)):
-            return self.out()
         if abs(speed) <= cfg.stop_speed:
             if self.stopped_since is None:
                 self.stopped_since = now
@@ -143,7 +142,20 @@ class TParkingSequence:
         stationary = self.stopped_since is not None and now-self.stopped_since >= cfg.stop_hold
 
         if self.phase == 'STOP_SELECT':
-            if not stationary or left.stamp <= self.last_left:
+            if not stationary:
+                self.selection_since = None
+                return self.out()
+            if self.selection_since is None:
+                self.selection_since = now
+            if now-self.selection_since >= self.SELECTION_TIMEOUT_SECONDS:
+                # Catalog order: T = 01/02, parallel = 03/04. The user-defined
+                # timeout choice is independent of missing/ambiguous scan data.
+                self.selected = 0
+                self.phase, self.reason = 'ADVANCE_3', 'candidate_timeout_default'
+                self.index = None
+                self.stopped_since = None
+                return self.out()  # zero-speed handoff; adapter awaits ACTIVATE
+            if left is None or not len(left.points) or left.stamp <= self.last_left:
                 return self.out()
             self.last_left = left.stamp
             findings = [inspect_candidate(c,pose,left,cfg) for c in self.candidates]

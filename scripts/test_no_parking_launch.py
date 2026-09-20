@@ -1,4 +1,4 @@
-"""Resolve no-parking launch actions with hardware/service operations mocked."""
+"""Resolve Yongin parking/no-parking launch actions with hardware mocked."""
 import importlib.util
 from pathlib import Path
 
@@ -12,21 +12,23 @@ from launch_ros.utilities import evaluate_parameters
 ROOT=Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize('explicit_course', [False, True])
-def test_no_parking_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,monkeypatch,explicit_course):
+@pytest.mark.parametrize('course,explicit_course,start',
+    [('yongin_no_parking',True,'01')] +
+    [('yongin_0920',explicit,start) for explicit in (False,True) for start in ('01','02','03','04','05','06','07')])
+def test_yongin_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,monkeypatch,course,explicit_course,start):
     path=ROOT/'src/adas_mgm/launch/REAL_VEHICLE_integration_v2_drive.launch.py'
     spec=importlib.util.spec_from_file_location('no_parking_launch_test',path)
     mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
     context=LaunchContext()
     context.launch_configurations.update(
         REAL_VEHICLE_CONFIRM='I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX',
-        start_waypoint='01',end_waypoint='06',
+        start_waypoint=start,end_waypoint=start if start in ('06','07') else '06',
         v_base='2.0',rviz='false',run_log_dir=str(tmp_path/'run'))
     if explicit_course:
-        context.launch_configurations['course']='yongin_no_parking'
+        context.launch_configurations['course']=course
     for action in mod.generate_launch_description().entities:
         if isinstance(action,DeclareLaunchArgument):action.execute(context)
-    assert context.launch_configurations['course']=='yongin_no_parking'
+    assert context.launch_configurations['course']==course
     monkeypatch.setenv('FMA_V2_WORKSPACE',str(ROOT))
     monkeypatch.setattr(mod,'check_lidar_devices',lambda:None)
     import stack_gps.persistent_service as persistent
@@ -39,12 +41,27 @@ def test_no_parking_launch_uses_snapshot_and_keeps_latest_conditions(tmp_path,mo
         if isinstance(action,OpaqueFunction):
             for setting in action.execute(context) or []:
                 setting.execute(context)
-    assert context.launch_configurations['t_reference_enabled']=='false'
-    assert context.launch_configurations['parking_course_catalog']==''
+    assert context.launch_configurations['t_reference_enabled']==('false' if course=='yongin_no_parking' else 'true')
+    if course=='yongin_no_parking':
+        assert context.launch_configurations['parking_course_catalog']==''
     manifest=yaml.safe_load((tmp_path/'run/route_selected.yaml').read_text())
-    assert [r['id'] for r in manifest['routes']]==['01','03','04','05','06','07']
-    assert all('no_parking_route' in r['file'] for r in manifest['routes'])
-    assert manifest['exit_branches']==dict(source='05',left='06',right='07')
+    expected=([start,'03','04','05','06','07'] if start in ('01','02') else
+              ['03','04','05','06','07'][['03','04','05','06','07'].index(start):])
+    if start in ('06','07'):expected=[start]
+    assert [r['id'] for r in manifest['routes']]==expected
+    directory='no_parking_route' if course=='yongin_no_parking' else 'yongin_0920_route'
+    assert all(directory in r['file'] for r in manifest['routes'])
+    if '05' in expected:
+        assert manifest['exit_branches']==dict(source='05',left='06',right='07')
+    else:
+        assert 'exit_branches' not in manifest
+    if course=='yongin_0920':
+        from stack_parking.parking_courses import load_catalog
+        courses=load_catalog(context.launch_configurations['parking_course_catalog'],manifest['routes'][0]['file'])
+        for mode,route_id in ((1,'03'),(2,'04')):
+            assert courses[mode].route_csv == tmp_path/'run/yongin_0920_route'/f'yongin_0920_{route_id}.csv'
+            assert len(courses[mode].course[0])==2
+        assert courses[1].exits is not None
     nodes=[n for n in actions if isinstance(n,Node)]
     mgm=next(n for n in nodes if n.node_package=='adas_mgm' and n.node_executable=='mgm_node')
     params=evaluate_parameters(context,mgm._Node__parameters)[1]
