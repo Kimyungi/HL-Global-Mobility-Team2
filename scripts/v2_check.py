@@ -47,7 +47,7 @@ def main():
           '; prepare/drive: upper ESTOP, legacy timed reverse excluded')
     print('Revised v2: GPS drive FIXED only; four raw LiDAR start gate; turn_zones controls GPS-only + traffic')
     print('Avoidance: Waypoint_Avoid_PR103; legacy New_Avoid_v2 disabled in prepare/drive')
-    print('State v09.17; Yongin map: yongin_reference_path_01..07; shared traffic/GPS zone [3]; dump v42. ESTOP: CSV state=6 station; hold until front corridor clear; no reverse')
+    print('State v09.17; Yongin: course=yongin (01..07) or yongin_no_parking (saved CSV); shared traffic/GPS zone [3]; dump v42. ESTOP: CSV state=6 station; hold until front corridor clear; no reverse')
     if not params['parking_zone_entry_active'] and not params['parking_search_zone_only']:
         print('Legacy parking limits seconds/metres =', params['parking_search_timeout'],
               params['max_parking_search_distance'])

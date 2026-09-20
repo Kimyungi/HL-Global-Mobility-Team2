@@ -87,14 +87,22 @@ def start_stack(context, route_profile='yongin'):
     share = Path(get_package_share_directory('adas_mgm'))
     if not share.resolve().is_relative_to(root / 'install_v2'):
         raise RuntimeError('Use this workspace scripts/v2 drive and install_v2')
+    run = (Path(value('run_log_dir')).expanduser().resolve() if value('run_log_dir')
+           else root / 'drive_logs' / datetime.now().strftime('v2_%Y%m%d_%H%M%S_%f'))
+    run.mkdir(parents=True, exist_ok=False)
+    no_parking = route_profile == 'yongin' and value('course') == 'yongin_no_parking'
     if route_profile == 'yongin':
-        manifest = selected_manifest(root / 'src/stack_gps/waypoints/yongin_route_sequence.yaml',
-                                     value('start_waypoint'), value('end_waypoint'))
+        catalog = root / 'src/stack_gps/waypoints/yongin_route_sequence.yaml'
+        if no_parking:
+            from stack_gps.no_parking_route import prepare_no_parking_catalog
+            catalog = prepare_no_parking_catalog(
+                root / 'src/stack_gps/waypoints/yongin_no_parking.csv', run/'no_parking_route')
+        manifest = selected_manifest(catalog, value('start_waypoint'), value('end_waypoint'))
     else:
         manifest = obstacle_test_manifest(root, value('start_waypoint'), value('end_waypoint'))
     print(f'[v2 drive] general driving v_base: {speed:g} m/s', flush=True)
     print('[v2 drive] selected start CSV: ' + manifest['routes'][0]['file'], flush=True)
-    if route_profile == 'obstacle':
+    if route_profile == 'obstacle' or no_parking:
         context.launch_configurations['t_reference_enabled'] = 'false'
     context.launch_configurations['t_reference_origin_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['t_reference_route_csv'] = str(
@@ -103,7 +111,7 @@ def start_stack(context, route_profile='yongin'):
         context.launch_configurations[f't_reference_reverse_{i}_csv'] = str(
             root / f'src/stack_parking/config/yongin_parking_ref_{i:02}.csv')
     context.launch_configurations['parking_course_catalog'] = str(
-        root / 'src/stack_parking/config/yongin_parking_courses.yaml') if route_profile == 'yongin' else ''
+        root / 'src/stack_parking/config/yongin_parking_courses.yaml') if route_profile == 'yongin' and not no_parking else ''
     context.launch_configurations['avoid_waypoint_csv'] = manifest['routes'][0]['file']
     context.launch_configurations['avoid_route_origin_csv'] = manifest['routes'][0]['file']
     # This entry owns route selection; avoid ambiguous overrides from the base launch.
@@ -120,9 +128,6 @@ def start_stack(context, route_profile='yongin'):
                            rtcm_host=value('rtcm_host'))
     ensure_running(config, root / 'src/stack_gps/tools/base_station/rtcm_server.py')
     context.launch_configurations['gps_link_mode'] = 'persistent'
-    run = (Path(value('run_log_dir')).expanduser().resolve() if value('run_log_dir')
-           else root / 'drive_logs' / datetime.now().strftime('v2_%Y%m%d_%H%M%S_%f'))
-    run.mkdir(parents=True, exist_ok=False)
     route_file = run / 'route_selected.yaml'
     route_file.write_text(yaml.safe_dump(manifest, sort_keys=False))
     (run / 'avoid_compute_backend.txt').write_text(backend + '\n')
@@ -144,6 +149,7 @@ def start_stack(context, route_profile='yongin'):
     if value('rviz') == 'true':
         actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(
             str(share / 'launch/integration_v2_view.launch.py'))))
+    print('[v2 drive] course: ' + ('yongin_no_parking' if no_parking else route_profile))
     print('[v2 drive] route: ' + ' -> '.join(r['id'] for r in manifest['routes']))
     print(f'[v2 drive] avoid planner: {mode}; backend={backend}; zone_only={value("avoid_zone_only")}')
     print(f'[v2 drive] logs: {run}; waiting for explicit go')
@@ -174,6 +180,9 @@ def generate_launch_description(route_profile='yongin'):
     start_options = {'default_value': route_id} if obstacle else {}
     return LaunchDescription([
         DeclareLaunchArgument('REAL_VEHICLE_CONFIRM', default_value='NOT_CONFIRMED'),
+        DeclareLaunchArgument('course', default_value='yongin',
+                              choices=['yongin','yongin_no_parking'],
+                              description='Yongin original or edited no-parking CSV'),
         DeclareLaunchArgument('start_waypoint',
                               description=('PR117 obstacle course; fixed route 01' if obstacle else
                                            'Required each session; scripts/v2 prompts when omitted'),

@@ -2,11 +2,12 @@
 
 현재 상태 머신: **스테이트 v09.17** ([명세·상태 점검](docs/STATE_V09_17.md)).
 
-2026-09-19 · `integration/v2_main` · 이 PC 기준 용인 전체 주행 런북입니다.
+2026-09-20 · `integration/v2_main` · 이 PC 기준 용인 전체 주행 런북입니다.
 한라 런북과 동일하게 **GPS 연결 → 센서 연결 확인 → 주행 런처 → GO → 종료** 순서로 설명합니다.
 모든 실행 명령은 `/home/sangmin/Desktop/HL-Global-Mobility-Team2-v2_main`의 `scripts/v2`를 사용합니다.
 GPS 경로는 **용인 `yongin_reference_path_01.csv` ~ `07.csv`**이며,
-경로·zone·주차 카탈로그도 모두 용인 파일로 연결합니다. 문서의 하드웨어 명령은 작성 중 실행하지 않았습니다.
+기본 `course:=yongin`은 경로·zone·주차 카탈로그를 용인 파일로 연결합니다.
+`course:=yongin_no_parking`을 선택하면 편집한 `yongin_no_parking.csv`를 사용하며 주차 미션을 수행하지 않습니다. 문서의 하드웨어 명령은 작성 중 실행하지 않았습니다.
 
 ## 1. GPS 연결 코드
 
@@ -93,7 +94,8 @@ scripts/v2 state
 | `selected_reference_valid`, `selected_reference_fresh` | 실제 사용할 참조의 유효성·신선도 |
 | `/adas/target_ref.v_ref`, MGM의 `reference_motion_blocked`, `active_safe_stop_reasons` | GO 전 0 속도는 정상; GO 후 정차 원인은 상태와 함께 확인 |
 
-준비 조건은 라이다 4대 정상 AND (카메라 영상 OR GPS FIXED)입니다.
+현재 revised v2 준비 조건은 **라이다 4대 정상 AND GPS FIXED·유효 경로**입니다.
+카메라 영상만으로 GPS 준비 조건을 대신할 수 없습니다.
 준비 완료와 실제 이동에 필요한 GPS 헤딩·선택 참조·주차 피드백 유효성은 별도입니다.
 상태 표시에서 Ctrl+C를 누르면 표시만 종료됩니다.
 
@@ -137,6 +139,30 @@ scripts/v2 prepare \
 이 명령은 센서·MGM·CAN·RViz를 실행하고 **GO를 기다립니다**. 터미널을 켜 둡니다.
 런처의 `selected start CSV`, `general driving v_base`, `route`, `logs` 출력을 확인합니다.
 경로 목록에는 분기 사전 로딩 때문에 06·07이 함께 표시될 수 있습니다.
+
+### 3-3a. 새 no-parking 경로 선택
+
+수정한 `yongin_no_parking.csv`로 주차 없이 주행하려면 다음처럼 선택합니다.
+
+```bash
+scripts/v2 prepare \
+  REAL_VEHICLE_CONFIRM:=I_UNDERSTAND_THIS_ENABLES_REAL_CAN_TX \
+  course:=yongin_no_parking start_waypoint:=01 v_base:=2.0
+```
+
+- 원본: `src/stack_gps/waypoints/yongin_no_parking.csv` (현재 2497개 행).
+- 매 prepare에서 저장된 원본을 읽고 해당 실행 로그 폴더의 `no_parking_route/`에
+  경로 01~07, zone 파일, 원본 스냅샷·SHA256을 생성합니다. 편집기의 저장 전 내용은 반영되지 않습니다.
+- 01 또는 02 출발, 03 → 04 → 05, 마지막 미션의 06/07 선택은 유지합니다.
+- 주차 state=1/2가 없는 경로이며 T·평행 주차 참조 실행을 끕니다.
+- 신호등 [3], 회피 state=4, 출구 [2]·state=3은 CSV의 현재 좌표·구역을 따라 연결합니다.
+- **경로 04 원본 idx 622(state=6)부터 idx 1021까지 ESTOP 감지 활성화**.
+  구역 진입만으로 정지하지 않고, 장애물 감지 시 한 번 정지합니다.
+- `course` 생략 시 기존 `yongin_reference_path_01..07`이 선택됩니다.
+  기존 경로에는 현재 state=6이 없으므로 해당 ESTOP 스테이션도 활성화되지 않습니다.
+
+런처의 `course: yongin_no_parking`과 `selected start CSV`를 확인합니다.
+아래 주차 순서·주차 구간 표는 기본 `course:=yongin`에 대한 설명입니다.
 
 ### 3-4. 실제 적용되는 CSV와 주행 순서
 
@@ -201,7 +227,16 @@ zone [1]·[3]은 현재 station 또는 허용된 preview로 진입을 관측합�
 
 신호등 카메라 노출 보정은 `traffic_exposure_compensation=-9`입니다. 변경은 런처 재시작 후 적용되며 라인 카메라는 그대로입니다.
 
-일반 신호등 박스 검출 기준은 최초 `confidence_threshold=0.09`, 추적 유지 `tracking_confidence_threshold=0.045`입니다. 빨간색 판별 조건과 정지선 검출 기준은 별도입니다.
+신호등 박스 검출 기준은 최초 **`confidence_threshold=0.65`**, 추적 유지 **`tracking_confidence_threshold=0.59`**입니다.
+현재 모델은 수동 라벨 396장으로 추가 학습한 `src/stack_traffic/models/yolov8n.pt`이며,
+SHA256은 `0e60f7f6996132fcced5f40d54e2311bf4cc63c6e54341d8921ecb0bb930a2e5`입니다.
+
+적색 근거는 **HSV 적색 OR YOLO 신뢰도 ≥0.70 OR 유효 template 박스의 표시 점수 1.00**입니다.
+template은 소수 둘째 자리 반올림 표시 기준이므로 0.999도 포함합니다. 두 점수는 다른 지표입니다.
+최근 5프레임 중 유효 적색 관측이 3회 이상이면 확정하며, 2회 이하로 떨어지면 적색을 해제합니다.
+YOLO 근거의 중간 프레임 유지·템플릿 투표에는 현재 추적 유효성 조건을 적용합니다.
+정상 영상의 미검출은 적색 0표이며, 카메라 수신 실패는 정상적인 적색 해제 관측이 아닙니다.
+사진 검토 화면의 ‘적색 미충족=초록불’ 표시는 실제 녹색 점등 확인을 의미하지 않습니다.
 
 - zone [3]에서 검출·최대 1m/s 제한을 적용합니다. 이탈 후 다른 제한이 없으면 `v_base`로 복귀합니다.
 - 신호등 bbox YOLO와 HSV 색상 판단, 정지선 segmentation을 사용합니다.
@@ -249,9 +284,18 @@ zone [2]에서는 `APPROACH=6`으로 검출하면서 주행합니다. idx 92의 
 
 과거 “독립 E-stop 삭제·상위 ESTOP 추가 예정” 요구는 현재 구현에 반영됐습니다.
 독립 E-stop과 옛 시간 기반 후진을 실행하지 않으며 상위 MGM이 전이를 결정합니다.
-실제 정차 6초·후방 확인 후 −0.3m/s로 실측 1m 후진하고, 다시 정차를 확인해야 복귀합니다.
-세부 진입·중단·실패 조건은 [현재 회복 계약](docs/V2_PR108_INTEGRATION.md)을 따릅니다.
-주차 완료 대기 3초, 출구 판단 3초와 이 회복 대기 시간을 혼동하지 않습니다.
+현재는 **후진 회복 없이 정지 유지**하는 스테이션 방식입니다.
+
+- CSV state=6부터 같은 path_id 끝까지 현재 위치로 감지 활성화합니다. 마커 없는 경로는 비활성화입니다.
+- 전방 LiDAR의 차체 앞끝부터 **3m × 차폭 0.62m** 사각형에서 한 장애물의 폭 **18cm 이상**을
+  새 유효 스캔 3회 확인하면 ESTOP에 진입합니다. 좌·우 센서 거리로는 진입하지 않습니다.
+- 영역이 비었음을 새 유효 스캔 3회 확인할 때까지 목표 0으로 정지합니다.
+  진입 후에는 작은 잔여 장애물도 빈 영역으로 취급하지 않습니다.
+- 무효·미수신·0.35초 초과 스캔은 소실 확인으로 사용하지 않습니다.
+- 소실 확인 후 이전 상태로 복귀하고 해당 스테이션 이탈 전 재진입을 금지합니다.
+- 과거 estop_recovery 실행기는 런처에서 실행하지 않으며, 옛 후진·done 명령도 사용하지 않습니다.
+
+[현재 ESTOP 계약](docs/ESTOP_STATION_20260919.md)을 따릅니다.
 
 ## 4. 주행 인가 코드
 
@@ -332,7 +376,7 @@ ros2 topic echo /adas/target_ref --once
 `route_selected.yaml`, `transitions.csv`, `zone_observations.csv`, `mission_events.csv`,
 `vehicle_vector.csv`, `mgm_snapshots.bin`을 함께 보관합니다.
 기본 `record=false`는 rosbag만 끄며 CSV·스냅샷은 남습니다. bag이 필요하면 준비 명령에 `record:=true`를 추가합니다.
-현재 스냅샷은 **v40**이며 동일 버전 replay를 사용합니다.
+현재 스냅샷은 **v42**이며 동일 버전 replay를 사용합니다.
 
 | 증상 | 확인할 항목 |
 |---|---|
