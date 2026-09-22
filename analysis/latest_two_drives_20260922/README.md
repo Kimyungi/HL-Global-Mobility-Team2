@@ -53,6 +53,38 @@ FINISH·SAFE_STOP은 이 단일 state와 별도의 상위 상태이므로 이 �
 
 ## 재현
 
+### MATLAB Figure 1 / Figure 2
+
+이 폴더를 MATLAB 현재 폴더로 설정하고 각각 실행한다 (MATLAB R2024b에서 검증).
+
+```matlab
+figure1  % 기본: 16:05 주행, 위 v_ref/v_act, 아래 str_ref/str_act
+figure2  % 기본: 16:05 주행, x-y 궤적을 state별 색상으로 표시
+
+% 13:20 주행은 CSV를 지정한다.
+figure1('v2_20260920_132033_650355.csv');
+figure2('v2_20260920_132033_650355.csv');
+```
+
+- [figure1.m](figure1.m)과 [figure2.m](figure2.m)은 서로 독립적으로 실행된다.
+  두 번째 인수로 저장 폴더를 지정할 수 있으며, 기본은 `figures/`이다.
+- Figure 1: `elapsed_s`를 시간축으로 사용하며 속도 m/s, 조향각 rad를 유지한다.
+  결측값 및 0.1초 초과 CAN 공백은 연결하지 않는다. 시간축을 압축하지 않아
+  16:05 주행의 693.585초 공백도 실제 길이로 보인다.
+- Figure 2: 유효한 GPS·시간 대응·state가 있는 행만 표시한다. state별 색상은
+  두 주행에서 동일하며, 같은 state가 다시 나타나도 떨어진 구간을 서로 잇지 않는다.
+  인접 유효 표본 사이 선분은 시작 표본의 state 색상, 각 점은 해당 표본의 색상이다.
+  GPS 결측 및 0.1초 초과 CAN 공백을 가로지르는 선은 그리지 않는다.
+- 실행할 때 Figure 1 또는 Figure 2 창을 갱신하고, CSV 이름별 PNG와 편집 가능한
+  MATLAB `.fig`를 저장한다. 동일 CSV로 재실행하면 해당 출력 파일을 덮어쓴다.
+
+| 주행 | Figure 1: 속도·조향 | Figure 2: state별 궤적 |
+|---|---|---|
+| 16:05 | [PNG](figures/v2_20260920_160548_762545_figure1.png) · [FIG](figures/v2_20260920_160548_762545_figure1.fig) | [PNG](figures/v2_20260920_160548_762545_figure2.png) · [FIG](figures/v2_20260920_160548_762545_figure2.fig) |
+| 13:20 | [PNG](figures/v2_20260920_132033_650355_figure1.png) · [FIG](figures/v2_20260920_132033_650355_figure1.fig) | [PNG](figures/v2_20260920_132033_650355_figure2.png) · [FIG](figures/v2_20260920_132033_650355_figure2.fig) |
+
+### CSV 추출 재현
+
 원본 로그는 차량 PC에 보존되어 있으며 수백 MB의 원본 덤프는 이 PR에 포함하지 않는다.
 Git 히스토리 전체와 g++/tar/Python 3가 필요하다. ROS 노드나 차량을 실행하지 않는다.
 
