@@ -1,0 +1,52 @@
+{
+  "alignment": "latest preceding MGM event_time_ns; maximum age 100ms; no interpolation",
+  "coordinate_source": "GPS local metric pose (invalid poses blank); original CAN coordinates in feedback_x/feedback_y",
+  "runs": [
+    {
+      "run": "v2_20260920_160548_762545",
+      "dump_version": 46,
+      "replay_revision": "d92ef8b7ef685c2c8440c847e35dd21554bbc422",
+      "snapshot_rows": 63710,
+      "can_rows": 57700,
+      "output_rows": 57700,
+      "unmatched_rows": 5,
+      "invalid_gps_rows": 63,
+      "first_kst": "2026-09-20T16:05:49.062+09:00",
+      "last_kst": "2026-09-20T16:26:59.600+09:00",
+      "max_feedback_gap_s": 693.585,
+      "max_snapshot_gap_s": 64086.790356151,
+      "snapshot_last_kst": "2026-09-21T10:16:01.879667+09:00",
+      "transition_rows_verified": 35,
+      "source_sha256": {
+        "mgm_snapshots.bin": "6c15e3015bff416aea8a84ddc6e70d78e91a3dbdd6885aec73b121a0fdf2fd90",
+        "vehicle_vector.csv": "9fe4698bcc1095c2b0a1aea002e2434f36a657b526278f7868aaacb268b776b8",
+        "transitions.csv": "df88cb7ef9bf5c49e6bd87ba877a2f06e2b00796ea017da7fa47953dd430d944",
+        "route_selected.yaml": "e81491709a121b327c1c03f18814e3573550ada015f7e1f35d398e703ab06e0a"
+      },
+      "output_sha256": "3915e5658f568f9b692ac7fa5e8fef1b300a20c5d3116a231a5aec1dedff886d"
+    },
+    {
+      "run": "v2_20260920_132033_650355",
+      "dump_version": 45,
+      "replay_revision": "0be273b01ef28d223b5b6643cfe16e62956123ad",
+      "snapshot_rows": 60151,
+      "can_rows": 60165,
+      "output_rows": 60165,
+      "unmatched_rows": 14,
+      "invalid_gps_rows": 58,
+      "first_kst": "2026-09-20T13:20:33.909+09:00",
+      "last_kst": "2026-09-20T13:30:35.557+09:00",
+      "max_feedback_gap_s": 0.016,
+      "max_snapshot_gap_s": 0.027887968,
+      "snapshot_last_kst": "2026-09-20T13:30:35.547966+09:00",
+      "transition_rows_verified": 58,
+      "source_sha256": {
+        "mgm_snapshots.bin": "194cce4a0205108d90786dedd416c06c2c90ca8b387df8b1387faf0df7a8baa5",
+        "vehicle_vector.csv": "0e5c13ebdc9dfb23fe702576e6da196277c774092ab600c9a73874dde2f32666",
+        "transitions.csv": "fc58133c6b8eb7d8aa2ff4a8eb437a35463c510756ae91777f976affbb16466b",
+        "route_selected.yaml": "26a627773515b8826370fbf74bb711437f303d112ffef960a09a611f580dba18"
+      },
+      "output_sha256": "eb107f1165f576614c17c09d56447a5a277e1fca4cd58c21bd84dfabf2e4045a"
+    }
+  ]
+}
